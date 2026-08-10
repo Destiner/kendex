@@ -5,9 +5,6 @@ first — they carry the rules and the system model; this file carries the work.
 Consumable: delete items as they land; delete the file at the end of
 Phase 6.
 
-**Step 0 (fresh clone or uncommitted repo): run `tools/setup` (installs the
-git hooks), then make the baseline commit.**
-
 ## Context
 
 vstack2 replaces vstack (v1): a desktop app plus a thin CLI with full parity
@@ -157,13 +154,26 @@ disable, remove, refresh), not just per-kind. Known: Codex MCP
 lives in `~/.codex/config.toml` (`mcp_servers`); Codex has no slash-command
 surface (unsupported).
 
-**Phase 1 pre-work**: complete this matrix — every harness's *observation*
-surfaces (read paths) for MCP servers, commands, and plugins — before
-writing the scanner, and commit the result into this file. Derive from each
-harness's docs plus HarnessKit's adapters
-(`crates/hk-core/src/adapter/*.rs` at the pinned SHA), which implement
-exactly this matrix. Mutation stays Phase 3; unsupported states must be
-explicit from Phase 1.
+**Observation matrix (P1 pre-work, completed)** — read-only scan surfaces
+for MCP servers, commands, and plugins. Ground truth: harness docs (Aug
+2026) + HarnessKit adapters at the pinned SHA; details in
+`docs/research/report-harnesskit-adapter-paths.md`. Mutation stays Phase
+3; unsupported states are explicit; "observe-if-present" surfaces are
+scanned when the path exists and never created.
+
+| Harness | Commands (project / global) | MCP servers (project / global) | Plugins (project / global) |
+|---|---|---|---|
+| claude | `.claude/commands/*.md` / `~/.claude/commands/*.md` | `.mcp.json` key `mcpServers` / `~/.claude.json` key `mcpServers` (project-local servers also nest under `projects.<path>.mcpServers` in that file; toggles live in settings files: `enabledMcpjsonServers`, `disabledMcpServers`) | enablement: `enabledPlugins` in `.claude/settings.json` + `.claude/settings.local.json` (project) and `~/.claude/settings.json` (global); files: `~/.claude/plugins/` — `cache/`, `data/`, registries `installed_plugins.json` + `known_marketplaces.json` |
+| codex | project: none; global `~/.codex/prompts/*.md` — deprecated-but-loading surface: observe, mark legacy, never mutate | `.codex/config.toml` / `~/.codex/config.toml` (root honors `$CODEX_HOME`), TOML table `[mcp_servers.<name>]` | none documented; observe-if-present `~/.codex/plugins/cache/…/.codex-plugin/plugin.json` + `[plugins."name@marketplace"]` enable table in config.toml |
+| opencode | `.opencode/commands/*.md` (+ legacy singular `command/`) / `~/.config/opencode/commands/*.md` | `opencode.json`/`.jsonc` at repo root / `~/.config/opencode/opencode.json(c)` — key `mcp`, entries tagged `{type: local\|remote}`, per-entry `enabled` | `.opencode/plugins/*.{js,ts,mjs,cjs}` / `~/.config/opencode/plugins/` — `.disabled` filename suffix = disabled; npm refs in config `plugin` array |
+| cursor | `.cursor/commands/*.md` / `~/.cursor/commands/*.md` | `.cursor/mcp.json` / `~/.cursor/mcp.json`, key `mcpServers` | none (VS Code-style editor extensions are out of scope); observe-if-present `~/.cursor/plugins/{local,cache}/…/.cursor-plugin/plugin.json` |
+| pi | prompt templates `.pi/prompts/*.md` / `~/.pi/agent/prompts/*.md` | none — pi has no MCP surface | `packages[]` in `.pi/settings.json` / `~/.pi/agent/settings.json` (root honors `$PI_CODING_AGENT_DIR`): `npm:` entries, `./packages/<name>` relative entries (v1-installed), git refs; per-scope dirs `packages/`, `npm/`, `git/`, `extensions/*.{ts,js}` |
+
+Cursor's global command/MCP surfaces exist and are observed even though v1
+managed cursor project-only — mutation capability stays gated by the
+capability table. Env overrides (`$CODEX_HOME`, `$OPENCODE_CONFIG`,
+`$OPENCODE_CONFIG_DIR`, `$PI_CODING_AGENT_DIR`) apply wherever those roots
+appear.
 
 ## Manifest shape (canonical)
 
@@ -279,20 +289,8 @@ Sidebar scope picker (Global / All / project) filters Items and Audit.
 
 ## Phases (each ends with a working app)
 
-1. **Walking skeleton** — cargo workspace (core, app, cli) + ui; wire
-   everything in "Wire at workspace creation" below. All five adapters
-   (detect + paths), scanner reads **every kind** read-only across real
-   global + registered projects; durable layout (settings file, project
-   registry); Overview, Scopes, Items, Harnesses, and Settings pages render
-   truth; CLI `project`, `list`, `check`. Adapter path fixtures for win/mac/linux
-   land with the adapters. Phase 1 truth is deliberately reduced:
-   observed/unmanaged items with best-effort git-origin provenance; no
-   drift counts; source controls inert until Phase 5; `check` here is
-   detection sanity, parity-grade in Phase 2. First vitest state tests land
-   here and `vitest run` joins the guard.
-   Done when: fixture-driven adapter/scanner tests + first UI tests pass
-   deterministically, guard green; smoke: app + CLI show this machine's
-   real installs.
+1. **Walking skeleton** — DONE. Carried forward: fs-watch scan trigger and
+   the Harnesses-page "open location" action land with Phase 2+ UI work.
 2. **Declare & diff** — manifest, lock, drift engine, transactional apply,
    Audit page, adopt + apply with plan preview (skills, agents, local
    sources, all harnesses). Generic tests for all eight ARCHITECTURE
@@ -341,26 +339,3 @@ Sidebar scope picker (Global / All / project) filters Items and Audit.
    dedup, Unicode deobfuscation, block threshold). Revisit after release
    against real demand.
 
-## Wire at workspace creation
-
-- Root `Cargo.toml`:
-  `[workspace.lints.rust] unsafe_code = "forbid"` and
-  `[workspace.lints.clippy]` denying `unwrap_used`, `expect_used`,
-  `dbg_macro`, `todo`, `unimplemented`, `print_stdout`, `print_stderr`,
-  `too_many_lines`. **Every member crate needs `[lints] workspace = true`**
-  (not inherited otherwise; guard enforces).
-- `rust-toolchain.toml` pin; pin Node (`.nvmrc` or mise); commit
-  `Cargo.lock` and `package-lock.json`; install via `npm ci` (guard already
-  runs only lockfile-resolved tools via `npx --no-install`). Install
-  Tauri's native OS prerequisites per its docs before first build.
-- tsconfig `strict`; Biome denying `any` and `console.log`, with an
-  override ignoring generated `ui/src/bindings.ts`.
-- Bindings staleness check: a Rust test exports specta bindings and diffs
-  them against the committed `ui/src/bindings.ts` (so `cargo test` in the
-  guard catches drift).
-- Non-interactive UI test command (`vitest run`) — first UI tests are a
-  Phase 1 requirement, and the command joins the guard's UI block then.
-- Upgrade the guard's core-purity check from TOML grep to `cargo tree`
-  once the workspace exists.
-- Widen the guard's hex-color check (3-digit hex, `rgb()`/`hsl()` literals)
-  when UI work starts.
