@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# vstack2 guardrails — deterministic checks, run as the pre-commit hook.
+# Checks the working tree, not the staged index — accepted trade-off:
+# agents commit whole files; partial staging is out of scope.
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)"
+fail=0
+say() {
+  echo "guard: $1"
+  fail=1
+}
+
+files=$({ git ls-files; git diff --cached --name-only; } | sort -u)
+
+while IFS= read -r f; do
+  [ -f "$f" ] || continue
+
+  # Size ceiling: no binary/asset bloat (lockfiles exempt).
+  case "$f" in
+    *.lock | package-lock.json) : ;;
+    *) [ "$(wc -c <"$f")" -gt 204800 ] &&
+      say "$f is over 200 KB — assets and binaries don't belong here" ;;
+  esac
+
+  # Line caps: split files before they exceed these.
+  case "$f" in
+    *.md | *.lock | *.json | *.svg) continue ;;
+    ui/src/components/ui/* | ui/src/bindings.ts) continue ;; # generated: shadcn, tauri-specta
+    *.rs) cap=400 ;;
+    *.ts | *.tsx) cap=250 ;;
+    *) cap=400 ;;
+  esac
+  lines=$(wc -l <"$f")
+  [ "$lines" -gt "$cap" ] &&
+    say "$f is $lines lines (cap $cap) — split it, don't compress it"
+done <<<"$files"
+
+# Content rules over hand-written source. Usage: scan <grep-ERE> [path-ERE]
+scan() {
+  local pat=$1 filter=${2:-.} f
+  while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    case "$f" in
+      tools/* | ui/src/components/ui/* | ui/src/bindings.ts) continue ;;
+      *.md | *.lock | *.json | *.svg) continue ;;
+    esac
+    [[ "$f" =~ $filter ]] || continue
+    grep -nHE "$pat" "$f" || true
+  done <<<"$files"
+}
+
+hits=$(scan 'TODO|FIXME|HACK')
+[ -n "$hits" ] && {
+  echo "$hits" | head -5
+  say "unfinished-work markers — finish it now or record it outside code"
+}
+
+hits=$(scan '#!\[allow')
+[ -n "$hits" ] && {
+  echo "$hits"
+  say "module-wide #![allow] — fix the lint instead of silencing the file"
+}
+
+hits=$(scan 'allow\((dead_code|unused)')
+[ -n "$hits" ] && {
+  echo "$hits"
+  say "allow(dead_code/unused) — delete the code instead of keeping it warm"
+}
+
+hits=$(scan '@tauri-apps/' '^ui/src/')
+[ -n "$hits" ] && {
+  echo "$hits"
+  say "UI reaches Tauri directly — only generated ui/src/bindings.ts may import @tauri-apps"
+}
+
+hits=$(scan '\[#|#[0-9a-fA-F]{6}\b' '^ui/src/.*\.tsx?$')
+[ -n "$hits" ] && {
+  echo "$hits" | head -5
+  say "raw hex color in UI code — use theme tokens; color lives in the stylesheet"
+}
+
+# Structural invariants.
+[ "$(readlink .claude/CLAUDE.md 2>/dev/null)" = "../AGENTS.md" ] ||
+  say ".claude/CLAUDE.md must be a symlink to ../AGENTS.md"
+
+if [ -f crates/core/Cargo.toml ] && grep -q tauri crates/core/Cargo.toml; then
+  say "crates/core must not depend on tauri"
+fi
+
+# Compiler-backed checks, once code exists.
+if [ -f Cargo.toml ]; then
+  for m in crates/*/Cargo.toml; do
+    [ -f "$m" ] || continue
+    grep -A1 '^\[lints\]' "$m" | grep -q 'workspace *= *true' ||
+      say "$m: missing [lints] workspace = true — workspace lints are not inherited"
+  done
+  cargo fmt --check || say "cargo fmt --check failed"
+  cargo clippy --workspace --quiet -- -D warnings || say "clippy failed"
+  cargo test --workspace --quiet || say "tests failed"
+fi
+if [ -f ui/package.json ]; then
+  (cd ui && npx --no-install tsc --noEmit) || say "tsc failed"
+  (cd ui && npx --no-install biome check src) || say "biome failed"
+fi
+
+exit $fail
