@@ -1,0 +1,85 @@
+import { describe, expect, it } from "vitest";
+import type { ObservedItem } from "@/bindings";
+import { countByKind, filterItems, groupItems, scopeMatches } from "./derive";
+
+function item(overrides: Partial<ObservedItem>): ObservedItem {
+  return {
+    kind: "skill",
+    name: "deploy",
+    harness: "claude",
+    scope: { scope: "global" },
+    path: "/h/.claude/skills/deploy",
+    fileState: { state: "dir" },
+    enabled: true,
+    origin: null,
+    description: null,
+    ...overrides,
+  };
+}
+
+describe("scopeMatches", () => {
+  it("matches all, global, and specific projects", () => {
+    const global = item({});
+    const project = item({ scope: { scope: "project", root: "/p" } });
+    expect(scopeMatches(global, "all")).toBe(true);
+    expect(scopeMatches(global, "global")).toBe(true);
+    expect(scopeMatches(global, { project: "/p" })).toBe(false);
+    expect(scopeMatches(project, "global")).toBe(false);
+    expect(scopeMatches(project, { project: "/p" })).toBe(true);
+    expect(scopeMatches(project, { project: "/other" })).toBe(false);
+  });
+});
+
+describe("filterItems", () => {
+  const items = [
+    item({ name: "deploy" }),
+    item({ name: "review", kind: "agent", harness: "pi" }),
+    item({ name: "gh", description: "github helper" }),
+  ];
+
+  it("filters by kind, harness, and search over name+description", () => {
+    expect(filterItems(items, { scope: "all", kind: "agent" })).toHaveLength(1);
+    expect(filterItems(items, { scope: "all", harness: "pi" })).toHaveLength(1);
+    expect(filterItems(items, { scope: "all", search: "GITHUB" })).toHaveLength(
+      1,
+    );
+    expect(filterItems(items, { scope: "all" })).toHaveLength(3);
+  });
+});
+
+describe("groupItems", () => {
+  it("groups installations under the logical item and flags shared artifacts", () => {
+    const shared = "/p/.agents/skills/deploy";
+    const groups = groupItems([
+      item({
+        harness: "codex",
+        path: shared,
+        scope: { scope: "project", root: "/p" },
+      }),
+      item({
+        harness: "pi",
+        path: shared,
+        scope: { scope: "project", root: "/p" },
+      }),
+      item({ name: "solo", harness: "claude" }),
+    ]);
+    expect(groups).toHaveLength(2);
+    const deploy = groups.find((g) => g.name === "deploy");
+    expect(deploy?.installations).toHaveLength(2);
+    expect(deploy?.harnesses.sort()).toEqual(["codex", "pi"]);
+    expect(deploy?.shared).toBe(true);
+    expect(groups.find((g) => g.name === "solo")?.shared).toBe(false);
+  });
+});
+
+describe("countByKind", () => {
+  it("tallies per kind", () => {
+    const counts = countByKind([
+      item({}),
+      item({ name: "x" }),
+      item({ kind: "agent" }),
+    ]);
+    expect(counts.get("skill")).toBe(2);
+    expect(counts.get("agent")).toBe(1);
+  });
+});

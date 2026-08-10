@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "vstack2",
+  "version": "0.1.0",
+  "identifier": "com.vanillagreen.vstack2",
+  "build": {
+    "beforeDevCommand": {
+      "cwd": "../../ui",
+      "script": "npm run dev"
+    },
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": {
+      "cwd": "../../ui",
+      "script": "npm run build"
+    },
+    "frontendDist": "../../ui/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "vstack2",
+        "width": 1280,
+        "height": 840,
+        "minWidth": 900,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false
+  }
+}

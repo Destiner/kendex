@@ -73,17 +73,17 @@ hits=$(scan '@tauri-apps/' '^ui/src/')
   say "UI reaches Tauri directly — only generated ui/src/bindings.ts may import @tauri-apps"
 }
 
-hits=$(scan '\[#|#[0-9a-fA-F]{6}\b' '^ui/src/.*\.tsx?$')
+hits=$(scan '#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?\b|rgba?\(|hsla?\(' '^ui/src/.*\.tsx?$')
 [ -n "$hits" ] && {
   echo "$hits" | head -5
-  say "raw hex color in UI code — use theme tokens; color lives in the stylesheet"
+  say "raw color literal in UI code — use theme tokens; color lives in the stylesheet"
 }
 
 # Structural invariants.
 [ "$(readlink .claude/CLAUDE.md 2>/dev/null)" = "../AGENTS.md" ] ||
   say ".claude/CLAUDE.md must be a symlink to ../AGENTS.md"
 
-if [ -f crates/core/Cargo.toml ] && grep -q tauri crates/core/Cargo.toml; then
+if [ -f Cargo.toml ] && cargo tree -p vstack-core -e normal 2>/dev/null | grep -qE '\btauri v'; then
   say "crates/core must not depend on tauri"
 fi
 
@@ -101,6 +101,7 @@ fi
 if [ -f ui/package.json ]; then
   (cd ui && npx --no-install tsc --noEmit) || say "tsc failed"
   (cd ui && npx --no-install biome check src) || say "biome failed"
+  (cd ui && npx --no-install vitest run --silent) || say "vitest failed"
 fi
 
 exit $fail

@@ -1,0 +1,25 @@
+[package]
+name = "vstack-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "vstack_app"
+
+[dependencies]
+vstack-core.workspace = true
+serde.workspace = true
+tauri.workspace = true
+tauri-specta.workspace = true
+specta.workspace = true
+specta-typescript.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[lints]
+workspace = true
