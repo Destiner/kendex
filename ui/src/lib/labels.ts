@@ -43,8 +43,11 @@ export const STATE_BADGES: Record<DriftState, BadgeVariant> = {
   conflict: "destructive",
 };
 
+// "Personal" follows the ecosystem convention (Claude Code skills docs):
+// personal items live in the home folder and apply in every project;
+// project items live in the repo and travel with it.
 export function scopeName(scope: Scope): string {
-  if (scope.scope === "global") return "Global";
+  if (scope.scope === "global") return "Personal";
   return scope.root.split("/").pop() ?? scope.root;
 }
 

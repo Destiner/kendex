@@ -31,8 +31,8 @@ export function ScopesPage() {
       <PageHeader title="Projects" subtitle="Where your setup applies" />
       <div className="space-y-4 p-8">
         <ScopeCard
-          title="Global"
-          subtitle="Applies everywhere on this machine"
+          title="Personal"
+          subtitle="Just for you — works in every project on this computer"
           counts={[...countByKind(globalItems).entries()]}
         />
 

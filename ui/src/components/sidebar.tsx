@@ -83,34 +83,38 @@ export function Sidebar() {
           </button>
         ))}
       </nav>
-      <div className="border-t px-3 py-3">
-        <p className="mb-1 px-1 text-xs text-muted-foreground">Show</p>
-        <Select
-          value={scopeValue}
-          onValueChange={(value) =>
-            setScope(
-              value === "all"
-                ? "all"
-                : value === "global"
-                  ? "global"
-                  : { project: value },
-            )
-          }
-        >
-          <SelectTrigger className="w-full" size="sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Everything</SelectItem>
-            <SelectItem value="global">Global — this machine</SelectItem>
-            {projects.map((root) => (
-              <SelectItem key={root} value={root}>
-                {scopeName({ scope: "project", root })}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {projects.length > 0 ? (
+        // Without projects there is nothing to filter between — the picker
+        // would render two choices that show identical lists.
+        <div className="border-t px-3 py-3">
+          <p className="mb-1 px-1 text-xs text-muted-foreground">Show</p>
+          <Select
+            value={scopeValue}
+            onValueChange={(value) =>
+              setScope(
+                value === "all"
+                  ? "all"
+                  : value === "global"
+                    ? "global"
+                    : { project: value },
+              )
+            }
+          >
+            <SelectTrigger className="w-full" size="sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Everything</SelectItem>
+              <SelectItem value="global">Personal — all projects</SelectItem>
+              {projects.map((root) => (
+                <SelectItem key={root} value={root}>
+                  {scopeName({ scope: "project", root })}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
     </aside>
   );
 }

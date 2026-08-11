@@ -16,7 +16,7 @@ describe("labels", () => {
   });
 
   it("names scopes by folder, global by name", () => {
-    expect(scopeName({ scope: "global" })).toBe("Global");
+    expect(scopeName({ scope: "global" })).toBe("Personal");
     expect(scopeName({ scope: "project", root: "/home/x/acme-web" })).toBe(
       "acme-web",
     );
