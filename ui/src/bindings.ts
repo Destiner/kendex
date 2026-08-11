@@ -17,6 +17,11 @@ export const commands = {
 	 *  this, never on its own assumptions.
 	 */
 	capabilityTable: () => __TAURI_INVOKE<CapabilityRow[]>("capability_table"),
+	auditAll: () => typedError<AuditView[], string>(__TAURI_INVOKE("audit_all")),
+	applyPlan: (scope: Scope, removeOrphans: boolean) => typedError<AuditView, string>(__TAURI_INVOKE("apply_plan", { scope, removeOrphans })),
+	adoptItem: (scope: Scope, kind: ItemKind, name: string, harness: HarnessId) => typedError<AuditView, string>(__TAURI_INVOKE("adopt_item", { scope, kind, name, harness })),
+	toggleItem: (scope: Scope, name: string, enabled: boolean) => typedError<AuditView, string>(__TAURI_INVOKE("toggle_item", { scope, name, enabled })),
+	removeItem: (scope: Scope, name: string) => typedError<AuditView, string>(__TAURI_INVOKE("remove_item", { scope, name })),
 };
 
 /* Types */
@@ -31,6 +36,17 @@ export type AppSettings = {
 
 export type Appearance = "system" | "light" | "dark";
 
+/**
+ *  What the Audit page renders: drift rows plus the human-readable plan
+ *  that would fix them.
+ */
+export type AuditView = {
+	scope: Scope,
+	drift: DriftRow[],
+	plan: string[],
+	notes: string[],
+};
+
 export type CapabilityRow = {
 	harness: HarnessId,
 	kind: ItemKind,
@@ -44,6 +60,27 @@ export type DetectedHarness = {
 	root: string,
 	version: string | null,
 };
+
+export type DriftRow = {
+	kind: ItemKind,
+	name: string,
+	harness: HarnessId,
+	scope: Scope,
+	state: DriftState,
+	detail: string,
+};
+
+export type DriftState = 
+/**  Declared but not on disk (or never recorded). */
+"missing" | 
+/**  On disk but no longer matching declaration + source. */
+"stale" | 
+/**  Recorded in the lock but no longer declared. */
+"orphaned" | 
+/**  On disk in a managed surface, but not ours. */
+"unmanaged" | 
+/**  Needs a human: foreign symlink, occupied target, or provenance clash. */
+"conflict";
 
 /**
  *  How an observed item exists on disk. Kinds that live as entries inside a

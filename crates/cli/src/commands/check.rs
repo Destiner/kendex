@@ -41,5 +41,31 @@ pub fn run(env: &Env, filter: ScopeFilter) -> CliResult {
     for warning in &result.warnings {
         say(&format!("warning: {warning}"));
     }
+
+    // v1 contract: drift alone is informational; an agent referencing a
+    // skill that is not declared is the one hard failure.
+    let mut missing_refs = 0usize;
+    for scope in &scopes {
+        let path = vstack_core::manifest::manifest_path(env, scope);
+        let Ok(vstack_core::manifest::ManifestFile::Current(manifest)) =
+            vstack_core::manifest::load(&path)
+        else {
+            continue;
+        };
+        for (agent, skills) in &manifest.agent_skills {
+            for skill in skills {
+                if !manifest.skills.contains_key(skill) {
+                    missing_refs += 1;
+                    say(&format!(
+                        "! {}: agent '{agent}' references skill '{skill}' which is not declared",
+                        scope.label()
+                    ));
+                }
+            }
+        }
+    }
+    if missing_refs > 0 {
+        return Err(format!("{missing_refs} skill reference(s) missing from install").into());
+    }
     Ok(())
 }

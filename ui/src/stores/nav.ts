@@ -1,7 +1,13 @@
 import { create } from "zustand";
 import type { ScopeSelection } from "@/lib/derive";
 
-export type Page = "overview" | "items" | "harnesses" | "scopes" | "settings";
+export type Page =
+  | "overview"
+  | "items"
+  | "harnesses"
+  | "scopes"
+  | "audit"
+  | "settings";
 
 interface NavState {
   page: Page;

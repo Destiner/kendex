@@ -1,0 +1,79 @@
+use vstack_core::engine::ops::{self, AddRequest};
+use vstack_core::env::Env;
+use vstack_core::lock::{load as load_lock, lock_path};
+use vstack_core::model::Scope;
+
+use super::engine_common::{confirm_and_execute, parse_harnesses, print_report};
+use super::{CliResult, resolve_scopes, say};
+use crate::scope::ScopeFilter;
+
+pub struct AddArgs {
+    pub source: Option<String>,
+    pub global: bool,
+    pub harness: Vec<String>,
+    pub agent: Vec<String>,
+    pub skill: Vec<String>,
+    pub hook: Vec<String>,
+    pub pi_extension: Vec<String>,
+    pub copy: bool,
+    pub yes: bool,
+    pub all: bool,
+    pub clobber: bool,
+    pub no_auto_skills: bool,
+}
+
+fn split(values: &[String]) -> Vec<String> {
+    values
+        .iter()
+        .flat_map(|v| v.split(','))
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+pub fn run(env: &Env, args: AddArgs) -> CliResult {
+    if !args.hook.is_empty() || !args.pi_extension.is_empty() {
+        return Err("hooks and pi-extensions become declarable in Phase 3 — agents and skills are available now".into());
+    }
+    let filter = if args.global {
+        ScopeFilter::Global
+    } else {
+        ScopeFilter::Project
+    };
+    let scope = resolve_scopes(env, filter)?.remove(0);
+
+    let agents = split(&args.agent);
+    let skills = split(&args.skill);
+    if args.global && !args.all && agents.is_empty() && skills.is_empty() {
+        return Err("global installs need --all or explicit --agent/--skill selections".into());
+    }
+    if args.global && args.all && !args.clobber {
+        let lock = load_lock(&lock_path(env, &Scope::Global))?;
+        if !lock.entries.is_empty() {
+            return Err(
+                "the global scope already has installs — pass --clobber to redeclare everything"
+                    .into(),
+            );
+        }
+    }
+
+    let request = AddRequest {
+        source: args.source,
+        agents,
+        skills,
+        all: args.all,
+        harnesses: if args.harness.is_empty() {
+            None
+        } else {
+            Some(parse_harnesses(&args.harness)?)
+        },
+        copy: args.copy,
+        no_auto_skills: args.no_auto_skills,
+    };
+    let report = ops::add(env, &scope, &request)?;
+    print_report(&report);
+    confirm_and_execute(env, &report, args.yes)?;
+    say("done");
+    Ok(())
+}

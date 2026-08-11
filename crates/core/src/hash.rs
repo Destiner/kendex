@@ -1,0 +1,231 @@
+use std::fmt::Write as _;
+use std::fs;
+use std::path::Path;
+
+use sha2::{Digest, Sha256};
+
+use crate::error::{CoreError, Result};
+use crate::manifest::Manifest;
+use crate::model::{HarnessId, ItemKind};
+
+/// SHA-256 over a file's bytes, or over a directory tree as sorted
+/// relative-path + content pairs. Symlinks hash their resolved content.
+pub fn hash_tree(path: &Path) -> Result<String> {
+    let mut hasher = Sha256::new();
+    hash_into(&mut hasher, path, Path::new(""))?;
+    Ok(hex(&hasher.finalize()))
+}
+
+fn hash_into(hasher: &mut Sha256, path: &Path, rel: &Path) -> Result<()> {
+    if path.is_dir() {
+        let mut entries: Vec<_> = fs::read_dir(path)
+            .map_err(|e| CoreError::io(path, e))?
+            .flatten()
+            .map(|e| e.path())
+            .collect();
+        entries.sort();
+        for entry in entries {
+            let Some(name) = entry.file_name() else {
+                continue;
+            };
+            hash_into(hasher, &entry, &rel.join(name))?;
+        }
+    } else {
+        let bytes = fs::read(path).map_err(|e| CoreError::io(path, e))?;
+        hasher.update(rel.to_string_lossy().as_bytes());
+        hasher.update([0]);
+        hasher.update(&bytes);
+        hasher.update([0]);
+    }
+    Ok(())
+}
+
+/// The hash a single-file artifact will have once written — mirrors
+/// `hash_tree` applied to a lone file.
+pub fn hash_bytes(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"");
+    hasher.update([0]);
+    hasher.update(bytes);
+    hasher.update([0]);
+    hex(&hasher.finalize())
+}
+
+/// The hash an in-memory rendered tree will have once written — mirrors
+/// `hash_tree` so plans can compare desired vs. disk without materializing.
+pub fn hash_files(files: &[(std::path::PathBuf, Vec<u8>)]) -> String {
+    let mut sorted: Vec<_> = files.iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut hasher = Sha256::new();
+    for (rel, bytes) in sorted {
+        hasher.update(rel.to_string_lossy().as_bytes());
+        hasher.update([0]);
+        hasher.update(bytes);
+        hasher.update([0]);
+    }
+    hex(&hasher.finalize())
+}
+
+/// The full installation hash: source bytes plus the manifest sections that
+/// shape this artifact (invariant 3) — editing a shared key invalidates
+/// dependents because the serialized sections change.
+pub fn installation_hash(
+    source_tree: &Path,
+    manifest: &Manifest,
+    kind: ItemKind,
+    name: &str,
+    harness: HarnessId,
+) -> Result<String> {
+    let mut hasher = Sha256::new();
+    hasher.update(hash_tree(source_tree)?.as_bytes());
+    hasher.update(relevant_sections(manifest, kind, name, harness).as_bytes());
+    Ok(hex(&hasher.finalize()))
+}
+
+/// Deterministic serialization of every manifest value that shapes the
+/// rendered artifact, shared `all`/`*` keys included.
+pub fn relevant_sections(
+    manifest: &Manifest,
+    kind: ItemKind,
+    name: &str,
+    harness: HarnessId,
+) -> String {
+    let mut out = String::new();
+    let mut push = |section: &str, key: &str, value: &str| {
+        let _ = writeln!(out, "{section}.{key}={value}");
+    };
+    let shared_keys = [name, "all", "*"];
+    match kind {
+        ItemKind::Skill => {
+            for key in shared_keys {
+                if let Some(text) = manifest.skill_instructions.get(key) {
+                    push("skill-instructions", key, text);
+                }
+            }
+        }
+        ItemKind::Agent => {
+            if let Some(skills) = manifest.agent_skills.get(name) {
+                push("agent-skills", name, &skills.join(","));
+            }
+            for key in shared_keys {
+                if let Some(text) = manifest.agent_launch_instructions.get(key) {
+                    push("agent-launch-instructions", key, text);
+                }
+                if let Some(text) = manifest.agent_additional_instructions.get(key) {
+                    push("agent-additional-instructions", key, text);
+                }
+            }
+            if let Some(overrides) = manifest
+                .agent_frontmatter
+                .get(harness.name())
+                .and_then(|by_agent| by_agent.get(name))
+            {
+                push(
+                    "agent-frontmatter",
+                    name,
+                    &toml::to_string(overrides).unwrap_or_default(),
+                );
+            }
+            for (index, hook) in manifest.custom_hooks.iter().enumerate() {
+                push(
+                    "custom-hooks",
+                    &index.to_string(),
+                    &format!(
+                        "{}:{}:{}",
+                        hook.event,
+                        hook.matcher.as_deref().unwrap_or(""),
+                        hook.command
+                    ),
+                );
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+fn hex(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let _ = write!(out, "{byte:02x}");
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::manifest::MANIFEST_SCHEMA;
+
+    #[test]
+    fn tree_hash_is_content_and_layout_sensitive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("a");
+        std::fs::create_dir_all(a.join("sub")).unwrap();
+        std::fs::write(a.join("SKILL.md"), "hello").unwrap();
+        std::fs::write(a.join("sub/x.sh"), "x").unwrap();
+        let first = hash_tree(&a).unwrap();
+        assert_eq!(first, hash_tree(&a).unwrap());
+
+        std::fs::write(a.join("sub/x.sh"), "y").unwrap();
+        assert_ne!(first, hash_tree(&a).unwrap());
+    }
+
+    #[test]
+    fn editing_a_shared_key_invalidates_dependents() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skill = tmp.path().join("skill");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(skill.join("SKILL.md"), "content").unwrap();
+
+        let mut manifest = Manifest {
+            schema: MANIFEST_SCHEMA,
+            ..Manifest::default()
+        };
+        let before = installation_hash(
+            &skill,
+            &manifest,
+            ItemKind::Skill,
+            "github",
+            HarnessId::Claude,
+        )
+        .unwrap();
+
+        manifest
+            .skill_instructions
+            .insert("all".into(), "shared instruction".into());
+        let after = installation_hash(
+            &skill,
+            &manifest,
+            ItemKind::Skill,
+            "github",
+            HarnessId::Claude,
+        )
+        .unwrap();
+        assert_ne!(before, after);
+
+        let unrelated = installation_hash(
+            &skill,
+            &manifest,
+            ItemKind::Command,
+            "github",
+            HarnessId::Claude,
+        )
+        .unwrap();
+        let unrelated_before = {
+            let clean = Manifest {
+                schema: MANIFEST_SCHEMA,
+                ..Manifest::default()
+            };
+            installation_hash(
+                &skill,
+                &clean,
+                ItemKind::Command,
+                "github",
+                HarnessId::Claude,
+            )
+            .unwrap()
+        };
+        assert_eq!(unrelated, unrelated_before);
+    }
+}

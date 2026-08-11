@@ -1,8 +1,16 @@
+pub mod apply;
 pub mod discover;
+pub mod engine;
 pub mod env;
 pub mod error;
 pub mod fs;
 pub mod harness;
+pub mod hash;
+pub mod lock;
+pub mod manifest;
+pub mod mapping;
 pub mod model;
+pub mod render;
 pub mod scan;
 pub mod settings;
+pub mod source;

@@ -4,6 +4,7 @@ import {
   Home,
   RefreshCw,
   Settings,
+  ShieldAlert,
   TerminalSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ const NAV: { page: Page; label: string; icon: typeof Home }[] = [
   { page: "items", label: "Items", icon: Boxes },
   { page: "harnesses", label: "Harnesses", icon: TerminalSquare },
   { page: "scopes", label: "Scopes", icon: FolderTree },
+  { page: "audit", label: "Audit", icon: ShieldAlert },
   { page: "settings", label: "Settings", icon: Settings },
 ];
 

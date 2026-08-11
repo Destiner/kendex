@@ -5,11 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { countByKind } from "@/lib/derive";
+import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 
 export function OverviewPage() {
   const { result, scanning, error, refresh } = useScanStore();
+  const driftCount = useAuditStore((s) =>
+    s.views.reduce((sum, view) => sum + view.drift.length, 0),
+  );
   const setPage = useNavStore((s) => s.setPage);
 
   if (!result) {
@@ -30,7 +34,7 @@ export function OverviewPage() {
       <div className="space-y-6 p-8">
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
           <Card>
             <CardHeader>
               <CardTitle className="text-sm text-muted-foreground">
@@ -49,6 +53,16 @@ export function OverviewPage() {
             </CardHeader>
             <CardContent className="text-3xl font-semibold">
               {result.items.length}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm text-muted-foreground">
+                Drift
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-3xl font-semibold">
+              {driftCount}
             </CardContent>
           </Card>
           <Card className="col-span-2">
@@ -107,6 +121,9 @@ export function OverviewPage() {
           </Button>
           <Button variant="outline" onClick={() => setPage("items")}>
             <Boxes className="size-4" /> Browse items
+          </Button>
+          <Button variant="outline" onClick={() => setPage("audit")}>
+            <TriangleAlert className="size-4" /> Audit
           </Button>
         </div>
       </div>

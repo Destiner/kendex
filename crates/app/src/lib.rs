@@ -1,3 +1,4 @@
+mod audit;
 mod commands;
 
 use tauri_specta::{Builder, collect_commands};
@@ -12,6 +13,11 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         commands::unregister_project,
         commands::discover_projects,
         commands::capability_table,
+        audit::audit_all,
+        audit::apply_plan,
+        audit::adopt_item,
+        audit::toggle_item,
+        audit::remove_item,
     ])
 }
 

@@ -1,6 +1,13 @@
+pub mod add;
+pub mod adopt;
+pub mod apply_cmd;
 pub mod check;
+pub mod engine_common;
 pub mod list;
 pub mod project;
+pub mod refresh;
+pub mod remove;
+pub mod verify;
 
 use std::io::Write;
 use std::path::PathBuf;

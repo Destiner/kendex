@@ -111,6 +111,12 @@ impl Env {
         self.data_dir.join("vstack2/local-source")
     }
 
+    /// Rendered canonical trees for global-scope skills — the stable target
+    /// native dirs link to (never the source cache, which refresh resets).
+    pub fn rendered_skills_dir(&self) -> PathBuf {
+        self.data_dir.join("vstack2/rendered/skills")
+    }
+
     pub fn project_manifest_file(project_root: &Path) -> PathBuf {
         project_root.join("vstack.toml")
     }

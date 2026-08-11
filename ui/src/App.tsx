@@ -1,10 +1,12 @@
 import { useEffect } from "react";
 import { Sidebar } from "@/components/sidebar";
+import { AuditPage } from "@/pages/audit";
 import { HarnessesPage } from "@/pages/harnesses";
 import { ItemsPage } from "@/pages/items";
 import { OverviewPage } from "@/pages/overview";
 import { ScopesPage } from "@/pages/scopes";
 import { SettingsPage } from "@/pages/settings";
+import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 import { useSettingsStore } from "@/stores/settings";
@@ -30,9 +32,10 @@ function useAppearance() {
 
 function useScanTriggers() {
   const refresh = useScanStore((s) => s.refresh);
+  const auditRefresh = useAuditStore((s) => s.refresh);
   const load = useSettingsStore((s) => s.load);
   useEffect(() => {
-    void load().then(refresh);
+    void load().then(refresh).then(auditRefresh);
     let last = Date.now();
     const onFocus = () => {
       if (Date.now() - last < FOCUS_RESCAN_DEBOUNCE_MS) return;
@@ -41,7 +44,7 @@ function useScanTriggers() {
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [refresh, load]);
+  }, [refresh, auditRefresh, load]);
 }
 
 export default function App() {
@@ -57,6 +60,7 @@ export default function App() {
         {page === "items" && <ItemsPage />}
         {page === "harnesses" && <HarnessesPage />}
         {page === "scopes" && <ScopesPage />}
+        {page === "audit" && <AuditPage />}
         {page === "settings" && <SettingsPage />}
       </main>
     </div>

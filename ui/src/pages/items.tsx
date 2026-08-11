@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { ItemKind } from "@/bindings";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -25,6 +26,7 @@ import {
   scopeLabel,
 } from "@/lib/derive";
 import { cn } from "@/lib/utils";
+import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 
@@ -173,10 +175,34 @@ export function ItemsPage() {
 }
 
 function ItemDetail({ group }: { group: ItemGroup }) {
+  const { busy, toggle, removeItem } = useAuditStore();
+  const managed = group.kind === "agent" || group.kind === "skill";
+  const anyDisabled = group.installations.some((i) => i.enabled === false);
+  const scope = group.installations[0]?.scope;
   return (
     <aside className="w-96 shrink-0 overflow-y-auto border-l p-5">
       <h2 className="font-semibold">{group.name}</h2>
       <p className="mb-4 text-sm text-muted-foreground">{group.kind}</p>
+      {managed && scope ? (
+        <div className="mb-4 flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => void toggle(scope, group.name, anyDisabled)}
+          >
+            {anyDisabled ? "Enable" : "Disable"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => void removeItem(scope, group.name)}
+          >
+            Remove
+          </Button>
+        </div>
+      ) : null}
       <div className="space-y-4">
         {group.installations.map((install) => (
           <div

@@ -251,9 +251,32 @@ never auto-dropped.
   applied) → native target. Rendered artifacts live only in native dirs and
   are always overwritable. Adoption moves content into the scope's local
   source (project: `project-skills-dir` and siblings; global: the
-  local-source dir) and declares it from source `local`. Phase 2 pre-work:
-  spec the per-kind flow (symlink vs copy vs generated) with v1 as ground
-  truth and commit it here.
+  local-source dir) and declares it from source `local`.
+- **Per-kind flow (P2 pre-work, completed; v1 ground truth, mechanism
+  unified)**:
+  - **Skill** — source dir → rendered copy = tree copy + `[skill-instructions]`
+    block injected into SKILL.md between `<!-- vstack:project-instructions -->`
+    markers (author text never overwritten). Rendered canonical location:
+    project `<proj>/.agents/skills/<name>`; global
+    `~/.local/share/vstack2/rendered/skills/<name>`. Every harness-native
+    skill dir gets a symlink (or copy, per `method`) → canonical; codex and
+    pi read the project canonical natively (no link needed). v2 divergence
+    from v1 mechanism, same outcome: v1 made codex's global dir the
+    canonical; v2 keeps one rule — every native dir links to the rendered
+    tree vstack owns. Never symlink into the source cache: refresh
+    hard-resets it under the harness's feet.
+  - **Agent** — always generated, never linked: per-harness render (claude
+    yaml-md, codex toml, opencode md, cursor mdc, pi md) from the source
+    agent file + manifest tables (`[agent-skills]`, launch/additional
+    instructions, `[agent-frontmatter.<harness>]`, custom hooks), written
+    straight into the native agents dir and overwritten on every refresh.
+    `method` does not apply.
+  - Lock `source_hash` covers source bytes + the manifest sections that
+    shaped the artifact (invariant 3); hashing is SHA-256 over sorted
+    relative-path+content pairs plus the serialized relevant sections.
+  - P3 kinds follow the same split later: hooks/pi-extensions = script/pkg
+    copy + structured registration edit; commands = file copy/symlink; MCP
+    = structured config edit only; plugins = structured toggle only.
 - Physical target identity is modeled separately from installation identity
   — codex and pi share `.agents/skills/`. Scans dedupe shared artifacts,
   plans state coupled effects, and removal is reference-counted: an

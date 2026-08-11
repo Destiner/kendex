@@ -11,9 +11,12 @@ toml.workspace = true
 dirs.workspace = true
 thiserror.workspace = true
 specta.workspace = true
+sha2.workspace = true
+fd-lock.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+fd-lock.workspace = true
 
 [lints]
 workspace = true

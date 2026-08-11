@@ -1,0 +1,69 @@
+use std::io::{IsTerminal, Write};
+
+use vstack_core::engine::EngineReport;
+use vstack_core::env::Env;
+use vstack_core::error::CoreError;
+use vstack_core::model::HarnessId;
+
+use super::{CliResult, say};
+
+pub fn parse_harnesses(values: &[String]) -> Result<Vec<HarnessId>, String> {
+    values
+        .iter()
+        .flat_map(|v| v.split(','))
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| HarnessId::parse(v).ok_or(format!("unknown harness '{v}'")))
+        .collect()
+}
+
+pub fn print_report(report: &EngineReport) {
+    for note in &report.notes {
+        say(&format!("note: {note}"));
+    }
+    if report.plan.is_empty() {
+        say("nothing to do");
+        return;
+    }
+    say("plan:");
+    for op in &report.plan.ops {
+        say(&format!("  - {}", op.description));
+    }
+}
+
+/// Prompted apply: `--yes` skips the prompt; a non-tty without `--yes`
+/// refuses rather than guessing.
+pub fn confirm_and_execute(env: &Env, report: &EngineReport, yes: bool) -> CliResult {
+    if report.plan.is_empty() {
+        return Ok(());
+    }
+    if !yes {
+        if !std::io::stdin().is_terminal() {
+            return Err("refusing to apply without --yes in a non-interactive session".into());
+        }
+        let _ = write!(std::io::stderr(), "apply? [y/N] ");
+        let mut answer = String::new();
+        std::io::stdin().read_line(&mut answer)?;
+        if !matches!(answer.trim(), "y" | "Y" | "yes") {
+            return Err("apply cancelled".into());
+        }
+    }
+    let outcome = vstack_core::apply::execute(env, &report.plan, None)?;
+    say(&format!("applied {} change(s)", outcome.applied));
+    Ok(())
+}
+
+/// A refresh failure per v1: any per-item failure or a locked item missing
+/// from its source is a hard error.
+pub fn refresh_failures(report: &EngineReport) -> Vec<String> {
+    report
+        .notes
+        .iter()
+        .filter(|n| n.contains("not found in source"))
+        .cloned()
+        .collect()
+}
+
+pub fn is_legacy(error: &CoreError) -> bool {
+    matches!(error, CoreError::LegacyManifest { .. })
+}

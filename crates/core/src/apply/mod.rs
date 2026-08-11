@@ -1,0 +1,254 @@
+use std::fs;
+use std::path::PathBuf;
+
+use crate::env::Env;
+use crate::error::{CoreError, Result};
+use crate::model::Scope;
+
+pub mod journal;
+mod op;
+
+pub use op::{Op, Plan, PlannedOp, Pre};
+
+/// Filesystem-safe key naming a scope's journal dir and lock file.
+pub fn scope_key(scope: &Scope) -> String {
+    match scope {
+        Scope::Global => "global".to_owned(),
+        Scope::Project { root } => {
+            let text = root.display().to_string();
+            let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+            for byte in text.bytes() {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+            let base = root
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "project".to_owned());
+            format!("{base}-{hash:016x}")
+        }
+    }
+}
+
+/// Exclusive per-scope writer lock (invariant 8). Held for the whole
+/// journal → mutate → clear window; recovery runs under the same lock.
+pub struct ScopeGuard {
+    _file: fs::File,
+}
+
+fn lock_scope(env: &Env, scope: &Scope) -> Result<ScopeGuard> {
+    let dir = env.scope_locks_dir();
+    fs::create_dir_all(&dir).map_err(|e| CoreError::io(&dir, e))?;
+    let path = dir.join(format!("{}.lock", scope_key(scope)));
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(|e| CoreError::io(&path, e))?;
+    let mut lock = fd_lock::RwLock::new(file);
+    // fd-lock ties its guard lifetime to the RwLock borrow; the OS lock is
+    // really held by the open fd, so forget the guard and keep the file —
+    // the lock releases when ScopeGuard drops (closing the fd).
+    let acquired = match lock.try_write() {
+        Ok(guard) => {
+            std::mem::forget(guard);
+            true
+        }
+        Err(_) => false,
+    };
+    if acquired {
+        Ok(ScopeGuard {
+            _file: lock.into_inner(),
+        })
+    } else {
+        Err(CoreError::ScopeBusy { lock: path })
+    }
+}
+
+/// Roll back an interrupted apply, if one left a journal. Returns whether
+/// recovery ran. Called under the scope lock on every apply, and at app
+/// launch for every known scope.
+pub fn recover(env: &Env, scope: &Scope) -> Result<bool> {
+    let dir = journal::journal_dir_for(&env.journal_dir(), &scope_key(scope));
+    if journal::pending(&dir) {
+        journal::rollback(&dir)?;
+        return Ok(true);
+    }
+    journal::clear(&dir)?;
+    Ok(false)
+}
+
+#[derive(Debug)]
+pub struct ApplyOutcome {
+    pub applied: usize,
+    pub recovered_first: bool,
+}
+
+/// Execute a plan transactionally. `fail_after` is test-only fault
+/// injection: simulate a crash after N ops to exercise every boundary.
+pub fn execute(env: &Env, plan: &Plan, fail_after: Option<usize>) -> Result<ApplyOutcome> {
+    let _guard = lock_scope(env, &plan.scope)?;
+    let recovered_first = recover(env, &plan.scope)?;
+    if recovered_first {
+        // The plan was computed against pre-crash state; after recovery the
+        // world may differ, so preconditions do the talking below.
+    }
+    let journal_dir = journal::journal_dir_for(&env.journal_dir(), &scope_key(&plan.scope));
+    let touched: Vec<PathBuf> = plan.ops.iter().flat_map(|p| p.op.touched()).collect();
+    journal::write(&journal_dir, &touched)?;
+
+    for (index, planned) in plan.ops.iter().enumerate() {
+        if fail_after == Some(index) {
+            journal::rollback(&journal_dir)?;
+            return Err(CoreError::RolledBack {
+                reason: format!("injected fault before '{}'", planned.description),
+            });
+        }
+        if let Err(error) = planned.op.run(env) {
+            journal::rollback(&journal_dir)?;
+            return Err(CoreError::RolledBack {
+                reason: format!("'{}' failed: {error}", planned.description),
+            });
+        }
+    }
+    journal::clear(&journal_dir)?;
+    Ok(ApplyOutcome {
+        applied: plan.ops.len(),
+        recovered_first,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::env::FakeOs;
+    use std::path::Path;
+
+    fn env_in(dir: &Path) -> Env {
+        Env::fake(dir, FakeOs::Linux)
+    }
+
+    fn write_plan(scope: Scope, path: PathBuf, content: &str, pre: Pre) -> Plan {
+        Plan {
+            scope,
+            ops: vec![PlannedOp {
+                description: format!("write {}", path.display()),
+                op: Op::WriteFile {
+                    path,
+                    bytes: content.as_bytes().to_vec(),
+                    pre,
+                },
+            }],
+        }
+    }
+
+    #[test]
+    fn fault_at_every_boundary_leaves_disk_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env = env_in(tmp.path());
+        let target = tmp.path().join("a/file.md");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(&target, "before").unwrap();
+
+        let plan = Plan {
+            scope: Scope::Global,
+            ops: vec![
+                PlannedOp {
+                    description: "first".into(),
+                    op: Op::WriteFile {
+                        path: target.clone(),
+                        bytes: b"after".to_vec(),
+                        pre: Pre::Any,
+                    },
+                },
+                PlannedOp {
+                    description: "second".into(),
+                    op: Op::WriteFile {
+                        path: tmp.path().join("b/new.md"),
+                        bytes: b"new".to_vec(),
+                        pre: Pre::Absent,
+                    },
+                },
+            ],
+        };
+
+        for boundary in 0..=1 {
+            let error = execute(&env, &plan, Some(boundary)).unwrap_err();
+            assert!(matches!(error, CoreError::RolledBack { .. }));
+            assert_eq!(fs::read_to_string(&target).unwrap(), "before");
+            assert!(!tmp.path().join("b/new.md").exists());
+        }
+
+        let outcome = execute(&env, &plan, None).unwrap();
+        assert_eq!(outcome.applied, 2);
+        assert_eq!(fs::read_to_string(&target).unwrap(), "after");
+    }
+
+    #[test]
+    fn stale_precondition_aborts_and_rolls_back() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env = env_in(tmp.path());
+        let target = tmp.path().join("file.md");
+        fs::write(&target, "changed since plan").unwrap();
+
+        let plan = write_plan(Scope::Global, target.clone(), "overwrite", Pre::Absent);
+        let error = execute(&env, &plan, None).unwrap_err();
+        assert!(matches!(error, CoreError::RolledBack { .. }));
+        assert_eq!(fs::read_to_string(&target).unwrap(), "changed since plan");
+    }
+
+    #[test]
+    fn interrupted_apply_recovers_on_next_run() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env = env_in(tmp.path());
+        let target = tmp.path().join("file.md");
+        fs::write(&target, "before").unwrap();
+
+        // Simulate a crash: journal written, mutation done, journal never
+        // cleared.
+        let journal_dir = journal::journal_dir_for(&env.journal_dir(), &scope_key(&Scope::Global));
+        journal::write(&journal_dir, std::slice::from_ref(&target)).unwrap();
+        fs::write(&target, "torn write").unwrap();
+
+        assert!(recover(&env, &Scope::Global).unwrap());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "before");
+        assert!(!recover(&env, &Scope::Global).unwrap());
+    }
+
+    #[test]
+    fn second_writer_gets_a_busy_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env = env_in(tmp.path());
+        let _guard = lock_scope(&env, &Scope::Global).unwrap();
+        assert!(matches!(
+            lock_scope(&env, &Scope::Global),
+            Err(CoreError::ScopeBusy { .. })
+        ));
+    }
+
+    #[test]
+    fn trash_receives_removals() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env = env_in(tmp.path());
+        let victim = tmp.path().join("skill");
+        fs::create_dir_all(&victim).unwrap();
+        fs::write(victim.join("SKILL.md"), "content").unwrap();
+
+        let plan = Plan {
+            scope: Scope::Global,
+            ops: vec![PlannedOp {
+                description: "remove skill".into(),
+                op: Op::Trash {
+                    path: victim.clone(),
+                    pre: Pre::Any,
+                },
+            }],
+        };
+        execute(&env, &plan, None).unwrap();
+        assert!(!victim.exists());
+        let trashed: Vec<_> = fs::read_dir(env.trash_dir()).unwrap().flatten().collect();
+        assert_eq!(trashed.len(), 1);
+        assert!(trashed[0].path().join("SKILL.md").is_file());
+    }
+}
