@@ -1,0 +1,125 @@
+import type {
+  HarnessId,
+  ItemKind,
+  Manifest_Serialize,
+  Scope,
+} from "@/bindings";
+import { AVAILABLE_SKILLS } from "./fixtures";
+import {
+  DECL_KEYS,
+  declTable,
+  type Handler,
+  label,
+  manifest,
+  same,
+  store,
+  view,
+} from "./mock-state";
+
+export const auditHandlers: Record<string, Handler> = {
+  audit_all: () => store.state.views,
+  apply_plan: ({
+    scope,
+    removeOrphans,
+  }: {
+    scope: Scope;
+    removeOrphans: boolean;
+  }) => {
+    const v = view(scope);
+    v.drift = v.drift.filter(
+      (row) =>
+        row.state === "unmanaged" ||
+        (row.state === "orphaned" && !removeOrphans),
+    );
+    v.plan = [];
+    return v;
+  },
+  adopt_item: (args: {
+    scope: Scope;
+    kind: ItemKind;
+    name: string;
+    harness: HarnessId;
+  }) => {
+    const v = view(args.scope);
+    v.drift = v.drift.filter(
+      (row) =>
+        !(
+          row.kind === args.kind &&
+          row.name === args.name &&
+          row.harness === args.harness
+        ),
+    );
+    const table = declTable(manifest(args.scope), args.kind);
+    if (table) table[args.name] = { source: "local", enabled: true };
+    for (const it of store.state.items) {
+      if (
+        it.kind === args.kind &&
+        it.name === args.name &&
+        same(it.scope, args.scope)
+      ) {
+        it.origin = "local";
+      }
+    }
+    return v;
+  },
+  toggle_item: ({
+    scope,
+    name,
+    enabled,
+  }: {
+    scope: Scope;
+    name: string;
+    enabled: boolean;
+  }) => {
+    for (const it of store.state.items) {
+      if (it.name === name && same(it.scope, scope)) it.enabled = enabled;
+    }
+    const m = manifest(scope);
+    for (const key of Object.values(DECL_KEYS)) {
+      const entry = m[key]?.[name];
+      if (entry) entry.enabled = enabled;
+    }
+    return view(scope);
+  },
+  remove_item: ({ scope, name }: { scope: Scope; name: string }) => {
+    store.state.items = store.state.items.filter(
+      (it) => !(it.name === name && same(it.scope, scope)),
+    );
+    const m = manifest(scope);
+    for (const key of Object.values(DECL_KEYS)) {
+      const table = m[key];
+      if (table?.[name]) {
+        m[key] = Object.fromEntries(
+          Object.entries(table).filter(([k]) => k !== name),
+        );
+      }
+    }
+    for (const row of store.state.sources) {
+      if (same(row.scope, scope)) {
+        row.declaredItems = row.declaredItems.filter((n) => n !== name);
+      }
+    }
+    return view(scope);
+  },
+  get_manifest: ({ scope }: { scope: Scope }) =>
+    store.state.manifests[label(scope)] ?? null,
+  update_manifest: ({
+    scope,
+    manifest: m,
+  }: {
+    scope: Scope;
+    manifest: Manifest_Serialize;
+  }) => {
+    store.state.manifests[label(scope)] = m;
+    return view(scope);
+  },
+  editor_inventory: ({ scope }: { scope: Scope }) => {
+    const m = store.state.manifests[label(scope)];
+    return {
+      declaredAgents: Object.keys(m?.agents ?? {}),
+      declaredSkills: Object.keys(m?.skills ?? {}),
+      availableSkills: AVAILABLE_SKILLS,
+      harnesses: m?.install.harnesses ?? ["claude"],
+    };
+  },
+};
