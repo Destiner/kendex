@@ -50,7 +50,7 @@ export function CustomizePage() {
     <div className="flex min-h-full flex-col">
       <PageHeader
         title="Customize"
-        subtitle="Every customization this scope declares — edited here, not by hand"
+        subtitle="Every customization here — edited in one place, not by hand"
       />
       <div className="flex-1 space-y-6 p-8">
         <div className="flex items-center gap-3">
@@ -85,15 +85,16 @@ export function CustomizePage() {
           </p>
         ) : null}
         {loading ? (
-          <p className="text-sm text-muted-foreground">loading…</p>
+          <p className="text-sm text-muted-foreground">Loading…</p>
         ) : null}
         {absent ? (
           <div className="space-y-2">
             <p className="text-sm text-muted-foreground">
-              No manifest yet — add something first, or create one.
+              Nothing here yet. Add something from your catalogs, or start
+              customizing directly.
             </p>
             <Button size="sm" disabled={saving} onClick={() => void create()}>
-              Create manifest
+              Start customizing
             </Button>
           </div>
         ) : null}
@@ -133,10 +134,10 @@ function EditorTabs({
       <TabsList>
         <TabsTrigger value="agent-skills">Agent skills</TabsTrigger>
         <TabsTrigger value="instructions">Instructions</TabsTrigger>
-        <TabsTrigger value="frontmatter">Frontmatter</TabsTrigger>
+        <TabsTrigger value="frontmatter">Agent settings</TabsTrigger>
         <TabsTrigger value="hooks">Custom hooks</TabsTrigger>
         {scope.scope === "project" ? (
-          <TabsTrigger value="project">Project skills dir</TabsTrigger>
+          <TabsTrigger value="project">Project skills folder</TabsTrigger>
         ) : null}
       </TabsList>
       <TabsContent value="agent-skills" className="pt-4">
@@ -164,9 +165,9 @@ function EditorTabs({
         <CustomHooksTab draft={draft} onChange={onChange} />
       </TabsContent>
       <TabsContent value="project" className="max-w-lg pt-4">
-        <Field label="project-skills-dir">
+        <Field label="Skills folder">
           <Input
-            aria-label="project-skills-dir"
+            aria-label="Skills folder"
             placeholder=".claude/skills-src"
             value={draft["project-skills-dir"] ?? ""}
             onChange={(event) =>
@@ -177,8 +178,8 @@ function EditorTabs({
           />
         </Field>
         <p className="pt-2 text-xs text-muted-foreground">
-          Project-owned skills live here and are symlinked into the harness
-          skill directories, so generated directories stay untracked.
+          Skills you own live here, then get linked into each tool's own skill
+          folder, so the generated copies don't need to be committed.
         </p>
       </TabsContent>
     </Tabs>

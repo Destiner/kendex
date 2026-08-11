@@ -1,14 +1,15 @@
 import {
-  Boxes,
   FolderTree,
   GitBranch,
   Home,
+  Library,
   RefreshCw,
   Settings,
   ShieldAlert,
   SlidersHorizontal,
   TerminalSquare,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -18,17 +19,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { projectScopes } from "@/lib/derive";
+import { scopeName } from "@/lib/labels";
 import { cn } from "@/lib/utils";
+import { useAuditStore } from "@/stores/audit";
 import { type Page, useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 
 const NAV: { page: Page; label: string; icon: typeof Home }[] = [
-  { page: "overview", label: "Overview", icon: Home },
-  { page: "items", label: "Items", icon: Boxes },
-  { page: "harnesses", label: "Harnesses", icon: TerminalSquare },
-  { page: "scopes", label: "Scopes", icon: FolderTree },
-  { page: "audit", label: "Audit", icon: ShieldAlert },
-  { page: "sources", label: "Sources", icon: GitBranch },
+  { page: "overview", label: "Home", icon: Home },
+  { page: "items", label: "Library", icon: Library },
+  { page: "harnesses", label: "Tools", icon: TerminalSquare },
+  { page: "scopes", label: "Projects", icon: FolderTree },
+  { page: "audit", label: "Sync", icon: ShieldAlert },
+  { page: "sources", label: "Catalogs", icon: GitBranch },
   { page: "customize", label: "Customize", icon: SlidersHorizontal },
   { page: "settings", label: "Settings", icon: Settings },
 ];
@@ -36,6 +39,9 @@ const NAV: { page: Page; label: string; icon: typeof Home }[] = [
 export function Sidebar() {
   const { page, scope, setPage, setScope } = useNavStore();
   const { result, scanning, refresh } = useScanStore();
+  const driftCount = useAuditStore((s) =>
+    s.views.reduce((sum, view) => sum + view.drift.length, 0),
+  );
   const projects = result ? projectScopes(result) : [];
 
   const scopeValue =
@@ -44,11 +50,12 @@ export function Sidebar() {
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
       <div className="flex items-center justify-between px-4 py-4">
-        <span className="font-semibold tracking-tight">vstack2</span>
+        <span className="font-semibold tracking-tight">vstack</span>
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Rescan"
+          aria-label="Scan again"
+          title="Scan again"
           onClick={() => void refresh()}
           disabled={scanning}
         >
@@ -69,12 +76,15 @@ export function Sidebar() {
             )}
           >
             <Icon className="size-4" />
-            {label}
+            <span className="flex-1 text-left">{label}</span>
+            {target === "audit" && driftCount > 0 ? (
+              <Badge variant="secondary">{driftCount}</Badge>
+            ) : null}
           </button>
         ))}
       </nav>
       <div className="border-t px-3 py-3">
-        <p className="mb-1 px-1 text-xs text-muted-foreground">Scope</p>
+        <p className="mb-1 px-1 text-xs text-muted-foreground">Show</p>
         <Select
           value={scopeValue}
           onValueChange={(value) =>
@@ -91,11 +101,11 @@ export function Sidebar() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All scopes</SelectItem>
-            <SelectItem value="global">Global</SelectItem>
+            <SelectItem value="all">Everything</SelectItem>
+            <SelectItem value="global">Global — this machine</SelectItem>
             {projects.map((root) => (
               <SelectItem key={root} value={root}>
-                {root.split("/").pop() ?? root}
+                {scopeName({ scope: "project", root })}
               </SelectItem>
             ))}
           </SelectContent>

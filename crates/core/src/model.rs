@@ -34,6 +34,18 @@ impl HarnessId {
         }
     }
 
+    /// The product name people read — plan previews and drift details use
+    /// this, never the internal id.
+    pub fn display_name(self) -> &'static str {
+        match self {
+            HarnessId::Claude => "Claude Code",
+            HarnessId::Codex => "Codex",
+            HarnessId::Opencode => "OpenCode",
+            HarnessId::Cursor => "Cursor",
+            HarnessId::Pi => "Pi",
+        }
+    }
+
     /// v1 harness ids, including the `claude-code` long form.
     pub fn parse(value: &str) -> Option<HarnessId> {
         match value {

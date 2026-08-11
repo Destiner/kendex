@@ -19,7 +19,7 @@ export function views(): AuditView[] {
           harness: "claude",
           scope: acme,
           state: "stale",
-          detail: "the source has newer content than what is installed",
+          detail: "newer content is available",
         },
         {
           kind: "hook",
@@ -27,7 +27,7 @@ export function views(): AuditView[] {
           harness: "codex",
           scope: acme,
           state: "missing",
-          detail: "declared for codex but not installed yet",
+          detail: "not installed yet",
         },
         {
           kind: "skill",
@@ -35,7 +35,7 @@ export function views(): AuditView[] {
           harness: "claude",
           scope: acme,
           state: "unmanaged",
-          detail: ".claude/skills/scratch exists but nothing manages it",
+          detail: `${ACME}/.claude/skills/scratch`,
         },
         {
           kind: "agent",
@@ -43,12 +43,13 @@ export function views(): AuditView[] {
           harness: "claude",
           scope: acme,
           state: "orphaned",
-          detail: "recorded from an earlier setup; nothing declares it anymore",
+          detail: "left over from an earlier setup; nothing needs it anymore",
         },
       ],
       plan: [
-        "refresh skill github → claude (content changed)",
-        "install hook guard → codex",
+        "Update skill github for Claude Code",
+        "Install hook guard for Codex",
+        "Update the install record",
       ],
       notes: [],
     },

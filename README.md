@@ -14,7 +14,8 @@ scan → declare → diff → apply
   adoption; nothing is copied into a shadow store.
 - **Declare** — a per-scope `vstack.toml` is the only durable home of your
   intent.
-- **Diff** — drift is declared vs. observed; the Audit page is that diff.
+- **Diff** — drift is declared vs. observed; the app's Sync page is that
+  diff.
 - **Apply** — make disk match declaration, plan shown first. Every apply is
   transactional: pre-images are journaled, failures roll back, interrupted
   applies recover on next run, and removals go to a trash — never straight
@@ -25,9 +26,9 @@ scan → declare → diff → apply
 Build from source (Rust + Node required):
 
 ```sh
-cargo build --release -p vstack-cli     # the `vstack` CLI
-cd ui && npm ci && cd ..
-cargo tauri dev                          # the desktop app
+cargo build --release -p vstack-cli               # the `vstack` CLI
+npm ci --prefix ui
+cd crates/app && ../../ui/node_modules/.bin/tauri dev   # the desktop app
 ```
 
 ## Quick start

@@ -36,7 +36,7 @@ export function AgentSkillsTab({
       <p className="text-sm text-muted-foreground">
         {rows.length === 0
           ? "No agents here yet — install an agent before assigning skills."
-          : "No skills available from the sources declared here."}
+          : "No skills available from the catalogs added here."}
       </p>
     );
   }
@@ -68,7 +68,7 @@ export function AgentSkillsTab({
                   {agent}
                   {agent in assigned ? null : (
                     <span className="ml-2 text-xs text-muted-foreground">
-                      automatic
+                      Automatic
                     </span>
                   )}
                 </TableCell>

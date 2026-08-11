@@ -110,7 +110,11 @@ pub(super) fn removal_ops(env: &Env, scope: &Scope, entry: &LockEntry) -> Result
         for candidate in [disabled_name(&path), path] {
             if candidate.exists() || candidate.is_symlink() {
                 ops.push(PlannedOp {
-                    description: format!("trash {}", candidate.display()),
+                    description: format!(
+                        "Move {} {}'s files to the trash",
+                        entry.kind.name(),
+                        entry.name
+                    ),
                     op: Op::Trash {
                         path: candidate,
                         pre: Pre::Any,
@@ -135,7 +139,11 @@ pub(super) fn removal_ops(env: &Env, scope: &Scope, entry: &LockEntry) -> Result
             continue;
         }
         ops.push(PlannedOp {
-            description: format!("deregister {} from {}", entry.name, path.display()),
+            description: format!(
+                "Remove {} from {}'s settings",
+                entry.name,
+                entry.harness.display_name()
+            ),
             op: Op::EditFile {
                 pre: Pre::HashIs {
                     hash: hash_tree(&path)?,

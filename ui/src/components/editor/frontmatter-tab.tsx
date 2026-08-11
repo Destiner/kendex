@@ -7,6 +7,7 @@ import {
   EMPTY_FRONTMATTER,
   setFrontmatterField,
 } from "@/lib/editor-draft";
+import { toolName } from "@/lib/labels";
 
 /** Cursor renders rules, not agent files — its frontmatter is never read. */
 const IGNORED_BY = new Set(["cursor"]);
@@ -28,7 +29,7 @@ export function FrontmatterTab({
       <TabsList variant="line">
         {harnesses.map((harness) => (
           <TabsTrigger key={harness} value={harness}>
-            {harness}
+            {toolName(harness)}
           </TabsTrigger>
         ))}
       </TabsList>
@@ -36,8 +37,8 @@ export function FrontmatterTab({
         <TabsContent key={harness} value={harness} className="space-y-4 pt-2">
           <p className="text-xs text-muted-foreground">
             {IGNORED_BY.has(harness)
-              ? "Cursor has no agent frontmatter — values set here are stored but never rendered."
-              : "Project values always win over the source's; blank fields keep the source value."}
+              ? "Cursor doesn't use agent settings, so values saved here are stored but have no effect."
+              : "Project values always win over the catalog's; leave a field blank to keep the catalog's value."}
           </p>
           <HarnessAgents
             draft={draft}
@@ -68,7 +69,7 @@ function HarnessAgents({
   if (agents.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No agents here yet — install an agent before overriding its frontmatter.
+        No agents here yet — install an agent before changing its settings.
       </p>
     );
   }

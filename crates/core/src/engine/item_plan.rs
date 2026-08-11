@@ -37,7 +37,7 @@ pub(super) fn plan_item(
         drift.push(row(
             DriftState::Conflict,
             format!(
-                "installed from {} but now declared from {} — remove it first",
+                "installed from {} but now set to come from {} — remove it first",
                 entry.source_repo, item.provenance
             ),
         ));
@@ -115,7 +115,7 @@ fn plan_written_file(
 ) -> Result<Planned> {
     if path.is_symlink() {
         return Ok(Planned::Conflict(format!(
-            "{} is a foreign symlink",
+            "{} is a link vstack did not create",
             path.display()
         )));
     }
@@ -132,19 +132,27 @@ fn plan_written_file(
         Some(current) => {
             if !locked {
                 return Ok(Planned::Conflict(format!(
-                    "unmanaged file at {} — adopt it first",
+                    "{} is not managed yet — start managing it first",
                     path.display()
                 )));
             }
             ops.push(PlannedOp {
-                description: format!("rewrite {}", path.display()),
+                description: format!(
+                    "Update {} {} for {}",
+                    item.kind.name(),
+                    item.name,
+                    item.harness.display_name()
+                ),
                 op: Op::WriteFile {
                     path: path.to_path_buf(),
                     bytes: bytes.to_vec(),
                     pre: Pre::HashIs { hash: current },
                 },
             });
-            Ok(Planned::Drift(DriftState::Stale, "content changed".into()))
+            Ok(Planned::Drift(
+                DriftState::Stale,
+                "newer content is available".into(),
+            ))
         }
         None => Ok(plan_absent_file(item, path, bytes, locked, ops)),
     }
@@ -162,21 +170,21 @@ fn plan_absent_file(
 ) -> Planned {
     let alternate = toggle_sibling(path);
     if alternate.is_symlink() {
-        return Planned::Conflict(format!("foreign symlink at {}", alternate.display()));
+        return Planned::Conflict(format!(
+            "{} is a link vstack did not create",
+            alternate.display()
+        ));
     }
     if alternate.is_file() {
         if !locked {
             return Planned::Conflict(format!(
-                "unmanaged file at {} — adopt it first",
+                "{} is not managed yet — start managing it first",
                 alternate.display()
             ));
         }
+        let flip = if item.enabled { "on" } else { "off" };
         ops.push(PlannedOp {
-            description: format!(
-                "{} {}",
-                if item.enabled { "enable" } else { "disable" },
-                item.name
-            ),
+            description: format!("Turn {} {flip}", item.name),
             op: Op::Rename {
                 from: alternate,
                 to: path.to_path_buf(),
@@ -184,25 +192,34 @@ fn plan_absent_file(
             },
         });
         ops.push(PlannedOp {
-            description: format!("refresh {}", path.display()),
+            description: format!(
+                "Update {} {} for {}",
+                item.kind.name(),
+                item.name,
+                item.harness.display_name()
+            ),
             op: Op::WriteFile {
                 path: path.to_path_buf(),
                 bytes: bytes.to_vec(),
                 pre: Pre::Any,
             },
         });
-        let wanted_state = if item.enabled { "enabled" } else { "disabled" };
-        return Planned::Drift(DriftState::Stale, format!("declared {wanted_state}"));
+        return Planned::Drift(DriftState::Stale, format!("should be turned {flip}"));
     }
     ops.push(PlannedOp {
-        description: format!("write {}", path.display()),
+        description: format!(
+            "Install {} {} for {}",
+            item.kind.name(),
+            item.name,
+            item.harness.display_name()
+        ),
         op: Op::WriteFile {
             path: path.to_path_buf(),
             bytes: bytes.to_vec(),
             pre: Pre::Absent,
         },
     });
-    Planned::Drift(DriftState::Missing, "not on disk".into())
+    Planned::Drift(DriftState::Missing, "not installed yet".into())
 }
 
 fn plan_tree(
@@ -221,7 +238,7 @@ fn plan_tree(
     };
     if canonical.is_symlink() {
         return Ok(Planned::Conflict(format!(
-            "{} is a foreign symlink",
+            "{} is a link vstack did not create",
             canonical.display()
         )));
     }
@@ -240,17 +257,17 @@ fn plan_tree(
     if disk.as_deref() != Some(wanted.as_str()) {
         if disk.is_some() && !locked && !written_canonicals.contains(canonical) {
             return Ok(Planned::Conflict(format!(
-                "unmanaged content at {} — adopt it first",
+                "{} is not managed yet — start managing it first",
                 canonical.display()
             )));
         }
         result = match disk {
-            Some(_) => Planned::Drift(DriftState::Stale, "content changed".into()),
-            None => Planned::Drift(DriftState::Missing, "not on disk".into()),
+            Some(_) => Planned::Drift(DriftState::Stale, "newer content is available".into()),
+            None => Planned::Drift(DriftState::Missing, "not installed yet".into()),
         };
         if written_canonicals.insert(canonical.clone()) {
             ops.push(PlannedOp {
-                description: format!("render {}", canonical.display()),
+                description: format!("Write {} {}'s files", item.kind.name(), item.name),
                 op: Op::WriteTree {
                     root: canonical.clone(),
                     files: files.clone(),
@@ -269,7 +286,7 @@ fn plan_tree(
         let points_to = std::fs::read_link(link).unwrap_or_default();
         if &points_to != canonical {
             return Ok(Planned::Conflict(format!(
-                "{} links elsewhere ({})",
+                "{} links somewhere vstack does not own ({})",
                 link.display(),
                 points_to.display()
             )));
@@ -277,12 +294,17 @@ fn plan_tree(
         Ok(result)
     } else if link.exists() {
         Ok(Planned::Conflict(format!(
-            "{} occupied by unmanaged content — adopt it first",
+            "{} is not managed yet — start managing it first",
             link.display()
         )))
     } else {
         ops.push(PlannedOp {
-            description: format!("link {} → {}", link.display(), canonical.display()),
+            description: format!(
+                "Connect {} to {} {}",
+                item.harness.display_name(),
+                item.kind.name(),
+                item.name
+            ),
             op: Op::Symlink {
                 link: link.clone(),
                 target: canonical.clone(),
@@ -291,7 +313,7 @@ fn plan_tree(
         });
         Ok(Planned::Drift(
             DriftState::Missing,
-            format!("no link at {}", link.display()),
+            format!("{} is not connected yet", item.harness.display_name()),
         ))
     }
 }
@@ -322,7 +344,11 @@ fn plan_registration(item: &Desired, locked: bool, ops: &mut Vec<PlannedOp>) -> 
             continue;
         }
         ops.push(PlannedOp {
-            description: format!("register {} in {}", item.name, path.display()),
+            description: format!(
+                "Register {} in {}'s settings",
+                item.name,
+                item.harness.display_name()
+            ),
             op: Op::EditFile {
                 path: path.clone(),
                 edit: edit.clone(),
@@ -336,8 +362,11 @@ fn plan_registration(item: &Desired, locked: bool, ops: &mut Vec<PlannedOp>) -> 
         });
         if matches!(planned, Planned::Clean) {
             planned = match locked {
-                true => Planned::Drift(DriftState::Stale, "registration out of sync".into()),
-                false => Planned::Drift(DriftState::Missing, "not registered".into()),
+                true => Planned::Drift(
+                    DriftState::Stale,
+                    "its settings entry is out of sync".into(),
+                ),
+                false => Planned::Drift(DriftState::Missing, "not registered yet".into()),
             };
         }
     }

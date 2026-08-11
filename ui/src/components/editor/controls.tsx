@@ -100,9 +100,9 @@ export function TriStateSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="unset">unset</SelectItem>
-        <SelectItem value="true">true</SelectItem>
-        <SelectItem value="false">false</SelectItem>
+        <SelectItem value="unset">Not set</SelectItem>
+        <SelectItem value="true">True</SelectItem>
+        <SelectItem value="false">False</SelectItem>
       </SelectContent>
     </Select>
   );

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import type { ItemKind } from "@/bindings";
+import type { HarnessId, ItemKind } from "@/bindings";
+import { ItemDetail } from "@/components/item-detail";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,14 +20,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  filterItems,
-  groupItems,
-  type ItemGroup,
-  scopeLabel,
-} from "@/lib/derive";
+import { filterItems, groupItems } from "@/lib/derive";
+import { kindLabel, toolName } from "@/lib/labels";
 import { cn } from "@/lib/utils";
-import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 
@@ -39,11 +35,12 @@ const KINDS: ItemKind[] = [
   "plugin",
   "pi-extension",
 ];
-const HARNESSES = ["claude", "codex", "opencode", "cursor", "pi"];
+const HARNESSES: HarnessId[] = ["claude", "codex", "opencode", "cursor", "pi"];
 
 export function ItemsPage() {
   const result = useScanStore((s) => s.result);
   const scope = useNavStore((s) => s.scope);
+  const setPage = useNavStore((s) => s.setPage);
   const [kind, setKind] = useState<string>("any");
   const [harness, setHarness] = useState<string>("any");
   const [search, setSearch] = useState("");
@@ -61,42 +58,49 @@ export function ItemsPage() {
   }, [result, scope, kind, harness, search]);
 
   const selected = groups.find((g) => g.key === selectedKey) ?? null;
+  const hasAnyItems = (result?.items.length ?? 0) > 0;
+
+  const clearFilters = () => {
+    setKind("any");
+    setHarness("any");
+    setSearch("");
+  };
 
   return (
     <div className="flex h-full flex-col">
       <PageHeader
-        title="Items"
-        subtitle="Everything observed, grouped by logical item"
+        title="Library"
+        subtitle="Everything installed across your tools"
       />
       <div className="flex gap-2 border-b px-8 py-3">
         <Input
-          placeholder="Search…"
+          placeholder="Search by name…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-56"
         />
         <Select value={kind} onValueChange={setKind}>
-          <SelectTrigger className="w-36">
+          <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="any">Any kind</SelectItem>
+            <SelectItem value="any">All types</SelectItem>
             {KINDS.map((k) => (
               <SelectItem key={k} value={k}>
-                {k}
+                {kindLabel(k, 2)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <Select value={harness} onValueChange={setHarness}>
-          <SelectTrigger className="w-36">
+          <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="any">Any harness</SelectItem>
+            <SelectItem value="any">All tools</SelectItem>
             {HARNESSES.map((h) => (
               <SelectItem key={h} value={h}>
-                {h}
+                {toolName(h)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -108,9 +112,9 @@ export function ItemsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Kind</TableHead>
-                <TableHead>Harnesses</TableHead>
-                <TableHead>State</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Tools</TableHead>
+                <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -134,34 +138,66 @@ export function ItemsPage() {
                     ) : null}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {group.kind}
+                    {kindLabel(group.kind)}
                   </TableCell>
                   <TableCell>
                     <span className="flex flex-wrap gap-1">
                       {group.harnesses.map((h) => (
                         <Badge key={h} variant="outline">
-                          {h}
+                          {toolName(h as HarnessId)}
                         </Badge>
                       ))}
                       {group.shared ? (
-                        <Badge variant="secondary">shared</Badge>
+                        <Badge variant="secondary">Shared files</Badge>
                       ) : null}
                     </span>
                   </TableCell>
                   <TableCell>
                     {group.installations.some((i) => i.enabled === false) ? (
-                      <Badge variant="secondary">disabled</Badge>
-                    ) : null}
+                      <Badge variant="secondary">Off</Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        Active
+                      </span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
               {groups.length === 0 ? (
                 <TableRow>
-                  <TableCell
-                    colSpan={4}
-                    className="py-10 text-center text-muted-foreground"
-                  >
-                    Nothing matches
+                  <TableCell colSpan={4} className="py-10">
+                    {hasAnyItems ? (
+                      <div className="flex flex-col items-center gap-3 text-center">
+                        <p className="text-muted-foreground">
+                          Nothing matches.
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={clearFilters}
+                        >
+                          Clear filters
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-3 text-center">
+                        <div>
+                          <p className="text-muted-foreground">
+                            Nothing installed yet.
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            Add a catalog to start installing skills and agents.
+                          </p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPage("sources")}
+                        >
+                          Go to Catalogs
+                        </Button>
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               ) : null}
@@ -171,70 +207,5 @@ export function ItemsPage() {
         {selected ? <ItemDetail group={selected} /> : null}
       </div>
     </div>
-  );
-}
-
-function ItemDetail({ group }: { group: ItemGroup }) {
-  const { busy, toggle, removeItem } = useAuditStore();
-  const managed = group.kind === "agent" || group.kind === "skill";
-  const anyDisabled = group.installations.some((i) => i.enabled === false);
-  const scope = group.installations[0]?.scope;
-  return (
-    <aside className="w-96 shrink-0 overflow-y-auto border-l p-5">
-      <h2 className="font-semibold">{group.name}</h2>
-      <p className="mb-4 text-sm text-muted-foreground">{group.kind}</p>
-      {managed && scope ? (
-        <div className="mb-4 flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => void toggle(scope, group.name, anyDisabled)}
-          >
-            {anyDisabled ? "Enable" : "Disable"}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => void removeItem(scope, group.name)}
-          >
-            Remove
-          </Button>
-        </div>
-      ) : null}
-      <div className="space-y-4">
-        {group.installations.map((install) => (
-          <div
-            key={`${install.harness}:${scopeLabel(install.scope)}:${install.path}`}
-            className="rounded-md border p-3 text-sm"
-          >
-            <div className="mb-1 flex items-center gap-2">
-              <Badge variant="outline">{install.harness}</Badge>
-              <span className="text-xs text-muted-foreground">
-                {scopeLabel(install.scope)}
-              </span>
-              {install.enabled === false ? (
-                <Badge variant="secondary">disabled</Badge>
-              ) : null}
-            </div>
-            <p className="break-all text-xs text-muted-foreground">
-              {install.path}
-            </p>
-            {install.fileState.state === "symlink" ? (
-              <p className="mt-1 break-all text-xs text-muted-foreground">
-                → {install.fileState.target}
-                {install.fileState.broken ? " (broken)" : ""}
-              </p>
-            ) : null}
-            {install.origin ? (
-              <p className="mt-1 break-all text-xs text-muted-foreground">
-                from {install.origin}
-              </p>
-            ) : null}
-          </div>
-        ))}
-      </div>
-    </aside>
   );
 }

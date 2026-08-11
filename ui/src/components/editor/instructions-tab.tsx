@@ -34,7 +34,7 @@ export function InstructionsTab({
     <div className="space-y-8">
       <Section
         title="Launch instructions"
-        caption="Injected at the top of every generated agent."
+        caption="Added at the start of every agent file vstack writes."
         table="agent-launch-instructions"
         candidates={agents}
         draft={draft}
@@ -42,7 +42,7 @@ export function InstructionsTab({
       />
       <Section
         title="Additional instructions"
-        caption="Injected at the bottom of every generated agent."
+        caption="Added at the end of every agent file vstack writes."
         table="agent-additional-instructions"
         candidates={agents}
         draft={draft}
@@ -50,7 +50,7 @@ export function InstructionsTab({
       />
       <Section
         title="Skill instructions"
-        caption="Injected into SKILL.md — installed and project-owned skills alike; the author's own text is never overwritten."
+        caption="Added to a skill's own instructions — the author's text is never overwritten."
         table="skill-instructions"
         candidates={skills}
         draft={draft}
@@ -96,7 +96,7 @@ function Section({
             <span className="text-sm font-medium">{key}</span>
             {key === SHARED_KEY ? (
               <span className="text-xs text-muted-foreground">
-                applies to every entry, rendered first
+                Applies to every entry, shown first
               </span>
             ) : null}
             <Button

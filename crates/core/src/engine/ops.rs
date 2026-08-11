@@ -354,7 +354,7 @@ fn ensure_manifest_persisted(
     report.plan.ops.insert(
         0,
         crate::apply::PlannedOp {
-            description: "write vstack.toml".into(),
+            description: "Save vstack.toml".into(),
             op: crate::apply::Op::WriteManifest {
                 pre: crate::apply::Pre::observed(&path)?,
                 path,

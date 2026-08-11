@@ -12,14 +12,14 @@ export function SaveBar({
   return (
     <div className="sticky bottom-0 flex items-center gap-3 border-t bg-background/95 px-8 py-3 backdrop-blur">
       <span className="text-sm text-muted-foreground">
-        Unsaved changes — saving rewrites the manifest and applies the plan.
+        Your changes are written to this project's files right away.
       </span>
       <span className="flex-1" />
       <Button variant="ghost" size="sm" disabled={saving} onClick={onDiscard}>
         Discard
       </Button>
       <Button size="sm" disabled={saving} onClick={onSave}>
-        {saving ? "Saving…" : "Save changes"}
+        {saving ? "Saving…" : "Save and apply"}
       </Button>
     </div>
   );

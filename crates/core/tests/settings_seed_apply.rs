@@ -91,7 +91,7 @@ fn seeds_env_defaults_and_never_overwrites_user_values() {
             .plan
             .ops
             .iter()
-            .any(|op| op.description.starts_with("seed ")),
+            .any(|op| op.description.starts_with("Seed ")),
         "clean settings file must not be re-planned"
     );
 }
@@ -121,6 +121,6 @@ fn occupied_settings_path_is_a_conflict_not_a_clobber() {
             .plan
             .ops
             .iter()
-            .any(|op| op.description.starts_with("seed "))
+            .any(|op| op.description.starts_with("Seed "))
     );
 }

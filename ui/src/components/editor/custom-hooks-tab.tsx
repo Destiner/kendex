@@ -25,8 +25,7 @@ export function CustomHooksTab({
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        Hooks written straight into this scope's harness configs. Registration
-        happens on save.
+        Hooks are written straight into each tool's configuration when you save.
       </p>
       {hooks.map((hook, index) => (
         <HookCard
@@ -67,17 +66,17 @@ function HookCard({
   return (
     <Card>
       <CardContent className="grid gap-3 sm:grid-cols-2">
-        <Field label="event">
+        <Field label="Event">
           <Input
-            aria-label="event"
+            aria-label="Event"
             placeholder="PreToolUse"
             value={hook.event}
             onChange={(e) => onEdit({ ...hook, event: e.target.value })}
           />
         </Field>
-        <Field label="matcher (optional)">
+        <Field label="Matcher (optional)">
           <Input
-            aria-label="matcher"
+            aria-label="Matcher"
             placeholder="Bash"
             value={hook.matcher ?? ""}
             onChange={(e) =>
@@ -85,26 +84,26 @@ function HookCard({
             }
           />
         </Field>
-        <Field label="command">
+        <Field label="Command">
           <Input
-            aria-label="command"
+            aria-label="Command"
             placeholder="./guard.sh"
             value={hook.command}
             onChange={(e) => onEdit({ ...hook, command: e.target.value })}
           />
         </Field>
-        <Field label="description (optional)">
+        <Field label="Description (optional)">
           <Input
-            aria-label="description"
+            aria-label="Description"
             value={hook.description ?? ""}
             onChange={(e) =>
               onEdit({ ...hook, description: optional(e.target.value) })
             }
           />
         </Field>
-        <Field label="agents — all, a role, or a comma-separated list">
+        <Field label="Agents — all, a role, or a comma-separated list">
           <CommitInput
-            label="agents"
+            label="Agents"
             placeholder="all"
             value={formatHookAgents(hook.agents)}
             onCommit={(text) =>

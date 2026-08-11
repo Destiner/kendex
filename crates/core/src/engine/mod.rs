@@ -87,7 +87,7 @@ pub fn plan_scope(
     if let Some(updated) = &state.manifest_update {
         let path = manifest::manifest_path(env, scope);
         ops.push(PlannedOp {
-            description: "merge upstream skill additions into vstack.toml".into(),
+            description: "Add new catalog skills to vstack.toml".into(),
             op: Op::WriteManifest {
                 pre: crate::apply::Pre::observed(&path)?,
                 path,
@@ -125,7 +125,7 @@ pub fn plan_scope(
     if new_lock.entries != lock.entries {
         let path = lock_path(env, scope);
         ops.push(PlannedOp {
-            description: "update lock".into(),
+            description: "Update the install record".into(),
             op: Op::WriteLock {
                 pre: crate::apply::Pre::observed(&path)?,
                 path,
@@ -180,7 +180,7 @@ fn plan_settings_seed(
     };
     ops.push(PlannedOp {
         description: format!(
-            "seed {} ({})",
+            "Seed {} with {}",
             crate::settings_seed::SETTINGS_FILE,
             added.join(", ")
         ),
@@ -243,9 +243,9 @@ fn orphans(
             scope: scope.clone(),
             state: DriftState::Orphaned,
             detail: if removable {
-                "no longer declared — will be removed".into()
+                "no longer wanted — will be removed".into()
             } else {
-                "recorded in lock but no longer declared".into()
+                "left over from an earlier setup; nothing needs it anymore".into()
             },
         });
         if !removable {

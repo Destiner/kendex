@@ -339,29 +339,25 @@ Sidebar scope picker (Global / All / project) filters Items and Audit.
 ## In flight (delete as merged)
 
 All 17 adversarial-review findings on the P2 engine are FIXED with
-regression tests (crates/core/tests/review_fixes.rs). Remaining work,
-in order:
+regression tests (crates/core/tests/review_fixes.rs). DONE since:
+VITE_MOCK dev-mock bridge (`ui/src/dev/`), UI copy/IA/hierarchy rework
+(plain-language vocabulary in `ui/src/lib/labels.ts`, confirm-dialog
+plan previews), settings seeding in project applies, pi cross-scope
+duplicate guard + fresh installs via update-pi, app-launch recovery,
+report routing GUI (`report_route` + item-detail dialog), P5 end-to-end
+over a file:// git host (`VSTACK_GIT_BASE`, cli/tests/remote_e2e.rs),
+release workflow (.github/workflows/release.yml + docs/RELEASING.md,
+icons, bundling; local deb/rpm packaging smoke green, AppImage needs
+CI's FUSE), real v1 repo (drovr copy) migration smoke green.
 
-1. **UI/UX polish phase (user directive above)** — dev-mock layer
-   (`VITE_MOCK=1` stubs the Tauri invoke bridge with fixture data so
-   Chromium/agent-browser can drive the real UI), then copy/IA/hierarchy
-   rework + browser-driven validation loop, cheap agent models.
-2. Settings seeding integration: engine applies `core/src/settings_seed.rs`
-   during project applies for skills shipping vstack.settings.toml.example.
-3. Pi cross-scope duplicate guard (v1: refuse installing a pi package at
-   one scope when the same/legacy name is installed at the other).
-4. App-launch recovery pass: apply::recover over global + registered
-   projects on startup (currently recovery runs at next apply only).
-5. Report routing in the GUI (CLI report is done; app command + a small
-   surface, low priority).
-6. P5 end-to-end: consuming repo installs from the default remote catalog
-   end to end (needs a network smoke or a file:// default-source fixture).
-7. P6 release: GitHub repo bootstrap + native-runner release workflows
-   (linux x86_64 primary, macOS aarch64, windows x86_64), feed.json
-   artifact for self-update (format already consumed by `vstack update`,
-   see cli/tests/compat.rs), packaging smoke per target; signing/updater
-   keys are USER-supplied gates. Then: migrate one real v1 repo as smoke,
-   delete docs/research/ and this file.
+Remaining, in order:
+
+1. Browser-driven validation loop findings → fixes (agent run in flight).
+2. GitHub repo bootstrap: create vanillagreencom/vstack2 (private until
+   the user flips it), push, tag when ready; signing/updater keys are
+   USER-supplied gates. In-place migration of real repos stays with the
+   user (one tool per repo — v1 owns them until the binary swap).
+3. Delete docs/research/ and this file.
 
 ## Phases (each ends with a working app)
 
