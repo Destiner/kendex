@@ -37,6 +37,10 @@ pub fn adopt(
         _ => dir.join(name),
     };
 
+    // Broken link: content is gone; declaring is all adoption can do. The
+    // link itself is cleared by a planned op — planning never touches disk,
+    // so a plan that is never applied (or fails) leaves the world as it was.
+    let mut broken_link: Option<Pre> = None;
     if original.is_symlink() {
         let points_to = fs::read_link(&original).map_err(|e| CoreError::io(&original, e))?;
         if original.exists() {
@@ -45,12 +49,10 @@ pub fn adopt(
                 points_to,
             });
         }
-        // Broken link: content is gone; declaring is all adoption can do.
-        fs::remove_file(&original).map_err(|e| CoreError::io(&original, e))?;
+        broken_link = Some(Pre::SymlinkTo { target: points_to });
     }
 
     let local_root = local_source_root(env, scope);
-    let mut ops = Vec::new();
     let local_item = match kind {
         ItemKind::Skill => local_root.join("skills").join(name),
         ItemKind::Agent => local_root.join("agents").join(format!("{name}.md")),
@@ -61,44 +63,7 @@ pub fn adopt(
             });
         }
     };
-
-    if original.exists() {
-        let files = read_tree(&original)?;
-        match kind {
-            ItemKind::Skill => ops.push(PlannedOp {
-                description: format!("move {} into the local source", name),
-                op: Op::WriteTree {
-                    root: local_item.clone(),
-                    files,
-                    pre: Pre::Any,
-                },
-            }),
-            ItemKind::Agent => {
-                let bytes = fs::read(&original).map_err(|e| CoreError::io(&original, e))?;
-                ops.push(PlannedOp {
-                    description: format!("move {} into the local source", name),
-                    op: Op::WriteFile {
-                        path: local_item.clone(),
-                        bytes,
-                        pre: Pre::Any,
-                    },
-                });
-            }
-            _ => {}
-        }
-        ops.push(PlannedOp {
-            description: format!("trash the unmanaged original at {}", original.display()),
-            op: Op::Trash {
-                path: original,
-                pre: Pre::Any,
-            },
-        });
-    } else if !local_item.exists() {
-        return Err(CoreError::ItemNotInSource {
-            name: name.to_owned(),
-            source_name: format!("nothing at {} to adopt", original.display()),
-        });
-    }
+    let mut ops = capture_ops(kind, name, original, &local_item, broken_link)?;
 
     let harness_is_default = manifest.install.harnesses.contains(&harness);
     let decl = manifest
@@ -110,10 +75,12 @@ pub fn adopt(
         decl.harnesses = Some(vec![harness]);
     }
 
+    let manifest_path = manifest::manifest_path(env, scope);
     ops.push(PlannedOp {
         description: "declare the adopted item in vstack.toml".into(),
         op: Op::WriteManifest {
-            path: manifest::manifest_path(env, scope),
+            pre: Pre::observed(&manifest_path)?,
+            path: manifest_path,
             manifest: Box::new(manifest),
         },
     });
@@ -121,6 +88,60 @@ pub fn adopt(
         scope: scope.clone(),
         ops,
     })
+}
+
+/// Move the observed artifact into the local source and clear what it left
+/// behind. Nothing here runs at plan time: every byte read becomes an op.
+fn capture_ops(
+    kind: ItemKind,
+    name: &str,
+    original: PathBuf,
+    local_item: &Path,
+    broken_link: Option<Pre>,
+) -> Result<Vec<PlannedOp>> {
+    let mut ops = Vec::new();
+    if let Some(pre) = broken_link {
+        ops.push(PlannedOp {
+            description: format!("clear the broken link at {}", original.display()),
+            op: Op::Trash {
+                path: original.clone(),
+                pre,
+            },
+        });
+    }
+    if !original.exists() {
+        if !local_item.exists() {
+            return Err(CoreError::ItemNotInSource {
+                name: name.to_owned(),
+                source_name: format!("nothing at {} to adopt", original.display()),
+            });
+        }
+        return Ok(ops);
+    }
+    let capture = match kind {
+        ItemKind::Skill => Op::WriteTree {
+            root: local_item.to_path_buf(),
+            files: read_tree(&original)?,
+            pre: Pre::Any,
+        },
+        _ => Op::WriteFile {
+            path: local_item.to_path_buf(),
+            bytes: fs::read(&original).map_err(|e| CoreError::io(&original, e))?,
+            pre: Pre::Any,
+        },
+    };
+    ops.push(PlannedOp {
+        description: format!("move {name} into the local source"),
+        op: capture,
+    });
+    ops.push(PlannedOp {
+        description: format!("trash the unmanaged original at {}", original.display()),
+        op: Op::Trash {
+            path: original,
+            pre: Pre::Any,
+        },
+    });
+    Ok(ops)
 }
 
 fn read_tree(root: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {

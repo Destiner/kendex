@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{CoreError, Result};
-use crate::fs::atomic_write;
 
 /// Pre-images of everything an apply is about to touch. Restore is
 /// idempotent, so a crash mid-rollback recovers by rolling back again.
@@ -27,8 +26,11 @@ pub enum PreState {
     File {
         store: String,
     },
+    /// The link itself, plus the linked-to file's bytes when it resolves —
+    /// a write through the link must be undoable at the target too.
     Symlink {
         target: PathBuf,
+        store: Option<String>,
     },
     /// Tree copied under `store/<index>/` in the journal dir.
     Dir {
@@ -41,25 +43,38 @@ pub fn journal_dir_for(base: &Path, scope_key: &str) -> PathBuf {
 }
 
 /// Record pre-images for every path, then durably write the journal meta.
-/// Only after this returns may the apply mutate anything.
+/// Only after this returns may the apply mutate anything. Durability order
+/// matters: store bytes sync before meta.json exists, so a journal with a
+/// readable meta always has intact pre-images, and a missing or torn meta
+/// proves no mutation ever started.
 pub fn write(dir: &Path, paths: &[PathBuf]) -> Result<()> {
     let store = dir.join("store");
     fs::create_dir_all(&store).map_err(|e| CoreError::io(&store, e))?;
     let mut entries = Vec::new();
     for (index, path) in paths.iter().enumerate() {
         let state = if path.is_symlink() {
+            let slot_name = index.to_string();
+            let slot = store.join(&slot_name);
+            let resolved_file = path.exists() && path.is_file();
+            if resolved_file {
+                fs::copy(path, &slot).map_err(|e| CoreError::io(path, e))?;
+                sync_file(&slot)?;
+            }
             PreState::Symlink {
                 target: fs::read_link(path).map_err(|e| CoreError::io(path, e))?,
+                store: resolved_file.then_some(slot_name),
             }
         } else if path.is_dir() {
             let slot = store.join(index.to_string());
             copy_tree(path, &slot)?;
+            sync_tree(&slot)?;
             PreState::Dir {
                 store: index.to_string(),
             }
         } else if path.is_file() {
             let slot = store.join(index.to_string());
             fs::copy(path, &slot).map_err(|e| CoreError::io(path, e))?;
+            sync_file(&slot)?;
             PreState::File {
                 store: index.to_string(),
             }
@@ -71,14 +86,44 @@ pub fn write(dir: &Path, paths: &[PathBuf]) -> Result<()> {
             state,
         });
     }
+    sync_dir(&store);
+    sync_dir(dir);
     let journal = Journal { entries };
     let meta = serde_json::to_string_pretty(&journal).map_err(|e| CoreError::JsonParse {
         path: dir.join("meta.json"),
         message: e.to_string(),
     })?;
-    atomic_write(&dir.join("meta.json"), &meta)?;
-    let file = fs::File::open(dir.join("meta.json")).map_err(|e| CoreError::io(dir, e))?;
-    file.sync_all().map_err(|e| CoreError::io(dir, e))?;
+    crate::fs::atomic_write_durable(&dir.join("meta.json"), &meta)?;
+    Ok(())
+}
+
+fn sync_file(path: &Path) -> Result<()> {
+    fs::File::open(path)
+        .and_then(|f| f.sync_all())
+        .map_err(|e| CoreError::io(path, e))
+}
+
+/// Directory fsync is a no-op on platforms where directories cannot be
+/// opened (Windows); rename durability there rides on the volume flush.
+fn sync_dir(path: &Path) {
+    #[cfg(unix)]
+    if let Ok(dir) = fs::File::open(path) {
+        let _ = dir.sync_all();
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+}
+
+fn sync_tree(root: &Path) -> Result<()> {
+    if root.is_file() {
+        return sync_file(root);
+    }
+    if let Ok(entries) = fs::read_dir(root) {
+        for entry in entries.flatten() {
+            sync_tree(&entry.path())?;
+        }
+        sync_dir(root);
+    }
     Ok(())
 }
 
@@ -90,10 +135,13 @@ pub fn rollback(dir: &Path) -> Result<()> {
         // Mutation never started (no meta written): nothing to restore.
         return clear(dir);
     };
-    let journal: Journal = serde_json::from_str(&text).map_err(|e| CoreError::JsonParse {
-        path: meta_path,
-        message: e.to_string(),
-    })?;
+    let journal: Journal = match serde_json::from_str(&text) {
+        Ok(journal) => journal,
+        // A torn meta can only mean the crash hit before the durable meta
+        // write completed — and mutations only start after it completes, so
+        // the world is untouched and the journal is safe to discard.
+        Err(_) => return clear(dir),
+    };
     let store = dir.join("store");
     for entry in &journal.entries {
         remove_any(&entry.path)?;
@@ -105,15 +153,27 @@ pub fn rollback(dir: &Path) -> Result<()> {
                 }
                 fs::copy(store.join(slot), &entry.path)
                     .map_err(|e| CoreError::io(&entry.path, e))?;
+                sync_file(&entry.path)?;
             }
-            PreState::Symlink { target } => {
+            PreState::Symlink {
+                target,
+                store: slot,
+            } => {
                 if let Some(parent) = entry.path.parent() {
                     fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
                 }
                 make_symlink(target, &entry.path)?;
+                // A write may have gone through the link: restore the
+                // linked-to file's bytes too.
+                if let Some(slot) = slot {
+                    fs::copy(store.join(slot), &entry.path)
+                        .map_err(|e| CoreError::io(&entry.path, e))?;
+                    sync_file(&entry.path)?;
+                }
             }
             PreState::Dir { store: slot } => {
                 copy_tree(&store.join(slot), &entry.path)?;
+                sync_tree(&entry.path)?;
             }
         }
     }

@@ -208,12 +208,22 @@ the resolved provenance + content hash (see Lock entry above) plus the
 applied enabled state — a declared-disabled item is disabled in place
 (invariant 5), which is a state, not drift.
 
-**Phase 3 pre-work**: schema fixtures for the new kinds before their engine
-work — catalog layout (`commands/`, `mcp/` dirs in sources), declaration
-fields (MCP: transport, args, env — secrets only as env *references*, never
-values in the manifest; commands: markdown body; plugins: marketplace
-provenance, observe/enable only), and the observation+mutation capability
-matrix per harness.
+**Phase 3 declaration schema (pre-work, completed)** — source catalogs gain
+`hooks/` (shell scripts with `# ---` comment frontmatter, v1 format),
+`commands/<name>.md` (markdown body, claude-managed only), and
+`mcp/<name>.toml` (fields: `command`, `args = []`, `transport =
+"stdio"|"http"|"sse"`, `url`, `env = { KEY = "$VAR_REF" }` — env values
+are always `$`-references, never secrets; validation rejects literals).
+Manifest declaration tables: `[hooks.<name>]`, `[commands.<name>]`,
+`[mcp-servers.<name>]` with the same `{source, harnesses?, method?,
+enabled}` shape; `[plugins."<name@marketplace>"]` carries only `{enabled}`
+plus marketplace provenance in the lock — plugins stay observe +
+enable/disable until the marketplace work. `[pi-extensions.<name>]`
+declares npm-packaged extensions from `pi-extensions/<name>/` in sources.
+Mutation capability stays exactly the caps.rs table: hooks manage on
+claude/codex (native JSON registration) + opencode (instruction render) +
+cursor (project advisory .mdc); commands and MCP manage on claude only;
+plugins toggle on claude only; pi-extensions manage on pi.
 
 ## Durable layout (paths via the `dirs` crate per OS; Linux shown)
 
@@ -310,21 +320,55 @@ in TS.
 
 Sidebar scope picker (Global / All / project) filters Items and Audit.
 
+## User directives (2026-08-10, binding)
+
+- License: MIT (LICENSE committed).
+- UI work/validation/review: use lower-cost agent models where possible.
+- A dedicated UI/UX polish phase is REQUIRED before release, validated by
+  driving the real UI (agent-browser against a Chromium-drivable dev build
+  with a `VITE_MOCK=1` in-memory command mock, since the WebKit Tauri
+  window is not CDP-drivable): elegant, polished, consumer-friendly;
+  simple, clean UX copy with no engineering jargon (rewrite: drift → "out
+  of sync", unmanaged → "not managed yet", adopt → "start managing",
+  orphaned → "left behind", scope → global/"per-project", harness →
+  "tool"); progressive flows and onboarding (empty states each carry one
+  primary action); clear action hierarchy (one primary action per view);
+  well-considered surfaces for observability (Overview/Audit), repo
+  modification (plan preview + confirm before any change), and Settings.
+
+## In flight (delete as merged)
+
+All 17 adversarial-review findings on the P2 engine are FIXED with
+regression tests (crates/core/tests/review_fixes.rs). Remaining work,
+in order:
+
+1. **UI/UX polish phase (user directive above)** — dev-mock layer
+   (`VITE_MOCK=1` stubs the Tauri invoke bridge with fixture data so
+   Chromium/agent-browser can drive the real UI), then copy/IA/hierarchy
+   rework + browser-driven validation loop, cheap agent models.
+2. Settings seeding integration: engine applies `core/src/settings_seed.rs`
+   during project applies for skills shipping vstack.settings.toml.example.
+3. Pi cross-scope duplicate guard (v1: refuse installing a pi package at
+   one scope when the same/legacy name is installed at the other).
+4. App-launch recovery pass: apply::recover over global + registered
+   projects on startup (currently recovery runs at next apply only).
+5. Report routing in the GUI (CLI report is done; app command + a small
+   surface, low priority).
+6. P5 end-to-end: consuming repo installs from the default remote catalog
+   end to end (needs a network smoke or a file:// default-source fixture).
+7. P6 release: GitHub repo bootstrap + native-runner release workflows
+   (linux x86_64 primary, macOS aarch64, windows x86_64), feed.json
+   artifact for self-update (format already consumed by `vstack update`,
+   see cli/tests/compat.rs), packaging smoke per target; signing/updater
+   keys are USER-supplied gates. Then: migrate one real v1 repo as smoke,
+   delete docs/research/ and this file.
+
 ## Phases (each ends with a working app)
 
 1. **Walking skeleton** — DONE. Carried forward: fs-watch scan trigger and
    the Harnesses-page "open location" action land with Phase 2+ UI work.
-2. **Declare & diff** — manifest, lock, drift engine, transactional apply,
-   Audit page, adopt + apply with plan preview (skills, agents, local
-   sources, all harnesses). Generic tests for all eight ARCHITECTURE
-   invariants land as failing tests before the engine (kind-specific
-   extensions — structured-config toggles, shared-target ownership —
-   extend them in Phase 3+); fault-injection tests on the journal.
-   CLI: add, remove, refresh, verify. v2 refuses to mutate a legacy
-   (schema-less v1) manifest — hard "migration required" error until the
-   Phase 6 importer; tests assert legacy files stay byte-identical.
-   Done when: declare→apply→drift-clean round-trips on a fixture project
-   (smoke: on a real one).
+2. **Declare & diff** — DONE. Kind-specific invariant-test extensions
+   (structured-config toggles, shared-target ownership) land with Phase 3.
 3. **All kinds** — declared management for hooks, commands, MCP servers,
    plugins, pi-extensions on every harness that supports them. CLI:
    update-pi.

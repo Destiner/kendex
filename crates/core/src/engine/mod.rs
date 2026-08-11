@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::apply::{Op, Plan, PlannedOp, Pre};
+use crate::apply::{Op, Plan, PlannedOp};
 use crate::env::Env;
 use crate::error::Result;
 use crate::lock::{Lock, lock_path};
@@ -13,8 +13,12 @@ use crate::model::{HarnessId, ItemKind, Scope};
 
 pub mod adopt;
 pub mod desired;
+mod desired_agent;
+mod desired_kinds;
 mod item_plan;
 pub mod ops;
+mod removal;
+mod targets;
 
 use item_plan::plan_item;
 
@@ -81,10 +85,12 @@ pub fn plan_scope(
     let mut written_canonicals: BTreeSet<PathBuf> = BTreeSet::new();
 
     if let Some(updated) = &state.manifest_update {
+        let path = manifest::manifest_path(env, scope);
         ops.push(PlannedOp {
             description: "merge upstream skill additions into vstack.toml".into(),
             op: Op::WriteManifest {
-                path: manifest::manifest_path(env, scope),
+                pre: crate::apply::Pre::observed(&path)?,
+                path,
                 manifest: Box::new(updated.clone()),
             },
         });
@@ -107,18 +113,20 @@ pub fn plan_scope(
         scope,
         manifest,
         lock,
-        &state.items,
+        &state,
         options,
         &mut drift,
         &mut ops,
         &mut new_lock,
-    );
+    )?;
 
     if new_lock.entries != lock.entries {
+        let path = lock_path(env, scope);
         ops.push(PlannedOp {
             description: "update lock".into(),
             op: Op::WriteLock {
-                path: lock_path(env, scope),
+                pre: crate::apply::Pre::observed(&path)?,
+                path,
                 lock: Box::new(new_lock),
             },
         });
@@ -142,18 +150,19 @@ fn orphans(
     scope: &Scope,
     manifest: &Manifest,
     lock: &Lock,
-    desired: &[Desired],
+    state: &desired::DesiredState,
     options: &PlanOptions,
     drift: &mut Vec<DriftRow>,
     ops: &mut Vec<PlannedOp>,
     new_lock: &mut Lock,
-) {
+) -> Result<()> {
+    let desired = &state.items;
     let desired_keys: BTreeSet<&String> = desired.iter().map(|d| &d.key).collect();
     let keep_canonical: BTreeSet<PathBuf> = desired
         .iter()
         .filter_map(|d| match &d.artifact {
             Artifact::Tree { canonical, .. } => Some(canonical.clone()),
-            Artifact::File { .. } => None,
+            Artifact::File { .. } | Artifact::Registration { .. } => None,
         })
         .collect();
     let mut trashed: BTreeSet<PathBuf> = BTreeSet::new();
@@ -163,8 +172,13 @@ fn orphans(
             continue;
         }
         // Declared but skipped this pass (pending/disabled source, missing
-        // from source): keep the record, it is not an orphan.
-        if manifest.declared(entry.kind).contains_key(&entry.name) {
+        // from source): keep the record, it is not an orphan. A declaration
+        // that did resolve has already said everything it wants installed,
+        // so an entry it did not ask for — a harness dropped from its list —
+        // is stranded and must be cleaned up like any other orphan.
+        let unreachable_source = manifest.declared(entry.kind).contains_key(&entry.name)
+            && !state.processed.contains(&(entry.kind, entry.name.clone()));
+        if unreachable_source {
             new_lock.entries.insert(key.clone(), entry.clone());
             continue;
         }
@@ -189,22 +203,18 @@ fn orphans(
             new_lock.entries.insert(key.clone(), entry.clone());
             continue;
         }
-        for path in ops::artifact_paths(env, scope, entry) {
-            let shared = keep_canonical.contains(&path);
-            if shared || !trashed.insert(path.clone()) {
+        for planned in removal::removal_ops(env, scope, entry)? {
+            // A skill tree another installation still wants stays put:
+            // shared physical targets are reference-counted, not deleted.
+            if let Op::Trash { path, .. } = &planned.op
+                && (keep_canonical.contains(path) || !trashed.insert(path.clone()))
+            {
                 continue;
             }
-            if path.exists() || path.is_symlink() {
-                ops.push(PlannedOp {
-                    description: format!("trash {}", path.display()),
-                    op: Op::Trash {
-                        path,
-                        pre: Pre::Any,
-                    },
-                });
-            }
+            ops.push(planned);
         }
     }
+    Ok(())
 }
 
 fn unmanaged_rows(
@@ -221,22 +231,19 @@ fn unmanaged_rows(
         .map(|d| d.key.clone())
         .chain(lock.entries.keys().cloned())
         .collect();
-    let declared_names: BTreeSet<(ItemKind, &String)> = manifest
-        .agents
-        .keys()
-        .map(|n| (ItemKind::Agent, n))
-        .chain(manifest.skills.keys().map(|n| (ItemKind::Skill, n)))
+    let declared_keys = declared_installation_keys(manifest, scope);
+    let mut owned: BTreeSet<PathBuf> = desired
+        .iter()
+        .flat_map(|d| desired::artifact_paths(&d.artifact))
         .collect();
+    owned.extend(declared_artifact_paths(env, scope, manifest));
     let mut seen: BTreeSet<String> = BTreeSet::new();
     for item in &scan.items {
-        if !matches!(item.kind, ItemKind::Agent | ItemKind::Skill) {
+        if !matches!(item.kind, ItemKind::Agent | ItemKind::Skill) || owned.contains(&item.path) {
             continue;
         }
         let key = crate::lock::entry_key(item.kind, &item.name, item.harness);
-        if known.contains(&key)
-            || declared_names.contains(&(item.kind, &item.name))
-            || !seen.insert(key)
-        {
+        if known.contains(&key) || declared_keys.contains(&key) || !seen.insert(key) {
             continue;
         }
         drift.push(DriftRow {
@@ -248,6 +255,43 @@ fn unmanaged_rows(
             detail: item.path.display().to_string(),
         });
     }
+}
+
+/// Every installation the manifest asks for, by lock key. A declaration
+/// speaks only for the harnesses it targets: a same-named item in a harness
+/// it does not target is someone else's, and hiding it would leave it
+/// loading forever with no drift row to discover it by.
+fn declared_installation_keys(manifest: &Manifest, scope: &Scope) -> BTreeSet<String> {
+    let mut keys = BTreeSet::new();
+    for (kind, table) in [
+        (ItemKind::Agent, &manifest.agents),
+        (ItemKind::Skill, &manifest.skills),
+    ] {
+        for (name, decl) in table {
+            for harness in desired::target_harnesses(decl, manifest, kind, scope) {
+                keys.insert(crate::lock::entry_key(kind, name, harness));
+            }
+        }
+    }
+    keys
+}
+
+/// Where those installations live, whether or not this pass could build
+/// them. Skills share one canonical tree across harnesses, so the path is
+/// what says "ours", not the harness the scanner attributes it to.
+fn declared_artifact_paths(env: &Env, scope: &Scope, manifest: &Manifest) -> BTreeSet<PathBuf> {
+    let mut paths = BTreeSet::new();
+    for (kind, table) in [
+        (ItemKind::Agent, &manifest.agents),
+        (ItemKind::Skill, &manifest.skills),
+    ] {
+        for (name, decl) in table {
+            paths.extend(desired::declared_paths(
+                env, scope, manifest, kind, name, decl,
+            ));
+        }
+    }
+    paths
 }
 
 /// Read-only audit for a scope. A legacy or absent manifest still reports

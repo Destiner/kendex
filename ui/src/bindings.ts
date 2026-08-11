@@ -22,6 +22,43 @@ export const commands = {
 	adoptItem: (scope: Scope, kind: ItemKind, name: string, harness: HarnessId) => typedError<AuditView, string>(__TAURI_INVOKE("adopt_item", { scope, kind, name, harness })),
 	toggleItem: (scope: Scope, name: string, enabled: boolean) => typedError<AuditView, string>(__TAURI_INVOKE("toggle_item", { scope, name, enabled })),
 	removeItem: (scope: Scope, name: string) => typedError<AuditView, string>(__TAURI_INVOKE("remove_item", { scope, name })),
+	getManifest: (scope: Scope) => typedError<{
+	schema: number,
+	sources?: { [key in string]: SourceDecl_Serialize },
+	install: InstallDefaults,
+	agents?: { [key in string]: ItemDecl_Serialize },
+	skills?: { [key in string]: ItemDecl_Serialize },
+	hooks?: { [key in string]: ItemDecl_Serialize },
+	commands?: { [key in string]: ItemDecl_Serialize },
+	"mcp-servers"?: { [key in string]: ItemDecl_Serialize },
+	/**
+	 *  Plugins are observe + enable/disable only; the key is
+	 *  `name@marketplace`, provenance lives in the lock.
+	 */
+	plugins?: { [key in string]: PluginDecl },
+	"pi-extensions"?: { [key in string]: ItemDecl_Serialize },
+	"agent-skills"?: { [key in string]: string[] },
+	"agent-launch-instructions"?: { [key in string]: string },
+	"agent-additional-instructions"?: { [key in string]: string },
+	"skill-instructions"?: { [key in string]: string },
+	/**  `[agent-frontmatter.<harness>.<agent>]`. */
+	"agent-frontmatter"?: { [key in string]: { [key in string]: FrontmatterOverrides_Serialize } },
+	"custom-hooks"?: CustomHook_Serialize[],
+	"project-skills-dir"?: string | null,
+} | null, string>(__TAURI_INVOKE("get_manifest", { scope })),
+	/**  Write an edited manifest and reconcile the scope to it. */
+	updateManifest: (scope: Scope, manifest: Manifest_Deserialize) => typedError<AuditView, string>(__TAURI_INVOKE("update_manifest", { scope, manifest })),
+	editorInventory: (scope: Scope) => typedError<EditorInventory, string>(__TAURI_INVOKE("editor_inventory", { scope })),
+	/**  Every declared source in every scope — the Sources page's one query. */
+	sourcesOverview: () => typedError<SourceRow[], string>(__TAURI_INVOKE("sources_overview")),
+	sourceAdd: (scope: Scope, name: string, reference: string) => typedError<SourceRow[], string>(__TAURI_INVOKE("source_add", { scope, name, reference })),
+	sourceRemove: (scope: Scope, name: string) => typedError<SourceRow[], string>(__TAURI_INVOKE("source_remove", { scope, name })),
+	sourceToggle: (scope: Scope, name: string, enabled: boolean) => typedError<SourceRow[], string>(__TAURI_INVOKE("source_toggle", { scope, name, enabled })),
+	/**
+	 *  Re-resolve every enabled remote across every scope. Returns warnings
+	 *  (offline caches keep serving); hard failures surface as the error.
+	 */
+	sourcesRefresh: () => typedError<string[], string>(__TAURI_INVOKE("sources_refresh")),
 };
 
 /* Types */
@@ -51,6 +88,24 @@ export type CapabilityRow = {
 	harness: HarnessId,
 	kind: ItemKind,
 	caps: KindCaps,
+};
+
+export type CustomHook = CustomHook_Serialize | CustomHook_Deserialize;
+
+export type CustomHook_Deserialize = {
+	event: string,
+	matcher: string | null,
+	command: string,
+	description: string | null,
+	agents?: HookAgents,
+};
+
+export type CustomHook_Serialize = {
+	event: string,
+	matcher?: string | null,
+	command: string,
+	description?: string | null,
+	agents: HookAgents,
 };
 
 /**  A harness found on this machine. */
@@ -83,12 +138,88 @@ export type DriftState =
 "conflict";
 
 /**
+ *  What the Customize page needs to offer real choices: the names already
+ *  declared here plus the skills any ready source can supply.
+ */
+export type EditorInventory = {
+	declaredAgents: string[],
+	declaredSkills: string[],
+	availableSkills: string[],
+	harnesses: HarnessId[],
+};
+
+/**
  *  How an observed item exists on disk. Kinds that live as entries inside a
  *  shared config file (MCP servers, some hooks) are `ConfigEntry`.
  */
 export type FileState = { state: "file" } | { state: "dir" } | { state: "symlink"; target: string; broken: boolean } | { state: "config-entry" };
 
+/**  Typed `[agent-frontmatter.<harness>.<agent>]` overrides — v1's field set. */
+export type FrontmatterOverrides = FrontmatterOverrides_Serialize | FrontmatterOverrides_Deserialize;
+
+/**  Typed `[agent-frontmatter.<harness>.<agent>]` overrides — v1's field set. */
+export type FrontmatterOverrides_Deserialize = {
+	color: string | null,
+	model: string | null,
+	"deny-tools": string[] | null,
+	"allowed-subagents": string[] | null,
+	pane: boolean | null,
+	background: boolean | null,
+	effort: string | null,
+	isolation: string | null,
+	memory: string | null,
+	mode: string | null,
+	"sandbox-mode": string | null,
+	"model-reasoning-effort": string | null,
+	"nickname-candidates": string[] | null,
+};
+
+/**  Typed `[agent-frontmatter.<harness>.<agent>]` overrides — v1's field set. */
+export type FrontmatterOverrides_Serialize = {
+	color?: string | null,
+	model?: string | null,
+	"deny-tools"?: string[] | null,
+	"allowed-subagents"?: string[] | null,
+	pane?: boolean | null,
+	background?: boolean | null,
+	effort?: string | null,
+	isolation?: string | null,
+	memory?: string | null,
+	mode?: string | null,
+	"sandbox-mode"?: string | null,
+	"model-reasoning-effort"?: string | null,
+	"nickname-candidates"?: string[] | null,
+};
+
 export type HarnessId = "claude" | "codex" | "opencode" | "cursor" | "pi";
+
+export type HookAgents = 
+/**  `"all"`, a role name, or a single agent name. */
+string | string[];
+
+export type InstallDefaults = {
+	harnesses?: HarnessId[],
+	method?: Method,
+};
+
+/**  One declared item: `[agents.<name>]` / `[skills.<name>]`. */
+export type ItemDecl = ItemDecl_Serialize | ItemDecl_Deserialize;
+
+/**  One declared item: `[agents.<name>]` / `[skills.<name>]`. */
+export type ItemDecl_Deserialize = {
+	source: string,
+	harnesses: HarnessId[] | null,
+	method: Method | null,
+	enabled?: boolean,
+};
+
+/**  One declared item: `[agents.<name>]` / `[skills.<name>]`. */
+export type ItemDecl_Serialize = {
+	source: string,
+	harnesses?: HarnessId[] | null,
+	method?: Method | null,
+	enabled: boolean,
+};
 
 export type ItemKind = "agent" | "skill" | "hook" | "command" | "mcp-server" | "plugin" | "pi-extension";
 
@@ -105,6 +236,60 @@ export type KindCaps = {
 	remove: OpSupport,
 	refresh: OpSupport,
 };
+
+export type Manifest = Manifest_Serialize | Manifest_Deserialize;
+
+export type Manifest_Deserialize = {
+	schema: number,
+	sources?: { [key in string]: SourceDecl_Deserialize },
+	install?: InstallDefaults,
+	agents?: { [key in string]: ItemDecl_Deserialize },
+	skills?: { [key in string]: ItemDecl_Deserialize },
+	hooks?: { [key in string]: ItemDecl_Deserialize },
+	commands?: { [key in string]: ItemDecl_Deserialize },
+	"mcp-servers"?: { [key in string]: ItemDecl_Deserialize },
+	/**
+	 *  Plugins are observe + enable/disable only; the key is
+	 *  `name@marketplace`, provenance lives in the lock.
+	 */
+	plugins?: { [key in string]: PluginDecl },
+	"pi-extensions"?: { [key in string]: ItemDecl_Deserialize },
+	"agent-skills"?: { [key in string]: string[] },
+	"agent-launch-instructions"?: { [key in string]: string },
+	"agent-additional-instructions"?: { [key in string]: string },
+	"skill-instructions"?: { [key in string]: string },
+	/**  `[agent-frontmatter.<harness>.<agent>]`. */
+	"agent-frontmatter"?: { [key in string]: { [key in string]: FrontmatterOverrides_Deserialize } },
+	"custom-hooks"?: CustomHook_Deserialize[],
+	"project-skills-dir": string | null,
+};
+
+export type Manifest_Serialize = {
+	schema: number,
+	sources?: { [key in string]: SourceDecl_Serialize },
+	install: InstallDefaults,
+	agents?: { [key in string]: ItemDecl_Serialize },
+	skills?: { [key in string]: ItemDecl_Serialize },
+	hooks?: { [key in string]: ItemDecl_Serialize },
+	commands?: { [key in string]: ItemDecl_Serialize },
+	"mcp-servers"?: { [key in string]: ItemDecl_Serialize },
+	/**
+	 *  Plugins are observe + enable/disable only; the key is
+	 *  `name@marketplace`, provenance lives in the lock.
+	 */
+	plugins?: { [key in string]: PluginDecl },
+	"pi-extensions"?: { [key in string]: ItemDecl_Serialize },
+	"agent-skills"?: { [key in string]: string[] },
+	"agent-launch-instructions"?: { [key in string]: string },
+	"agent-additional-instructions"?: { [key in string]: string },
+	"skill-instructions"?: { [key in string]: string },
+	/**  `[agent-frontmatter.<harness>.<agent>]`. */
+	"agent-frontmatter"?: { [key in string]: { [key in string]: FrontmatterOverrides_Serialize } },
+	"custom-hooks"?: CustomHook_Serialize[],
+	"project-skills-dir"?: string | null,
+};
+
+export type Method = "symlink" | "copy";
 
 /**
  *  One item as the scanner found it — read-only truth, no interpretation of
@@ -133,6 +318,10 @@ export type OpSupport = {
 	global: boolean,
 };
 
+export type PluginDecl = {
+	enabled?: boolean,
+};
+
 export type ScanResult = {
 	harnesses: DetectedHarness[],
 	items: ObservedItem[],
@@ -143,6 +332,32 @@ export type ScanResult = {
 };
 
 export type Scope = { scope: "global" } | { scope: "project"; root: string };
+
+export type SourceDecl = SourceDecl_Serialize | SourceDecl_Deserialize;
+
+export type SourceDecl_Deserialize = {
+	repo: string | null,
+	path: string | null,
+	enabled?: boolean,
+};
+
+export type SourceDecl_Serialize = {
+	repo?: string | null,
+	path?: string | null,
+	enabled: boolean,
+};
+
+/**  Everything the Sources page shows for one declared source in one scope. */
+export type SourceRow = {
+	scope: Scope,
+	name: string,
+	reference: string,
+	isRemote: boolean,
+	enabled: boolean,
+	/**  Cache HEAD for remotes — freshness display. */
+	head: string | null,
+	declaredItems: string[],
+};
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

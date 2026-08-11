@@ -21,7 +21,7 @@ pub struct AuditView {
     pub notes: Vec<String>,
 }
 
-fn view(env: &Env, scope: &Scope) -> Result<AuditView, String> {
+pub(crate) fn view(env: &Env, scope: &Scope) -> Result<AuditView, String> {
     let report = engine::audit(env, scope).map_err(|e| e.to_string())?;
     Ok(AuditView {
         scope: scope.clone(),

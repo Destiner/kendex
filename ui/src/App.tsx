@@ -1,11 +1,13 @@
 import { useEffect } from "react";
 import { Sidebar } from "@/components/sidebar";
 import { AuditPage } from "@/pages/audit";
+import { CustomizePage } from "@/pages/customize";
 import { HarnessesPage } from "@/pages/harnesses";
 import { ItemsPage } from "@/pages/items";
 import { OverviewPage } from "@/pages/overview";
 import { ScopesPage } from "@/pages/scopes";
 import { SettingsPage } from "@/pages/settings";
+import { SourcesPage } from "@/pages/sources";
 import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
@@ -61,6 +63,8 @@ export default function App() {
         {page === "harnesses" && <HarnessesPage />}
         {page === "scopes" && <ScopesPage />}
         {page === "audit" && <AuditPage />}
+        {page === "sources" && <SourcesPage />}
+        {page === "customize" && <CustomizePage />}
         {page === "settings" && <SettingsPage />}
       </main>
     </div>

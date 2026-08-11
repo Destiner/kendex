@@ -73,6 +73,15 @@ pub enum CoreError {
 
     #[error("apply failed and was rolled back: {reason}")]
     RolledBack { reason: String },
+
+    #[error("{path}: structured edit failed: {message}")]
+    ConfigEdit { path: PathBuf, message: String },
+
+    #[error("pi package {name}: {message}")]
+    PiPackage { name: String, message: String },
+
+    #[error("{command} failed: {stderr}")]
+    GitFailed { command: String, stderr: String },
 }
 
 impl CoreError {

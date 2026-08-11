@@ -1,0 +1,82 @@
+use vstack_core::env::Env;
+use vstack_core::model::Scope;
+use vstack_core::source_ops::{self, SourceRow};
+use vstack_core::{apply, manifest, remote};
+
+fn env() -> Result<Env, String> {
+    Env::detect().map_err(|e| e.to_string())
+}
+
+fn all_scopes(env: &Env) -> Result<Vec<Scope>, String> {
+    let settings = vstack_core::settings::load(env).map_err(|e| e.to_string())?;
+    let mut scopes = vec![Scope::Global];
+    scopes.extend(
+        settings
+            .projects
+            .into_iter()
+            .map(|root| Scope::Project { root }),
+    );
+    Ok(scopes)
+}
+
+/// Every declared source in every scope — the Sources page's one query.
+#[tauri::command]
+#[specta::specta]
+pub fn sources_overview() -> Result<Vec<SourceRow>, String> {
+    let env = env()?;
+    let mut rows = Vec::new();
+    for scope in all_scopes(&env)? {
+        rows.extend(source_ops::list_sources(&env, &scope).map_err(|e| e.to_string())?);
+    }
+    Ok(rows)
+}
+
+fn run_and_list(
+    env: &Env,
+    report: vstack_core::engine::EngineReport,
+) -> Result<Vec<SourceRow>, String> {
+    apply::execute(env, &report.plan, None).map_err(|e| e.to_string())?;
+    sources_overview()
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn source_add(scope: Scope, name: String, reference: String) -> Result<Vec<SourceRow>, String> {
+    let env = env()?;
+    let report =
+        source_ops::add_source(&env, &scope, &name, &reference).map_err(|e| e.to_string())?;
+    run_and_list(&env, report)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn source_remove(scope: Scope, name: String) -> Result<Vec<SourceRow>, String> {
+    let env = env()?;
+    let report = source_ops::remove_source(&env, &scope, &name).map_err(|e| e.to_string())?;
+    run_and_list(&env, report)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn source_toggle(scope: Scope, name: String, enabled: bool) -> Result<Vec<SourceRow>, String> {
+    let env = env()?;
+    let report =
+        source_ops::toggle_source(&env, &scope, &name, enabled).map_err(|e| e.to_string())?;
+    run_and_list(&env, report)
+}
+
+/// Re-resolve every enabled remote across every scope. Returns warnings
+/// (offline caches keep serving); hard failures surface as the error.
+#[tauri::command]
+#[specta::specta]
+pub fn sources_refresh() -> Result<Vec<String>, String> {
+    let env = env()?;
+    let mut warnings = Vec::new();
+    for scope in all_scopes(&env)? {
+        let path = manifest::manifest_path(&env, &scope);
+        if let Ok(Some(loaded)) = manifest::load_for_mutation(&path) {
+            warnings.extend(remote::sync_sources(&env, &loaded).map_err(|e| e.to_string())?);
+        }
+    }
+    Ok(warnings)
+}

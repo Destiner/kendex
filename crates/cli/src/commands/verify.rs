@@ -37,10 +37,9 @@ pub fn run(
                         DriftState::Missing | DriftState::Stale | DriftState::Conflict
                     )
             });
-            let unreachable_source = report
-                .notes
-                .iter()
-                .any(|n| n.starts_with(&format!("{}:", entry.name)));
+            let unreachable_source = report.notes.iter().any(|n| {
+                n.starts_with(&format!("{}:", entry.name)) && !n.contains("disabled — inactive")
+            });
             match problem {
                 Some(row) => {
                     failed += 1;

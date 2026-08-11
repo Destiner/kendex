@@ -23,6 +23,11 @@ const TOP_LEVEL: &[&str] = &[
     "install",
     "agents",
     "skills",
+    "hooks",
+    "commands",
+    "mcp-servers",
+    "plugins",
+    "pi-extensions",
     "agent-skills",
     "agent-launch-instructions",
     "agent-additional-instructions",
@@ -30,6 +35,17 @@ const TOP_LEVEL: &[&str] = &[
     "agent-frontmatter",
     "custom-hooks",
     "project-skills-dir",
+];
+
+/// Kind tables whose entries name an item from a source. Plugins are not
+/// among them: they come from a marketplace and carry only an enabled flag.
+const ITEM_TABLES: &[&str] = &[
+    "agents",
+    "skills",
+    "hooks",
+    "commands",
+    "mcp-servers",
+    "pi-extensions",
 ];
 
 const HARNESSES: &[&str] = &["claude", "codex", "opencode", "cursor", "pi"];
@@ -72,6 +88,7 @@ pub fn validate(table: &Table) -> Vec<Finding> {
     validate_sources(table, &mut findings);
     validate_install(table, &mut findings);
     validate_items(table, &mut findings);
+    validate_plugins(table, &mut findings);
     validate_frontmatter(table, &mut findings);
     validate_hooks(table, &mut findings);
     findings
@@ -128,7 +145,7 @@ fn validate_items(table: &Table, findings: &mut Vec<Finding>) {
         .and_then(Value::as_table)
         .map(|s| s.keys().cloned().collect())
         .unwrap_or_default();
-    for kind_table in ["agents", "skills"] {
+    for &kind_table in ITEM_TABLES {
         let Some(items) = table.get(kind_table).and_then(Value::as_table) else {
             continue;
         };
@@ -174,6 +191,24 @@ fn validate_items(table: &Table, findings: &mut Vec<Finding>) {
                     }
                 }
             }
+        }
+    }
+}
+
+fn validate_plugins(table: &Table, findings: &mut Vec<Finding>) {
+    let Some(plugins) = table.get("plugins").and_then(Value::as_table) else {
+        return;
+    };
+    for (key, decl) in plugins {
+        let declares_only_enabled = decl.as_table().is_some_and(|decl| {
+            decl.keys().all(|k| k == "enabled") && decl.get("enabled").is_none_or(Value::is_bool)
+        });
+        if !declares_only_enabled {
+            findings.push(Finding {
+                location: format!("plugins.{key}"),
+                problem: "a plugin declares nothing but enabled".into(),
+                fix: format!("write [plugins.\"{key}\"] with enabled = true or false"),
+            });
         }
     }
 }
@@ -258,6 +293,12 @@ source = "nowhere"
 [agents."-bad/name"]
 source = "local"
 
+[mcp-servers.gh]
+source = "nowhere"
+
+[plugins."fmt@main"]
+version = "1"
+
 [agent-frontmatter.claude.orch]
 tools = ["a"]
 
@@ -267,6 +308,8 @@ matcher = "Bash"
         );
         let findings = validate(&table);
         let locations: Vec<_> = findings.iter().map(|f| f.location.as_str()).collect();
+        assert!(locations.contains(&"mcp-servers.gh"));
+        assert!(locations.contains(&"plugins.fmt@main"));
         assert!(locations.contains(&"schema"));
         assert!(locations.contains(&"typo-table"));
         assert!(locations.contains(&"sources.bad"));
@@ -291,6 +334,12 @@ repo = "vanillagreencom/vstack"
 source = "vstack"
 [agents.local-one]
 source = "local"
+[hooks.guard]
+source = "vstack"
+[mcp-servers.gh]
+source = "vstack"
+[plugins."fmt@main"]
+enabled = false
 "#,
         );
         assert_eq!(validate(&table), Vec::new());

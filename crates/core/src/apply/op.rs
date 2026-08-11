@@ -24,6 +24,17 @@ pub enum Pre {
 }
 
 impl Pre {
+    /// What a plan that rewrites `path` wholesale binds to: the bytes seen
+    /// at plan time, or the absence seen at plan time.
+    pub fn observed(path: &Path) -> Result<Pre> {
+        match path.is_file() {
+            true => Ok(Pre::HashIs {
+                hash: hash_tree(path)?,
+            }),
+            false => Ok(Pre::Absent),
+        }
+    }
+
     fn check(&self, path: &Path) -> Result<()> {
         let ok = match self {
             Pre::Any => true,
@@ -68,19 +79,30 @@ pub enum Op {
     Rename {
         from: PathBuf,
         to: PathBuf,
+        /// Checked against `to`: rename(2) replaces its destination
+        /// silently, so a file that appeared since planning must abort.
+        to_pre: Pre,
     },
     /// Removal never deletes: the artifact moves to the trash.
-    Trash {
+    Trash { path: PathBuf, pre: Pre },
+    /// Apply an idempotent structured edit to a (possibly absent) config
+    /// file — unrelated keys always survive.
+    EditFile {
         path: PathBuf,
+        edit: crate::configedit::ConfigEdit,
         pre: Pre,
     },
+    /// Both records are written as whole plan-time snapshots, so `pre`
+    /// keeps a stale plan from reverting a concurrent apply's work.
     WriteLock {
         path: PathBuf,
         lock: Box<Lock>,
+        pre: Pre,
     },
     WriteManifest {
         path: PathBuf,
         manifest: Box<Manifest>,
+        pre: Pre,
     },
 }
 
@@ -91,8 +113,9 @@ impl Op {
             Op::WriteFile { path, .. } => vec![path.clone()],
             Op::WriteTree { root, .. } => vec![root.clone()],
             Op::Symlink { link, .. } => vec![link.clone()],
-            Op::Rename { from, to } => vec![from.clone(), to.clone()],
+            Op::Rename { from, to, .. } => vec![from.clone(), to.clone()],
             Op::Trash { path, .. } => vec![path.clone()],
+            Op::EditFile { path, .. } => vec![path.clone()],
             Op::WriteLock { path, .. } => vec![path.clone()],
             Op::WriteManifest { path, .. } => vec![path.clone()],
         }
@@ -129,7 +152,10 @@ impl Op {
                 }
                 journal::make_symlink(target, link)
             }
-            Op::Rename { from, to } => fs::rename(from, to).map_err(|e| CoreError::io(from, e)),
+            Op::Rename { from, to, to_pre } => {
+                to_pre.check(to)?;
+                fs::rename(from, to).map_err(|e| CoreError::io(from, e))
+            }
             Op::Trash { path, pre } => {
                 pre.check(path)?;
                 let trash = env.trash_dir();
@@ -150,8 +176,35 @@ impl Op {
                 }
                 Ok(())
             }
-            Op::WriteLock { path, lock } => crate::lock::save(path, lock),
-            Op::WriteManifest { path, manifest } => crate::manifest::save(path, manifest),
+            Op::EditFile { path, edit, pre } => {
+                pre.check(path)?;
+                let current = crate::fs::read_if_exists(path)?.unwrap_or_default();
+                let updated = edit
+                    .apply(&current)
+                    .map_err(|message| CoreError::ConfigEdit {
+                        path: path.clone(),
+                        message,
+                    })?;
+                if updated != current {
+                    if let Some(parent) = path.parent() {
+                        fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
+                    }
+                    fs::write(path, updated).map_err(|e| CoreError::io(path, e))?;
+                }
+                Ok(())
+            }
+            Op::WriteLock { path, lock, pre } => {
+                pre.check(path)?;
+                crate::lock::save(path, lock)
+            }
+            Op::WriteManifest {
+                path,
+                manifest,
+                pre,
+            } => {
+                pre.check(path)?;
+                crate::manifest::save(path, manifest)
+            }
         }
     }
 }

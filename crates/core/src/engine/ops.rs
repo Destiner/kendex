@@ -1,46 +1,26 @@
 use std::collections::BTreeSet;
-use std::path::PathBuf;
 
-use super::desired::native_dir;
 use super::{EngineReport, PlanOptions, plan_scope};
 use crate::env::Env;
 use crate::error::{CoreError, Result};
 use crate::fs::read_if_exists;
-use crate::lock::{Lock, LockEntry, lock_path};
+use crate::lock::{Lock, lock_path};
 use crate::manifest::{
     self, DEFAULT_SOURCE_NAME, ItemDecl, LOCAL_SOURCE_NAME, Manifest, Method, SourceDecl,
 };
 use crate::model::{HarnessId, ItemKind, Scope};
-use crate::render::agent::file_name;
 use crate::source::{self, find_item, list_items, source_config};
 
-/// Where a lock entry's artifacts live — for orphan cleanup and removal.
-pub fn artifact_paths(env: &Env, scope: &Scope, entry: &LockEntry) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    match entry.kind {
-        ItemKind::Agent => {
-            if let Some(dir) = native_dir(env, scope, entry.harness, ItemKind::Agent) {
-                let base = dir.join(file_name(entry.harness, &entry.name));
-                paths.push(PathBuf::from(format!("{}.disabled", base.display())));
-                paths.push(base);
-            }
-        }
-        ItemKind::Skill => {
-            if let Some(dir) = native_dir(env, scope, entry.harness, ItemKind::Skill) {
-                paths.push(dir.join(&entry.name));
-            }
-            let canonical = match scope {
-                Scope::Global => env.rendered_skills_dir().join(&entry.name),
-                Scope::Project { root } => root.join(".agents/skills").join(&entry.name),
-            };
-            if !paths.contains(&canonical) {
-                paths.push(canonical);
-            }
-        }
-        _ => {}
-    }
-    paths
-}
+/// Every kind a manifest declares by name. Plugins are excluded: they carry
+/// only an enabled flag, in their own table.
+const DECLARED_KINDS: [ItemKind; 6] = [
+    ItemKind::Agent,
+    ItemKind::Skill,
+    ItemKind::Hook,
+    ItemKind::Command,
+    ItemKind::McpServer,
+    ItemKind::PiExtension,
+];
 
 fn detected_harnesses(env: &Env) -> Vec<HarnessId> {
     crate::harness::all_adapters()
@@ -141,7 +121,7 @@ pub fn add(env: &Env, scope: &Scope, request: &AddRequest) -> Result<EngineRepor
     }
 
     let mut report = plan_scope(env, scope, &manifest, &lock, &PlanOptions::default())?;
-    ensure_manifest_persisted(env, scope, &manifest, &mut report);
+    ensure_manifest_persisted(env, scope, &manifest, &mut report)?;
     Ok(report)
 }
 
@@ -319,8 +299,10 @@ pub fn remove(env: &Env, scope: &Scope, names: &[String]) -> Result<EngineReport
     let mut manifest = manifest_for_mutation(env, scope)?;
     let lock = crate::lock::load(&lock_path(env, scope))?;
     for name in names {
-        manifest.agents.remove(name);
-        manifest.skills.remove(name);
+        for kind in DECLARED_KINDS {
+            manifest.declared_mut(kind).remove(name);
+        }
+        manifest.plugins.remove(name);
         manifest.agent_skills.remove(name);
         manifest.skill_instructions.remove(name);
     }
@@ -329,7 +311,7 @@ pub fn remove(env: &Env, scope: &Scope, names: &[String]) -> Result<EngineReport
         removal_filter: Some(names.to_vec()),
     };
     let mut report = plan_scope(env, scope, &manifest, &lock, &options)?;
-    ensure_manifest_persisted(env, scope, &manifest, &mut report);
+    ensure_manifest_persisted(env, scope, &manifest, &mut report)?;
     Ok(report)
 }
 
@@ -338,14 +320,17 @@ pub fn toggle(env: &Env, scope: &Scope, names: &[String], enabled: bool) -> Resu
     let mut manifest = manifest_for_mutation(env, scope)?;
     let lock = crate::lock::load(&lock_path(env, scope))?;
     for name in names {
-        for kind in [ItemKind::Agent, ItemKind::Skill] {
+        for kind in DECLARED_KINDS {
             if let Some(decl) = manifest.declared_mut(kind).get_mut(name) {
                 decl.enabled = enabled;
             }
         }
+        if let Some(plugin) = manifest.plugins.get_mut(name) {
+            plugin.enabled = enabled;
+        }
     }
     let mut report = plan_scope(env, scope, &manifest, &lock, &PlanOptions::default())?;
-    ensure_manifest_persisted(env, scope, &manifest, &mut report);
+    ensure_manifest_persisted(env, scope, &manifest, &mut report)?;
     Ok(report)
 }
 
@@ -356,22 +341,26 @@ fn ensure_manifest_persisted(
     scope: &Scope,
     manifest: &Manifest,
     report: &mut EngineReport,
-) {
+) -> Result<()> {
     let already = report
         .plan
         .ops
         .iter()
         .any(|op| matches!(op.op, crate::apply::Op::WriteManifest { .. }));
-    if !already {
-        report.plan.ops.insert(
-            0,
-            crate::apply::PlannedOp {
-                description: "write vstack.toml".into(),
-                op: crate::apply::Op::WriteManifest {
-                    path: manifest::manifest_path(env, scope),
-                    manifest: Box::new(manifest.clone()),
-                },
-            },
-        );
+    if already {
+        return Ok(());
     }
+    let path = manifest::manifest_path(env, scope);
+    report.plan.ops.insert(
+        0,
+        crate::apply::PlannedOp {
+            description: "write vstack.toml".into(),
+            op: crate::apply::Op::WriteManifest {
+                pre: crate::apply::Pre::observed(&path)?,
+                path,
+                manifest: Box::new(manifest.clone()),
+            },
+        },
+    );
+    Ok(())
 }

@@ -71,7 +71,16 @@ pub fn run(env: &Env, args: AddArgs) -> CliResult {
         copy: args.copy,
         no_auto_skills: args.no_auto_skills,
     };
-    let report = ops::add(env, &scope, &request)?;
+    let report = match ops::add(env, &scope, &request) {
+        Err(vstack_core::error::CoreError::SourcePending { .. }) => {
+            let manifest = ops::manifest_for_mutation(env, &scope)?;
+            for warning in vstack_core::remote::sync_sources(env, &manifest)? {
+                say(&format!("warning: {warning}"));
+            }
+            ops::add(env, &scope, &request)?
+        }
+        other => other?,
+    };
     print_report(&report);
     confirm_and_execute(env, &report, args.yes)?;
     say("done");

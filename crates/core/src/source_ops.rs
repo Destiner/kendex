@@ -1,0 +1,240 @@
+use serde::Serialize;
+use specta::Type;
+
+use crate::engine::{EngineReport, PlanOptions, plan_scope};
+use crate::env::Env;
+use crate::error::{CoreError, Result};
+use crate::lock::{load as load_lock, lock_path};
+use crate::manifest::{self, Manifest, SourceDecl};
+use crate::model::Scope;
+
+/// Everything the Sources page shows for one declared source in one scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceRow {
+    pub scope: Scope,
+    pub name: String,
+    pub reference: String,
+    pub is_remote: bool,
+    pub enabled: bool,
+    /// Cache HEAD for remotes — freshness display.
+    pub head: Option<String>,
+    pub declared_items: Vec<String>,
+}
+
+fn load_current(env: &Env, scope: &Scope) -> Result<Option<Manifest>> {
+    match manifest::load(&manifest::manifest_path(env, scope))? {
+        manifest::ManifestFile::Current(m) => Ok(Some(*m)),
+        _ => Ok(None),
+    }
+}
+
+fn referents(manifest: &Manifest, source: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for (table, items) in [
+        ("agents", &manifest.agents),
+        ("skills", &manifest.skills),
+        ("hooks", &manifest.hooks),
+        ("commands", &manifest.commands),
+        ("mcp-servers", &manifest.mcp_servers),
+        ("pi-extensions", &manifest.pi_extensions),
+    ] {
+        for (name, decl) in items {
+            if decl.source == source {
+                names.push(format!("{table}.{name}"));
+            }
+        }
+    }
+    names
+}
+
+pub fn list_sources(env: &Env, scope: &Scope) -> Result<Vec<SourceRow>> {
+    let Some(manifest) = load_current(env, scope)? else {
+        return Ok(Vec::new());
+    };
+    Ok(manifest
+        .sources
+        .iter()
+        .map(|(name, decl)| SourceRow {
+            scope: scope.clone(),
+            name: name.clone(),
+            reference: decl
+                .repo
+                .clone()
+                .or_else(|| decl.path.clone())
+                .unwrap_or_default(),
+            is_remote: decl.repo.is_some(),
+            enabled: decl.enabled,
+            head: decl
+                .repo
+                .as_deref()
+                .and_then(|repo| crate::remote::cache_head(env, repo)),
+            declared_items: referents(&manifest, name),
+        })
+        .collect())
+}
+
+fn persist_and_plan(env: &Env, scope: &Scope, manifest: Manifest) -> Result<EngineReport> {
+    let lock = load_lock(&lock_path(env, scope))?;
+    let mut report = plan_scope(env, scope, &manifest, &lock, &PlanOptions::default())?;
+    let has_write = report
+        .plan
+        .ops
+        .iter()
+        .any(|op| matches!(op.op, crate::apply::Op::WriteManifest { .. }));
+    if !has_write {
+        let path = manifest::manifest_path(env, scope);
+        report.plan.ops.insert(
+            0,
+            crate::apply::PlannedOp {
+                description: "write vstack.toml".into(),
+                op: crate::apply::Op::WriteManifest {
+                    pre: crate::apply::Pre::observed(&path)?,
+                    path,
+                    manifest: Box::new(manifest),
+                },
+            },
+        );
+    }
+    Ok(report)
+}
+
+/// Declare a source. `owner/repo`-shaped references become remotes,
+/// anything else a path.
+pub fn add_source(env: &Env, scope: &Scope, name: &str, reference: &str) -> Result<EngineReport> {
+    let mut manifest = crate::engine::ops::manifest_for_mutation(env, scope)?;
+    let is_repo = reference.contains('/')
+        && !reference.starts_with('.')
+        && !reference.starts_with('/')
+        && !reference.starts_with('~')
+        && reference.matches('/').count() == 1;
+    let decl = if is_repo {
+        SourceDecl {
+            repo: Some(reference.to_owned()),
+            path: None,
+            enabled: true,
+        }
+    } else {
+        SourceDecl {
+            repo: None,
+            path: Some(reference.to_owned()),
+            enabled: true,
+        }
+    };
+    manifest.sources.insert(name.to_owned(), decl);
+    persist_and_plan(env, scope, manifest)
+}
+
+/// Removal is blocked while declarations still reference the source — the
+/// error names every referent and the fix; disable stays available.
+pub fn remove_source(env: &Env, scope: &Scope, name: &str) -> Result<EngineReport> {
+    let mut manifest = crate::engine::ops::manifest_for_mutation(env, scope)?;
+    if !manifest.sources.contains_key(name) {
+        return Err(CoreError::UnknownSource {
+            name: name.to_owned(),
+        });
+    }
+    let used_by = referents(&manifest, name);
+    if !used_by.is_empty() {
+        return Err(CoreError::ManifestInvalid {
+            path: manifest::manifest_path(env, scope),
+            findings: vec![format!(
+                "sources.{name}: still referenced by {} — fix: remove those items first, or disable the source instead",
+                used_by.join(", ")
+            )],
+        });
+    }
+    manifest.sources.remove(name);
+    persist_and_plan(env, scope, manifest)
+}
+
+/// Disabling deactivates the source's installations in place; re-enabling
+/// restores them (they stay declared throughout — not drift).
+pub fn toggle_source(env: &Env, scope: &Scope, name: &str, enabled: bool) -> Result<EngineReport> {
+    let mut manifest = crate::engine::ops::manifest_for_mutation(env, scope)?;
+    let Some(decl) = manifest.sources.get_mut(name) else {
+        return Err(CoreError::UnknownSource {
+            name: name.to_owned(),
+        });
+    };
+    decl.enabled = enabled;
+    persist_and_plan(env, scope, manifest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::env::FakeOs;
+    use std::fs;
+
+    fn fixture() -> (tempfile::TempDir, Env, Scope) {
+        let tmp = tempfile::tempdir().unwrap();
+        let env = Env::fake(tmp.path(), FakeOs::Linux);
+        let project = tmp.path().join("app");
+        let source = tmp.path().join("catalog");
+        fs::create_dir_all(project.join(".claude")).unwrap();
+        fs::create_dir_all(source.join("skills/gh")).unwrap();
+        fs::write(source.join("skills/gh/SKILL.md"), "---\nname: gh\n---\nx\n").unwrap();
+        fs::write(
+            project.join("vstack.toml"),
+            format!(
+                "schema = 1\n[sources.cat]\npath = \"{}\"\n[install]\nharnesses = [\"claude\"]\n[skills.gh]\nsource = \"cat\"\n",
+                source.display()
+            ),
+        )
+        .unwrap();
+        let scope = Scope::Project { root: project };
+        (tmp, env, scope)
+    }
+
+    #[test]
+    fn removal_is_blocked_while_referenced_then_allowed() {
+        let (_tmp, env, scope) = fixture();
+        let error = remove_source(&env, &scope, "cat").unwrap_err();
+        assert!(error.to_string().contains("skills.gh"));
+        assert!(error.to_string().contains("disable the source"));
+
+        let report = crate::engine::ops::remove(&env, &scope, &["gh".to_owned()]).unwrap();
+        crate::apply::execute(&env, &report.plan, None).unwrap();
+        let report = remove_source(&env, &scope, "cat").unwrap();
+        crate::apply::execute(&env, &report.plan, None).unwrap();
+        assert!(list_sources(&env, &scope).unwrap().is_empty());
+    }
+
+    #[test]
+    fn disable_deactivates_without_drift_and_reenable_restores() {
+        let (_tmp, env, scope) = fixture();
+        let report = crate::engine::audit(&env, &scope).unwrap();
+        crate::apply::execute(&env, &report.plan, None).unwrap();
+        let link = match &scope {
+            Scope::Project { root } => root.join(".claude/skills/gh"),
+            Scope::Global => unreachable!("fixture scope is a project"),
+        };
+        assert!(link.is_symlink());
+
+        let report = toggle_source(&env, &scope, "cat", false).unwrap();
+        crate::apply::execute(&env, &report.plan, None).unwrap();
+        // Declared but inactive: the artifact stays (nothing to render it
+        // away against), and audit reports no drift for it.
+        let after = crate::engine::audit(&env, &scope).unwrap();
+        assert!(after.notes.iter().any(|n| n.contains("disabled")));
+        assert!(!after.drift.iter().any(|r| r.name == "gh"));
+
+        let report = toggle_source(&env, &scope, "cat", true).unwrap();
+        crate::apply::execute(&env, &report.plan, None).unwrap();
+        let clean = crate::engine::audit(&env, &scope).unwrap();
+        assert_eq!(clean.drift, vec![]);
+        assert!(link.is_symlink());
+    }
+
+    #[test]
+    fn rows_show_reference_enablement_and_referents() {
+        let (_tmp, env, scope) = fixture();
+        let rows = list_sources(&env, &scope).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "cat");
+        assert!(!rows[0].is_remote);
+        assert!(rows[0].enabled);
+        assert_eq!(rows[0].declared_items, ["skills.gh"]);
+    }
+}

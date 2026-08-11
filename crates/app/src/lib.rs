@@ -1,5 +1,7 @@
 mod audit;
 mod commands;
+mod editor;
+mod sources;
 
 use tauri_specta::{Builder, collect_commands};
 
@@ -18,6 +20,14 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         audit::adopt_item,
         audit::toggle_item,
         audit::remove_item,
+        editor::get_manifest,
+        editor::update_manifest,
+        editor::editor_inventory,
+        sources::sources_overview,
+        sources::source_add,
+        sources::source_remove,
+        sources::source_toggle,
+        sources::sources_refresh,
     ])
 }
 

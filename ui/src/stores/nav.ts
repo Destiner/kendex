@@ -7,6 +7,8 @@ export type Page =
   | "harnesses"
   | "scopes"
   | "audit"
+  | "customize"
+  | "sources"
   | "settings";
 
 interface NavState {

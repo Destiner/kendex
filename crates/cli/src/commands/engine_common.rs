@@ -59,7 +59,11 @@ pub fn refresh_failures(report: &EngineReport) -> Vec<String> {
     report
         .notes
         .iter()
-        .filter(|n| n.contains("not found in source"))
+        .filter(|n| {
+            n.contains("not found in source")
+                || n.contains("missing at")
+                || n.contains("not fetched yet")
+        })
         .cloned()
         .collect()
 }

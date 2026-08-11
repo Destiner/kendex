@@ -10,6 +10,7 @@ name = "vstack_app"
 [dependencies]
 vstack-core.workspace = true
 serde.workspace = true
+toml.workspace = true
 tauri.workspace = true
 tauri-specta.workspace = true
 specta.workspace = true

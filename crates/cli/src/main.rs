@@ -83,6 +83,64 @@ impl AddFlags {
     }
 }
 
+#[derive(Args)]
+struct ReportFlags {
+    /// Report about an installed skill
+    #[arg(long)]
+    skill: Option<String>,
+    /// Report about an installed agent
+    #[arg(long)]
+    agent: Option<String>,
+    /// Report about an installed hook
+    #[arg(long)]
+    hook: Option<String>,
+    /// Any installed asset by name, kind auto-detected
+    #[arg(long)]
+    asset: Option<String>,
+    /// Issue title
+    #[arg(long)]
+    title: String,
+    /// Issue body text
+    #[arg(long)]
+    body: Option<String>,
+    /// Read the body from a file
+    #[arg(long, conflicts_with = "body")]
+    body_file: Option<std::path::PathBuf>,
+    #[arg(short = 'g', long)]
+    global: bool,
+    /// project | global (default project; all rejected)
+    #[arg(long)]
+    scope: Option<String>,
+    /// Upstream repo for vstack-owned issues
+    #[arg(long)]
+    upstream: Option<String>,
+    /// Routing label: cli | skills | harness | review-gate | docs | tech-debt
+    #[arg(long)]
+    area: Option<String>,
+    /// Print the decision and exact gh command; file nothing
+    #[arg(long)]
+    dry_run: bool,
+}
+
+impl ReportFlags {
+    fn into_args(self) -> commands::report::ReportArgs {
+        commands::report::ReportArgs {
+            skill: self.skill,
+            agent: self.agent,
+            hook: self.hook,
+            asset: self.asset,
+            title: self.title,
+            body: self.body,
+            body_file: self.body_file,
+            global: self.global,
+            scope: self.scope,
+            upstream: self.upstream,
+            area: self.area,
+            dry_run: self.dry_run,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum Command {
     /// Install agents, skills, and more from a source
@@ -171,6 +229,42 @@ enum Command {
         #[arg(long)]
         scope: Option<String>,
     },
+    /// File an issue about an installed asset, routed by ownership
+    Report(ReportFlags),
+    /// Migrate v1 manifests and locks to v2 (originals go to the trash)
+    Import {
+        #[arg(short = 'g', long)]
+        global: bool,
+        /// project | global | all (default all)
+        #[arg(long)]
+        scope: Option<String>,
+    },
+    /// Declare, toggle, and refresh sources
+    #[command(subcommand)]
+    Source(commands::source_cmd::SourceCommand),
+    /// Scaffold a new catalog item in the current directory
+    Init {
+        name: Option<String>,
+        /// agent | skill | hook
+        #[arg(long)]
+        kind: Option<String>,
+    },
+    /// Self-update from the release feed
+    Update {
+        /// Reinstall even when the version matches
+        #[arg(short = 'f', long)]
+        force: bool,
+    },
+    /// Update Pi extension packages
+    #[command(name = "update-pi")]
+    UpdatePi {
+        /// Print the plan and change nothing
+        #[arg(short = 'c', long)]
+        check: bool,
+        /// project | global | all (default all)
+        #[arg(long)]
+        scope: Option<String>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -254,6 +348,21 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::All)?;
             commands::check::run(&env, filter)?;
         }
+        Command::UpdatePi { check, scope } => {
+            let filter = ScopeFilter::resolve(scope.as_deref(), false, ScopeFilter::All)?;
+            commands::update_pi::run(&env, filter, check)?;
+        }
+        Command::Report(flags) => commands::report::run(&env, flags.into_args())?,
+        Command::Import { global, scope } => {
+            let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::All)?;
+            commands::import::run(&env, filter)?;
+        }
+        Command::Source(source_command) => {
+            let filter = ScopeFilter::resolve(None, false, ScopeFilter::Project)?;
+            commands::source_cmd::run(&env, source_command, filter)?;
+        }
+        Command::Init { name, kind } => commands::init::run(name, kind)?,
+        Command::Update { force } => commands::update::run(force)?,
     }
     Ok(ExitCode::SUCCESS)
 }

@@ -95,7 +95,8 @@ pub fn execute(env: &Env, plan: &Plan, fail_after: Option<usize>) -> Result<Appl
         // world may differ, so preconditions do the talking below.
     }
     let journal_dir = journal::journal_dir_for(&env.journal_dir(), &scope_key(&plan.scope));
-    let touched: Vec<PathBuf> = plan.ops.iter().flat_map(|p| p.op.touched()).collect();
+    let mut touched: Vec<PathBuf> = plan.ops.iter().flat_map(|p| p.op.touched()).collect();
+    touched.extend(created_dir_roots(&touched));
     journal::write(&journal_dir, &touched)?;
 
     for (index, planned) in plan.ops.iter().enumerate() {
@@ -117,6 +118,32 @@ pub fn execute(env: &Env, plan: &Plan, fail_after: Option<usize>) -> Result<Appl
         applied: plan.ops.len(),
         recovered_first,
     })
+}
+
+/// The top of every directory chain the plan's `create_dir_all` calls will
+/// bring into being. Journaled as absent, so rollback deletes the whole
+/// chain — an empty `.codex/` left behind is not cosmetic, it is what
+/// harness and project detection read as "installed here".
+fn created_dir_roots(touched: &[PathBuf]) -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for path in touched {
+        let mut topmost_missing = None;
+        let mut ancestor = path.parent();
+        while let Some(dir) = ancestor {
+            if dir.as_os_str().is_empty() || dir.exists() {
+                break;
+            }
+            topmost_missing = Some(dir.to_path_buf());
+            ancestor = dir.parent();
+        }
+        if let Some(root) = topmost_missing
+            && !touched.contains(&root)
+            && !roots.contains(&root)
+        {
+            roots.push(root);
+        }
+    }
+    roots
 }
 
 #[cfg(test)]

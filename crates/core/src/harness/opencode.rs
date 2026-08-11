@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use super::{HarnessAdapter, ProjectMarker, Reader, Surface};
 use crate::env::Env;
-use crate::model::{DetectedHarness, HarnessId, ItemKind};
+use crate::model::{DetectedHarness, HarnessId, ItemKind, Scope};
 
 pub struct Opencode;
 
@@ -27,6 +27,15 @@ fn project_config_file(project: &Path) -> PathBuf {
         jsonc
     } else {
         json
+    }
+}
+
+/// The one config file for a scope — the file the scanner reads MCP servers
+/// and plugin refs from, and the file hook instruction refs are written to.
+pub fn config_file(env: &Env, scope: &Scope) -> PathBuf {
+    match scope {
+        Scope::Global => global_config_file(&Opencode.default_global_root(env), env),
+        Scope::Project { root } => project_config_file(root),
     }
 }
 
@@ -149,6 +158,25 @@ mod tests {
                 Surface::files(PathBuf::from("/p/.opencode/commands"), &["md"]),
                 Surface::files(PathBuf::from("/p/.opencode/command"), &["md"]),
             ]
+        );
+    }
+
+    #[test]
+    fn config_file_follows_the_scope_and_the_jsonc_variant() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env = Env::fake(tmp.path(), FakeOs::Linux);
+        let project = tmp.path().join("app");
+        std::fs::create_dir_all(&project).unwrap();
+        let scope = Scope::Project {
+            root: project.clone(),
+        };
+        assert_eq!(config_file(&env, &scope), project.join("opencode.json"));
+
+        std::fs::write(project.join("opencode.jsonc"), "{}").unwrap();
+        assert_eq!(config_file(&env, &scope), project.join("opencode.jsonc"));
+        assert_eq!(
+            config_file(&env, &Scope::Global),
+            tmp.path().join(".config/opencode/opencode.json")
         );
     }
 

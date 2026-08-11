@@ -1,10 +1,12 @@
 import {
   Boxes,
   FolderTree,
+  GitBranch,
   Home,
   RefreshCw,
   Settings,
   ShieldAlert,
+  SlidersHorizontal,
   TerminalSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,6 +28,8 @@ const NAV: { page: Page; label: string; icon: typeof Home }[] = [
   { page: "harnesses", label: "Harnesses", icon: TerminalSquare },
   { page: "scopes", label: "Scopes", icon: FolderTree },
   { page: "audit", label: "Audit", icon: ShieldAlert },
+  { page: "sources", label: "Sources", icon: GitBranch },
+  { page: "customize", label: "Customize", icon: SlidersHorizontal },
   { page: "settings", label: "Settings", icon: Settings },
 ];
 

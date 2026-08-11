@@ -13,7 +13,9 @@ fn default_role_skills(role: Role) -> &'static [&'static str] {
     }
 }
 
-fn skill_match_prefix(agent_name: &str) -> &str {
+/// Reviewer agents share their base agent's skill assignment: `agent_skills`
+/// lookups fall back to this name when the full one has no entry.
+pub(crate) fn skill_match_prefix(agent_name: &str) -> &str {
     agent_name.strip_prefix("reviewer-").unwrap_or(agent_name)
 }
 

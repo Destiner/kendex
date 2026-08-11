@@ -13,6 +13,19 @@ pub fn run(env: &Env, filter: ScopeFilter, verbose: bool) -> CliResult {
     let mut failures: Vec<String> = Vec::new();
 
     for scope in resolve_scopes(env, filter)? {
+        let manifest_path = vstack_core::manifest::manifest_path(env, &scope);
+        if let Ok(vstack_core::manifest::ManifestFile::Current(manifest)) =
+            vstack_core::manifest::load(&manifest_path)
+        {
+            match vstack_core::remote::sync_sources(env, &manifest) {
+                Ok(warnings) => {
+                    for warning in warnings {
+                        say(&format!("warning: {warning}"));
+                    }
+                }
+                Err(error) => failures.push(error.to_string()),
+            }
+        }
         let report = match audit(env, &scope) {
             Ok(report) => report,
             Err(error) => {

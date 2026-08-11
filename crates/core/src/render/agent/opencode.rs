@@ -141,10 +141,15 @@ fn body(agent: &EffectiveAgent) -> String {
 }
 
 fn yaml_str(text: &str) -> String {
-    if text.contains([':', '#', '"', '\'', '\n']) {
-        return format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""));
+    let starts_safe = text
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphanumeric());
+    let body_safe = !text.contains([':', '#', '"', '\'', '\n', '\t']);
+    if starts_safe && body_safe {
+        return text.to_owned();
     }
-    text.to_owned()
+    format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 fn is_none_value(value: &str) -> bool {

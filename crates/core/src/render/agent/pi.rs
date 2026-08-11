@@ -48,24 +48,25 @@ fn model(agent: &EffectiveAgent) -> Option<String> {
         .or(agent.overrides.effort.as_deref())
         .or(agent.source.effort.as_deref())
         .filter(|effort| !is_none_value(effort));
-    match agent.overrides.model.as_deref() {
-        Some(model) if is_inherit(model) => None,
-        Some(model) => Some(with_effort(model, effort)),
-        None => match agent.source.model.to_lowercase().as_str() {
-            "opus" => None,
-            "sonnet" | "haiku" => Some(with_effort("sonnet", effort)),
-            other => Some(other.to_owned()),
-        },
+    let model = agent
+        .overrides
+        .model
+        .as_deref()
+        .unwrap_or(&agent.source.model);
+    if is_inherit(model) {
+        return None;
     }
+    with_effort(model, effort)
 }
 
-fn with_effort(model: &str, effort: Option<&str>) -> String {
+/// Tiers map to the codex model; anything else renders verbatim (original
+/// case) — both forms carry the `:effort` suffix (v1 pi.rs:96-148).
+fn with_effort(model: &str, effort: Option<&str>) -> Option<String> {
+    let suffix = effort.map(|e| format!(":{e}")).unwrap_or_default();
     match model.to_lowercase().as_str() {
-        "opus" | "sonnet" | "haiku" => {
-            let suffix = effort.map(|e| format!(":{e}")).unwrap_or_default();
-            format!("openai-codex/gpt-5.6-sol{suffix}")
-        }
-        other => other.to_owned(),
+        "opus" => None,
+        "sonnet" | "haiku" => Some(format!("openai-codex/gpt-5.6-sol{suffix}")),
+        _ => Some(format!("{model}{suffix}")),
     }
 }
 

@@ -3,10 +3,16 @@ pub mod adopt;
 pub mod apply_cmd;
 pub mod check;
 pub mod engine_common;
+pub mod import;
+pub mod init;
 pub mod list;
 pub mod project;
 pub mod refresh;
 pub mod remove;
+pub mod report;
+pub mod source_cmd;
+pub mod update;
+pub mod update_pi;
 pub mod verify;
 
 use std::io::Write;

@@ -106,6 +106,13 @@ pub struct FrontmatterOverrides {
     pub nickname_candidates: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub struct PluginDecl {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "kebab-case")]
 pub struct CustomHook {
@@ -144,6 +151,22 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub skills: BTreeMap<String, ItemDecl>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub hooks: BTreeMap<String, ItemDecl>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub commands: BTreeMap<String, ItemDecl>,
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        rename = "mcp-servers"
+    )]
+    pub mcp_servers: BTreeMap<String, ItemDecl>,
+    /// Plugins are observe + enable/disable only; the key is
+    /// `name@marketplace`, provenance lives in the lock.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub plugins: BTreeMap<String, PluginDecl>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub pi_extensions: BTreeMap<String, ItemDecl>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub agent_skills: BTreeMap<String, Vec<String>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub agent_launch_instructions: BTreeMap<String, String>,
@@ -171,7 +194,11 @@ impl Manifest {
         match kind {
             crate::model::ItemKind::Agent => &self.agents,
             crate::model::ItemKind::Skill => &self.skills,
-            _ => &EMPTY,
+            crate::model::ItemKind::Hook => &self.hooks,
+            crate::model::ItemKind::Command => &self.commands,
+            crate::model::ItemKind::McpServer => &self.mcp_servers,
+            crate::model::ItemKind::PiExtension => &self.pi_extensions,
+            crate::model::ItemKind::Plugin => &EMPTY,
         }
     }
 
@@ -182,10 +209,13 @@ impl Manifest {
         match kind {
             crate::model::ItemKind::Agent => &mut self.agents,
             crate::model::ItemKind::Skill => &mut self.skills,
-            other => unreachable!(
-                "kind {} has no declaration table until Phase 3",
-                other.name()
-            ),
+            crate::model::ItemKind::Hook => &mut self.hooks,
+            crate::model::ItemKind::Command => &mut self.commands,
+            crate::model::ItemKind::McpServer => &mut self.mcp_servers,
+            crate::model::ItemKind::PiExtension => &mut self.pi_extensions,
+            crate::model::ItemKind::Plugin => {
+                unreachable!("plugins declare through [plugins.<key>] with only an enabled flag")
+            }
         }
     }
 }

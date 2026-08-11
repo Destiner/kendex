@@ -205,8 +205,16 @@ pub fn find_item(
             .iter()
             .map(|d| root.join(d).join(format!("{name}.md")))
             .find(|p| p.is_file()),
-        _ => None,
+        ItemKind::Hook => catalog_file(root, "hooks", &format!("{name}.sh")),
+        ItemKind::Command => catalog_file(root, "commands", &format!("{name}.md")),
+        ItemKind::McpServer => catalog_file(root, "mcp", &format!("{name}.toml")),
+        ItemKind::Plugin | ItemKind::PiExtension => None,
     }
+}
+
+fn catalog_file(root: &Path, dir: &str, file: &str) -> Option<PathBuf> {
+    let path = root.join(dir).join(file);
+    path.is_file().then_some(path)
 }
 
 pub fn list_items(root: &Path, config: &SourceConfig, kind: ItemKind) -> Vec<String> {
@@ -345,6 +353,24 @@ mod tests {
             resolve(&env, &Scope::Global, "nope", &manifest),
             Err(CoreError::UnknownSource { .. })
         ));
+    }
+
+    #[test]
+    fn phase_three_kinds_live_at_fixed_catalog_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (root, config) = (tmp.path(), SourceConfig::default());
+        for (kind, rel) in [
+            (ItemKind::Hook, "hooks/guard.sh"),
+            (ItemKind::Command, "commands/ship.md"),
+            (ItemKind::McpServer, "mcp/gh.toml"),
+        ] {
+            assert_eq!(find_item(root, &config, kind, "guard"), None);
+            let path = root.join(rel);
+            std::fs::create_dir_all(root.join(rel).parent().unwrap()).unwrap();
+            std::fs::write(&path, "x").unwrap();
+            let name = path.file_stem().unwrap().to_string_lossy();
+            assert_eq!(find_item(root, &config, kind, &name), Some(path));
+        }
     }
 
     #[test]

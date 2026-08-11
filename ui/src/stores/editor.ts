@@ -1,0 +1,98 @@
+import { create } from "zustand";
+import { commands, type EditorInventory, type Scope } from "@/bindings";
+import { type Draft, emptyDraft, toDraft } from "@/lib/editor-draft";
+import { useAuditStore } from "./audit";
+import { useScanStore } from "./scan";
+
+interface EditorState {
+  /** The single scope being edited — deliberately not the sidebar filter. */
+  scope: Scope;
+  draft: Draft | null;
+  inventory: EditorInventory | null;
+  /** No manifest at this scope yet; the page offers to create one. */
+  absent: boolean;
+  dirty: boolean;
+  loading: boolean;
+  saving: boolean;
+  error: string | null;
+  setScope: (scope: Scope) => Promise<void>;
+  load: () => Promise<void>;
+  edit: (change: (draft: Draft) => Draft) => void;
+  save: () => Promise<void>;
+  create: () => Promise<void>;
+}
+
+export const useEditorStore = create<EditorState>((set, get) => {
+  const load = async () => {
+    const { scope } = get();
+    set({ loading: true });
+    const [manifest, inventory] = await Promise.all([
+      commands.getManifest(scope),
+      commands.editorInventory(scope),
+    ]);
+    if (manifest.status === "error") {
+      set({
+        loading: false,
+        draft: null,
+        absent: false,
+        dirty: false,
+        error: manifest.error,
+      });
+      return;
+    }
+    set({
+      loading: false,
+      draft: manifest.data ? toDraft(manifest.data) : null,
+      absent: manifest.data === null,
+      inventory: inventory.status === "ok" ? inventory.data : get().inventory,
+      dirty: false,
+      error: inventory.status === "ok" ? null : inventory.error,
+    });
+  };
+
+  const write = async (draft: Draft) => {
+    const { scope } = get();
+    set({ saving: true });
+    const response = await commands.updateManifest(scope, draft);
+    if (response.status === "error") {
+      set({ saving: false, error: response.error });
+      return;
+    }
+    set({ saving: false, error: null });
+    await load();
+    await useAuditStore.getState().refresh();
+    await useScanStore.getState().refresh();
+  };
+
+  return {
+    scope: { scope: "global" },
+    draft: null,
+    inventory: null,
+    absent: false,
+    dirty: false,
+    loading: false,
+    saving: false,
+    error: null,
+
+    setScope: async (scope) => {
+      set({ scope, draft: null, dirty: false, error: null });
+      await load();
+    },
+
+    load,
+
+    edit: (change) => {
+      const { draft } = get();
+      if (!draft) return;
+      set({ draft: change(draft), dirty: true });
+    },
+
+    save: async () => {
+      const { draft } = get();
+      if (!draft) return;
+      await write(draft);
+    },
+
+    create: () => write(emptyDraft()),
+  };
+});
