@@ -88,7 +88,7 @@ pub fn update_manifest(scope: Scope, manifest: Manifest) -> Result<AuditView, St
         report.plan.ops.insert(
             0,
             PlannedOp {
-                description: "write vstack.toml".into(),
+                description: "Save vstack.toml".into(),
                 op: Op::WriteManifest {
                     pre: Pre::observed(&path).map_err(|e| e.to_string())?,
                     path: path.clone(),

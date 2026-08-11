@@ -1,0 +1,98 @@
+# Release: build the CLI and the desktop app on a native runner per
+# target, then publish a GitHub Release carrying every artifact plus the
+# feed.json that `vstack update` consumes.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            cli-source: target/release/vstack
+          - os: macos-14
+            target: aarch64-apple-darwin
+            cli-source: target/release/vstack
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            cli-source: target/release/vstack.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Linux webview dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf libxdo-dev
+        shell: bash
+      - run: npm ci --prefix ui
+        shell: bash
+      - run: cargo build --release -p vstack-cli
+        shell: bash
+      - name: Bundle the desktop app
+        run: cd crates/app && ../../ui/node_modules/.bin/tauri build
+        shell: bash
+        env:
+          # User-supplied gates: unset keys skip updater-artifact signing.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Stage release assets
+        run: |
+          mkdir -p dist
+          ext=""
+          [ "${{ runner.os }}" = "Windows" ] && ext=".exe"
+          cp "${{ matrix.cli-source }}" "dist/vstack-${{ matrix.target }}${ext}"
+          find target/release/bundle -type f \
+            \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
+               -o -name '*.dmg' -o -name '*.app.tar.gz' \
+               -o -name '*-setup.exe' -o -name '*.msi' \) \
+            -exec cp {} dist/ \;
+          ls -l dist
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assets-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Write the update feed
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          cat > dist/feed.json << EOF
+          {
+            "version": "${version}",
+            "assets": {
+              "x86_64-unknown-linux-gnu": "${base}/vstack-x86_64-unknown-linux-gnu",
+              "aarch64-apple-darwin": "${base}/vstack-aarch64-apple-darwin",
+              "x86_64-pc-windows-msvc": "${base}/vstack-x86_64-pc-windows-msvc.exe"
+            }
+          }
+          EOF
+          cat dist/feed.json
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          draft: true
