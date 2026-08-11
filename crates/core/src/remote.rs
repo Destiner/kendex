@@ -5,12 +5,15 @@ use crate::env::Env;
 use crate::error::{CoreError, Result};
 use crate::manifest::Manifest;
 
-/// `owner/repo` → clone URL. Full URLs pass through untouched.
-pub fn clone_url(repo: &str) -> String {
+/// `owner/repo` → clone URL. Full URLs pass through untouched;
+/// `VSTACK_GIT_BASE` rebases shorthands onto another host (test fixtures).
+pub fn clone_url(env: &Env, repo: &str) -> String {
     if repo.contains("://") || repo.starts_with("git@") {
-        repo.to_owned()
-    } else {
-        format!("https://github.com/{repo}.git")
+        return repo.to_owned();
+    }
+    match env.var("VSTACK_GIT_BASE") {
+        Some(base) => format!("{}/{repo}", base.trim_end_matches('/')),
+        None => format!("https://github.com/{repo}.git"),
     }
 }
 
@@ -76,7 +79,7 @@ pub fn sync_sources(env: &Env, manifest: &Manifest) -> Result<Vec<String>> {
         let Some(repo) = &decl.repo else {
             continue;
         };
-        match sync(env, repo, &clone_url(repo)) {
+        match sync(env, repo, &clone_url(env, repo)) {
             Ok((_, Some(warning))) => warnings.push(warning),
             Ok((_, None)) => {}
             Err(error) => {
@@ -214,11 +217,16 @@ mod tests {
 
     #[test]
     fn shorthand_becomes_a_github_url_and_urls_pass_through() {
-        assert_eq!(clone_url("a/b"), "https://github.com/a/b.git");
-        assert_eq!(clone_url("https://x/y.git"), "https://x/y.git");
+        let tmp = tempfile::tempdir().unwrap();
+        let env = Env::fake(tmp.path(), FakeOs::Linux);
+        assert_eq!(clone_url(&env, "a/b"), "https://github.com/a/b.git");
+        assert_eq!(clone_url(&env, "https://x/y.git"), "https://x/y.git");
         assert_eq!(
-            clone_url("git@github.com:a/b.git"),
+            clone_url(&env, "git@github.com:a/b.git"),
             "git@github.com:a/b.git"
         );
+        let rebased = env.with_var("VSTACK_GIT_BASE", "file:///fixtures/");
+        assert_eq!(clone_url(&rebased, "a/b"), "file:///fixtures/a/b");
+        assert_eq!(clone_url(&rebased, "https://x/y.git"), "https://x/y.git");
     }
 }

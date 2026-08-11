@@ -4,11 +4,14 @@ use std::path::{Path, PathBuf};
 use crate::error::{CoreError, Result};
 
 /// Process env vars that relocate harness roots.
-const HARNESS_VARS: [&str; 4] = [
+const HARNESS_VARS: [&str; 5] = [
     "CODEX_HOME",
     "OPENCODE_CONFIG",
     "OPENCODE_CONFIG_DIR",
     "PI_CODING_AGENT_DIR",
+    // Rebases `owner/repo` source shorthands onto another git host —
+    // release smokes and tests point it at a file:// fixture tree.
+    "VSTACK_GIT_BASE",
 ];
 
 /// Every filesystem root the app reads or writes flows through here so tests

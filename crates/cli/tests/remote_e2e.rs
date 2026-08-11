@@ -1,0 +1,114 @@
+//! Phase 5 end to end: a fresh consuming repo installs from the DEFAULT
+//! remote catalog, customizes it, and refreshes clean — the GitHub host
+//! swapped for a local file:// git fixture via VSTACK_GIT_BASE.
+#![cfg(unix)]
+
+use std::fs;
+use std::path::Path;
+use std::process::{Command, Output};
+
+#[allow(clippy::expect_used)]
+fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_vstack"))
+        .args(args)
+        .current_dir(cwd)
+        .env_clear()
+        .env("HOME", home)
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("VSTACK_GIT_BASE", format!("file://{}/git", home.display()))
+        .output()
+        .expect("vstack binary runs")
+}
+
+#[allow(clippy::unwrap_used)]
+fn git(dir: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git {args:?} failed");
+}
+
+/// The default catalog, served as a real git repo under the rebased host
+/// path `git/vanillagreencom/vstack`.
+#[allow(clippy::unwrap_used)]
+fn fixture() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let upstream = home.join("git/vanillagreencom/vstack");
+    fs::create_dir_all(upstream.join("skills/gh")).unwrap();
+    fs::write(
+        upstream.join("skills/gh/SKILL.md"),
+        "---\nname: gh\ndescription: github flows\n---\nUpstream v1.\n",
+    )
+    .unwrap();
+    git(&upstream, &["init", "--quiet", "-b", "main"]);
+    git(&upstream, &["add", "."]);
+    git(&upstream, &["commit", "--quiet", "-m", "one"]);
+
+    // Claude is detected globally and marks the project.
+    fs::create_dir_all(home.join(".claude")).unwrap();
+    fs::create_dir_all(home.join("proj/.claude")).unwrap();
+    tmp
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn consuming_repo_installs_customizes_and_refreshes_from_the_default_catalog() {
+    let tmp = fixture();
+    let home = tmp.path();
+    let proj = home.join("proj");
+
+    // Install with NO source argument: the seeded default source resolves
+    // remotely, is fetched into the cache, and the skill lands.
+    let output = vstack(home, &proj, &["add", "--skill", "gh", "-y"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let manifest = fs::read_to_string(proj.join("vstack.toml")).unwrap();
+    assert!(manifest.contains("[sources.vstack]"), "{manifest}");
+    assert!(manifest.contains("vanillagreencom/vstack"), "{manifest}");
+    let rendered = proj.join(".agents/skills/gh/SKILL.md");
+    assert!(
+        fs::read_to_string(&rendered)
+            .unwrap()
+            .contains("Upstream v1"),
+    );
+    assert!(proj.join(".claude/skills/gh").is_symlink());
+    assert!(
+        home.join(".cache/vstack2/sources/vanillagreencom_vstack/.git")
+            .is_dir()
+    );
+    assert!(vstack(home, &proj, &["verify"]).status.success());
+
+    // Customize: a project skill instruction re-renders into the skill.
+    let manifest = format!("{manifest}\n[skill-instructions]\ngh = \"Team note.\"\n");
+    fs::write(proj.join("vstack.toml"), manifest).unwrap();
+    let output = vstack(home, &proj, &["refresh"]);
+    assert!(output.status.success());
+    assert!(
+        fs::read_to_string(&rendered)
+            .unwrap()
+            .contains("Team note."),
+    );
+    assert!(vstack(home, &proj, &["verify"]).status.success());
+
+    // Upstream moves; refresh re-syncs the cache and regenerates.
+    let upstream = home.join("git/vanillagreencom/vstack");
+    fs::write(
+        upstream.join("skills/gh/SKILL.md"),
+        "---\nname: gh\ndescription: github flows\n---\nUpstream v2.\n",
+    )
+    .unwrap();
+    git(&upstream, &["commit", "--quiet", "-am", "two"]);
+    let output = vstack(home, &proj, &["refresh"]);
+    assert!(output.status.success());
+    let text = fs::read_to_string(&rendered).unwrap();
+    assert!(text.contains("Upstream v2"), "{text}");
+    assert!(text.contains("Team note."), "{text}");
+    assert!(vstack(home, &proj, &["verify"]).status.success());
+}
