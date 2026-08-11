@@ -18,10 +18,12 @@ use crate::error::{CoreError, Result};
 use crate::fs::{atomic_write, read_if_exists};
 
 mod files;
+mod renames;
 mod settings;
 
 pub use files::package_hash;
 use files::{copy_package, inside, package_path, read_dir, trash};
+pub use renames::{duplicate_elsewhere, legacy_names};
 pub use settings::list_npm_entries;
 
 const NPM_INSTALL_ARGS: &[&str] = &[

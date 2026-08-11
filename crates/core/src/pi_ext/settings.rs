@@ -128,6 +128,16 @@ fn bare_npm_name(spec: &str) -> Option<String> {
     (!bare.is_empty()).then_some(bare)
 }
 
+/// Whether any `packages` entry refers to this package, in any of the forms
+/// `refers_to` recognizes.
+pub(super) fn references_package(path: &Path, name: &str) -> Result<bool> {
+    let settings = read(path)?;
+    Ok(settings
+        .get("packages")
+        .and_then(Value::as_array)
+        .is_some_and(|entries| entries.iter().any(|entry| refers_to(entry, name))))
+}
+
 /// The npm-sourced packages Pi loads in this scope — vstack does not own
 /// these, `update-pi` only reports their versions.
 pub fn list_npm_entries(scope_root: &Path) -> Result<Vec<String>> {

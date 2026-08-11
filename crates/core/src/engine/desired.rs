@@ -65,6 +65,9 @@ pub struct DesiredState {
     /// Manifest with upstream skill additions merged in — present only when
     /// the merge changed something and must be written back.
     pub manifest_update: Option<Manifest>,
+    /// `[env]` defaults shipped by enabled skills
+    /// (vstack.settings.toml.example), first declaration wins per key.
+    pub settings_env: Vec<crate::settings_seed::EnvEntry>,
 }
 
 impl DesiredState {
@@ -258,6 +261,16 @@ pub(super) struct ItemCtx<'a> {
 fn desired_skill(ctx: &ItemCtx, state: &mut DesiredState) -> Result<()> {
     let enabled = ctx.decl.enabled;
     let method = ctx.decl.method.unwrap_or(ctx.manifest.install.method);
+    if enabled && matches!(ctx.scope, Scope::Project { .. }) {
+        let template = ctx.item_path.join(crate::settings_seed::SETTINGS_TEMPLATE);
+        if let Some(text) = crate::fs::read_if_exists(&template)? {
+            for entry in crate::settings_seed::extract_env_entries(&text) {
+                if !state.settings_env.iter().any(|e| e.key == entry.key) {
+                    state.settings_env.push(entry);
+                }
+            }
+        }
+    }
     let mut files = render_skill(ctx.item_path, ctx.manifest, ctx.name)?;
     if !enabled {
         for (rel, _) in &mut files {

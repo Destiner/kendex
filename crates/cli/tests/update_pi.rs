@@ -106,6 +106,87 @@ fn update_reinstalls_from_the_declared_source() {
 }
 
 #[test]
+#[allow(clippy::unwrap_used)]
+fn a_declared_package_not_yet_installed_installs_fresh() {
+    let tmp = fixture();
+    let project = tmp.path().join("dev/app");
+    fs::remove_dir_all(project.join(".pi/packages/pi-widgets")).unwrap();
+    fs::write(project.join(".pi/settings.json"), "{}\n").unwrap();
+
+    let check = vstack(tmp.path(), &project, &["update-pi", "--check"]);
+    assert!(check.status.success());
+    let plan = String::from_utf8_lossy(&check.stdout);
+    assert!(plan.contains("not installed yet"), "{plan}");
+
+    let output = vstack(tmp.path(), &project, &["update-pi"]);
+    assert!(output.status.success());
+    let progress = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        progress.contains("installed pi-widgets -> 2.0.0"),
+        "{progress}"
+    );
+    assert!(
+        project
+            .join(".pi/packages/pi-widgets/package.json")
+            .is_file()
+    );
+    let settings = fs::read_to_string(project.join(".pi/settings.json")).unwrap();
+    assert!(settings.contains("./packages/pi-widgets"), "{settings}");
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_package_installed_at_the_other_scope_blocks_the_install() {
+    let tmp = fixture();
+    let project = tmp.path().join("dev/app");
+    fs::remove_dir_all(project.join(".pi/packages/pi-widgets")).unwrap();
+    fs::write(project.join(".pi/settings.json"), "{}\n").unwrap();
+    // The same package already lives at the global scope: Pi would load
+    // both copies and crash at startup.
+    write(
+        &tmp.path()
+            .join(".pi/agent/packages/pi-widgets/package.json"),
+        "{\"name\": \"pi-widgets\", \"version\": \"1.0.0\"}\n",
+    );
+
+    let output = vstack(tmp.path(), &project, &["update-pi"]);
+    assert!(output.status.success());
+    let plan = String::from_utf8_lossy(&output.stdout);
+    assert!(plan.contains("blocked"), "{plan}");
+    assert!(plan.contains("register twice"), "{plan}");
+    assert!(!project.join(".pi/packages/pi-widgets").exists());
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_legacy_named_package_at_the_other_scope_blocks_the_scoped_name() {
+    let tmp = tempfile::tempdir().unwrap();
+    let project = tmp.path().join("dev/app");
+    write(
+        &project.join("vstack.toml"),
+        "schema = 1\n\n[sources.cat]\npath = \"catalog\"\n\n[pi-extensions.\"@vanillagreen/pi-hooks\"]\nsource = \"cat\"\n",
+    );
+    write(
+        &project.join("catalog/pi-extensions/@vanillagreen/pi-hooks/package.json"),
+        "{\"name\": \"@vanillagreen/pi-hooks\", \"version\": \"1.0.0\"}\n",
+    );
+    fs::create_dir_all(project.join(".pi")).unwrap();
+    // The pre-1.0.0 unscoped name still sits at the global scope; it
+    // registers the same resources as the scoped package.
+    write(
+        &tmp.path().join(".pi/agent/packages/pi-hooks/package.json"),
+        "{\"name\": \"pi-hooks\", \"version\": \"0.9.0\"}\n",
+    );
+
+    let output = vstack(tmp.path(), &project, &["update-pi"]);
+    assert!(output.status.success());
+    let plan = String::from_utf8_lossy(&output.stdout);
+    assert!(plan.contains("blocked"), "{plan}");
+    assert!(plan.contains("pi-hooks is installed at"), "{plan}");
+    assert!(!project.join(".pi/packages/@vanillagreen").exists());
+}
+
+#[test]
 fn a_package_no_source_declares_is_reported_not_updated() {
     let tmp = fixture();
     let project = tmp.path().join("dev/app");

@@ -108,6 +108,8 @@ pub fn plan_scope(
         )?;
     }
 
+    plan_settings_seed(scope, &state, &mut ops, &mut drift)?;
+
     orphans(
         env,
         scope,
@@ -142,6 +144,53 @@ pub fn plan_scope(
     };
     unmanaged_rows(env, scope, manifest, lock, &state.items, &mut report.drift);
     Ok(report)
+}
+
+/// Skills may ship `[env]` defaults; missing keys merge into the project's
+/// vstack.settings.toml write-if-absent (v1 semantics — a key the user set
+/// anywhere in the file is never touched).
+fn plan_settings_seed(
+    scope: &Scope,
+    state: &desired::DesiredState,
+    ops: &mut Vec<PlannedOp>,
+    drift: &mut Vec<DriftRow>,
+) -> Result<()> {
+    let Scope::Project { root } = scope else {
+        return Ok(());
+    };
+    if state.settings_env.is_empty() {
+        return Ok(());
+    }
+    let path = root.join(crate::settings_seed::SETTINGS_FILE);
+    if path.is_symlink() || (path.exists() && !path.is_file()) {
+        drift.push(DriftRow {
+            kind: ItemKind::Skill,
+            name: crate::settings_seed::SETTINGS_FILE.into(),
+            harness: HarnessId::Claude,
+            scope: scope.clone(),
+            state: DriftState::Conflict,
+            detail: format!("{} is not a regular file", path.display()),
+        });
+        return Ok(());
+    }
+    let current = crate::fs::read_if_exists(&path)?;
+    let Some((text, added)) = crate::settings_seed::merge(current.as_deref(), &state.settings_env)
+    else {
+        return Ok(());
+    };
+    ops.push(PlannedOp {
+        description: format!(
+            "seed {} ({})",
+            crate::settings_seed::SETTINGS_FILE,
+            added.join(", ")
+        ),
+        op: Op::WriteFile {
+            pre: crate::apply::Pre::observed(&path)?,
+            path,
+            bytes: text.into_bytes(),
+        },
+    });
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -1,6 +1,7 @@
 mod audit;
 mod commands;
 mod editor;
+pub mod recovery;
 mod sources;
 
 use tauri_specta::{Builder, collect_commands};
@@ -32,6 +33,18 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
 }
 
 pub fn run() -> tauri::Result<()> {
+    use std::io::Write;
+    let mut stderr = std::io::stderr();
+    match vstack_core::env::Env::detect() {
+        Ok(env) => {
+            for message in recovery::recover_on_launch(&env) {
+                let _ = writeln!(stderr, "recovery: {message}");
+            }
+        }
+        Err(error) => {
+            let _ = writeln!(stderr, "recovery skipped: {error}");
+        }
+    }
     let builder = specta_builder();
     tauri::Builder::default()
         .invoke_handler(builder.invoke_handler())

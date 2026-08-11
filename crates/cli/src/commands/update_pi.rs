@@ -12,12 +12,21 @@ use vstack_core::{manifest, pi_ext, settings, source};
 use super::{CliResult, out, resolve_scopes, say};
 use crate::scope::ScopeFilter;
 
-/// What update-pi found for one installed package.
+/// What update-pi found for one declared or installed package.
 enum Status {
     Current,
     /// The declared source ships different bytes than the installed copy.
     Stale {
         source_dir: PathBuf,
+    },
+    /// Declared but not installed in this scope yet.
+    Missing {
+        source_dir: PathBuf,
+    },
+    /// Pi loads both scopes together, so the same (or legacy-renamed)
+    /// package at the other scope would register twice and crash Pi.
+    Blocked {
+        reason: String,
     },
     /// Installed under `packages/`, but no declared source ships it.
     Unsourced,
@@ -44,18 +53,27 @@ struct ScopePlan {
 /// Compare every installed Pi package against the source it came from and
 /// reinstall the ones that fell behind.
 pub fn run(env: &Env, filter: ScopeFilter, check: bool) -> CliResult {
-    let roots = settings::load(env)?.harness_roots;
+    let settings = settings::load(env)?;
+    let global_root = settings
+        .harness_roots
+        .get(Pi.id().name())
+        .cloned()
+        .unwrap_or_else(|| Pi.default_global_root(env));
     let mut plans = Vec::new();
     for scope in resolve_scopes(env, filter)? {
         let root = match &scope {
-            Scope::Global => roots
-                .get(Pi.id().name())
-                .cloned()
-                .unwrap_or_else(|| Pi.default_global_root(env)),
+            Scope::Global => global_root.clone(),
             Scope::Project { root } => root.join(".pi"),
         };
-        if root.is_dir() {
-            plans.push(plan_scope(env, &scope, root)?);
+        // Pi loads the other scope's packages alongside this one's, so an
+        // install here must be checked against every root Pi could pair
+        // this scope with.
+        let other_roots: Vec<PathBuf> = match &scope {
+            Scope::Global => settings.projects.iter().map(|p| p.join(".pi")).collect(),
+            Scope::Project { .. } => vec![global_root.clone()],
+        };
+        if root.is_dir() || scope_declares_extensions(env, &scope) {
+            plans.push(plan_scope(env, &scope, root, &other_roots)?);
         }
     }
 
@@ -68,10 +86,10 @@ pub fn run(env: &Env, filter: ScopeFilter, check: bool) -> CliResult {
     }
 
     if check {
-        let stale = plans.iter().flat_map(|p| &p.rows).filter(is_stale).count();
-        if stale > 0 {
+        let pending = plans.iter().flat_map(|p| &p.rows).filter(updatable).count();
+        if pending > 0 {
             say(&format!(
-                "{stale} package(s) can be updated — run without --check to apply"
+                "{pending} package(s) can be updated — run without --check to apply"
             ));
         }
         return Ok(());
@@ -79,38 +97,76 @@ pub fn run(env: &Env, filter: ScopeFilter, check: bool) -> CliResult {
     update(env, &plans)
 }
 
-fn is_stale(row: &&Row) -> bool {
-    matches!(row.status, Status::Stale { .. })
+fn updatable(row: &&Row) -> bool {
+    matches!(row.status, Status::Stale { .. } | Status::Missing { .. })
+}
+
+fn scope_declares_extensions(env: &Env, scope: &Scope) -> bool {
+    matches!(
+        manifest::load(&manifest::manifest_path(env, scope)),
+        Ok(ManifestFile::Current(manifest)) if !manifest.pi_extensions.is_empty()
+    )
 }
 
 fn plan_scope(
     env: &Env,
     scope: &Scope,
     root: PathBuf,
+    other_roots: &[PathBuf],
 ) -> Result<ScopePlan, Box<dyn std::error::Error>> {
     let mut notes = Vec::new();
     let sources = declared_sources(env, scope, &mut notes);
     let mut rows = Vec::new();
 
-    for name in pi_ext::list_installed(&root)? {
-        let status = match sources.get(&name) {
+    let guard = |name: &str, status: Status| match pi_ext::duplicate_elsewhere(name, other_roots) {
+        Some((conflict, at)) => Status::Blocked {
+            reason: format!(
+                "blocked: {conflict} is installed at {} and would register twice — remove it there first",
+                at.display()
+            ),
+        },
+        None => status,
+    };
+
+    let installed_names = pi_ext::list_installed(&root)?;
+    for name in &installed_names {
+        let status = match sources.get(name) {
             None => Status::Unsourced,
             Some(source_dir) => {
-                let installed = pi_ext::installed_hash(&root, &name)?;
+                let installed = pi_ext::installed_hash(&root, name)?;
                 if installed.is_some() && installed == pi_ext::package_hash(source_dir)? {
                     Status::Current
                 } else {
-                    Status::Stale {
-                        source_dir: source_dir.clone(),
-                    }
+                    guard(
+                        name,
+                        Status::Stale {
+                            source_dir: source_dir.clone(),
+                        },
+                    )
                 }
             }
         };
-        let version = installed_version(&root, &name);
+        let version = installed_version(&root, name);
         rows.push(Row {
-            name,
+            name: name.clone(),
             version,
             status,
+        });
+    }
+
+    for (name, source_dir) in &sources {
+        if installed_names.contains(name) {
+            continue;
+        }
+        rows.push(Row {
+            name: name.clone(),
+            version: None,
+            status: guard(
+                name,
+                Status::Missing {
+                    source_dir: source_dir.clone(),
+                },
+            ),
         });
     }
 
@@ -241,6 +297,8 @@ fn describe(row: &Row) -> String {
     match &row.status {
         Status::Current => "up to date".to_owned(),
         Status::Stale { .. } => "stale (source changed)".to_owned(),
+        Status::Missing { .. } => "not installed yet".to_owned(),
+        Status::Blocked { reason } => reason.clone(),
         Status::Unsourced => "no declared source".to_owned(),
         Status::Npm { latest } => match latest {
             None => "npm, latest unknown".to_owned(),
@@ -260,14 +318,16 @@ fn update(env: &Env, plans: &[ScopePlan]) -> CliResult {
     let mut failures: Vec<String> = Vec::new();
     for plan in plans {
         for row in &plan.rows {
-            let Status::Stale { source_dir } = &row.status else {
-                continue;
+            let (source_dir, verb) = match &row.status {
+                Status::Stale { source_dir } => (source_dir, "updated"),
+                Status::Missing { source_dir } => (source_dir, "installed"),
+                _ => continue,
             };
             match pi_ext::install(env, &plan.root, source_dir) {
                 Ok(outcome) => {
                     updated += 1;
                     out(&format!(
-                        "  updated {} -> {}",
+                        "  {verb} {} -> {}",
                         row.name,
                         outcome.version.as_deref().unwrap_or("?")
                     ));

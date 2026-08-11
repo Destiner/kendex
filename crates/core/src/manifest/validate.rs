@@ -151,7 +151,13 @@ fn validate_items(table: &Table, findings: &mut Vec<Finding>) {
         };
         for (name, decl) in items {
             let location = format!("{kind_table}.{name}");
-            if name.contains('/') || name.starts_with('-') {
+            // Pi extensions are npm packages, where `@scope/name` is a
+            // legitimate shape; everything else keeps flat names.
+            let scoped_ok = kind_table == "pi-extensions"
+                && name.starts_with('@')
+                && name.matches('/').count() == 1
+                && !name.ends_with('/');
+            if (name.contains('/') && !scoped_ok) || name.starts_with('-') {
                 findings.push(Finding {
                     location: location.clone(),
                     problem: "item names must not contain '/' or start with '-'".into(),

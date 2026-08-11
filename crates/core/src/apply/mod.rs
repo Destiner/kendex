@@ -69,6 +69,13 @@ fn lock_scope(env: &Env, scope: &Scope) -> Result<ScopeGuard> {
 /// Roll back an interrupted apply, if one left a journal. Returns whether
 /// recovery ran. Called under the scope lock on every apply, and at app
 /// launch for every known scope.
+/// Recovery under the scope lock, for callers outside an apply (launch
+/// passes). A busy scope has a live writer that will recover it itself.
+pub fn recover_locked(env: &Env, scope: &Scope) -> Result<bool> {
+    let _guard = lock_scope(env, scope)?;
+    recover(env, scope)
+}
+
 pub fn recover(env: &Env, scope: &Scope) -> Result<bool> {
     let dir = journal::journal_dir_for(&env.journal_dir(), &scope_key(scope));
     if journal::pending(&dir) {
