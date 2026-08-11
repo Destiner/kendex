@@ -86,3 +86,62 @@ pub fn capability_table() -> Vec<CapabilityRow> {
     }
     rows
 }
+
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportRouteView {
+    pub vstack_owned: bool,
+    pub repo: Option<String>,
+    pub label: Option<String>,
+    /// Prefilled new-issue page — only when the report belongs upstream.
+    pub issue_url: Option<String>,
+}
+
+fn urlencode(text: &str) -> String {
+    text.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                char::from(b).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+/// Where a problem report about this item belongs: the vstack upstream
+/// (with a prefilled issue link) or the user's own repo.
+#[tauri::command]
+#[specta::specta]
+pub fn report_route(
+    scope: vstack_core::model::Scope,
+    name: String,
+    kind: Option<ItemKind>,
+) -> Result<ReportRouteView, String> {
+    let env = env()?;
+    let lock = vstack_core::lock::load(&vstack_core::lock::lock_path(&env, &scope))
+        .map_err(|e| e.to_string())?;
+    let route = vstack_core::report::route(
+        &env,
+        &scope,
+        &lock,
+        &name,
+        kind,
+        vstack_core::report::DEFAULT_UPSTREAM,
+    );
+    let issue_url = route.repo.as_ref().map(|repo| {
+        let mut url = format!(
+            "https://github.com/{repo}/issues/new?title={}",
+            urlencode(&format!("{name}: "))
+        );
+        if let Some(label) = &route.label {
+            url.push_str(&format!("&labels={label}"));
+        }
+        url
+    });
+    Ok(ReportRouteView {
+        vstack_owned: route.vstack_owned,
+        repo: route.repo,
+        label: route.label,
+        issue_url,
+    })
+}

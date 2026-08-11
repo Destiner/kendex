@@ -17,6 +17,11 @@ export const commands = {
 	 *  this, never on its own assumptions.
 	 */
 	capabilityTable: () => __TAURI_INVOKE<CapabilityRow[]>("capability_table"),
+	/**
+	 *  Where a problem report about this item belongs: the vstack upstream
+	 *  (with a prefilled issue link) or the user's own repo.
+	 */
+	reportRoute: (scope: Scope, name: string, kind: "agent" | "skill" | "hook" | "command" | "mcp-server" | "plugin" | "pi-extension" | null) => typedError<ReportRouteView, string>(__TAURI_INVOKE("report_route", { scope, name, kind })),
 	auditAll: () => typedError<AuditView[], string>(__TAURI_INVOKE("audit_all")),
 	applyPlan: (scope: Scope, removeOrphans: boolean) => typedError<AuditView, string>(__TAURI_INVOKE("apply_plan", { scope, removeOrphans })),
 	adoptItem: (scope: Scope, kind: ItemKind, name: string, harness: HarnessId) => typedError<AuditView, string>(__TAURI_INVOKE("adopt_item", { scope, kind, name, harness })),
@@ -320,6 +325,14 @@ export type OpSupport = {
 
 export type PluginDecl = {
 	enabled?: boolean,
+};
+
+export type ReportRouteView = {
+	vstackOwned: boolean,
+	repo: string | null,
+	label: string | null,
+	/**  Prefilled new-issue page — only when the report belongs upstream. */
+	issueUrl: string | null,
 };
 
 export type ScanResult = {

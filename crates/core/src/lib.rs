@@ -16,6 +16,7 @@ pub mod model;
 pub mod pi_ext;
 pub mod remote;
 pub mod render;
+pub mod report;
 pub mod scan;
 pub mod settings;
 pub mod settings_seed;

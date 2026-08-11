@@ -2,13 +2,12 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use vstack_core::env::Env;
-use vstack_core::lock::{Lock, load as load_lock, lock_path};
-use vstack_core::model::{ItemKind, Scope};
+use vstack_core::lock::{load as load_lock, lock_path};
+use vstack_core::model::ItemKind;
+use vstack_core::report::DEFAULT_UPSTREAM;
 
 use super::{CliResult, out, resolve_scopes, say};
 use crate::scope::ScopeFilter;
-
-pub const DEFAULT_UPSTREAM: &str = "vanillagreencom/vstack";
 
 pub struct ReportArgs {
     pub skill: Option<String>,
@@ -25,109 +24,26 @@ pub struct ReportArgs {
     pub dry_run: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Area {
-    Cli,
-    Skills,
-    Harness,
-    ReviewGate,
-    Docs,
-    TechDebt,
-}
-
-impl Area {
-    fn label(self) -> &'static str {
-        match self {
-            Area::Cli => "cli",
-            Area::Skills => "skills",
-            Area::Harness => "harness",
-            Area::ReviewGate => "ci-infra",
-            Area::Docs => "docs",
-            Area::TechDebt => "chore",
-        }
+/// `--area` names accepted on the CLI, mapped to routing labels.
+fn parse_area(raw: &str) -> Result<&'static str, String> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "cli" => Ok("cli"),
+        "skills" => Ok("skills"),
+        "harness" => Ok("harness"),
+        "review-gate" | "ci-infra" => Ok("ci-infra"),
+        "docs" => Ok("docs"),
+        "tech-debt" | "chore" => Ok("chore"),
+        other => Err(format!(
+            "unknown --area '{other}'; expected one of: cli, skills, harness, review-gate, docs, tech-debt"
+        )),
     }
-
-    fn parse(raw: &str) -> Result<Self, String> {
-        match raw.trim().to_ascii_lowercase().as_str() {
-            "cli" => Ok(Area::Cli),
-            "skills" => Ok(Area::Skills),
-            "harness" => Ok(Area::Harness),
-            "review-gate" | "ci-infra" => Ok(Area::ReviewGate),
-            "docs" => Ok(Area::Docs),
-            "tech-debt" | "chore" => Ok(Area::TechDebt),
-            other => Err(format!(
-                "unknown --area '{other}'; expected one of: cli, skills, harness, review-gate, docs, tech-debt"
-            )),
-        }
-    }
-
-    fn derive(name: &str, kind: Option<ItemKind>) -> Self {
-        if name.contains("review-gate") {
-            return Area::ReviewGate;
-        }
-        match kind {
-            Some(ItemKind::Hook | ItemKind::PiExtension) => Area::Harness,
-            Some(ItemKind::Skill | ItemKind::Agent) => Area::Skills,
-            _ => Area::Cli,
-        }
-    }
-}
-
-/// vstack-owned assets file upstream; everything else files against the
-/// current repo — the safe default. Skills never route upstream via the
-/// lock (distribution is not ownership); only their own frontmatter can
-/// opt them in.
-fn is_vstack_owned(
-    lock: &Lock,
-    name: &str,
-    kind: Option<ItemKind>,
-    frontmatter_source: Option<&str>,
-    frontmatter_repo: Option<&str>,
-    upstream: &str,
-) -> bool {
-    if frontmatter_source == Some("vstack") || frontmatter_repo == Some(DEFAULT_UPSTREAM) {
-        return true;
-    }
-    lock.entries.values().any(|entry| {
-        entry.name == name
-            && kind.is_none_or(|k| k == entry.kind)
-            && entry.kind != ItemKind::Skill
-            && entry.source_repo == upstream
-    })
-}
-
-fn installed_frontmatter(env: &Env, scope: &Scope, name: &str) -> (Option<String>, Option<String>) {
-    let candidates = [match scope {
-        Scope::Project { root } => root.join(".agents/skills").join(name).join("SKILL.md"),
-        Scope::Global => env.rendered_skills_dir().join(name).join("SKILL.md"),
-    }];
-    for path in candidates {
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let Some(front) = text
-            .strip_prefix("---")
-            .and_then(|rest| rest.find("\n---").map(|end| rest[..end].to_owned()))
-        else {
-            continue;
-        };
-        let field = |key: &str| {
-            front.lines().find_map(|line| {
-                line.strip_prefix(key)
-                    .map(|v| v.trim().trim_matches('"').to_owned())
-                    .filter(|v| !v.is_empty())
-            })
-        };
-        return (field("source:"), field("repository:"));
-    }
-    (None, None)
 }
 
 struct Inputs {
     selector: Option<(String, Option<ItemKind>)>,
     body: String,
     filter: ScopeFilter,
-    area_override: Option<Area>,
+    area_override: Option<&'static str>,
     upstream: String,
 }
 
@@ -162,7 +78,7 @@ fn parse_inputs(args: &ReportArgs) -> Result<Inputs, Box<dyn std::error::Error>>
         selector: chosen.pop(),
         body,
         filter,
-        area_override: args.area.as_deref().map(Area::parse).transpose()?,
+        area_override: args.area.as_deref().map(parse_area).transpose()?,
         upstream: args
             .upstream
             .clone()
@@ -185,17 +101,10 @@ pub fn run(env: &Env, args: ReportArgs) -> CliResult {
     if selector.is_none() {
         say("warning: no asset selector — routing to this project's own repo");
     }
-    let vstack_owned = selector.as_ref().is_some_and(|(name, kind)| {
-        let (fm_source, fm_repo) = installed_frontmatter(env, &scope, name);
-        is_vstack_owned(
-            &lock,
-            name,
-            *kind,
-            fm_source.as_deref(),
-            fm_repo.as_deref(),
-            &upstream,
-        )
-    });
+    let route = selector
+        .as_ref()
+        .map(|(name, kind)| vstack_core::report::route(env, &scope, &lock, name, *kind, &upstream));
+    let vstack_owned = route.as_ref().is_some_and(|r| r.vstack_owned);
 
     let mut gh_args = vec!["issue".to_owned(), "create".to_owned()];
     let mut sent_body = body.clone();
@@ -212,9 +121,10 @@ pub fn run(env: &Env, args: ReportArgs) -> CliResult {
         gh_args.extend(["--repo".to_owned(), upstream.clone()]);
         // Routing labels exist only on the canonical repo; a fork override
         // must not carry one or gh fails with "label not found".
-        if upstream == DEFAULT_UPSTREAM {
-            let derived = area_override.unwrap_or_else(|| Area::derive(name, kind));
-            gh_args.extend(["--label".to_owned(), derived.label().to_owned()]);
+        if let Some(derived) =
+            area_override.or_else(|| route.as_ref().and_then(|r| r.label.as_deref()))
+        {
+            gh_args.extend(["--label".to_owned(), derived.to_owned()]);
             area = Some(derived);
         }
     }
@@ -237,7 +147,7 @@ pub fn run(env: &Env, args: ReportArgs) -> CliResult {
             }
         ));
         if let Some(area) = area {
-            say(&format!("label: {}", area.label()));
+            say(&format!("label: {area}"));
         }
         say(&format!("would run: gh {}", shell_join(&gh_args)));
         return Ok(());
