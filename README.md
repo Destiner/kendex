@@ -1,25 +1,87 @@
 # vstack
 
-One place to manage AI coding-harness customizations — agents, skills,
-hooks, commands, MCP servers, plugins, and Pi extensions — across Claude
-Code, Codex, opencode, Cursor, and Pi, at global and per-project scope.
+One place to manage AI coding-tool customizations — agents, skills, hooks,
+commands, MCP servers, plugins, and Pi extensions — across Claude Code,
+Codex, OpenCode, Cursor, and Pi, personally and per-project.
 
-Desktop app + CLI over one engine. Four verbs, one model:
+Desktop app + CLI over one engine.
+
+## Features
+
+- **Install once, use everywhere** — one library serves all five tools.
+- **Author once** — one markdown file per agent or skill; vstack renders
+  each tool's native format (Claude markdown, Codex TOML, Cursor rules…).
+- **Preview-first** — every change shows its plan and asks before touching
+  a file.
+- **Reversible** — applies are journaled with crash recovery; removals go
+  to a trash, never a hard delete.
+- **Yours stays yours** — your edits win, your removals stick, files
+  vstack didn't create are never touched.
+- **Personal and per-project** — personal setup follows you everywhere;
+  project setup lives in the repo and travels with it.
+- **Catalogs are plain git repos** — use the default, your team's, or any
+  local folder; enable them per project.
+- **Sync** — see what's out of date across every tool and fix it in one
+  click.
+- **Point-and-click customization** — skills per agent, extra
+  instructions, per-tool settings; no config editing.
+- **Adopt** — bring hand-made files under management without rewriting
+  them.
+- **Self-updating** app and CLI, with v1 migration built in.
+
+## What's supported
+
+| | Claude Code | Codex | OpenCode | Cursor* | Pi |
+|---|:-:|:-:|:-:|:-:|:-:|
+| Agents | ● | ● | ● | ● | ● |
+| Skills | ● | ● | ● | ● | ● |
+| Hooks | ● | ● | ● | ● | — |
+| Commands | ● | ○ | ○ | ○ | ○ |
+| MCP servers | ● | ○ | ○ | ○ | — |
+| Plugins | ◐ | ○ | ○ | ○ | — |
+| Pi extensions | — | — | — | — | ● |
+
+● managed · ◐ enable/disable · ○ shown read-only · — no such surface.
+*Cursor is project-only.
+
+## How vstack works
 
 ```
-scan → declare → diff → apply
+  CATALOGS                YOUR CHOICES               YOUR TOOLS
+  git repos of agents,    vstack.toml — what you     each tool's own folders
+  skills, hooks, more     want, plus your tweaks     (.claude/ .codex/ .pi/ …)
+       │                        │                          ▲
+       ▼                        ▼                          │
+  ┌──────────┐  render   ┌───────────────┐    apply   ┌────┴─────┐
+  │  cached  │ ────────▶ │ finished files│ ─────────▶ │ links,   │
+  │  copy    │           │ (your tweaks  │  preview,  │ copies,  │
+  └──────────┘           │  baked in)    │  confirm,  │ config   │
+                         └───────────────┘  journaled │ entries  │
+                                                      └──────────┘
 ```
 
-- **Scan** reads harness-native directories in place. Useful with zero
-  adoption; nothing is copied into a shadow store.
-- **Declare** — a per-scope `vstack.toml` is the only durable home of your
-  intent.
-- **Diff** — drift is declared vs. observed; the app's Sync page is that
-  diff.
-- **Apply** — make disk match declaration, plan shown first. Every apply is
-  transactional: pre-images are journaled, failures roll back, interrupted
-  applies recover on next run, and removals go to a trash — never straight
-  to delete.
+Four verbs, always in this order: **scan** what every tool actually has
+(read-only) → **declare** what you want in one small `vstack.toml` per
+place → **diff** wanted vs. actual (the Sync page) → **apply** with a
+preview, transactionally.
+
+An install, concretely — say the `github` skill into a project for Claude
+Code, Codex, and Pi:
+
+1. The catalog repo is fetched into a local cache.
+2. The skill is **rendered**: catalog content with your project's added
+   instructions baked in.
+3. The rendered copy lands once in the project (`.agents/skills/github`).
+4. Claude Code gets a link to it; Codex and Pi read the same folder
+   natively. One copy — the tools can't drift apart.
+5. A lock file records what was installed, from where, and a content
+   fingerprint — that's how Sync knows when the catalog moved ahead.
+
+Agents are *generated* per tool from one source file. MCP servers and
+hooks are surgical edits inside a tool's own config that leave every
+other key untouched. Pi extensions are npm packages, copied and
+registered. Generated files are always safe to regenerate; your intent
+lives only in `vstack.toml`.
 
 ## Install
 
