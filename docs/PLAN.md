@@ -533,35 +533,16 @@ repos cross via the Phase 1 schema migration.
 - Session quirks (subagent report recovery, WebKit-on-Wayland env) are
   documented in the user-level CLAUDE.md and `crates/app/src/lib.rs`.
 
-## Open questions for the owner
+## Owner decisions (all resolved 2026-08-10)
 
-Answers change scope, not direction; each phase notes assume the
-recommended option until overruled.
-
-(Resolved: marketplace *shopping* stays lightweight in v0.2 — install
-from marketplace repos via the existing pages; the store-like browsing
-experience moved to `docs/roadmaps/future.md` by owner decision.)
-
-1. **Restructure our own default catalog?** (Phase 3)
-   - **A (recommended):** keep its current layout, add a `[bundles]`
-     declaration — zero migration risk for existing users.
-   - **B:** restructure it into plugin/bundle directories to match the
-     marketplace shape — one layout everywhere, but every v1 install
-     needs the migration path exercised.
-2. **Should vstack manage instruction files?** (`CLAUDE.md`, `GEMINI.md`,
-   `copilot-instructions.md`) Both new tools lean on them; vstack has no
-   ItemKind for them today.
-   - **A (recommended):** out of v0.2 — observe nothing, manage nothing;
-     revisit as its own cycle (it touches files users hand-edit daily,
-     the riskiest ground invariant 2 covers).
-   - **B:** observe-only in v0.2 — show them in scans so the picture is
-     complete, still never write.
-3. **How strict should safety blocking be?** (Phase 5) Any Critical
-   finding blocks in every option; the question is the aggregate score.
-   - **A (recommended):** aggregate also warns below 80 and blocks below
-     60 — protective, and the fully-bound override is always available.
-   - **B:** Critical-only blocking in v0.2; aggregate scores stay
-     advisory for a cycle while the rule corpus calibrates against real
-     catalogs, then thresholds arm in v0.3.
-   - **C:** aggregate blocks below 80 — strictest, most friction on
-     foreign catalogs.
+- **Marketplace shopping stays lightweight in v0.2** — install from
+  marketplace repos via the existing pages; the store-like browsing
+  experience moved to `docs/roadmaps/future.md`.
+- **Default catalog keeps its current layout** and gains a `[bundles]`
+  declaration — no restructure, zero migration risk (Phase 3/4).
+- **Instruction files stay out of v0.2 entirely** (`CLAUDE.md`,
+  `GEMINI.md`, `copilot-instructions.md`): observe nothing, manage
+  nothing; revisit as its own cycle (`docs/roadmaps/future.md`).
+- **Safety gate: warn below 80, block below 60** on the aggregate score,
+  Critical findings always block, fully-bound override available
+  (Phase 5).
