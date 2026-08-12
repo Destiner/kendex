@@ -193,13 +193,39 @@ foundations the external reviews showed are prerequisites:
 10. Per-adapter structural validators — they co-land here because they
     assert exactly what the renderers emit; the rules engine itself
     waits for Phase 5.
+11. **One hardened process constructor** (invariant 13). Every external
+    invocation is built by it: redirect vars cleared, prompt paths
+    closed, timeout set; `Command::new` outside it is guard-banned.
+    Prerequisite for Phase 3's source store — v1 has 27 unguarded
+    `Command::new("git")` sites and three `git reset --hard`, so a
+    cache repo whose `.git/config` sets `core.worktree` elsewhere (or
+    an inherited `GIT_WORK_TREE`) resets files outside the cache.
+12. **Byte-faithful writes + validate-before-mutate** (invariants 10
+    and 11). A round-trip test per writer proves the intended edit is
+    the only byte difference; a rejection test proves manifest, lock,
+    and install tree are byte-identical after a refused operation. No
+    "compare ignoring trailing newline" helper is written: v1 needs
+    `project_config.rs::same_ignoring_trailing_newline` only because two
+    of its section writers drop the trailing newline that twelve
+    siblings restore, and that comparison then pins the malformed output
+    as unchanged forever.
+13. **Verification compares content** (invariant 12): drift rows re-hash
+    installed artifacts, and an artifact that cannot be compared is
+    reported uncompared. v1's `verify` checks path existence for skills
+    and agents and counts an uncomparable install as OK
+    (`commands/verify.rs::verify_entry`), so a Codex agent widened to
+    `danger-full-access` after install still reports `install:✓`.
 
 **Done when:** decision-table rows checked off with a failing-first test
 each; an oversized skill produces a split, not a truncation; a foreign
 catalog agent imports with its restrictions intact (source parse and v1
 import both) and an inexpressible restriction refuses rather than
 widens; a symlinked catalog cannot read outside its root through *any*
-read path; a Codex+Pi project install shares one `.agents/skills`
+read path; a git operation cannot escape its cache directory through
+`core.worktree` or an inherited `GIT_WORK_TREE`, and cannot block on a
+credential prompt; every config writer round-trips byte-identically and
+a refused operation mutates nothing; a tampered install fails
+verification; a Codex+Pi project install shares one `.agents/skills`
 variant rendered to group constraints; two MCP servers install into one
 settings file in one apply; v0.1 fixtures migrate; render warnings show
 in plan preview; suite green.
@@ -222,6 +248,22 @@ subtype, transport, feature-flag dependency — generated into the UI
 bindings like everything else, and the honesty tests extend to the new
 axes. Claiming `managed(BOTH)` where only half the verbs work would
 break "the capability table gates everything".
+
+**Enforcement is one of those axes.** `managed` today says vstack can
+write and track an artifact; it does not say the harness will run it.
+Both are `managed(BOTH)` for Hook, yet Claude registers an executable
+whose exit code gates the tool call, while Cursor gets a `.mdc` rule
+with no registration (`engine/targets.rs`), OpenCode gets instruction
+files plus config refs (`caps.rs`), and Codex is native only for the
+events `hook.rs` maps and advisory prose otherwise. Gemini and Copilot
+both arrive with real hook systems (research §D1, §D9), which makes the
+gap wider, not narrower. So caps gain an **enforcement level** —
+enforced (the harness runs the command and honors its result) vs
+advisory (rendered as text the model may ignore) — resolved per
+(harness, kind, event), carried into plan preview, Audit, and the item
+UI. A safety hook must never read as protection on a harness that can
+only suggest it. `(Pi, Hook) => unsupported()` is the model working
+correctly and stays as is.
 
 Adapter facts that shape the code:
 
@@ -262,7 +304,9 @@ Adapter facts that shape the code:
 
 **Done when:** detection roots proven against fixtures for both tools and
 both scopes; every §7 caps row implemented with the v2 axes and covered
-by the extended honesty tests; managed kinds round-trip
+by the extended honesty tests; every hook-capable harness carries an
+enforcement level that the UI and plan preview show, with an advisory
+install stating plainly that it is not enforced; managed kinds round-trip
 install/toggle/remove; an inert-but-present installation is reported as
 such; renderers produce doc-valid output (Phase 1 validators assert it);
 suite green.
@@ -364,7 +408,9 @@ it botched, and scope it honestly:
   without the preview/confirm step. This changes CLI `refresh`, which
   today applies its plan directly (`refresh.rs:58`) — regeneration of
   existing installations stays automatic, set changes require
-  confirmation or `--yes` (register B10).
+  confirmation or `--yes` (register B10). On a non-TTY the confirm step
+  refuses before writing anything rather than prompting — the standing
+  non-interactive rule, which every new prompt in this cycle inherits.
 - A user's removal of a required dep records a suppression; refresh
   honors it; Audit shows a "missing required dependency" warning on the
   parent rather than resurrecting the dep (durable-removal semantics,
@@ -533,7 +579,7 @@ repos cross via the Phase 1 schema migration.
 - Session quirks (subagent report recovery, WebKit-on-Wayland env) are
   documented in the user-level CLAUDE.md and `crates/app/src/lib.rs`.
 
-## Owner decisions (all resolved 2026-08-10)
+## Owner decisions (resolved 2026-08-10; propagation 2026-08-12)
 
 - **Marketplace shopping stays lightweight in v0.2** — install from
   marketplace repos via the existing pages; the store-like browsing
@@ -546,3 +592,13 @@ repos cross via the Phase 1 schema migration.
 - **Safety gate: warn below 80, block below 60** on the aggregate score,
   Critical findings always block, fully-bound override available
   (Phase 5).
+- **Auto-PR propagation into consuming repos is a permanent non-goal**,
+  in this cycle and after it. vstack detects drift and informs the agent
+  at session start; a local refresh brings the repo current. The blocker
+  is factual, not a matter of effort: the managed assets are not tracked
+  in consuming repos — the lock file is gitignored in all six checked,
+  no agents are tracked anywhere, and skills only in four of six — so
+  there is nothing to open a pull request about. The invariant that
+  follows (never mutate a working tree vstack does not own) is in
+  ARCHITECTURE.md, which outlives this file. Evidence:
+  [vstack#1254](https://github.com/vanillagreencom/vstack/pull/1254#issuecomment-5274025650).

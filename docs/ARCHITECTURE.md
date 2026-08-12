@@ -67,6 +67,31 @@ lives in one capability table read by core and UI.
 8. One writer per scope: every apply (app or CLI) holds an OS-level scope
    lock; journal recovery runs under the same lock; a busy scope is a
    clear error, never an interleaved write.
+9. Never mutate a working tree vstack does not own. Managed scopes are
+   the only writable surface; vstack never stages, commits, or resets in
+   a repository it did not create. Work that must produce a commit runs
+   in a disposable clone, where none of a live tree's states exist.
+10. Writes are byte-faithful: a file vstack edits round-trips
+    byte-identically except for the intended edit, trailing newline
+    included. Change detection compares exact bytes — a comparison that
+    ignores trailing whitespace pins the corruption it hides instead of
+    letting the next write heal it.
+11. Validation precedes mutation. Every input check for an operation
+    runs before its first durable write — not merely before the apply
+    it guards — and a rejected operation leaves manifest, lock, and
+    install tree byte-identical. No failure path leaves persistent
+    state changed.
+12. Verification compares content, not provenance. Installed artifacts
+    are re-hashed against what they should be; a matching lock entry
+    alone never reports OK, and an artifact vstack cannot compare is
+    reported as uncompared, never as passing.
+13. External processes are hardened by construction. One constructor
+    builds every invocation: environment that can redirect it
+    (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`) cleared, every
+    prompt path closed (`GIT_TERMINAL_PROMPT=0`, SSH `BatchMode=yes`),
+    a timeout on every call. An unhardened invocation is not
+    constructible — the raw-`Command` pattern is guard-banned, because
+    a per-call-site discipline reliably misses call sites.
 
 ## Decisions
 
@@ -84,6 +109,22 @@ lives in one capability table read by core and UI.
   native support for a kind is marked unsupported — never shimmed.
 - Fresh manifest schema + one-time v1 importer; no compat shims. v1
   extras/theme packs are not carried over.
+- **Propagation into consuming repos is local, never a pull request.**
+  vstack detects drift and informs the agent at session start; the repo
+  is brought current by a local refresh. Opening PRs in consumer repos
+  is a permanent non-goal: the managed assets are gitignored there, so
+  there is nothing to commit, and the attempt would mean mutating a
+  live foreign working tree (invariant 9).
+- Non-interactive is a mode, not a fallback. Every CLI verb completes
+  without a TTY: selection flags suppress prompts rather than
+  pre-filling them, and a verb that would need input on a non-TTY fails
+  before its first write, naming the flag that answers it. Agent- and
+  CI-driven runs are the normal case. Interactive selection lives in
+  the GUI; the CLI has no pickers.
+- vstack never emits a pasteable command line. Errors, hints, and
+  recovery instructions present the verb and its parameters as data —
+  cross-platform shell quoting is a cost the product declines to carry,
+  and a hint built by concatenation is an injection surface.
 
 Build sequence and to-build specs: `docs/PLAN.md` — consumed and deleted as
 phases complete; delete this pointer with that file.
