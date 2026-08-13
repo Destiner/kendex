@@ -57,6 +57,26 @@ export const sourceHandlers: Record<string, Handler> = {
     }
     return store.state.sources;
   },
+  bundles_overview: () => store.state.bundles,
+  bundle_install: ({
+    scope,
+    source,
+    name,
+  }: {
+    scope: Scope;
+    source: string;
+    name: string;
+  }) => {
+    const row = store.state.bundles.find(
+      (bundle) =>
+        bundle.name === name &&
+        bundle.source === source &&
+        same(bundle.scope, scope),
+    );
+    if (!row) return Promise.reject(`no bundle named '${name}' here`);
+    row.installed = true;
+    return store.state.bundles;
+  },
   sources_refresh: () => {
     for (const row of store.state.sources) {
       if (row.isRemote && row.enabled) row.head = "e4d0b2f";

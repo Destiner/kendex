@@ -94,6 +94,9 @@ pub enum CoreError {
     #[error("no item from source '{source_name}' offers '{name}' as an optional dependency")]
     NoSuchOptional { name: String, source_name: String },
 
+    #[error("source '{source_name}' offers no bundle called '{name}'")]
+    NoSuchBundle { name: String, source_name: String },
+
     #[error("apply failed and was rolled back: {reason}")]
     RolledBack { reason: String },
 

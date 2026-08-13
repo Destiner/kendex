@@ -7,9 +7,11 @@ use crate::manifest::{LOCAL_SOURCE_NAME, Manifest, SourceDecl};
 use crate::model::{ItemKind, Scope};
 use crate::source_read::SealedSource;
 
+pub mod bundles;
 mod catalog;
 mod marketplace;
 
+pub use bundles::CatalogBundle;
 pub use catalog::{CatalogGroup, CatalogItem, CatalogMetadata, metadata as catalog_metadata};
 pub use marketplace::{CatalogFinding, PluginEntry, REGISTRY as MARKETPLACE_REGISTRY, Registry};
 
@@ -177,6 +179,9 @@ pub struct SourceConfig {
     pub agent_skills: BTreeMap<String, Vec<String>>,
     pub role_skills: BTreeMap<String, Vec<String>>,
     pub frontmatter: BTreeMap<String, BTreeMap<String, crate::manifest::FrontmatterOverrides>>,
+    /// The curated sets this catalog offers by name. Empty for a
+    /// marketplace-shaped catalog, whose plugins are its sets.
+    pub bundles: BTreeMap<String, CatalogBundle>,
     /// Set when the source carries a marketplace registry: its items live
     /// one plugin deep and are named `<plugin>/<item>`. The kind directories
     /// at the root are not read in that case — the registry says what the
@@ -215,6 +220,7 @@ pub fn source_config(sealed: &SealedSource) -> Result<SourceConfig> {
             config.skill_dirs = dirs;
         }
     }
+    config.bundles = bundles::declared(&table);
     if let Some(mapping) = table.get("agent-skills").and_then(|t| t.as_table()) {
         for (agent, skills) in mapping {
             if let Some(list) = string_list(Some(skills)) {

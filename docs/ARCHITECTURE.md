@@ -27,8 +27,9 @@ logic.
 Scope (global | project) · Harness (adapter + capability table) · ItemKind
 (agent, skill, hook, command, mcp-server, plugin, pi-extension) ·
 Item (logical: kind + name from a source) · Installation (item × harness ×
-scope — what locks, drift rows, and applies track) · Source (path | git;
-registry reserved post-release) · Manifest · Lock (provenance + hash) ·
+scope — what locks, drift rows, and applies track) · Bundle (a curated set a
+catalog offers under one name, installed as one declaration) · Source (path |
+git; registry reserved post-release) · Manifest · Lock (provenance + hash) ·
 Observation (scanner truth) · Drift. Core modules mirror the verbs: `model`, `scan`,
 `manifest`, `diff`, `apply`, `source`, `harness/` (one file per harness).
 
@@ -211,6 +212,28 @@ lives in one capability table read by core and UI.
   a named group) is read-side only — it feeds browsing and, later,
   installing a plugin as a unit; the manifest records what the user chose,
   never what a catalog says about itself.
+- **Intent in the manifest, closure in the plan, edges in the lock.** The
+  manifest records choices and never their consequences: the items asked
+  for, the bundles installed, which optional dependencies were taken, what
+  stays removed. Everything those choices imply — a bundle's members, a
+  skill's dependencies — is derived on every plan, so a derived
+  installation can never read as a request and whatever brought it in can
+  always take it away. The lock caches why each installation exists as a
+  set of typed edges (`requested`, `required-by`, `member-of`) pointing at
+  structured counterparts rather than sentences; losing the lock loses
+  nothing, because the graph rebuilds from the manifest and the catalogs.
+  Uninstalling a bundle therefore has exactly one answer: members whose
+  only remaining edges came from that bundle go, and members that are also
+  requested, required by a survivor, or carried by another installed
+  bundle stay — with the preview naming both halves and the reason for
+  each. A member the user takes away on their own is a suppression, the
+  same durable removal a dependency gets: refresh honors it, and the audit
+  reports the bundle as installed with members held back rather than
+  pretending it is whole. Authoring lives with the catalog —
+  `[bundles.<name>]` in the source's own `vstack.toml`, or nothing at all
+  for a marketplace-shaped catalog, where each plugin is a set already —
+  and a set's members are its own catalog's items, since a bare name from
+  another source names nothing stable.
 - **A namespaced name is the identity; the separator is per tool.** Items
   from marketplace-shaped catalogs are named `<plugin>/<item>` in the
   manifest, the lock, and the UI, so two plugins can each ship an

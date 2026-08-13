@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ObservedItem } from "@/bindings";
-import { countByKind, filterItems, groupItems, scopeMatches } from "./derive";
+import {
+  bundleSummary,
+  countByKind,
+  filterItems,
+  groupItems,
+  scopeMatches,
+} from "./derive";
 
 function item(overrides: Partial<ObservedItem>): ObservedItem {
   return {
@@ -81,5 +87,22 @@ describe("countByKind", () => {
     ]);
     expect(counts.get("skill")).toBe(2);
     expect(counts.get("agent")).toBe(1);
+  });
+});
+
+describe("bundleSummary", () => {
+  it("lists what a bundle carries", () => {
+    expect(bundleSummary(["skill dev", "agent writer"])).toBe(
+      "skill dev, agent writer",
+    );
+  });
+
+  it("counts the rest once the list would run long", () => {
+    const members = ["a", "b", "c", "d", "e", "f"];
+    expect(bundleSummary(members)).toBe("a, b, c, d, and 2 more");
+  });
+
+  it("says so when a bundle carries nothing", () => {
+    expect(bundleSummary([])).toBe("Carries nothing yet");
   });
 });

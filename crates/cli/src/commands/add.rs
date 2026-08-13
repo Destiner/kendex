@@ -13,6 +13,7 @@ pub struct AddArgs {
     pub harness: Vec<String>,
     pub agent: Vec<String>,
     pub skill: Vec<String>,
+    pub bundle: Vec<String>,
     pub optional: Vec<String>,
     pub hook: Vec<String>,
     pub pi_extension: Vec<String>,
@@ -46,8 +47,11 @@ pub fn run(env: &Env, args: AddArgs) -> CliResult {
 
     let agents = split(&args.agent);
     let skills = split(&args.skill);
-    if args.global && !args.all && agents.is_empty() && skills.is_empty() {
-        return Err("global installs need --all or explicit --agent/--skill selections".into());
+    let bundles = split(&args.bundle);
+    if args.global && !args.all && agents.is_empty() && skills.is_empty() && bundles.is_empty() {
+        return Err(
+            "global installs need --all or explicit --agent/--skill/--bundle selections".into(),
+        );
     }
     if args.global && args.all && !args.clobber {
         let lock = load_lock(&lock_path(env, &Scope::Global))?;
@@ -72,6 +76,7 @@ pub fn run(env: &Env, args: AddArgs) -> CliResult {
         copy: args.copy,
         no_auto_skills: args.no_auto_skills,
         optional: split(&args.optional),
+        bundles,
     };
     let report = match ops::add(env, &scope, &request) {
         Err(vstack_core::error::CoreError::SourcePending { .. }) => {

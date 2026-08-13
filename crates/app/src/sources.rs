@@ -1,6 +1,7 @@
+use vstack_core::engine::ops::{self as engine_ops, AddRequest};
 use vstack_core::env::Env;
 use vstack_core::model::Scope;
-use vstack_core::source_ops::{self, SourceRow};
+use vstack_core::source_ops::{self, BundleRow, SourceRow};
 use vstack_core::{apply, manifest, remote};
 
 fn env() -> Result<Env, String> {
@@ -63,6 +64,40 @@ pub fn source_toggle(scope: Scope, name: String, enabled: bool) -> Result<Vec<So
     let report =
         source_ops::toggle_source(&env, &scope, &name, enabled).map_err(|e| e.to_string())?;
     run_and_list(&env, report)
+}
+
+/// Every curated set every catalog offers, across every scope — what the
+/// Catalogs page lists under each source.
+#[tauri::command]
+#[specta::specta]
+pub fn bundles_overview() -> Result<Vec<BundleRow>, String> {
+    let env = env()?;
+    let mut rows = Vec::new();
+    for scope in all_scopes(&env)? {
+        rows.extend(source_ops::list_bundles(&env, &scope).map_err(|e| e.to_string())?);
+    }
+    Ok(rows)
+}
+
+/// Install a set whole. Its members derive from the catalog, so this declares
+/// one name and applies the plan that follows from it.
+#[tauri::command]
+#[specta::specta]
+pub fn bundle_install(
+    scope: Scope,
+    source: String,
+    name: String,
+) -> Result<Vec<BundleRow>, String> {
+    let env = env()?;
+    let request = AddRequest {
+        source: Some(source),
+        bundles: vec![name],
+        no_auto_skills: true,
+        ..AddRequest::default()
+    };
+    let report = engine_ops::add(&env, &scope, &request).map_err(|e| e.to_string())?;
+    apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
+    bundles_overview()
 }
 
 /// Re-resolve every enabled remote across every scope. Returns warnings

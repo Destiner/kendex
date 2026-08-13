@@ -4,12 +4,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::manifest::Manifest;
-use crate::model::{HarnessId, ItemKind, Scope};
+use crate::model::{HarnessId, ItemKind};
 use crate::names;
 use crate::source::SourceConfig;
 
-use super::desired::{DesiredState, Refused, target_harnesses};
+use super::desired::{DesiredState, Refused};
+use super::expansion::Expansion;
 
 /// The installations two declarations both claim. Namespacing is what makes
 /// this reachable: `a/b` and a plain `a__b` are two names in `vstack.toml`
@@ -19,23 +19,22 @@ use super::desired::{DesiredState, Refused, target_harnesses};
 pub(super) struct Collisions(BTreeSet<(ItemKind, String, HarnessId)>);
 
 impl Collisions {
-    /// Every clash the manifest holds, recorded as refusals on the state.
-    pub(super) fn find(manifest: &Manifest, scope: &Scope, state: &mut DesiredState) -> Collisions {
+    /// Every clash in what this plan would install, recorded as refusals on
+    /// the state. The whole set is checked, not only what the manifest spells
+    /// out: a bundle carrying two members that land on one file is the same
+    /// collision as two declarations that do.
+    pub(super) fn find(expansion: &Expansion, state: &mut DesiredState) -> Collisions {
         let mut claimed = BTreeSet::new();
-        for (kind, table) in [
-            (ItemKind::Skill, &manifest.skills),
-            (ItemKind::Agent, &manifest.agents),
-            (ItemKind::Command, &manifest.commands),
-        ] {
-            // Folded rendered name → the declarations that spell it, per
-            // tool: the same two names can clash on one tool and not on
-            // another, since the tools join a plugin to an item differently.
+        for kind in [ItemKind::Skill, ItemKind::Agent, ItemKind::Command] {
+            // Folded rendered name → the names that spell it, per tool: the
+            // same two names can clash on one tool and not on another, since
+            // the tools join a plugin to an item differently.
             let mut claims: BTreeMap<(HarnessId, String), Vec<String>> = BTreeMap::new();
-            for (name, decl) in table {
-                for harness in target_harnesses(decl, manifest, kind, scope) {
-                    let rendered = crate::harness::rendered_name(harness, name);
+            for (name, planned) in expansion.of(kind) {
+                for harness in &planned.harnesses {
+                    let rendered = crate::harness::rendered_name(*harness, name);
                     claims
-                        .entry((harness, names::fold(&rendered)))
+                        .entry((*harness, names::fold(&rendered)))
                         .or_default()
                         .push(name.clone());
                 }

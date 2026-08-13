@@ -190,21 +190,17 @@ pub fn desired_state(
 
 fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result<DesiredState> {
     let mut state = DesiredState::default();
-    let collisions = super::catalog::Collisions::find(manifest, scope, &mut state);
     let mut updated_manifest = manifest.clone();
     let mut manifest_changed = false;
-    // Skills are planned from the closure — the declared ones plus what they
-    // require — while the manifest keeps holding only what was chosen.
-    let expansion = super::deps::expand(env, scope, manifest, &mut state);
+    // Everything is planned from the closure — what was declared, what the
+    // installed bundles carry, and what those skills require — while the
+    // manifest keeps holding only what was chosen.
+    let expansion = super::expansion::expand(env, scope, manifest, &mut state);
+    let collisions = super::catalog::Collisions::find(&expansion, &mut state);
 
-    for (kind, table) in [
-        (ItemKind::Skill, &expansion.items),
-        (ItemKind::Agent, &manifest.agents),
-        (ItemKind::Hook, &manifest.hooks),
-        (ItemKind::Command, &manifest.commands),
-        (ItemKind::McpServer, &manifest.mcp_servers),
-    ] {
-        for (name, decl) in table {
+    for kind in super::expansion::PLANNED_KINDS {
+        for (name, planned) in expansion.of(kind) {
+            let decl = &planned.decl;
             let Some((root, provenance)) =
                 resolve_source(env, scope, name, decl, manifest, &mut state)?
             else {
@@ -222,7 +218,7 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
                 continue;
             };
             state.processed.insert((kind, name.clone()));
-            let mut harnesses = target_harnesses(decl, manifest, kind, scope);
+            let mut harnesses = planned.harnesses.clone();
             // Every tool this is declared for is one that holds no such kind
             // here. Nothing installs, and silence would read as success.
             if harnesses.is_empty() {
@@ -297,24 +293,16 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
     Ok(state)
 }
 
-/// Why each of an item's installations is wanted. Only skills carry
-/// dependencies; every other kind installs for exactly one reason, which is
-/// that it is declared.
+/// Why each of an item's installations is wanted, as the closure derived it.
 fn reasons_for(
     kind: ItemKind,
     name: &str,
     harnesses: &[HarnessId],
-    expansion: &super::deps::Expansion,
+    expansion: &super::expansion::Expansion,
 ) -> BTreeMap<HarnessId, BTreeSet<crate::lock::Reason>> {
     harnesses
         .iter()
-        .map(|harness| {
-            let why = match kind {
-                ItemKind::Skill => expansion.reasons(name, *harness),
-                _ => BTreeSet::from([crate::lock::Reason::Requested]),
-            };
-            (*harness, why)
-        })
+        .map(|harness| (*harness, expansion.reasons(kind, name, *harness)))
         .collect()
 }
 

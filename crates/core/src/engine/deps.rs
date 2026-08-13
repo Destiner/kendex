@@ -15,16 +15,16 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use crate::env::Env;
 use crate::error::Result;
 use crate::lock::{InstallRef, Reason};
 use crate::manifest::{ItemDecl, Manifest};
 use crate::model::{HarnessId, ItemKind, Scope};
-use crate::source::{SourceConfig, SourceState, find_item, list_items, source_config};
+use crate::source::{SourceConfig, find_item, list_items};
 use crate::source_read::SealedSource;
 
 use super::ItemWarning;
-use super::desired::{DesiredState, target_harnesses};
+use super::desired::DesiredState;
+use super::expansion::{Catalogs, Expansion};
 
 /// One item's declared dependencies. Names are as the author wrote them.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -60,133 +60,37 @@ pub(crate) fn declared_dependencies(
     })
 }
 
-/// The skills a plan installs and why each installation exists — the
-/// declared ones plus everything they require, keyed the way the lock keys
-/// an installation.
-#[derive(Debug, Default)]
-pub(super) struct Expansion {
-    /// The declaration to plan each skill under. A derived one inherits its
-    /// parent's source and carries the harnesses its parents need it on.
-    pub(super) items: BTreeMap<String, ItemDecl>,
-    reasons: BTreeMap<(String, HarnessId), BTreeSet<Reason>>,
-}
-
-impl Expansion {
-    pub(super) fn reasons(&self, name: &str, harness: HarnessId) -> BTreeSet<Reason> {
-        self.reasons
-            .get(&(name.to_owned(), harness))
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    /// Record one reason, returning whether this taught the expansion
-    /// something new — which is what keeps a cycle from walking forever.
-    fn add(&mut self, name: &str, decl: &ItemDecl, harness: HarnessId, reason: Reason) -> bool {
-        let fresh = self
-            .reasons
-            .entry((name.to_owned(), harness))
-            .or_default()
-            .insert(reason);
-        let entry = self
-            .items
-            .entry(name.to_owned())
-            .or_insert_with(|| ItemDecl {
-                harnesses: Some(Vec::new()),
-                ..decl.clone()
-            });
-        let harnesses = entry.harnesses.get_or_insert_with(Vec::new);
-        if !harnesses.contains(&harness) {
-            harnesses.push(harness);
-        }
-        fresh
-    }
-
-    fn harnesses(&self, name: &str) -> Vec<HarnessId> {
-        self.items
-            .get(name)
-            .and_then(|decl| decl.harnesses.clone())
-            .unwrap_or_default()
-    }
-}
-
-/// Every catalog read this pass, opened once. Sources that cannot be read
-/// carry no dependencies to find; the declaration that names one reports
-/// that on its own, where it can say which declaration it cost.
-struct Catalogs<'a> {
-    env: &'a Env,
-    scope: &'a Scope,
-    manifest: &'a Manifest,
-    open: BTreeMap<String, Option<(SealedSource, SourceConfig)>>,
-}
-
-impl Catalogs<'_> {
-    fn get(
-        &mut self,
-        source: &str,
-        state: &mut DesiredState,
-    ) -> Option<&(SealedSource, SourceConfig)> {
-        if !self.open.contains_key(source) {
-            let opened = self.read(source, state);
-            self.open.insert(source.to_owned(), opened);
-        }
-        self.open.get(source).and_then(Option::as_ref)
-    }
-
-    fn read(&self, source: &str, state: &mut DesiredState) -> Option<(SealedSource, SourceConfig)> {
-        let resolution = match state.sources.get(source) {
-            Some(resolution) => resolution.clone(),
-            None => {
-                let resolution =
-                    crate::source::resolve(self.env, self.scope, source, self.manifest).ok()?;
-                state.sources.insert(source.to_owned(), resolution.clone());
-                resolution
-            }
-        };
-        let SourceState::Ready(ready) = resolution else {
-            return None;
-        };
-        let sealed = SealedSource::open(&ready.root).ok()?;
-        let config = source_config(&sealed).ok()?;
-        Some((sealed, config))
-    }
-}
-
-/// The declared skills plus everything they require, walked until no
+/// Everything the skills in this expansion require, walked until no
 /// installation learns a new reason. Cycles are fine — v1's `orch` and `dev`
 /// require each other on purpose — because an item is only walked again when
-/// its reasons grow, and they cannot grow forever.
+/// its reasons grow, and they cannot grow forever. Skills that came in as
+/// bundle members are walked like any other: what a skill needs does not
+/// depend on how it was chosen.
 pub(super) fn expand(
-    env: &Env,
     scope: &Scope,
     manifest: &Manifest,
+    expansion: &mut Expansion,
+    catalogs: &mut Catalogs,
     state: &mut DesiredState,
-) -> Expansion {
-    let mut expansion = Expansion::default();
-    let mut queue: VecDeque<String> = VecDeque::new();
-    for (name, decl) in &manifest.skills {
-        for harness in target_harnesses(decl, manifest, ItemKind::Skill, scope) {
-            expansion.add(name, decl, harness, Reason::Requested);
-        }
-        queue.push_back(name.clone());
-    }
-    let mut catalogs = Catalogs {
-        env,
-        scope,
-        manifest,
-        open: BTreeMap::new(),
-    };
+) {
+    let mut queue: VecDeque<String> = expansion
+        .of(ItemKind::Skill)
+        .into_iter()
+        .map(|(name, _)| name.clone())
+        .collect();
     let mut edges: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     while let Some(parent) = queue.pop_front() {
         // A declaration no tool here can hold installs nothing, so it needs
         // nothing either; the declaration itself reports that.
-        let Some(source) = expansion.items.get(&parent).map(|decl| decl.source.clone()) else {
+        let Some(source) = expansion.source_of(ItemKind::Skill, &parent) else {
             continue;
         };
-        for (dep, harnesses) in wanted_by(&parent, &expansion, manifest, &mut catalogs, state) {
+        let harnesses = expansion.harnesses(ItemKind::Skill, &parent);
+        for (dep, harnesses) in wanted_by(&parent, &source, &harnesses, manifest, catalogs, state) {
             edges.entry(parent.clone()).or_default().insert(dep.clone());
             let decl = ItemDecl {
                 source: source.clone(),
-                harnesses: Some(Vec::new()),
+                harnesses: None,
                 // A derived installation takes the scope's own default
                 // method: its parent's is a choice about the parent.
                 method: None,
@@ -201,7 +105,13 @@ pub(super) fn expand(
                     harness,
                     scope: scope.clone(),
                 };
-                grew |= expansion.add(&dep, &decl, harness, Reason::RequiredBy { by });
+                grew |= expansion.add(
+                    ItemKind::Skill,
+                    &dep,
+                    &decl,
+                    harness,
+                    Reason::RequiredBy { by },
+                );
             }
             if grew {
                 queue.push_back(dep);
@@ -214,7 +124,6 @@ pub(super) fn expand(
             members.join(" and ")
         ));
     }
-    expansion
 }
 
 /// One item's dependencies, resolved against its own catalog: the required
@@ -223,16 +132,13 @@ pub(super) fn expand(
 /// never dropped in silence.
 fn wanted_by(
     parent: &str,
-    expansion: &Expansion,
+    source: &str,
+    harnesses: &[HarnessId],
     manifest: &Manifest,
     catalogs: &mut Catalogs,
     state: &mut DesiredState,
 ) -> Vec<(String, Vec<HarnessId>)> {
-    let Some(decl) = expansion.items.get(parent).cloned() else {
-        return Vec::new();
-    };
-    let harnesses = expansion.harnesses(parent);
-    let Some((sealed, config)) = catalogs.get(&decl.source, state) else {
+    let Some((sealed, config)) = catalogs.get(source, state) else {
         return Vec::new();
     };
     let Some(dir) = find_item(sealed, config, ItemKind::Skill, parent) else {
@@ -259,7 +165,7 @@ fn wanted_by(
         .iter()
         .chain(declared.optional.iter().filter(|o| chosen.contains(o)))
     {
-        let Some(dep) = resolve(name, parent, sealed, config, &decl.source, state) else {
+        let Some(dep) = resolve(name, parent, sealed, config, source, state) else {
             continue;
         };
         if manifest.is_suppressed(ItemKind::Skill, &dep) {
@@ -272,7 +178,7 @@ fn wanted_by(
         }
         wanted.push((
             dep.clone(),
-            for_harnesses(&dep, parent, &harnesses, manifest, state),
+            for_harnesses(&dep, parent, harnesses, manifest, state),
         ));
     }
     wanted

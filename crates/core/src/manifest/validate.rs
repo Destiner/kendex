@@ -28,6 +28,7 @@ const TOP_LEVEL: &[&str] = &[
     "mcp-servers",
     "plugins",
     "pi-extensions",
+    "bundles",
     "suppressed",
     "optional-dependencies",
     "agent-skills",

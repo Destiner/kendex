@@ -38,6 +38,7 @@ pub fn run(env: &Env, names: Vec<String>, filter: ScopeFilter, sweep: Option<boo
             .any(|op| matches!(op.op, Op::Trash { .. } | Op::WriteLock { .. }));
         if touches_artifacts {
             removed_any = true;
+            say_split(&report);
             vstack_core::apply::execute(env, &report.plan, None)?;
             for op in &report.plan.ops {
                 say(&format!("  - {}", op.description));
@@ -48,6 +49,33 @@ pub fn run(env: &Env, names: Vec<String>, filter: ScopeFilter, sweep: Option<boo
         say("Nothing removed");
     }
     Ok(())
+}
+
+/// What the removal decided. Taking a bundle away takes some of what it
+/// carried and leaves the rest, so both halves are said out loud, each with
+/// what accounts for it — otherwise the user is left guessing which members
+/// survived and why.
+fn say_split(report: &EngineReport) {
+    for change in &report.set_changes {
+        if change.direction == vstack_core::engine::SetDirection::Remove {
+            say(&format!(
+                "removing {} {} for {} — {}",
+                change.kind.name(),
+                change.name,
+                change.harness.display_name(),
+                change.reason
+            ));
+        }
+    }
+    for kept in &report.kept {
+        say(&format!(
+            "keeping {} {} for {} — {}",
+            kept.kind.name(),
+            kept.name,
+            kept.harness.display_name(),
+            kept.reason
+        ));
+    }
 }
 
 /// Removing the last thing that needed something leaves it behind. Asking is

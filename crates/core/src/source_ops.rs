@@ -38,6 +38,7 @@ fn referents(manifest: &Manifest, source: &str) -> Vec<String> {
         ("commands", &manifest.commands),
         ("mcp-servers", &manifest.mcp_servers),
         ("pi-extensions", &manifest.pi_extensions),
+        ("bundles", &manifest.bundles),
     ] {
         for (name, decl) in items {
             if decl.source == source {
@@ -72,6 +73,67 @@ pub fn list_sources(env: &Env, scope: &Scope) -> Result<Vec<SourceRow>> {
             declared_items: referents(&manifest, name),
         })
         .collect())
+}
+
+/// One curated set a catalog offers, as the Catalogs page lists it.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BundleRow {
+    pub scope: Scope,
+    pub source: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub version: Option<String>,
+    pub category: Option<String>,
+    /// What it carries, each as the kind and name it installs under.
+    pub members: Vec<String>,
+    pub installed: bool,
+}
+
+/// Every set the readable catalogs in this scope offer. A catalog that cannot
+/// be read right now offers nothing here — the Catalogs page already says why
+/// that source is unreachable, and repeating it per set would say it twice.
+pub fn list_bundles(env: &Env, scope: &Scope) -> Result<Vec<BundleRow>> {
+    let Some(manifest) = load_current(env, scope)? else {
+        return Ok(Vec::new());
+    };
+    let mut rows = Vec::new();
+    for source in manifest.sources.keys() {
+        let Ok(crate::source::SourceState::Ready(ready)) =
+            crate::source::resolve(env, scope, source, &manifest)
+        else {
+            continue;
+        };
+        let Ok(sealed) = crate::source_read::SealedSource::open(&ready.root) else {
+            continue;
+        };
+        let Ok(config) = crate::source::source_config(&sealed) else {
+            continue;
+        };
+        let Ok(offered) = crate::source::bundles::offered(&sealed, &config) else {
+            continue;
+        };
+        for bundle in offered {
+            rows.push(BundleRow {
+                scope: scope.clone(),
+                source: source.clone(),
+                installed: manifest
+                    .bundles
+                    .get(&bundle.name)
+                    .is_some_and(|decl| &decl.source == source),
+                name: bundle.name,
+                description: bundle.description,
+                version: bundle.version,
+                category: bundle.category,
+                members: bundle
+                    .members
+                    .into_iter()
+                    .map(|member| format!("{} {}", member.kind.name(), member.name))
+                    .collect(),
+            });
+        }
+    }
+    Ok(rows)
 }
 
 fn persist_and_plan(env: &Env, scope: &Scope, manifest: Manifest) -> Result<EngineReport> {

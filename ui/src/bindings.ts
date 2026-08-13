@@ -41,6 +41,13 @@ export const commands = {
 	 *  `name@marketplace`, provenance lives in the lock.
 	 */
 	plugins?: { [key in string]: PluginDecl },
+	/**
+	 *  Installed bundles: a curated set the catalog offers under one name.
+	 *  What the set holds is the catalog's to say and derives on every plan;
+	 *  this records only that the set is installed, and how its members
+	 *  install — the same choices any declaration makes.
+	 */
+	bundles?: { [key in string]: ItemDecl_Serialize },
 	"pi-extensions"?: { [key in string]: ItemDecl_Serialize },
 	/**
 	 *  Items the user removed and wants kept removed, by kind: a dependency
@@ -77,6 +84,16 @@ export const commands = {
 	 *  (offline caches keep serving); hard failures surface as the error.
 	 */
 	sourcesRefresh: () => typedError<string[], string>(__TAURI_INVOKE("sources_refresh")),
+	/**
+	 *  Every curated set every catalog offers, across every scope — what the
+	 *  Catalogs page lists under each source.
+	 */
+	bundlesOverview: () => typedError<BundleRow[], string>(__TAURI_INVOKE("bundles_overview")),
+	/**
+	 *  Install a set whole. Its members derive from the catalog, so this declares
+	 *  one name and applies the plan that follows from it.
+	 */
+	bundleInstall: (scope: Scope, source: string, name: string) => typedError<BundleRow[], string>(__TAURI_INVOKE("bundle_install", { scope, source, name })),
 };
 
 /* Types */
@@ -119,6 +136,19 @@ export type AuditView_Serialize = {
 	plan: string[],
 	notes: string[],
 	warnings: ItemWarning_Serialize[],
+};
+
+/**  One curated set a catalog offers, as the Catalogs page lists it. */
+export type BundleRow = {
+	scope: Scope,
+	source: string,
+	name: string,
+	description: string | null,
+	version: string | null,
+	category: string | null,
+	/**  What it carries, each as the kind and name it installs under. */
+	members: string[],
+	installed: boolean,
 };
 
 export type CapabilityRow = {
@@ -359,6 +389,13 @@ export type Manifest_Deserialize = {
 	 *  `name@marketplace`, provenance lives in the lock.
 	 */
 	plugins?: { [key in string]: PluginDecl },
+	/**
+	 *  Installed bundles: a curated set the catalog offers under one name.
+	 *  What the set holds is the catalog's to say and derives on every plan;
+	 *  this records only that the set is installed, and how its members
+	 *  install — the same choices any declaration makes.
+	 */
+	bundles?: { [key in string]: ItemDecl_Deserialize },
 	"pi-extensions"?: { [key in string]: ItemDecl_Deserialize },
 	/**
 	 *  Items the user removed and wants kept removed, by kind: a dependency
@@ -397,6 +434,13 @@ export type Manifest_Serialize = {
 	 *  `name@marketplace`, provenance lives in the lock.
 	 */
 	plugins?: { [key in string]: PluginDecl },
+	/**
+	 *  Installed bundles: a curated set the catalog offers under one name.
+	 *  What the set holds is the catalog's to say and derives on every plan;
+	 *  this records only that the set is installed, and how its members
+	 *  install — the same choices any declaration makes.
+	 */
+	bundles?: { [key in string]: ItemDecl_Serialize },
 	"pi-extensions"?: { [key in string]: ItemDecl_Serialize },
 	/**
 	 *  Items the user removed and wants kept removed, by kind: a dependency

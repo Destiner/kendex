@@ -8,6 +8,23 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- Install a whole set at once. A catalog can offer named bundles — a
+  starter kit, a review workflow, the tools one team shares — and
+  installing one brings in every agent, skill, command and hook it
+  carries: `vstack add <catalog> --bundle <name>`, or the Install button
+  now beside each catalog on the Catalogs page. Repositories that ship
+  marketplace-style plugins need no extra authoring, because each plugin
+  is already a set, with the version and description it publishes.
+  Uninstalling is the half that usually goes wrong, so it says exactly
+  what it will do before it does it: members you also asked for by name,
+  members another installed bundle carries, and members something else
+  still needs all stay, everything else goes, and every line comes with
+  the reason it went or stayed. Removing a single member sticks too — a
+  refresh will not quietly put it back, and the audit reports the bundle
+  as installed with members held back rather than as complete. When a
+  catalog changes its mind about what a bundle carries, the additions and
+  removals appear in the refresh preview and wait for an answer before
+  anything is installed or uninstalled.
 - Skills can require other skills: a required companion installs with
   its parent (for the tools that support it, with a warning where one
   cannot), an optional companion is a real install-time choice that

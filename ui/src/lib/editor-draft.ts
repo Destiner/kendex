@@ -101,6 +101,7 @@ export function toDraft(manifest: Manifest_Serialize): Draft {
     commands: optional(manifest.commands, itemDecl),
     "mcp-servers": optional(manifest["mcp-servers"], itemDecl),
     "pi-extensions": optional(manifest["pi-extensions"], itemDecl),
+    bundles: optional(manifest.bundles, itemDecl),
     "agent-frontmatter": optional(manifest["agent-frontmatter"], (perAgent) =>
       mapValues(perAgent, frontmatter),
     ),

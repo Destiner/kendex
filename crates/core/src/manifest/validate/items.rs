@@ -6,8 +6,10 @@ use toml::Value;
 
 use super::Finding;
 
-/// Kind tables whose entries name an item from a source. Plugins are not
+/// Tables whose entries name something a source offers. Plugins are not
 /// among them: they come from a marketplace and carry only an enabled flag.
+/// Bundles are — a bundle names a set the source offers, and it declares the
+/// same things about installing it that any item declares.
 const ITEM_TABLES: &[&str] = &[
     "agents",
     "skills",
@@ -15,6 +17,7 @@ const ITEM_TABLES: &[&str] = &[
     "commands",
     "mcp-servers",
     "pi-extensions",
+    "bundles",
 ];
 
 /// The kinds a marketplace-shaped catalog offers, and so the only ones whose
@@ -69,7 +72,7 @@ pub(super) fn validate_items(table: &Table, findings: &mut Vec<Finding>) {
                     fix: match namespaced {
                         true => "rename the item — a plain name, or `<plugin>/<item>` for an item from a marketplace catalog".into(),
                         false => format!(
-                            "rename the item — a {} is named without a `/`, since no marketplace catalog offers one",
+                            "rename it — a {} is named without a `/`",
                             kind_table.strip_suffix('s').unwrap_or(kind_table)
                         ),
                     },

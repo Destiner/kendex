@@ -1,12 +1,13 @@
 import type {
   AppSettings,
   AuditView,
+  BundleRow,
   DetectedHarness,
   Manifest_Serialize,
   ObservedItem,
   SourceRow,
 } from "@/bindings";
-import { manifests, sources, views } from "./fixture-declared";
+import { bundles, manifests, sources, views } from "./fixture-declared";
 import { harnesses, items } from "./fixture-observed";
 import { ACME, API } from "./fixture-scopes";
 
@@ -21,6 +22,7 @@ export interface MockState {
   views: AuditView[];
   manifests: Record<string, Manifest_Serialize>;
   sources: SourceRow[];
+  bundles: BundleRow[];
 }
 
 export function initialState(): MockState {
@@ -33,5 +35,6 @@ export function initialState(): MockState {
     views: views(),
     manifests: manifests(),
     sources: sources(),
+    bundles: bundles(),
   };
 }

@@ -1,5 +1,6 @@
 import type {
   AuditView,
+  BundleRow,
   ItemDecl_Serialize,
   Manifest_Serialize,
   SourceRow,
@@ -131,5 +132,30 @@ export function sources(): SourceRow[] {
       declaredItems: [],
     },
     { scope: proj(API), ...vstack, declaredItems: ["orch", "github"] },
+  ];
+}
+
+export function bundles(): BundleRow[] {
+  const starter = {
+    source: "vstack",
+    name: "starter",
+    description: "Everything a new repo needs",
+    version: null,
+    category: null,
+    members: ["agent orch", "skill github", "skill deploy", "command ship-it"],
+  };
+  const review = {
+    source: "vstack",
+    name: "review",
+    description: "Code review, end to end",
+    version: "1.2.0",
+    category: "quality",
+    members: ["agent reviewer", "skill code-review"],
+  };
+  return [
+    { scope: GLOBAL, ...starter, installed: false },
+    { scope: GLOBAL, ...review, installed: true },
+    { scope: proj(ACME), ...starter, installed: true },
+    { scope: proj(ACME), ...review, installed: false },
   ];
 }

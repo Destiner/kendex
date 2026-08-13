@@ -41,6 +41,9 @@ struct AddFlags {
     /// Install specific skills (comma-separated)
     #[arg(short = 's', long)]
     skill: Vec<String>,
+    /// Install whole bundles the source offers (comma-separated)
+    #[arg(short = 'b', long)]
+    bundle: Vec<String>,
     /// Also take these optional dependencies (comma-separated)
     #[arg(long = "with")]
     optional: Vec<String>,
@@ -75,6 +78,7 @@ impl AddFlags {
             harness: self.harness,
             agent: self.agent,
             skill: self.skill,
+            bundle: self.bundle,
             optional: self.optional,
             hook: self.hook,
             pi_extension: self.pi_extension,

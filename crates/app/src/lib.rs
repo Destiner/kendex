@@ -30,6 +30,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         sources::source_remove,
         sources::source_toggle,
         sources::sources_refresh,
+        sources::bundles_overview,
+        sources::bundle_install,
     ])
 }
 

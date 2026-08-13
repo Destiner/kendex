@@ -193,6 +193,12 @@ pub struct Manifest {
     /// `name@marketplace`, provenance lives in the lock.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub plugins: BTreeMap<String, PluginDecl>,
+    /// Installed bundles: a curated set the catalog offers under one name.
+    /// What the set holds is the catalog's to say and derives on every plan;
+    /// this records only that the set is installed, and how its members
+    /// install — the same choices any declaration makes.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub bundles: BTreeMap<String, ItemDecl>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub pi_extensions: BTreeMap<String, ItemDecl>,
     /// Items the user removed and wants kept removed, by kind: a dependency

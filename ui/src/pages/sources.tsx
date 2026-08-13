@@ -27,6 +27,7 @@ function sameScope(a: Scope, b: Scope): boolean {
 export function SourcesPage() {
   const {
     rows,
+    bundles,
     busy,
     error,
     warnings,
@@ -34,6 +35,7 @@ export function SourcesPage() {
     add,
     remove,
     toggle,
+    installBundle,
     refreshRemotes,
   } = useSourcesStore();
   const projects = useSettingsStore((s) => s.settings?.projects ?? []);
@@ -87,9 +89,13 @@ export function SourcesPage() {
             key={scopeLabel(scope)}
             scope={scope}
             rows={rows.filter((row) => sameScope(row.scope, scope))}
+            bundles={bundles.filter((bundle) => sameScope(bundle.scope, scope))}
             busy={busy}
             onToggle={(name, enabled) => void toggle(scope, name, enabled)}
             onRemove={(name) => void remove(scope, name)}
+            onInstallBundle={(source, name) =>
+              void installBundle(scope, source, name)
+            }
             onAddFocus={focusAddForm}
           />
         ))}

@@ -63,6 +63,19 @@ impl SetChange {
     }
 }
 
+/// One installation a removal leaves in place, and what still accounts for
+/// it. Uninstalling a bundle says both halves out loud: the members that go,
+/// and the ones that stay because something else wants them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct KeptInstall {
+    pub kind: ItemKind,
+    pub name: String,
+    pub harness: HarnessId,
+    /// Why it stays, in the words a preview shows.
+    pub reason: String,
+}
+
 /// The reasons an installation exists, said once, in the words a preview
 /// uses. Reasons from another scope name it — a global bundle pulling a
 /// project item in has to read as what it is.
@@ -111,4 +124,36 @@ pub(super) fn set_changes(scope: &Scope, before: &Lock, after: &Lock) -> Vec<Set
             .map(|(_, entry)| SetChange::dropped(scope, entry)),
     );
     changes
+}
+
+/// What an uninstalled bundle's members turned out to be held by. Only the
+/// members that survive are here — the ones that went are already in the set
+/// changes — and each reads back with the reasons it has left, which is
+/// exactly what the user needs to see to believe the split.
+pub(super) fn kept_members(
+    scope: &Scope,
+    before: &Lock,
+    after: &Lock,
+    bundles: &[String],
+) -> Vec<KeptInstall> {
+    if bundles.is_empty() {
+        return Vec::new();
+    }
+    before
+        .entries
+        .iter()
+        .filter(|(_, entry)| {
+            entry.reasons.iter().any(|reason| match reason {
+                Reason::MemberOf { bundle } => bundles.contains(&bundle.name),
+                Reason::Requested | Reason::RequiredBy { .. } => false,
+            })
+        })
+        .filter_map(|(key, _)| after.entries.get(key))
+        .map(|entry| KeptInstall {
+            kind: entry.kind,
+            name: entry.name.clone(),
+            harness: entry.harness,
+            reason: why_wanted(scope, &entry.reasons),
+        })
+        .collect()
 }

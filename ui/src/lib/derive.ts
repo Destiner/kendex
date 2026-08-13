@@ -102,3 +102,11 @@ export function projectScopes(result: ScanResult): string[] {
   }
   return [...roots].sort();
 }
+
+/** What a bundle carries, short enough to sit under its name. */
+export function bundleSummary(members: string[]): string {
+  if (members.length === 0) return "Carries nothing yet";
+  const shown = members.slice(0, 4).join(", ");
+  const rest = members.length - 4;
+  return rest > 0 ? `${shown}, and ${rest} more` : shown;
+}

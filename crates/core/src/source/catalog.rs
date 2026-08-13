@@ -143,6 +143,16 @@ pub struct CatalogMetadata {
     pub findings: Vec<CatalogFinding>,
 }
 
+/// The items one plugin ships, named the way they install. What it cannot
+/// ship is reported by [`metadata`], which is where a catalog's problems are
+/// read; here the question is only what a plugin installed as a set brings.
+pub(super) fn plugin_members(
+    sealed: &SealedSource,
+    entry: &PluginEntry,
+) -> Result<Vec<CatalogItem>> {
+    Ok(group(sealed, entry, &mut Vec::new())?.members)
+}
+
 /// The full read: the registry, every plugin's own manifest, and the items
 /// on disk, checked against each other. `None` when the source is not
 /// marketplace-shaped.

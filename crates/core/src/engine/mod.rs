@@ -12,6 +12,7 @@ use crate::manifest::{self, Manifest, ManifestFile};
 use crate::model::{HarnessId, ItemKind, Scope};
 
 pub mod adopt;
+mod bundles;
 mod catalog;
 mod config_edits;
 mod copilot;
@@ -23,6 +24,7 @@ mod desired_kinds;
 mod desired_mcp;
 mod desired_skill;
 mod desired_source;
+mod expansion;
 mod gemini;
 mod item_plan;
 pub mod ops;
@@ -37,8 +39,8 @@ use item_plan::plan_item;
 use scope_writes::{
     plan_config_edits, plan_lock_write, plan_schema_upgrade, plan_settings_seed, source_revisions,
 };
-use set_change::set_changes;
-pub use set_change::{SetChange, SetDirection};
+pub use set_change::{KeptInstall, SetChange, SetDirection};
+use set_change::{kept_members, set_changes};
 use unmanaged::unmanaged_rows;
 
 use desired::desired_state;
@@ -94,6 +96,9 @@ pub struct EngineReport {
     /// Installations this plan leaves alone that nothing needs anymore —
     /// what a removal offers to take with it.
     pub sweepable: Vec<SetChange>,
+    /// Members of an uninstalled bundle that stay, and what still accounts
+    /// for them — the other half of the preview a bundle removal shows.
+    pub kept: Vec<KeptInstall>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -107,6 +112,10 @@ pub struct PlanOptions {
     /// anymore — a dependency whose last dependent went away, or one an
     /// upstream item stopped requiring.
     pub sweep_unneeded: bool,
+    /// Bundles this plan uninstalls. Their members that survive are named in
+    /// the preview with what keeps them, so an uninstall says both halves:
+    /// what goes, and what stays.
+    pub uninstalled_bundles: Vec<String>,
 }
 
 /// Compute drift and the plan that would fix it, in one pass — the Audit
@@ -204,6 +213,7 @@ pub fn plan_scope(
 
     plan_config_edits(config_edits, &mut ops)?;
     let set_changes = set_changes(scope, lock, &new_lock);
+    let kept = kept_members(scope, lock, &new_lock, &options.uninstalled_bundles);
     plan_lock_write(env, scope, lock, new_lock, &mut ops)?;
 
     let mut report = EngineReport {
@@ -216,6 +226,7 @@ pub fn plan_scope(
         warnings: state.warnings,
         set_changes,
         sweepable,
+        kept,
     };
     unmanaged_rows(env, scope, manifest, lock, &state.items, &mut report.drift);
     Ok(report)
@@ -308,6 +319,7 @@ fn plan_declared(env: &Env, scope: &Scope, options: &PlanOptions) -> Result<Engi
                 warnings: Vec::new(),
                 set_changes: Vec::new(),
                 sweepable: Vec::new(),
+                kept: Vec::new(),
             };
             if matches!(other, ManifestFile::Legacy { .. }) {
                 report
