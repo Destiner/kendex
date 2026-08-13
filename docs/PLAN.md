@@ -16,44 +16,16 @@
 >   remediation (CLI + Sync page); surface groups with hash-dedup
 >   (codex+pi share `.agents/skills`); two adversarial review rounds
 >   folded in (14 + 3 blocking findings fixed).
-> - **Next session, in order:**
->   1. Wire `render/split.rs` (done, 15 tests, registered, unconsumed)
->      into `engine/desired_skill.rs`: per-group cap =
->      `min(format_caps(member).skill_body_max_bytes)`; on Some(cap) run
->      `enforce_body_cap` after instruction injection; refusal →
->      `state.refused` (same path as the Pi allowlist refusal); warnings
->      → `state.warnings`; test: oversized skill splits for the codex+pi
->      group while the claude variant stays whole and diverges onto its
->      own tree (extend `tests/surfaces.rs`).
->   2. Remaining adversarial-review findings (non-blocking): update-pi
->      listing aborts on one bad package (`pi_ext/files.rs` package_hash
->      error should become a per-package row, not `?`); `is_file`
->      swallows containment errors so a symlinked entry point reads as
->      "not found" (find_item / source_config on a symlinked
->      vstack.toml) — misattributed message; `list_dir` allocates before
->      bounding; extend the guard catalog-read ban to `engine/ops.rs`,
->      `app/editor.rs`, `pi_ext/files.rs`; coalesced plan rows lost the
->      harness name in copy; drop the `(v1 pi.rs:96-148)` comment
->      pointer in render/agent/pi.rs; `kinds.rs` coalesce test comment
->      mentions a hook but removes two MCP servers.
->   3. Rest of item 9: tool-name swap + conservative prose rewrite
->      (shared table; never in fences/inline literals/links; deny-list
->      entries never dropped), commands→skills on Codex with the
->      emitted mapping recorded in the lock (+ `__command`/`__cmd`
->      collision suffixes), per-harness name legality checks (OpenCode
->      lower-kebab ≤64).
->   4. Item 10: per-adapter structural validators run inside plan
->      preview (modeled on wshobson validate_generated.py — see research
->      §4 table for per-harness checks).
->   5. Item 11: hardened process constructor (env cleared:
->      GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE, GIT_TERMINAL_PROMPT=0, SSH
->      BatchMode, timeouts); convert remote.rs; guard-ban raw
->      `Command::new`.
->   6. Items 12–13: byte-faithful round-trip + rejection tests per
->      writer; verification re-hashes installed content and reports
->      uncomparable artifacts as uncompared.
->   7. Adversarial review of the unreviewed batch (schema v2, warnings
->      channel, surface groups, splitter wiring) before Phase 1 closes.
+> - **Remaining for Phase 1** (items 1-6 of the former list are done —
+>   splitter wired with per-surface divergence, review findings folded,
+>   commands→skills on Codex with emitted-mapping lock records,
+>   validators in plan preview incl. name legality, hardened process
+>   constructor, byte-faithful + uncompared-reporting tests):
+>   1. Fold in adversarial review #3 (running over 926ac5d..b160def).
+>   2. Check the Phase-1 done-when list, then delete the Phase 1 section
+>      and its landed decision-table rows; amend ARCHITECTURE.md with the
+>      durable decisions (surface model, permission intent, sealed reads,
+>      schema versioning) in the same change.
 > - Standing: subagent reports may arrive only as idle notifications —
 >   recover them from the session's `subagents/*.jsonl` (user CLAUDE.md).
 >   Engine/render changes get adversarial review before merge. Commits
