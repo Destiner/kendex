@@ -13,8 +13,17 @@
 >   preview; hardened process constructor; byte-faithful + uncompared
 >   tests. Three adversarial review rounds folded in (14 + 3 + 18
 >   findings). ARCHITECTURE.md carries the durable decisions.
-> - Phase 2 ⏳ next: capability model v2, then Gemini CLI + GitHub
->   Copilot adapters per `docs/research/gemini-copilot-matrix.md` §7.
+> - Phase 2 ⏳ in flight. A `phase2-foundation` subagent is implementing
+>   the shared base (HarnessId::Gemini/Copilot, caps v2 axes incl.
+>   enforcement level + mcp transports, adapter stubs with doc-verified
+>   detection roots, labels/README/bindings) — uncommitted working tree;
+>   recover its report from this session's `subagents/agent-
+>   aphase2-foundation-*.jsonl` if needed. After it lands: fan out one
+>   agent per adapter (gemini set: `harness/gemini.rs` +
+>   `render/agent/gemini.rs` + scan/tests; copilot mirror set), then the
+>   remaining Phase 2 bullets (B11 plugin harness targeting,
+>   effective-state scanning, migration-tolerant readers), then
+>   adversarial review.
 > - Standing: subagent reports may arrive only as idle notifications —
 >   recover them from the session's `subagents/*.jsonl` (user CLAUDE.md).
 >   Engine/render changes get adversarial review before merge. Commits
