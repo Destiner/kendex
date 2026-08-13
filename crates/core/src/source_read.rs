@@ -124,15 +124,16 @@ impl SealedSource {
             .map_err(|e| CoreError::io(dir, e))?
             .flatten()
         {
+            entries.push(entry.path());
             // The bound holds while collecting — a million-entry directory
-            // must not get a million-entry allocation first.
-            if entries.len() >= MAX_DIR_ENTRIES {
+            // must not get a million-entry allocation first. A directory of
+            // exactly the limit is within it; the entry after that is not.
+            if entries.len() > MAX_DIR_ENTRIES {
                 return Err(CoreError::SourceEscape {
                     path: dir.to_path_buf(),
                     reason: format!("more than {MAX_DIR_ENTRIES} entries in one catalog directory"),
                 });
             }
-            entries.push(entry.path());
         }
         entries.sort();
         Ok(entries)
@@ -287,6 +288,25 @@ mod tests {
         std::fs::write(nested.join("f"), "x").expect("write");
         assert!(matches!(
             sealed.collect_tree(&sealed.root().join("skills/deep"), &[]),
+            Err(CoreError::SourceEscape { .. })
+        ));
+    }
+
+    /// The bound is a ceiling, not a wall one short of it: a directory
+    /// holding exactly the limit is inside it and must still read.
+    #[test]
+    fn the_directory_bound_admits_exactly_the_limit() {
+        let (_tmp, sealed) = fixture();
+        let dir = sealed.root().join("many");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        for n in 0..MAX_DIR_ENTRIES {
+            std::fs::write(dir.join(format!("f{n}")), "x").expect("write");
+        }
+        assert_eq!(sealed.list_dir(&dir).expect("list").len(), MAX_DIR_ENTRIES);
+
+        std::fs::write(dir.join("one-too-many"), "x").expect("write");
+        assert!(matches!(
+            sealed.list_dir(&dir),
             Err(CoreError::SourceEscape { .. })
         ));
     }

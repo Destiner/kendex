@@ -28,10 +28,11 @@ fn a_tool_reference_speaks_each_harness_vocabulary() {
         rewrite(body, HarnessId::Cursor),
         "Use the read tool first, then the bash tool.\n"
     );
-    // Codex names actions, so the whole reference goes.
+    // Codex names actions, so the whole `use the X tool` goes — and only
+    // that shape, because the phrase reads as a verb and nothing else.
     assert_eq!(
         rewrite(body, HarnessId::Codex),
-        "Use open the file first, then run a shell command.\n"
+        "Open the file first, then the Bash tool.\n"
     );
     // Bodies are authored in Claude's words already.
     assert_eq!(rewrite(body, HarnessId::Claude), body);
@@ -39,14 +40,44 @@ fn a_tool_reference_speaks_each_harness_vocabulary() {
 }
 
 #[test]
-fn a_reference_that_opens_a_sentence_keeps_its_capital() {
+fn a_codex_rewrite_keeps_the_capital_the_verb_had() {
     assert_eq!(
-        rewrite("The Grep tool is fast.\n", HarnessId::Codex),
-        "Search is fast.\n"
+        rewrite("Use the Read tool to inspect it.\n", HarnessId::Codex),
+        "Open the file to inspect it.\n"
     );
     assert_eq!(
+        rewrite("Please use the Read tool first.\n", HarnessId::Codex),
+        "Please open the file first.\n"
+    );
+}
+
+/// A Codex phrase is a verb, so it can only replace a whole `use the X
+/// tool`. Dropped anywhere else it produces sentences no reader can parse —
+/// "Open the file is the only way in" — or collapses two different tools
+/// into one phrase, so the reference stays in Claude's words instead.
+#[test]
+fn codex_leaves_every_other_shape_in_claude_s_words() {
+    for body in [
+        "The Read tool is the only way in.\n",
+        "Do not reach for the Write tool here.\n",
+        "The Edit tool, the Write tool and the Bash tool are denied.\n",
+    ] {
+        assert_eq!(rewrite(body, HarnessId::Codex), body, "{body}");
+    }
+    let (_, warnings) = rewrite_prose("The Read tool is the only way in.\n", HarnessId::Codex);
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].message.contains("Read"), "{:?}", warnings[0]);
+}
+
+/// An inline literal is a sample to copy. Codex's phrase would swallow the
+/// backticks along with the name and the byte-faithful promise with them.
+#[test]
+fn a_quoted_name_keeps_every_byte_on_codex() {
+    let body = "Use `Read` tool sparingly.\n";
+    assert_eq!(rewrite(body, HarnessId::Codex), body);
+    assert_eq!(
         rewrite("The `Write` tool overwrites.\n", HarnessId::Codex),
-        "Edit the file overwrites.\n"
+        "The `Write` tool overwrites.\n"
     );
     assert_eq!(
         rewrite("The `Write` tool overwrites.\n", HarnessId::Opencode),
@@ -96,14 +127,22 @@ fn an_unclosed_fence_protects_the_rest_of_the_body() {
 fn unknown_and_mcp_references_pass_through_with_one_warning_each() {
     let body =
         "Call the mcp__github__search tool, the SendMessage tool, the mcp__github__search tool.\n";
-    let (text, warnings) = rewrite_prose(body, HarnessId::Codex);
+    let (text, warnings) = rewrite_prose(body, HarnessId::Opencode);
     assert_eq!(text, body);
     assert_eq!(warnings.len(), 2);
     assert_eq!(
         warnings[0].message,
-        "`mcp__github__search` is not a Codex tool name — the reference passes through as written"
+        "`mcp__github__search` is not an OpenCode tool name — the reference passes through as written"
     );
     assert!(warnings[1].message.starts_with("`SendMessage`"));
+
+    // Codex leaves every reference as written, so naming them one by one
+    // would drown the body — they arrive as one line.
+    let (text, warnings) = rewrite_prose(body, HarnessId::Codex);
+    assert_eq!(text, body);
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].message.contains("mcp__github__search"));
+    assert!(warnings[0].message.contains("SendMessage"));
 }
 
 #[test]
@@ -111,11 +150,24 @@ fn a_tool_codex_has_no_word_for_is_reported_not_guessed_at() {
     let body = "Track it with the TodoWrite tool.\n";
     let (text, warnings) = rewrite_prose(body, HarnessId::Codex);
     assert_eq!(text, body);
-    assert!(warnings[0].message.contains("`TodoWrite`"));
+    assert!(warnings[0].message.contains("TodoWrite"));
     // OpenCode has no word for it either, and says so rather than inventing one.
     let (text, warnings) = rewrite_prose(body, HarnessId::Opencode);
     assert_eq!(text, body);
     assert!(warnings[0].message.contains("`TodoWrite`"));
+}
+
+/// A fenced block nested in a list item is indented four spaces — the shape
+/// most real skills use. Reading that as prose rewrites a sample the agent
+/// was told to copy verbatim.
+#[test]
+fn an_indented_fence_is_still_a_fence() {
+    let body = "1. Run this:\n\n    ```sh\n    use the Bash tool\n    ```\n\nDone.\n";
+    for harness in [HarnessId::Codex, HarnessId::Opencode, HarnessId::Cursor] {
+        let (text, warnings) = rewrite_prose(body, harness);
+        assert_eq!(text, body, "{harness:?} rewrote an indented block");
+        assert!(warnings.is_empty(), "{harness:?} warned: {warnings:?}");
+    }
 }
 
 #[test]

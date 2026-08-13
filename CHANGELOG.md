@@ -15,9 +15,11 @@ changes carry a **Breaking** call-out with their migration note inline.
   in, a name OpenCode's loader rejects like `My_Skill` — is blocked in the
   plan with the fix spelled out, instead of installing broken and going
   quiet. Only the tool that rejects it is blocked: the same item still
-  installs everywhere its format is valid. Files that load but not as
-  written, like a Cursor rule carrying keys Cursor ignores, install with a
-  warning rather than a block.
+  installs everywhere its format is valid — except where tools read the
+  same folder, where one file serves them all, so a refusal there covers
+  every tool reading it. Files that load but not as written, like a Cursor
+  rule carrying keys Cursor ignores, install with a warning rather than a
+  block.
 
 - **Breaking:** commands install on Codex, which retired its prompt
   directory in favor of skills. A declared command lands on Codex's skill
@@ -33,13 +35,17 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 - Agent instructions now speak each tool's own vocabulary. A body written
   in Claude's words — "use the Read tool" — is reworded as it installs on
-  Codex, OpenCode, Cursor, and Pi, so the agent reading it gets an
-  instruction about a tool it actually has instead of a name it does not
-  recognize. Only unmistakable references are touched: code samples,
-  inline literals, links, generated skill paths, and the project's own
-  launch and additional instructions keep every byte. A custom or MCP tool
-  name is never guessed at — it passes through as written, and the plan
-  preview names both what was reworded and what was left alone.
+  OpenCode, Cursor, and Pi, so the agent reading it gets an instruction
+  about a tool it actually has instead of a name it does not recognize.
+  Codex is narrower, because it names actions rather than tools: only a
+  whole "use the Read tool" becomes "open the file", and every other
+  mention stays as authored, since an action phrase dropped into a name's
+  place turns the sentence into nonsense. Only unmistakable references are
+  touched: code samples, links, generated skill paths, backtick-quoted
+  names on Codex, and the project's own launch and additional instructions
+  keep every byte. A custom or MCP tool name is never guessed at — it
+  passes through as written, and the plan preview names both what was
+  reworded and what was left alone.
 
 - Catalog downloads are hardened against the repositories they fetch. A
   source repository can no longer redirect a refresh at files outside its
@@ -76,9 +82,11 @@ changes carry a **Breaking** call-out with their migration note inline.
   settings changes name the tool again.
 - **Breaking:** a skill too large for Codex's loader now splits into a
   head plus `references/details.md` instead of silently truncating at
-  load; tools without the cap keep the whole body on their own copy. A
-  skill whose single code block cannot fit is refused with a clear
-  message rather than cut mid-block. Migration: refresh regenerates.
+  load; tools without the cap keep the whole body on their own copy, and
+  a command that installs as a Codex skill splits the same way. Nothing
+  is refused for size unless the split itself is impossible — a single
+  code block spanning the limit — and the message says so. Migration:
+  refresh regenerates.
 - The editor's skill list no longer breaks on a machine where nothing
   was ever adopted; the reserved local source reads as missing until
   adopt creates it.
@@ -95,6 +103,39 @@ changes carry a **Breaking** call-out with their migration note inline.
   server, or any mix of registrations and removals) into one settings
   file in one apply used to fail and roll back; each file now gets a
   single composed mutation with a single precondition.
+- A tool refusing a skill no longer wedges the project. Where two tools
+  read the same folder, the refusal used to plan the same removal twice,
+  which failed and rolled the whole apply back — nothing in that project
+  could be applied again until the catalog was hand-edited. The refusal
+  also no longer takes the folder away from a tool that accepted the
+  skill and is still reading it. Two tools pointed at one folder likewise
+  no longer plan the same connection twice.
+- A skill that grows past a tool's size limit, or shrinks back under it,
+  now moves cleanly between the shared copy and a copy of its own. Tools
+  with no limit used to keep reading the shortened copy through a stale
+  link — exactly the truncation splitting exists to prevent — and the
+  change was reported as a conflict with nothing the user could do about
+  it.
+- Two commands can no longer claim one generated name. Names are handed
+  out in a fixed order, so a command keeps the same name from one check
+  to the next instead of two commands swapping bodies on every apply.
+- A command whose name a skill takes over, or gives back, no longer
+  leaves its old copy behind for the tools to offer under a name nobody
+  declared.
+- A long skill now splits at any section heading, not only top-level
+  ones, so what the tool reads stays a skill instead of becoming a
+  pointer. A code block indented inside a list item is recognized as
+  code: it is never cut through and never reworded.
+- A command too long for Codex splits like any other skill instead of
+  being refused with a fix its author could not make, and the plan says
+  when the generated skill also lands where Pi reads.
+- A command's one-line summary comes from its own `description`, not from
+  one nested under another key, and its frontmatter no longer appears as
+  literal text inside the generated skill.
+- A custom `GIT_SSH_COMMAND` is extended rather than replaced, so a
+  catalog that needs a particular SSH key keeps fetching.
+- A command that outlives its timeout now takes everything it started
+  with it, instead of leaving a stray process running behind it.
 
 ### Changed
 

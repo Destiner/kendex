@@ -59,7 +59,11 @@ lives in one capability table read by core and UI.
    app changes nothing.
 6. Never touch the unowned: unmanaged files are reported, never deleted;
    foreign symlinks are conflicts, not clobber targets; adoption merges
-   content, never loses it.
+   content, never loses it. Ownership is what vstack wrote, read from the
+   lock — including the paths an installation recorded writing under
+   another kind's name. A position we put something at is ours to replace
+   or clear, whichever entry holds it now; deriving ownership from the
+   lock key alone calls our own output a stranger's.
 7. Applies are transactional: preconditions revalidate against observed
    hashes immediately before mutation; pre-images are journaled first; any
    failure rolls back and interrupted applies recover on next launch.
@@ -145,9 +149,15 @@ lives in one capability table read by core and UI.
   directory form a surface group carrying exactly one variant rendered
   to the group's combined constraints (tightest byte cap wins); a
   variant whose bytes match the shared tree collapses onto it through a
-  link, and a divergent one gets its own tree. Format facts — byte
-  caps, name rules — live in one table beside the op table
-  (`harness/caps.rs`), never as renderer literals.
+  link, and a divergent one gets its own tree. The move runs both ways as
+  the source grows and shrinks: a link gives way to a directory and a
+  directory back to a link, each planned as a removal plus a write, since
+  a variant left reading a stale link gets exactly the truncation the
+  split exists to prevent. A refusal is per surface, not per tool — the
+  members of a group all read one file — and it takes down only what the
+  refusing installation alone holds. Format facts — byte caps, name
+  rules — live in one table beside the op table (`harness/caps.rs`),
+  never as renderer literals.
 - One model-alias table for every harness: bare tiers resolve per
   harness, `inherit` is expressed in each tool's own dialect, explicit
   vendor ids pass through.

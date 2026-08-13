@@ -142,12 +142,19 @@ fn render_variant(
     enabled: bool,
 ) -> Result<Variant> {
     let mut files = render_skill(ctx.sealed, ctx.item_path, ctx.manifest, ctx.name)?;
-    let cap = group
+    // The tightest cap in the group and the member that enforces it, taken
+    // together: they are one fact, and reading them from separate passes
+    // invites a fallback for a state that cannot happen.
+    let capped = group
         .members
         .iter()
-        .filter_map(|h| crate::harness::format_caps(*h).skill_body_max_bytes)
-        .min();
-    if let Some(cap) = cap {
+        .filter_map(|h| {
+            crate::harness::format_caps(*h)
+                .skill_body_max_bytes
+                .map(|c| (c, *h))
+        })
+        .min_by_key(|(cap, _)| *cap);
+    if let Some((cap, capped_by)) = capped {
         let outcome = crate::render::split::enforce_body_cap(files, cap);
         if let Some(reason) = outcome.refusal {
             for harness in &group.members {
@@ -164,17 +171,6 @@ fn render_variant(
                 refused: true,
             });
         }
-        let capped_by = group
-            .members
-            .iter()
-            .copied()
-            .filter(|h| {
-                crate::harness::format_caps(*h)
-                    .skill_body_max_bytes
-                    .is_some()
-            })
-            .min_by_key(|h| crate::harness::format_caps(*h).skill_body_max_bytes)
-            .unwrap_or(group.members[0]);
         for warning in outcome.warnings {
             state.warnings.push(super::ItemWarning {
                 kind: ItemKind::Skill,

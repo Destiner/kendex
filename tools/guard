@@ -91,7 +91,7 @@ hits=$(scan '#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?\b|rgba?\(|hsla?\(' '^ui/src/.*\.ts
 # its only Command re-execs this app, replacing the process rather than
 # launching a tool. Integration tests under crates/*/tests run our own
 # binary and are likewise not tool launches.
-hits=$(scan 'Command::new' '^crates/(core|cli)/src/' | grep -v '^crates/core/src/process\.rs:')
+hits=$(scan 'Command::new' '^crates/(core|cli)/src/' | grep -v '^crates/core/src/process/')
 [ -n "$hits" ] && {
   echo "$hits" | head -5
   say "raw Command::new — external processes go through process::Hardened"

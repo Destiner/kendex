@@ -21,10 +21,13 @@ mod desired_skill;
 mod item_plan;
 pub mod ops;
 mod removal;
+mod scope_writes;
 mod targets;
+mod tree_plan;
 mod unmanaged;
 
 use item_plan::plan_item;
+use scope_writes::{plan_config_edits, plan_lock_write, plan_schema_upgrade, plan_settings_seed};
 use unmanaged::unmanaged_rows;
 
 use desired::desired_state;
@@ -105,7 +108,7 @@ pub fn plan_scope(
         version: crate::lock::LOCK_VERSION,
         entries: BTreeMap::new(),
     };
-    let mut written_canonicals: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut written = tree_plan::Written::default();
     let mut config_edits = config_edits::ConfigEditPlan::default();
 
     if let Some(updated) = &state.manifest_update {
@@ -124,26 +127,40 @@ pub fn plan_scope(
         plan_schema_upgrade(env, scope, manifest, &mut ops)?;
     }
 
+    // What earlier installs put on disk under another kind's name. A path
+    // one of them wrote is ours to replace, whichever entry holds it now.
+    let emitted_paths: BTreeSet<PathBuf> = lock
+        .entries
+        .values()
+        .filter_map(|entry| entry.emitted.as_ref())
+        .flat_map(|emitted| emitted.paths.iter().cloned())
+        .collect();
+
     for item in &state.items {
-        plan_item(
-            item,
-            scope,
-            lock,
-            &mut drift,
-            &mut ops,
-            &mut config_edits,
-            &mut new_lock,
-            &mut written_canonicals,
-        )?;
+        let mut sink = item_plan::PlanSink {
+            drift: &mut drift,
+            ops: &mut ops,
+            config_edits: &mut config_edits,
+            new_lock: &mut new_lock,
+            written: &mut written,
+        };
+        plan_item(item, scope, lock, &emitted_paths, &mut sink)?;
     }
 
     plan_settings_seed(scope, &state, &mut ops, &mut drift)?;
+
+    // Trash ops all pass one guard: writes for this pass are already
+    // planned, so anything still wanted is known, and no path goes to the
+    // trash twice.
+    let mut guard = removal::TrashGuard::new(&state.items);
+    removal::stale_emitted(&state, lock, &mut guard, &mut ops);
 
     let refused_keys = plan_refusals(
         env,
         scope,
         lock,
         &state,
+        &mut guard,
         &mut drift,
         &mut ops,
         &mut config_edits,
@@ -157,45 +174,15 @@ pub fn plan_scope(
         &state,
         options,
         &refused_keys,
+        &mut guard,
         &mut drift,
         &mut ops,
         &mut config_edits,
         &mut new_lock,
     )?;
 
-    // One mutation per config file, whatever asked for it — a single
-    // precondition can hold; per-edit preconditions against the same
-    // original bytes cannot.
-    for (path, (labels, edits)) in config_edits.by_file {
-        let file = path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.display().to_string());
-        ops.push(PlannedOp {
-            description: format!("Update {file} ({})", labels.join(", ")),
-            op: Op::EditFile {
-                pre: crate::apply::Pre::observed(&path)?,
-                path,
-                edits,
-            },
-        });
-    }
-
-    // An old-version lock rewrites even when its entries are unchanged —
-    // the version bump is itself the change.
-    if new_lock.entries != lock.entries
-        || (lock.version != crate::lock::LOCK_VERSION && !lock.entries.is_empty())
-    {
-        let path = lock_path(env, scope);
-        ops.push(PlannedOp {
-            description: "Update the install record".into(),
-            op: Op::WriteLock {
-                pre: crate::apply::Pre::observed(&path)?,
-                path,
-                lock: Box::new(new_lock),
-            },
-        });
-    }
+    plan_config_edits(config_edits, &mut ops)?;
+    plan_lock_write(env, scope, lock, new_lock, &mut ops)?;
 
     let mut report = EngineReport {
         drift,
@@ -210,50 +197,18 @@ pub fn plan_scope(
     Ok(report)
 }
 
-/// Upgrade an older-schema manifest through the normal journaled apply.
-/// The bump is a surgical text edit — the schema line changes and nothing
-/// else does (invariant 10); only if the line has an unexpected spelling
-/// does the plan fall back to a full rewrite.
-fn plan_schema_upgrade(
-    env: &Env,
-    scope: &Scope,
-    manifest: &Manifest,
-    ops: &mut Vec<PlannedOp>,
-) -> Result<()> {
-    let path = manifest::manifest_path(env, scope);
-    let description = "Upgrade vstack.toml to the current format".to_owned();
-    let old_line = format!("schema = {}", manifest.schema);
-    let new_line = format!("schema = {}", manifest::MANIFEST_SCHEMA);
-    let current = crate::fs::read_if_exists(&path)?.unwrap_or_default();
-    let op = match current.lines().any(|line| line.trim() == old_line) {
-        true => Op::WriteFile {
-            pre: crate::apply::Pre::observed(&path)?,
-            path,
-            bytes: current.replacen(&old_line, &new_line, 1).into_bytes(),
-        },
-        false => {
-            let mut upgraded = manifest.clone();
-            upgraded.schema = manifest::MANIFEST_SCHEMA;
-            Op::WriteManifest {
-                pre: crate::apply::Pre::observed(&path)?,
-                path,
-                manifest: Box::new(upgraded),
-            }
-        }
-    };
-    ops.push(PlannedOp { description, op });
-    Ok(())
-}
-
 /// A refusal is a conflict the user must resolve, and any previous, wider
 /// rendering comes off disk on the default path — leaving it live would
-/// keep exactly the access the refusal exists to prevent.
+/// keep exactly the access the refusal exists to prevent. Only what this
+/// installation alone holds comes off: the tree a refused tool shares with
+/// a tool that still installs stays exactly where it is.
 #[allow(clippy::too_many_arguments)]
 fn plan_refusals(
     env: &Env,
     scope: &Scope,
     lock: &Lock,
     state: &desired::DesiredState,
+    guard: &mut removal::TrashGuard,
     drift: &mut Vec<DriftRow>,
     ops: &mut Vec<PlannedOp>,
     config_edits: &mut config_edits::ConfigEditPlan,
@@ -265,73 +220,30 @@ fn plan_refusals(
         .collect();
     for refusal in &state.refused {
         let key = crate::lock::entry_key(refusal.kind, &refusal.name, refusal.harness);
-        let existing = lock.entries.get(&key);
+        let mut removals = Vec::new();
+        if let Some(entry) = lock.entries.get(&key) {
+            guard.extend(
+                &mut removals,
+                removal::removal_ops(env, scope, entry, config_edits)?,
+            );
+        }
         drift.push(DriftRow {
             kind: refusal.kind,
             name: refusal.name.clone(),
             harness: refusal.harness,
             scope: scope.clone(),
             state: DriftState::Conflict,
-            detail: match existing {
-                Some(_) => format!(
+            detail: match removals.is_empty() {
+                false => format!(
                     "{} — the previous installation will be moved to the trash",
                     refusal.reason
                 ),
-                None => refusal.reason.clone(),
+                true => refusal.reason.clone(),
             },
         });
-        if let Some(entry) = existing {
-            ops.extend(removal::removal_ops(env, scope, entry, config_edits)?);
-        }
+        ops.append(&mut removals);
     }
     Ok(refused_keys)
-}
-
-/// Skills may ship `[env]` defaults; missing keys merge into the project's
-/// vstack.settings.toml write-if-absent (v1 semantics — a key the user set
-/// anywhere in the file is never touched).
-fn plan_settings_seed(
-    scope: &Scope,
-    state: &desired::DesiredState,
-    ops: &mut Vec<PlannedOp>,
-    drift: &mut Vec<DriftRow>,
-) -> Result<()> {
-    let Scope::Project { root } = scope else {
-        return Ok(());
-    };
-    if state.settings_env.is_empty() {
-        return Ok(());
-    }
-    let path = root.join(crate::settings_seed::SETTINGS_FILE);
-    if path.is_symlink() || (path.exists() && !path.is_file()) {
-        drift.push(DriftRow {
-            kind: ItemKind::Skill,
-            name: crate::settings_seed::SETTINGS_FILE.into(),
-            harness: HarnessId::Claude,
-            scope: scope.clone(),
-            state: DriftState::Conflict,
-            detail: format!("{} is not a regular file", path.display()),
-        });
-        return Ok(());
-    }
-    let current = crate::fs::read_if_exists(&path)?;
-    let Some((text, added)) = crate::settings_seed::merge(current.as_deref(), &state.settings_env)
-    else {
-        return Ok(());
-    };
-    ops.push(PlannedOp {
-        description: format!(
-            "Seed {} with {}",
-            crate::settings_seed::SETTINGS_FILE,
-            added.join(", ")
-        ),
-        op: Op::WriteFile {
-            pre: crate::apply::Pre::observed(&path)?,
-            path,
-            bytes: text.into_bytes(),
-        },
-    });
-    Ok(())
 }
 
 /// Read-only audit for a scope. A legacy or absent manifest still reports

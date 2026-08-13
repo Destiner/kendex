@@ -1,127 +1,11 @@
-//! What each harness calls the tools an agent talks about. Agent bodies are
-//! authored in Claude's vocabulary — "the Read tool" — and every other
-//! harness reads that as a name for something it does not have. This module
-//! owns all three translations: the manifest-name tables the renderers use
-//! for their permission fields, and the conservative prose rewrite that lets
-//! a body say the same thing in the reader's own words.
+//! The prose rewrite: saying a body's tool references in the reader's
+//! own words, conservatively enough that a body nobody can translate is
+//! left as authored rather than mangled.
 
-use super::RenderWarning;
+use super::super::RenderWarning;
+use super::super::fences::fence_marker;
+use super::{CLAUDE_TOOLS, SKILL_POINTER, Word, word};
 use crate::model::HarnessId;
-
-/// v1's alias table: manifests write generic lowercase tool names, Claude
-/// matches exact PascalCase — an unmapped name silently fails to deny.
-pub fn claude_tool_name(tool: &str) -> String {
-    match normalize(tool).as_str() {
-        "read" => "Read".into(),
-        "grep" => "Grep".into(),
-        "glob" | "find" => "Glob".into(),
-        "ls" | "list" => "LS".into(),
-        "bash" => "Bash".into(),
-        "edit" => "Edit".into(),
-        "multiedit" => "MultiEdit".into(),
-        "write" => "Write".into(),
-        "webfetch" => "WebFetch".into(),
-        "websearch" => "WebSearch".into(),
-        "todowrite" => "TodoWrite".into(),
-        "todoread" => "TodoRead".into(),
-        "task" | "agent" | "subagent" | "spawnagent" | "spawnagentsoncsv" => "Agent".into(),
-        "question" | "askuserquestion" => "AskUserQuestion".into(),
-        "notebookread" => "NotebookRead".into(),
-        "notebookedit" => "NotebookEdit".into(),
-        _ => tool.trim().to_owned(),
-    }
-}
-
-/// OpenCode gates tools by permission key, not tool name. `None` is the
-/// empty name — nothing to gate; an unknown name passes through so an MCP
-/// tool can still be denied by its own id.
-pub fn opencode_permission(tool: &str) -> Option<String> {
-    let permission = match normalize(tool).as_str() {
-        "read" => "read",
-        "edit" | "write" | "patch" | "applypatch" | "multiedit" | "notebookedit" => "edit",
-        "glob" | "find" | "ls" | "list" => "glob",
-        "grep" => "grep",
-        "bash" | "shell" => "bash",
-        "task" | "agent" | "subagent" | "spawnagent" | "spawnagentsoncsv" => "task",
-        "skill" => "skill",
-        "lsp" => "lsp",
-        "question" => "question",
-        "webfetch" | "websearch" | "web" | "webresearch" | "webanswer" | "codesearch" => "webfetch",
-        "" => return None,
-        _ => return Some(tool.trim().to_owned()),
-    };
-    Some(permission.to_owned())
-}
-
-/// Claude's own spelling for every tool a body can name. Recognition in
-/// prose is exact against this list: `read` in a sentence is the verb,
-/// `Read` is the tool.
-const CLAUDE_TOOLS: [&str; 16] = [
-    "Read",
-    "Grep",
-    "Glob",
-    "LS",
-    "Bash",
-    "Edit",
-    "MultiEdit",
-    "Write",
-    "WebFetch",
-    "WebSearch",
-    "TodoWrite",
-    "TodoRead",
-    "Agent",
-    "AskUserQuestion",
-    "NotebookRead",
-    "NotebookEdit",
-];
-
-/// Skill pointers name generated files; a line that carries one is a path
-/// reference, not prose, and stays byte-for-byte.
-const SKILL_POINTER: &str = "SKILL.md";
-
-/// How a harness says a tool: a name that slots into the same sentence, or
-/// — for Codex, whose docs name actions rather than tools — a phrase that
-/// stands in for the whole reference.
-enum Word {
-    Name(&'static str),
-    Phrase(&'static str),
-}
-
-/// The vocabulary each harness has an official word for. A tool missing
-/// from a harness's column is left as authored rather than guessed at.
-fn word(tool: &str, harness: HarnessId) -> Option<Word> {
-    let tool = normalize(tool);
-    match harness {
-        // Bodies are already written in Claude's words.
-        HarnessId::Claude => None,
-        HarnessId::Codex => Some(Word::Phrase(match tool.as_str() {
-            "read" => "open the file",
-            "grep" => "search",
-            "glob" | "ls" => "list files",
-            "bash" => "run a shell command",
-            "edit" | "multiedit" | "write" => "edit the file",
-            "webfetch" | "websearch" => "fetch the page",
-            _ => return None,
-        })),
-        HarnessId::Opencode | HarnessId::Cursor | HarnessId::Pi => {
-            Some(Word::Name(match tool.as_str() {
-                "read" => "read",
-                "grep" => "grep",
-                "glob" => "glob",
-                "ls" => "list",
-                "bash" => "bash",
-                "edit" | "multiedit" => "edit",
-                "write" => "write",
-                "webfetch" | "websearch" => "webfetch",
-                _ => return None,
-            }))
-        }
-    }
-}
-
-fn normalize(tool: &str) -> String {
-    tool.trim().to_lowercase().replace(['_', '-'], "")
-}
 
 /// Say the body's tool references in `harness`'s vocabulary. Only two
 /// shapes are touched — `the Read tool` and `` `Read` tool `` — because
@@ -129,6 +13,12 @@ fn normalize(tool: &str) -> String {
 /// to copy (code fences, inline literals), links, and generated skill
 /// paths keep every byte, and a name this module does not know is reported
 /// rather than guessed at.
+///
+/// Codex is the exception, because it names actions rather than tools: a
+/// phrase can only stand where the whole reference does, so exactly one
+/// shape is reworded — `use the Read tool` becomes `open the file`. Every
+/// other mention stays in Claude's words, which reads as an unfamiliar name
+/// rather than as a broken sentence, and one warning says so.
 ///
 /// Renderers pass the agent's own body and nothing else. Launch and
 /// additional instructions are the project's words about this project;
@@ -167,13 +57,39 @@ pub fn rewrite_prose(body: &str, harness: HarnessId) -> (String, Vec<RenderWarni
             reworded.join(", ")
         )));
     }
-    warnings.extend(kept.iter().map(|tool| {
-        RenderWarning::new(format!(
-            "`{tool}` is not a {} tool name — the reference passes through as written",
-            harness.display_name()
-        ))
-    }));
+    if !kept.is_empty() {
+        warnings.extend(left_as_written(&kept, harness));
+    }
     (out, warnings)
+}
+
+/// What the rewrite could not say in the harness's own words. Codex has no
+/// tool names at all, so listing every mention one by one would bury the
+/// body in warnings — one line names them together.
+fn left_as_written(kept: &[String], harness: HarnessId) -> Vec<RenderWarning> {
+    if harness == HarnessId::Codex {
+        return vec![RenderWarning::new(format!(
+            "left in Claude's words for Codex: {} — Codex names actions, not tools, so only a whole `use the X tool` is reworded",
+            kept.join(", ")
+        ))];
+    }
+    kept.iter()
+        .map(|tool| {
+            RenderWarning::new(format!(
+                "`{tool}` is not {} tool name — the reference passes through as written",
+                with_article(harness.display_name())
+            ))
+        })
+        .collect()
+}
+
+/// "a Cursor", "an OpenCode" — harness names are proper nouns, and only some
+/// of them open with a vowel.
+fn with_article(name: &str) -> String {
+    match name.starts_with(['A', 'E', 'I', 'O', 'U']) {
+        true => format!("an {name}"),
+        false => format!("a {name}"),
+    }
 }
 
 fn rewrite_line(
@@ -208,9 +124,19 @@ fn rewrite_line(
         }
         let (from, to, said) = match (CLAUDE_TOOLS.contains(&name), word(name, harness)) {
             (true, Some(Word::Name(said))) => (from, to, said.to_owned()),
-            (true, Some(Word::Phrase(said))) => match reference.capitalized {
-                true => (reference.start, at + 4, capitalize(said)),
-                false => (reference.start, at + 4, said.to_owned()),
+            // A phrase names an action, so it can only stand where a whole
+            // `use the X tool` stood. Anywhere else — as a subject, after
+            // another verb, in backticks — it would put a verb phrase in a
+            // noun's place and the sentence would stop making sense.
+            (true, Some(Word::Phrase(said))) => match reference.verb {
+                Some(capital) if !reference.quoted => match capital {
+                    true => (reference.start, at + 4, capitalize(said)),
+                    false => (reference.start, at + 4, said.to_owned()),
+                },
+                _ => {
+                    remember(kept, name);
+                    continue;
+                }
             },
             // A tool this harness has no word for, and any name that is not
             // ours to translate — an MCP id, a plugin's own tool.
@@ -230,12 +156,14 @@ fn rewrite_line(
 }
 
 /// The tool reference ending at the word `tool` that starts at `at`: where
-/// the whole reference starts (article and backticks included), the name's
-/// own range, and whether the article opened a sentence.
+/// the whole reference starts (verb, article and backticks included), the
+/// name's own range, whether the name was quoted, and — when the reference
+/// reads `use the X tool` — whether that verb opened a sentence.
 struct Reference {
     start: usize,
     name: (usize, usize),
-    capitalized: bool,
+    quoted: bool,
+    verb: Option<bool>,
 }
 
 fn reference_before(line: &str, at: usize) -> Option<Reference> {
@@ -248,6 +176,7 @@ fn reference_before(line: &str, at: usize) -> Option<Reference> {
         return None;
     }
     let head = line[..at].strip_suffix(' ')?.trim_end();
+    let quoted = head.ends_with('`');
     let (name, outer) = match head.strip_suffix('`') {
         Some(quoted) => {
             let open = quoted.rfind('`')?;
@@ -272,11 +201,27 @@ fn reference_before(line: &str, at: usize) -> Option<Reference> {
         .find(|article| {
             before.ends_with(**article) && !line[..before.len() - 3].ends_with(word_char)
         })
-        .map(|article| (before.len() - article.len(), article.starts_with('T')));
+        .map(|article| before.len() - article.len());
+    let verb = article.and_then(|start| verb_before(line, start));
     Some(Reference {
-        start: article.map_or(outer, |(start, _)| start),
+        start: match (verb, article) {
+            (Some((start, _)), _) => start,
+            (None, Some(start)) => start,
+            (None, None) => outer,
+        },
         name,
-        capitalized: article.is_some_and(|(_, capital)| capital),
+        quoted,
+        verb: verb.map(|(_, capital)| capital),
+    })
+}
+
+/// The `use` or `Use` immediately before the article, as its offset and
+/// whether it opened a sentence.
+fn verb_before(line: &str, article: usize) -> Option<(usize, bool)> {
+    let head = line[..article].trim_end();
+    ["use", "Use"].iter().find_map(|verb| {
+        let start = head.strip_suffix(*verb)?;
+        (!start.ends_with(word_char)).then_some((head.len() - verb.len(), verb.starts_with('U')))
     })
 }
 
@@ -350,19 +295,3 @@ fn link_ranges(line: &str) -> Vec<(usize, usize)> {
     }
     ranges
 }
-
-/// A fence line: up to three spaces of indent, then three or more backticks
-/// or tildes. `bare` — nothing but whitespace after the run — is what makes
-/// a line eligible to close a fence rather than open one.
-fn fence_marker(line: &str) -> Option<(char, usize, bool)> {
-    let rest = line.trim_start_matches(' ');
-    if line.len() - rest.len() > 3 {
-        return None;
-    }
-    let marker = rest.chars().next().filter(|c| matches!(c, '`' | '~'))?;
-    let run = rest.chars().take_while(|c| *c == marker).count();
-    (run >= 3).then(|| (marker, run, rest[run..].trim().is_empty()))
-}
-
-#[cfg(test)]
-mod tests;

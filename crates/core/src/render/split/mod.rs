@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use super::RenderWarning;
+use super::fences::fenced_ranges;
 use super::skill::{INSTRUCTIONS_END, INSTRUCTIONS_START};
 
 const SKILL_FILE: &str = "SKILL.md";
@@ -173,19 +174,26 @@ fn overflow_path(files: &[(PathBuf, Vec<u8>)]) -> PathBuf {
     path
 }
 
-/// Offsets of `## ` headings that start a line outside every forbidden range
-/// — the only points a cut can land on without slicing a code block or the
-/// instructions block in half.
+/// Offsets of the section headings a cut can land on: any heading from `##`
+/// to `######` that starts a line outside every forbidden range. Deeper
+/// headings count — a skill whose sections are all `###` would otherwise
+/// keep a title and nothing else, and send the reader a pointer instead of a
+/// skill.
 fn headings(body: &str, forbidden: &[(usize, usize)]) -> Vec<usize> {
     let mut offsets = Vec::new();
     let mut offset = 0;
     for line in body.split_inclusive('\n') {
-        if line.starts_with("## ") && !inside(forbidden, offset) {
+        if is_heading(line) && !inside(forbidden, offset) {
             offsets.push(offset);
         }
         offset += line.len();
     }
     offsets
+}
+
+fn is_heading(line: &str) -> bool {
+    let hashes = line.chars().take_while(|c| *c == '#').count();
+    (2..=6).contains(&hashes) && line[hashes..].starts_with(' ')
 }
 
 /// Cut at the last line boundary under the ceiling, or — when the ceiling
@@ -219,45 +227,6 @@ fn inside(ranges: &[(usize, usize)], offset: usize) -> bool {
     ranges
         .iter()
         .any(|(start, end)| offset > *start && offset < *end)
-}
-
-/// Byte ranges covered by fenced code blocks. A fence closes only on a run of
-/// at least as many of the same character, so a four-backtick fence survives
-/// the three-backtick runs it quotes; an unclosed fence runs to the end.
-fn fenced_ranges(body: &str) -> Vec<(usize, usize)> {
-    let mut ranges = Vec::new();
-    let mut open: Option<(char, usize, usize)> = None;
-    let mut offset = 0;
-    for line in body.split_inclusive('\n') {
-        match (fence_marker(line), open) {
-            (Some((marker, run, bare)), Some((wanted, len, start)))
-                if marker == wanted && run >= len && bare =>
-            {
-                ranges.push((start, offset + line.len()));
-                open = None;
-            }
-            (Some((marker, run, _)), None) => open = Some((marker, run, offset)),
-            _ => {}
-        }
-        offset += line.len();
-    }
-    if let Some((_, _, start)) = open {
-        ranges.push((start, body.len()));
-    }
-    ranges
-}
-
-/// A fence line: up to three spaces of indent, then three or more backticks
-/// or tildes. `bare` — nothing but whitespace after the run — is what makes a
-/// line eligible to close a fence rather than open one.
-fn fence_marker(line: &str) -> Option<(char, usize, bool)> {
-    let rest = line.trim_start_matches(' ');
-    if line.len() - rest.len() > 3 {
-        return None;
-    }
-    let marker = rest.chars().next().filter(|c| matches!(c, '`' | '~'))?;
-    let run = rest.chars().take_while(|c| *c == marker).count();
-    (run >= 3).then(|| (marker, run, rest[run..].trim().is_empty()))
 }
 
 #[cfg(test)]

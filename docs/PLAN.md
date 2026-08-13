@@ -3,7 +3,7 @@
 > **Cycle progress** (updated every commit; deleted sections = landed):
 >
 > - Phase 0 ✅ (221f950) — changelog, app-deploy skill, commit-msg rule.
-> - Phase 1 ⏳ ~65%, every commit suite-green. Landed: typed
+> - Phase 1 ⏳ review fixes in flight, every commit suite-green. Landed: typed
 >   `PermissionIntent` through all five renderers (bug 1: optional role,
 >   Codex sandbox inference, Claude native allowlist, OpenCode permission
 >   synthesis, Pi refusal → conflict row + removal of the wide artifact),

@@ -9,19 +9,35 @@ use crate::lock::{Lock, LockEntry, timestamp};
 use crate::model::Scope;
 
 use super::config_edits::ConfigEditPlan;
-use super::desired::{Artifact, Desired, artifact_disk_hash};
+use super::desired::{Artifact, Desired};
+use super::tree_plan::{Written, plan_tree};
 
-#[allow(clippy::too_many_arguments)]
+/// Everything one pass over the desired items accumulates.
+pub(super) struct PlanSink<'a> {
+    pub(super) drift: &'a mut Vec<DriftRow>,
+    pub(super) ops: &'a mut Vec<PlannedOp>,
+    pub(super) config_edits: &'a mut ConfigEditPlan,
+    pub(super) new_lock: &'a mut Lock,
+    pub(super) written: &'a mut Written,
+}
+
+/// `owned` holds every path an earlier install wrote under another kind's
+/// name: a codex command lands as a skill tree, and the skill that later
+/// claims that name is replacing our own output, not adopting a stranger's.
 pub(super) fn plan_item(
     item: &Desired,
     scope: &Scope,
     lock: &Lock,
-    drift: &mut Vec<DriftRow>,
-    ops: &mut Vec<PlannedOp>,
-    config_edits: &mut ConfigEditPlan,
-    new_lock: &mut Lock,
-    written_canonicals: &mut BTreeSet<PathBuf>,
+    owned: &BTreeSet<PathBuf>,
+    sink: &mut PlanSink,
 ) -> Result<()> {
+    let PlanSink {
+        drift,
+        ops,
+        config_edits,
+        new_lock,
+        written,
+    } = sink;
     let row = |state: DriftState, detail: String| DriftRow {
         kind: item.kind,
         name: item.name.clone(),
@@ -50,7 +66,7 @@ pub(super) fn plan_item(
 
     let planned = match &item.artifact {
         Artifact::File { .. } => plan_file(item, existing.is_some(), ops),
-        Artifact::Tree { .. } => plan_tree(item, existing.is_some(), written_canonicals, ops),
+        Artifact::Tree { .. } => plan_tree(item, existing.is_some(), owned, written, ops),
         Artifact::Registration { .. } => {
             plan_registration(item, existing.is_some(), ops, config_edits)
         }
@@ -99,7 +115,7 @@ pub(super) fn plan_item(
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum Planned {
+pub(super) enum Planned {
     Clean,
     Drift(DriftState, String),
     Conflict(String),
@@ -236,107 +252,6 @@ fn plan_absent_file(
         },
     });
     Planned::Drift(DriftState::Missing, "not installed yet".into())
-}
-
-fn plan_tree(
-    item: &Desired,
-    locked: bool,
-    written_canonicals: &mut BTreeSet<PathBuf>,
-    ops: &mut Vec<PlannedOp>,
-) -> Result<Planned> {
-    let Artifact::Tree {
-        canonical,
-        files,
-        link,
-    } = &item.artifact
-    else {
-        return Ok(Planned::Clean);
-    };
-    if canonical.is_symlink() {
-        return Ok(Planned::Conflict(format!(
-            "{} is a link vstack did not create",
-            canonical.display()
-        )));
-    }
-    if canonical.exists() && !canonical.is_dir() {
-        return Ok(Planned::Conflict(format!(
-            "a file sits at {}",
-            canonical.display()
-        )));
-    }
-    let wanted = artifact_disk_hash(&item.artifact);
-    let disk = match canonical.is_dir().then(|| hash_tree(canonical)).transpose() {
-        Ok(disk) => disk,
-        Err(error) => {
-            return Ok(Planned::Conflict(format!(
-                "{} cannot be compared ({error}) — fix its permissions or remove it",
-                canonical.display()
-            )));
-        }
-    };
-    let mut result = Planned::Clean;
-    if disk.as_deref() != Some(wanted.as_str()) {
-        if disk.is_some() && !locked && !written_canonicals.contains(canonical) {
-            return Ok(Planned::Conflict(format!(
-                "{} is not managed yet — start managing it first",
-                canonical.display()
-            )));
-        }
-        result = match disk {
-            Some(_) => Planned::Drift(DriftState::Stale, "newer content is available".into()),
-            None => Planned::Drift(DriftState::Missing, "not installed yet".into()),
-        };
-        if written_canonicals.insert(canonical.clone()) {
-            ops.push(PlannedOp {
-                description: format!("Write {} {}'s files", item.kind.name(), item.name),
-                op: Op::WriteTree {
-                    root: canonical.clone(),
-                    files: files.clone(),
-                    pre: match disk {
-                        Some(hash) => Pre::HashIs { hash },
-                        None => Pre::Absent,
-                    },
-                },
-            });
-        }
-    }
-    let Some(link) = link else {
-        return Ok(result);
-    };
-    if link.is_symlink() {
-        let points_to = std::fs::read_link(link).unwrap_or_default();
-        if &points_to != canonical {
-            return Ok(Planned::Conflict(format!(
-                "{} links somewhere vstack does not own ({})",
-                link.display(),
-                points_to.display()
-            )));
-        }
-        Ok(result)
-    } else if link.exists() {
-        Ok(Planned::Conflict(format!(
-            "{} is not managed yet — start managing it first",
-            link.display()
-        )))
-    } else {
-        ops.push(PlannedOp {
-            description: format!(
-                "Connect {} to {} {}",
-                item.harness.display_name(),
-                item.kind.name(),
-                item.name
-            ),
-            op: Op::Symlink {
-                link: link.clone(),
-                target: canonical.clone(),
-                pre: Pre::Absent,
-            },
-        });
-        Ok(Planned::Drift(
-            DriftState::Missing,
-            format!("{} is not connected yet", item.harness.display_name()),
-        ))
-    }
 }
 
 /// A registration is in sync when its backing file matches and re-applying

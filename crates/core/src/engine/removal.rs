@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use super::desired::{self, Artifact, native_dir};
+use super::desired::{self, native_dir};
 use super::targets::{HookTarget, disabled_name, hook_target, mcp_registry, plugin_settings};
 use super::{DriftRow, DriftState, PlanOptions};
 use crate::apply::{Op, PlannedOp, Pre};
@@ -162,6 +162,86 @@ pub(super) fn removal_ops(
     Ok(ops)
 }
 
+/// Which paths a Trash op may still take. Several lock entries name one
+/// physical tree — codex and pi read the same skill directory — so a removal
+/// must not move a tree another installation still wants, and must not move
+/// the same tree twice: the second op finds nothing there and fails the
+/// whole apply.
+pub(super) struct TrashGuard {
+    keep: BTreeSet<PathBuf>,
+    trashed: BTreeSet<PathBuf>,
+}
+
+impl TrashGuard {
+    pub(super) fn new(items: &[desired::Desired]) -> TrashGuard {
+        let keep = items
+            .iter()
+            .flat_map(|item| desired::artifact_paths(&item.artifact))
+            .collect();
+        TrashGuard {
+            keep,
+            trashed: BTreeSet::new(),
+        }
+    }
+
+    fn allows(&mut self, op: &Op) -> bool {
+        let Op::Trash { path, .. } = op else {
+            return true;
+        };
+        !self.keep.contains(path) && self.trashed.insert(path.clone())
+    }
+
+    pub(super) fn extend(
+        &mut self,
+        ops: &mut Vec<PlannedOp>,
+        planned: impl IntoIterator<Item = PlannedOp>,
+    ) {
+        ops.extend(planned.into_iter().filter(|p| self.allows(&p.op)));
+    }
+}
+
+/// An earlier install of a still-declared item wrote somewhere this one will
+/// not: a codex command whose emitted name changed when a skill claimed it.
+/// The tree it left is ours and nobody wants it now — without this it stays
+/// on disk forever, offered by the tool under a name nobody declared.
+pub(super) fn stale_emitted(
+    state: &desired::DesiredState,
+    lock: &Lock,
+    guard: &mut TrashGuard,
+    ops: &mut Vec<PlannedOp>,
+) {
+    for item in &state.items {
+        let Some(previous) = lock
+            .entries
+            .get(&item.key)
+            .and_then(|entry| entry.emitted.as_ref())
+        else {
+            continue;
+        };
+        let current = item.emitted.iter().flat_map(|e| e.paths.iter());
+        for path in &previous.paths {
+            if current.clone().any(|kept| kept == path) {
+                continue;
+            }
+            if !path.exists() && !path.is_symlink() {
+                continue;
+            }
+            let planned = PlannedOp {
+                description: format!(
+                    "Move {} {}'s old files to the trash",
+                    item.kind.name(),
+                    item.name
+                ),
+                op: Op::Trash {
+                    path: path.clone(),
+                    pre: Pre::Any,
+                },
+            };
+            guard.extend(ops, [planned]);
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn orphans(
     env: &Env,
@@ -171,21 +251,13 @@ pub(super) fn orphans(
     state: &desired::DesiredState,
     options: &PlanOptions,
     refused_keys: &BTreeSet<String>,
+    guard: &mut TrashGuard,
     drift: &mut Vec<DriftRow>,
     ops: &mut Vec<PlannedOp>,
     config_edits: &mut super::config_edits::ConfigEditPlan,
     new_lock: &mut Lock,
 ) -> Result<()> {
-    let desired = &state.items;
-    let desired_keys: BTreeSet<&String> = desired.iter().map(|d| &d.key).collect();
-    let keep_canonical: BTreeSet<PathBuf> = desired
-        .iter()
-        .filter_map(|d| match &d.artifact {
-            Artifact::Tree { canonical, .. } => Some(canonical.clone()),
-            Artifact::File { .. } | Artifact::Registration { .. } => None,
-        })
-        .collect();
-    let mut trashed: BTreeSet<PathBuf> = BTreeSet::new();
+    let desired_keys: BTreeSet<&String> = state.items.iter().map(|d| &d.key).collect();
 
     for (key, entry) in &lock.entries {
         if desired_keys.contains(key) || refused_keys.contains(key) {
@@ -223,16 +295,7 @@ pub(super) fn orphans(
             new_lock.entries.insert(key.clone(), entry.clone());
             continue;
         }
-        for planned in removal_ops(env, scope, entry, config_edits)? {
-            // A skill tree another installation still wants stays put:
-            // shared physical targets are reference-counted, not deleted.
-            if let Op::Trash { path, .. } = &planned.op
-                && (keep_canonical.contains(path.as_path()) || !trashed.insert(path.clone()))
-            {
-                continue;
-            }
-            ops.push(planned);
-        }
+        guard.extend(ops, removal_ops(env, scope, entry, config_edits)?);
     }
     Ok(())
 }

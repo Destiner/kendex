@@ -1,7 +1,8 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use crate::error::Result;
+use crate::frontmatter::Value;
 use crate::lock::EmittedArtifact;
 use crate::model::{HarnessId, ItemKind};
 use crate::render::agent::GENERATED_BANNER;
@@ -68,15 +69,27 @@ fn as_skill(
         return Ok(None);
     };
     let body = String::from_utf8_lossy(bytes);
-    let marker = match ctx.decl.enabled {
-        true => "SKILL.md",
-        false => "SKILL.md.disabled",
-    };
     let tree = dir.join(&name);
-    let files = vec![(
-        PathBuf::from(marker),
+    let mut files = vec![(
+        PathBuf::from("SKILL.md"),
         skill_text(&name, &body, ctx.name).into_bytes(),
     )];
+    // A command is one file the author cannot split themselves, so an
+    // oversized one is cut into references/ exactly like a skill — nothing
+    // is dropped, and only a body the splitter cannot cut is refused.
+    if let Some(cap) = crate::harness::format_caps(harness).skill_body_max_bytes {
+        let Some(capped) = split_to_cap(ctx, state, harness, files, cap) else {
+            return Ok(None);
+        };
+        files = capped;
+    }
+    if !ctx.decl.enabled {
+        for (rel, _) in &mut files {
+            if rel == std::path::Path::new("SKILL.md") {
+                *rel = PathBuf::from("SKILL.md.disabled");
+            }
+        }
+    }
     // Installed as a skill, it answers to the skill loader's rules — under
     // the emitted name, which is the one the user will type.
     let findings = crate::render::validate::validate_skill_tree(harness, &name, &files);
@@ -98,6 +111,23 @@ fn as_skill(
             remediation: Some(finding.remediation.clone()),
         });
     }
+    // Pi reads the same project skill directory Codex does, so the generated
+    // skill shows up there too. Saying so beats the user finding a command
+    // they never declared for Pi in Pi's skill list.
+    if native_dir(ctx.env, ctx.scope, HarnessId::Pi, ItemKind::Skill).as_ref() == Some(&dir) {
+        state.warnings.push(ItemWarning {
+            kind: ItemKind::Command,
+            name: ctx.name.to_owned(),
+            harness: Some(harness),
+            message: format!(
+                "installed as skill {name} in a directory Pi also reads, so Pi offers it too"
+            ),
+            remediation: Some(format!(
+                "drop {} from this command's harnesses if Pi must not see it",
+                harness.display_name()
+            )),
+        });
+    }
     let artifact = Artifact::Tree {
         canonical: tree.clone(),
         files,
@@ -112,45 +142,108 @@ fn as_skill(
     Ok(Some(item))
 }
 
+/// Cut the generated skill down to the harness's byte cap. `None` means the
+/// splitter could not cut it at all — one code block bigger than the cap —
+/// and the command is refused for this harness rather than truncated.
+fn split_to_cap(
+    ctx: &ItemCtx,
+    state: &mut DesiredState,
+    harness: HarnessId,
+    files: Vec<(PathBuf, Vec<u8>)>,
+    cap: usize,
+) -> Option<Vec<(PathBuf, Vec<u8>)>> {
+    let outcome = crate::render::split::enforce_body_cap(files, cap);
+    if let Some(reason) = outcome.refusal {
+        state.refused.push(super::desired::Refused {
+            kind: ItemKind::Command,
+            name: ctx.name.to_owned(),
+            harness,
+            reason: format!("{reason} — break the block up in the command's own file"),
+        });
+        return None;
+    }
+    for warning in outcome.warnings {
+        state.warnings.push(ItemWarning {
+            kind: ItemKind::Command,
+            name: ctx.name.to_owned(),
+            harness: Some(harness),
+            message: warning.message,
+            remediation: Some(format!(
+                "nothing to fix — {} reads the rest from references/; shorten the command to keep it in one file",
+                harness.display_name()
+            )),
+        });
+    }
+    Some(outcome.files)
+}
+
 /// The name the generated skill takes. A real skill keeps its own name, so
 /// a command that clashes is renamed and the user is told which name to
 /// type; when both renames are taken too, nothing is written rather than
 /// something being overwritten.
 fn emitted_name(ctx: &ItemCtx, state: &mut DesiredState, harness: HarnessId) -> Option<String> {
-    let claimed = claimed_skill_names(ctx, harness);
-    if !claimed.contains(ctx.name) {
-        return Some(ctx.name.to_owned());
+    match emitted_names(ctx, harness).remove(ctx.name).flatten() {
+        Some(name) if name == ctx.name => Some(name),
+        Some(name) => {
+            state.warnings.push(ItemWarning {
+                kind: ItemKind::Command,
+                name: ctx.name.to_owned(),
+                harness: Some(harness),
+                message: format!(
+                    "{} is already taken on {}, so the command installs as {name}",
+                    ctx.name,
+                    harness.display_name()
+                ),
+                remediation: Some(format!(
+                    "run it as {name} on {}, or rename one of the two",
+                    harness.display_name()
+                )),
+            });
+            Some(name)
+        }
+        None => {
+            state.refused.push(super::desired::Refused {
+                kind: ItemKind::Command,
+                name: ctx.name.to_owned(),
+                harness,
+                reason: format!(
+                    "{name}, {name}__command and {name}__cmd are all taken on {} — rename one of them",
+                    harness.display_name(),
+                    name = ctx.name
+                ),
+            });
+            None
+        }
     }
-    for suffix in ["__command", "__cmd"] {
-        let candidate = format!("{}{suffix}", ctx.name);
-        if claimed.contains(&candidate) {
+}
+
+/// The name every declared command emits on this harness, resolved in one
+/// pass so no two commands can pick the same tree. Skills hold their names
+/// outright; among commands the first in name order keeps the plain name and
+/// later ones take a suffix — a fixed order, so the answer does not depend on
+/// which command was rendered first and never changes between audits.
+fn emitted_names(ctx: &ItemCtx, harness: HarnessId) -> BTreeMap<String, Option<String>> {
+    let mut taken = claimed_skill_names(ctx, harness);
+    let mut chosen = BTreeMap::new();
+    for (name, decl) in &ctx.manifest.commands {
+        if !target_harnesses(decl, ctx.manifest, ItemKind::Command, ctx.scope).contains(&harness) {
             continue;
         }
-        state.warnings.push(ItemWarning {
-            kind: ItemKind::Command,
-            name: ctx.name.to_owned(),
-            harness: Some(harness),
-            message: format!(
-                "a skill already answers to {}, so the command installs as {candidate}",
-                ctx.name
-            ),
-            remediation: Some(format!(
-                "run it as {candidate} on {}, or rename one of the two",
-                harness.display_name()
-            )),
-        });
-        return Some(candidate);
+        let free = free_name(name, &taken);
+        if let Some(free) = &free {
+            taken.insert(free.clone());
+        }
+        chosen.insert(name.clone(), free);
     }
-    state.refused.push(super::desired::Refused {
-        kind: ItemKind::Command,
-        name: ctx.name.to_owned(),
-        harness,
-        reason: format!(
-            "skills already hold {name}, {name}__command and {name}__cmd — rename one of them",
-            name = ctx.name
-        ),
-    });
-    None
+    chosen
+}
+
+/// The first of `name`, `name__command` and `name__cmd` nothing holds yet.
+fn free_name(name: &str, taken: &BTreeSet<String>) -> Option<String> {
+    ["", "__command", "__cmd"]
+        .into_iter()
+        .map(|suffix| format!("{name}{suffix}"))
+        .find(|candidate| !taken.contains(candidate))
 }
 
 /// Skill names this harness must not have taken from it: the ones declared
@@ -175,42 +268,45 @@ fn claimed_skill_names(ctx: &ItemCtx, harness: HarnessId) -> BTreeSet<String> {
 }
 
 /// The generated SKILL.md: the frontmatter the loader needs, the banner
-/// every generated file carries, then the command body as written.
+/// every generated file carries, then the command's prose. The command's own
+/// frontmatter stays out — carried through, `argument-hint` and
+/// `allowed-tools` would read as literal text inside the skill.
 fn skill_text(emitted: &str, body: &str, name: &str) -> String {
+    let (front, prose) = match crate::frontmatter::split(body) {
+        Ok((front, prose)) => (Some(front), prose),
+        Err(_) => (None, body),
+    };
     format!(
-        "---\nname: {}\ndescription: {}\n---\n\n{GENERATED_BANNER}\n\n{body}",
+        "---\nname: {}\ndescription: {}\n---\n\n{GENERATED_BANNER}\n\n{}",
         yaml_scalar(emitted),
-        yaml_scalar(&description(body, name)),
+        yaml_scalar(&description(front, prose, name)),
+        prose.trim_start_matches('\n'),
     )
 }
 
-/// One line saying what the command does: its own frontmatter description
-/// when it declares one, else its first line of prose.
-fn description(body: &str, name: &str) -> String {
-    let mut lines = body.lines().peekable();
-    let mut in_frontmatter = lines.peek().is_some_and(|line| line.trim() == "---");
-    if in_frontmatter {
-        lines.next();
+/// One line saying what the command does: the `description` its own
+/// frontmatter declares, else its first line of prose. The frontmatter is
+/// parsed, not scanned — a `description` nested under another key describes
+/// that key, not the command.
+fn description(front: Option<&str>, prose: &str, name: &str) -> String {
+    let declared = front
+        .and_then(|yaml| crate::frontmatter::parse_tolerant(yaml).ok())
+        .and_then(|parsed| {
+            parsed
+                .map
+                .get("description")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .map(str::to_owned)
+        })
+        .filter(|text| !text.is_empty());
+    if let Some(declared) = declared {
+        return declared;
     }
-    for line in lines {
-        let line = line.trim();
-        if in_frontmatter {
-            if line == "---" {
-                in_frontmatter = false;
-                continue;
-            }
-            let Some(value) = line.strip_prefix("description:") else {
-                continue;
-            };
-            let value = value.trim().trim_matches('"');
-            if !value.is_empty() {
-                return value.to_owned();
-            }
-            continue;
-        }
-        let prose = line.trim_start_matches('#').trim();
-        if !prose.is_empty() {
-            return prose.to_owned();
+    for line in prose.lines() {
+        let line = line.trim().trim_start_matches('#').trim();
+        if !line.is_empty() {
+            return line.to_owned();
         }
     }
     format!("command {name}")
@@ -220,34 +316,59 @@ fn description(body: &str, name: &str) -> String {
 mod tests {
     use super::*;
 
+    fn described(body: &str, name: &str) -> String {
+        match crate::frontmatter::split(body) {
+            Ok((front, prose)) => description(Some(front), prose, name),
+            Err(_) => description(None, body, name),
+        }
+    }
+
     #[test]
     fn a_description_comes_from_frontmatter_then_prose_then_the_name() {
         assert_eq!(
-            description(
+            described(
                 "---\ndescription: Ship it\nmodel: opus\n---\n\n# Ship\n",
                 "ship"
             ),
             "Ship it"
         );
         assert_eq!(
-            description("\n# Ship the branch\n\nSteps.\n", "ship"),
+            described("\n# Ship the branch\n\nSteps.\n", "ship"),
             "Ship the branch"
         );
-        assert_eq!(
-            description("---\nmodel: opus\n---\n", "ship"),
-            "command ship"
+        assert_eq!(described("---\nmodel: opus\n---\n", "ship"), "command ship");
+        assert_eq!(described("", "ship"), "command ship");
+    }
+
+    /// A `description` indented under another key describes that key. Taking
+    /// it as the command's own is how a scanner reads frontmatter; a parser
+    /// sees the nesting.
+    #[test]
+    fn a_nested_description_never_beats_the_command_s_own() {
+        let text = skill_text(
+            "ship",
+            "---\nallowed-tools:\n  description: NESTED WINS\ndescription: Ship the branch\n---\n\nBody.\n",
+            "ship",
         );
-        assert_eq!(description("", "ship"), "command ship");
+        assert!(
+            text.starts_with("---\nname: ship\ndescription: Ship the branch\n---\n"),
+            "{text}"
+        );
     }
 
     #[test]
-    fn the_generated_skill_keeps_the_body_and_quotes_a_risky_description() {
-        let text = skill_text("ship", "---\ndescription: do: it\n---\n\nBody.\n", "ship");
+    fn the_generated_skill_keeps_the_prose_and_drops_the_command_s_frontmatter() {
+        let text = skill_text(
+            "ship",
+            "---\ndescription: do: it\nargument-hint: <branch>\n---\n\nBody.\n",
+            "ship",
+        );
         assert!(
             text.starts_with("---\nname: ship\ndescription: \"do: it\"\n---\n"),
             "{text}"
         );
         assert!(text.contains(GENERATED_BANNER));
+        assert!(!text.contains("argument-hint"), "{text}");
         assert!(text.ends_with("Body.\n"));
     }
 }

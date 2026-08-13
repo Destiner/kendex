@@ -363,7 +363,7 @@ mod tests {
         let mut agent = effective(&source, &scope);
         agent.additional_instructions = Some("Use the Read tool.".into());
         let rendered = generate(&agent);
-        assert!(rendered.text.contains("Use open the file.\n"));
+        assert!(rendered.text.contains("Open the file.\n"));
         assert!(
             rendered
                 .text

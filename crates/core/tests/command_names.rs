@@ -1,0 +1,213 @@
+//! What a generated command-as-skill is called, and what happens to the tree
+//! it used to occupy when that name changes. Two commands must never pick
+//! one name, and a tree an earlier install wrote is ours to clear away.
+#![cfg(unix)]
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use vstack_core::apply;
+use vstack_core::engine::{DriftState, audit};
+use vstack_core::env::{Env, FakeOs};
+use vstack_core::model::Scope;
+
+struct Fixture {
+    _tmp: tempfile::TempDir,
+    env: Env,
+    scope: Scope,
+    skills: PathBuf,
+    project: PathBuf,
+    source: PathBuf,
+}
+
+#[allow(clippy::unwrap_used)]
+fn put(path: &Path, text: &str) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+}
+
+#[allow(clippy::unwrap_used)]
+fn fixture() -> Fixture {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().to_path_buf();
+    let project = home.join("dev/app");
+    Fixture {
+        env: Env::fake(&home, FakeOs::Linux),
+        scope: Scope::Project {
+            root: project.clone(),
+        },
+        skills: project.join(".agents/skills"),
+        source: home.join("catalog"),
+        project,
+        _tmp: tmp,
+    }
+}
+
+fn declare(f: &Fixture, declarations: &str) {
+    put(
+        &f.project.join("vstack.toml"),
+        &format!(
+            "schema = 2\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"codex\"]\nmethod = \"symlink\"\n\n{declarations}",
+            f.source.display()
+        ),
+    );
+}
+
+fn add_command(f: &Fixture, name: &str, body: &str) {
+    put(
+        &f.source.join(format!("commands/{name}.md")),
+        &format!("---\ndescription: {name}\n---\n\n{body}\n"),
+    );
+}
+
+fn add_skill(f: &Fixture, name: &str, body: &str) {
+    put(
+        &f.source.join(format!("skills/{name}/SKILL.md")),
+        &format!("---\nname: {name}\ndescription: {name}\n---\n\n{body}\n"),
+    );
+}
+
+#[allow(clippy::unwrap_used)]
+fn apply_now(f: &Fixture) {
+    let report = audit(&f.env, &f.scope).unwrap();
+    apply::execute(&f.env, &report.plan, None).unwrap();
+}
+
+/// Nothing left to do and nothing needing a human: an empty plan with no
+/// conflict row. An orphan row is a report about a dropped declaration, not
+/// unfinished work, so it is checked where it is expected.
+#[allow(clippy::unwrap_used)]
+fn settled(f: &Fixture) -> bool {
+    let report = audit(&f.env, &f.scope).unwrap();
+    report.plan.ops.is_empty()
+        && !report
+            .drift
+            .iter()
+            .any(|row| row.state == DriftState::Conflict)
+}
+
+#[allow(clippy::unwrap_used)]
+fn body_of(dir: &Path) -> String {
+    fs::read_to_string(dir.join("SKILL.md")).unwrap()
+}
+
+/// A skill holds its own name and each command takes the next free one, in a
+/// fixed order. Without that, two commands claim one tree: one body wins,
+/// silently, and every apply hands it to the other one.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn two_commands_never_fight_over_one_emitted_name() {
+    let f = fixture();
+    add_skill(&f, "ship", "The real skill.");
+    add_command(&f, "ship", "Ship the branch.");
+    add_command(&f, "ship__command", "Something else entirely.");
+    declare(
+        &f,
+        "[skills.ship]\nsource = \"cat\"\n\n[commands.ship]\nsource = \"cat\"\n\n[commands.ship__command]\nsource = \"cat\"\n",
+    );
+    apply_now(&f);
+
+    assert!(body_of(&f.skills.join("ship")).contains("The real skill."));
+    assert!(body_of(&f.skills.join("ship__command")).contains("Ship the branch."));
+    assert!(body_of(&f.skills.join("ship__command__command")).contains("Something else entirely."));
+    // Two audits in a row: the names must not swap back and forth.
+    assert!(settled(&f));
+    assert!(settled(&f));
+    assert!(audit(&f.env, &f.scope).unwrap().drift.is_empty());
+}
+
+/// A real skill declared later takes the name back. The command relocates,
+/// and the tree it leaves behind is ours to hand over — not an unmanaged
+/// directory the user has to delete before the skill can install.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_skill_claiming_a_command_s_name_takes_the_tree_over() {
+    let f = fixture();
+    add_command(&f, "ship", "Ship the branch.");
+    declare(&f, "[commands.ship]\nsource = \"cat\"\n");
+    apply_now(&f);
+    assert!(body_of(&f.skills.join("ship")).contains("Ship the branch."));
+
+    add_skill(&f, "ship", "The real skill.");
+    declare(
+        &f,
+        "[skills.ship]\nsource = \"cat\"\n\n[commands.ship]\nsource = \"cat\"\n",
+    );
+    apply_now(&f);
+
+    assert!(body_of(&f.skills.join("ship")).contains("The real skill."));
+    assert!(body_of(&f.skills.join("ship__command")).contains("Ship the branch."));
+    assert!(settled(&f));
+}
+
+/// The clash clears and the command gets its plain name back. The tree it
+/// used while renamed must go, or both tools list a skill nobody declared.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_command_getting_its_name_back_leaves_no_old_tree() {
+    let f = fixture();
+    add_command(&f, "ship", "Ship the branch.");
+    add_skill(&f, "ship", "The real skill.");
+    declare(
+        &f,
+        "[skills.ship]\nsource = \"cat\"\n\n[commands.ship]\nsource = \"cat\"\n",
+    );
+    apply_now(&f);
+    assert!(f.skills.join("ship__command").is_dir());
+
+    fs::remove_dir_all(f.source.join("skills/ship")).unwrap();
+    declare(&f, "[commands.ship]\nsource = \"cat\"\n");
+    apply_now(&f);
+
+    assert!(body_of(&f.skills.join("ship")).contains("Ship the branch."));
+    assert!(
+        !f.skills.join("ship__command").exists(),
+        "the renamed tree outlived the rename"
+    );
+    assert!(settled(&f));
+}
+
+/// A command is one file its author cannot split. Over Codex's byte cap it
+/// must split into references/ like any other skill — refusing it leaves the
+/// user a fix they cannot make.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn an_oversized_command_splits_instead_of_being_refused() {
+    let f = fixture();
+    let mut body = String::from("Ship the branch.\n");
+    for step in 0..40 {
+        body.push_str(&format!("\n## Step {step}\n\n{}\n", "prose ".repeat(60)));
+    }
+    assert!(body.len() > 8192);
+    add_command(&f, "ship", &body);
+    declare(&f, "[commands.ship]\nsource = \"cat\"\n");
+
+    let report = audit(&f.env, &f.scope).unwrap();
+    assert!(
+        report
+            .drift
+            .iter()
+            .all(|row| row.state != DriftState::Conflict),
+        "{:?}",
+        report.drift
+    );
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.message.contains("Pi offers it too")),
+        "{:?}",
+        report.warnings
+    );
+    apply::execute(&f.env, &report.plan, None).unwrap();
+
+    let tree = f.skills.join("ship");
+    assert!(body_of(&tree).len() <= 8192);
+    assert!(tree.join("references/details.md").is_file());
+    assert!(
+        fs::read_to_string(tree.join("references/details.md"))
+            .unwrap()
+            .contains("Step 39")
+    );
+    assert!(settled(&f));
+}

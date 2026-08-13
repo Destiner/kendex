@@ -102,6 +102,47 @@ fn an_unclosed_fence_swallows_the_rest_of_the_body() {
     assert_eq!(headings(body, &fenced), vec![0]);
 }
 
+/// A block nested inside a list item is indented four spaces. Reading that
+/// as prose puts the cut inside it: the head ends on an unclosed fence and
+/// the overflow file opens mid-block, with nothing said about either.
+#[test]
+fn an_indented_fence_is_not_a_split_point() {
+    // No headings, so the cut falls where the bytes run out — inside the
+    // block unless the block is known to be one.
+    let block = format!(
+        "1. Run this:\n\n    ```sh\n{}    ```\n",
+        "    step\n".repeat(60)
+    );
+    let text = skill(&format!("{}\n{block}", "Intro line.\n".repeat(20)));
+    let outcome = enforce_body_cap(tree(&text), 400);
+    let head = read(&outcome, "SKILL.md");
+    let overflow = read(&outcome, "references/details.md");
+
+    assert!(!head.contains("```"), "the head ends mid-block: {head}");
+    assert!(head.contains("1. Run this:"));
+    assert!(overflow.contains("    ```sh\n") && overflow.ends_with("    ```\n"));
+}
+
+/// Real skills section themselves with `###` under one `##`. Counting only
+/// `##` leaves those with a title and a pointer — every byte reachable, and
+/// nothing useful in the file the tool actually reads.
+#[test]
+fn deeper_headings_are_split_points_too() {
+    let body: String = (1..=6)
+        .map(|n| format!("\n### S{n}\n\n{}\n", "x".repeat(200)))
+        .collect();
+    let text = skill(&format!("\n## Only\n\nintro\n{body}"));
+    let outcome = enforce_body_cap(tree(&text), 700);
+    let head = read(&outcome, "SKILL.md");
+
+    assert!(head.len() <= 700);
+    assert!(
+        head.contains("### S2"),
+        "the head kept almost nothing: {head}"
+    );
+    assert!(read(&outcome, "references/details.md").starts_with(&format!("{PROVENANCE}### ")));
+}
+
 #[test]
 fn a_multibyte_character_is_never_cut_in_half() {
     let text = skill(&"é".repeat(400));

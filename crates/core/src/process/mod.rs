@@ -28,6 +28,10 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 
 const POLL: Duration = Duration::from_millis(10);
 
+/// How long a timed-out process tree gets to end on its own before it is
+/// ended for it.
+const GROUP_GRACE: Duration = Duration::from_millis(100);
+
 /// Environment that points git at a different repository than the caller
 /// named — inherited from whatever launched the app, including another
 /// harness mid-operation.
@@ -122,8 +126,7 @@ impl Hardened {
                 Err(error) => return Err(CoreError::io(&self.label, error)),
             }
             if Instant::now() >= deadline {
-                let _ = child.kill();
-                let _ = child.wait();
+                end_tree(&mut child);
                 return Err(CoreError::io(
                     &self.label,
                     io::Error::new(
@@ -147,9 +150,10 @@ impl Hardened {
             hardened.command.env_remove(variable);
         }
         hardened.command.env("GIT_TERMINAL_PROMPT", "0");
+        let inherited = std::env::var("GIT_SSH_COMMAND").ok();
         hardened
             .command
-            .env("GIT_SSH_COMMAND", "ssh -oBatchMode=yes");
+            .env("GIT_SSH_COMMAND", ssh_command(inherited.as_deref()));
         if let Some(cwd) = cwd {
             hardened.command.current_dir(cwd);
         }
@@ -168,6 +172,10 @@ impl Hardened {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        // The child leads a group of its own, so a timeout can end
+        // everything it started rather than only the process we hold.
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut command, 0);
         Hardened {
             command,
             label,
@@ -183,6 +191,44 @@ impl Hardened {
 
 fn owned(args: &[&str]) -> Vec<OsString> {
     args.iter().map(OsString::from).collect()
+}
+
+/// SSH must never sit at a prompt, and a caller who set its own ssh command
+/// — a deploy key, a jump host — must keep it: a catalog that only fetches
+/// with that key stops fetching the moment we replace it. BatchMode rides
+/// along with whatever was inherited.
+fn ssh_command(inherited: Option<&str>) -> String {
+    match inherited.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(value) => format!("{value} -oBatchMode=yes"),
+        None => "ssh -oBatchMode=yes".to_owned(),
+    }
+}
+
+/// End the timed-out child and everything it started. Git shells out to ssh,
+/// and killing only the process we hold leaves that grandchild running past
+/// the deadline with a reader thread blocked on its pipe. The child leads its
+/// own group, so the group is what goes: a chance to end cleanly, then not.
+#[cfg(unix)]
+fn end_tree(child: &mut std::process::Child) {
+    let group = format!("-{}", child.id());
+    for signal in ["-TERM", "-KILL"] {
+        let _ = Command::new("kill")
+            .args([signal, &group])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        if signal == "-TERM" {
+            std::thread::sleep(GROUP_GRACE);
+        }
+    }
+    let _ = child.wait();
+}
+
+#[cfg(not(unix))]
+fn end_tree(child: &mut std::process::Child) {
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn read(pipe: &mut impl Read) -> io::Result<Vec<u8>> {
@@ -203,125 +249,4 @@ fn collect(reader: JoinHandle<io::Result<Vec<u8>>>, label: &str) -> Result<Vec<u
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashMap;
-    use std::ffi::OsStr;
-    use std::fs;
-
-    fn child_env(hardened: &Hardened) -> HashMap<&OsStr, Option<&OsStr>> {
-        hardened.command.get_envs().collect()
-    }
-
-    #[test]
-    fn git_runs_without_redirecting_environment_and_without_prompts() {
-        let hardened = Hardened::git(&["status"], None);
-        let env = child_env(&hardened);
-        for variable in GIT_REDIRECTS {
-            assert_eq!(
-                env.get(OsStr::new(variable)),
-                Some(&None),
-                "{variable} must be removed from the child"
-            );
-        }
-        assert_eq!(
-            env[OsStr::new("GIT_TERMINAL_PROMPT")],
-            Some(OsStr::new("0"))
-        );
-        assert_eq!(
-            env[OsStr::new("GIT_SSH_COMMAND")],
-            Some(OsStr::new("ssh -oBatchMode=yes"))
-        );
-    }
-
-    #[test]
-    fn errors_name_the_call_the_caller_asked_for_not_the_pinning() {
-        let repo = Path::new("/nowhere/cache");
-        assert_eq!(
-            Hardened::git_in(repo, &["fetch", "origin"]).label(),
-            "git fetch origin"
-        );
-    }
-
-    /// A cached repository whose own config points its working tree at a
-    /// sibling directory. Un-pinned, `git reset --hard` here overwrites the
-    /// sibling's files with the repository's; pinned, it cannot see them.
-    #[test]
-    fn a_hostile_core_worktree_cannot_reach_outside_the_cache() {
-        let tmp = tempfile::tempdir().unwrap();
-        let cache = tmp.path().join("cache");
-        let victim = tmp.path().join("victim");
-        fs::create_dir_all(cache.join("skills/gh")).unwrap();
-        fs::create_dir_all(victim.join("skills/gh")).unwrap();
-        fs::write(cache.join("skills/gh/SKILL.md"), "from the catalog\n").unwrap();
-        for args in [
-            vec!["init", "--quiet", "-b", "main"],
-            vec!["add", "."],
-            vec![
-                "-c",
-                "user.email=t@t",
-                "-c",
-                "user.name=t",
-                "commit",
-                "--quiet",
-                "-m",
-                "one",
-            ],
-            vec!["config", "core.worktree", &victim.display().to_string()],
-        ] {
-            assert!(
-                Hardened::git(&args, Some(&cache))
-                    .run()
-                    .unwrap()
-                    .status
-                    .success()
-            );
-        }
-        let precious = victim.join("skills/gh/SKILL.md");
-        fs::write(&precious, "the user's own work\n").unwrap();
-        fs::write(cache.join("skills/gh/SKILL.md"), "locally edited\n").unwrap();
-
-        let reset = Hardened::git_in(&cache, &["reset", "--hard", "HEAD", "--quiet"])
-            .run()
-            .unwrap();
-
-        assert!(reset.status.success());
-        assert_eq!(
-            fs::read_to_string(&precious).unwrap(),
-            "the user's own work\n"
-        );
-        assert_eq!(
-            fs::read_to_string(cache.join("skills/gh/SKILL.md")).unwrap(),
-            "from the catalog\n"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_call_that_outlives_its_timeout_is_killed() {
-        let started = Instant::now();
-        let error = Hardened::program("/bin/sleep", &["5"])
-            .timeout(Duration::from_millis(200))
-            .run()
-            .unwrap_err();
-        assert!(
-            started.elapsed() < Duration::from_secs(2),
-            "waited too long"
-        );
-        let CoreError::Io { source, .. } = error else {
-            panic!("timeout must report as an io error");
-        };
-        assert_eq!(source.kind(), io::ErrorKind::TimedOut);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_child_reading_stdin_gets_nothing_instead_of_waiting() {
-        let output = Hardened::program("/bin/cat", &[])
-            .timeout(Duration::from_secs(5))
-            .run()
-            .unwrap();
-        assert!(output.status.success());
-        assert!(output.stdout.is_empty());
-    }
-}
+mod tests;
