@@ -170,21 +170,44 @@ mod tests {
         }
     }
 
-    /// Nothing may be mutable where it cannot even be observed.
+    /// One kind stored as another is the whole of the cross-kind mapping:
+    /// a renderer exists for exactly this pair, so a new entry in the
+    /// table must arrive with the renderer that serves it.
+    #[test]
+    fn the_only_kind_stored_as_another_is_a_codex_command() {
+        for harness in HarnessId::ALL {
+            for kind in ItemKind::ALL {
+                if let Some(emitted) = capabilities(harness, kind).installs_as {
+                    assert_eq!(
+                        (harness, kind, emitted),
+                        (HarnessId::Codex, ItemKind::Command, ItemKind::Skill)
+                    );
+                }
+            }
+        }
+    }
+
+    /// Nothing may be mutable where what it writes cannot be observed. A
+    /// kind the harness stores as another one is checked against that
+    /// kind's surfaces, because that is where its artifact lands.
     #[test]
     fn no_capability_exceeds_observation() {
         for harness in HarnessId::ALL {
             for kind in ItemKind::ALL {
                 let c = capabilities(harness, kind);
-                for (op, sup) in [
-                    ("adopt", c.adopt),
-                    ("install", c.install),
-                    ("toggle", c.toggle),
-                    ("remove", c.remove),
-                    ("refresh", c.refresh),
+                let written = match c.installs_as {
+                    Some(emitted) => capabilities(harness, emitted).observe,
+                    None => c.observe,
+                };
+                for (op, sup, observe) in [
+                    ("adopt", c.adopt, c.observe),
+                    ("install", c.install, written),
+                    ("toggle", c.toggle, written),
+                    ("remove", c.remove, written),
+                    ("refresh", c.refresh, written),
                 ] {
                     assert!(
-                        (!sup.project || c.observe.project) && (!sup.global || c.observe.global),
+                        (!sup.project || observe.project) && (!sup.global || observe.global),
                         "{}/{}: {op} exceeds observe",
                         harness.name(),
                         kind.name(),

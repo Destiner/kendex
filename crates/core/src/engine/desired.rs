@@ -26,6 +26,9 @@ pub struct Desired {
     pub provenance: String,
     pub hash: String,
     pub upstream_skills: Option<Vec<String>>,
+    /// Set when the artifact is not this kind's native form — the lock
+    /// records it so removal targets what was written.
+    pub emitted: Option<crate::lock::EmittedArtifact>,
     pub artifact: Artifact,
 }
 
@@ -216,7 +219,7 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
                     &mut manifest_changed,
                 ),
                 ItemKind::Hook => desired_kinds::desired_hook(&ctx, &mut state),
-                ItemKind::Command => desired_kinds::desired_command(&ctx, &mut state),
+                ItemKind::Command => super::desired_command::desired_command(&ctx, &mut state),
                 ItemKind::McpServer => desired_kinds::desired_mcp(&ctx, &mut state),
                 _ => Ok(()),
             };

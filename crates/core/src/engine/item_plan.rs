@@ -92,6 +92,7 @@ pub(super) fn plan_item(
             source_hash: item.hash.clone(),
             enabled: item.enabled,
             upstream_skills: item.upstream_skills.clone(),
+            emitted: item.emitted.clone(),
         },
     );
     Ok(())
@@ -130,7 +131,17 @@ fn plan_written_file(
             path.display()
         )));
     }
-    let disk = path.is_file().then(|| hash_tree(path)).transpose()?;
+    // An artifact we cannot hash is reported uncompared (invariant 12) —
+    // a read error must never read as passing, and must not kill the scope.
+    let disk = match path.is_file().then(|| hash_tree(path)).transpose() {
+        Ok(disk) => disk,
+        Err(error) => {
+            return Ok(Planned::Conflict(format!(
+                "{} cannot be compared ({error}) — fix its permissions or remove it",
+                path.display()
+            )));
+        }
+    };
     let wanted = crate::hash::hash_bytes(bytes);
     match disk {
         Some(current) if current == wanted => Ok(Planned::Clean),
@@ -254,10 +265,15 @@ fn plan_tree(
         )));
     }
     let wanted = artifact_disk_hash(&item.artifact);
-    let disk = canonical
-        .is_dir()
-        .then(|| hash_tree(canonical))
-        .transpose()?;
+    let disk = match canonical.is_dir().then(|| hash_tree(canonical)).transpose() {
+        Ok(disk) => disk,
+        Err(error) => {
+            return Ok(Planned::Conflict(format!(
+                "{} cannot be compared ({error}) — fix its permissions or remove it",
+                canonical.display()
+            )));
+        }
+    };
     let mut result = Planned::Clean;
     if disk.as_deref() != Some(wanted.as_str()) {
         if disk.is_some() && !locked && !written_canonicals.contains(canonical) {

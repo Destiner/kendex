@@ -318,6 +318,7 @@ fn convert_lock(
                     ),
                     enabled: true,
                     upstream_skills: None,
+                    emitted: None,
                 },
             );
         }

@@ -1,9 +1,9 @@
 use std::path::PathBuf;
-use std::process::Command;
 
 use crate::env::Env;
 use crate::error::{CoreError, Result};
 use crate::manifest::Manifest;
+use crate::process::Hardened;
 
 /// `owner/repo` → clone URL. Full URLs pass through untouched;
 /// `VSTACK_GIT_BASE` rebases shorthands onto another host (test fixtures).
@@ -21,20 +21,14 @@ pub fn cache_dir(env: &Env, repo: &str) -> PathBuf {
     env.source_cache_dir().join(repo.replace('/', "_"))
 }
 
-fn git(args: &[&str], cwd: Option<&std::path::Path>) -> Result<()> {
-    let mut command = Command::new("git");
-    command.args(args);
-    if let Some(cwd) = cwd {
-        command.current_dir(cwd);
-    }
-    let output = command
-        .output()
-        .map_err(|e| CoreError::io(PathBuf::from("git"), e))?;
+fn run(git: Hardened) -> Result<()> {
+    let command = git.label().to_owned();
+    let output = git.run()?;
     if output.status.success() {
         Ok(())
     } else {
         Err(CoreError::GitFailed {
-            command: format!("git {}", args.join(" ")),
+            command,
             stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
         })
     }
@@ -47,8 +41,15 @@ fn git(args: &[&str], cwd: Option<&std::path::Path>) -> Result<()> {
 pub fn sync(env: &Env, repo: &str, url: &str) -> Result<(PathBuf, Option<String>)> {
     let cache = cache_dir(env, repo);
     if cache.join(".git").is_dir() {
-        let refreshed = git(&["fetch", "origin", "--quiet"], Some(&cache))
-            .and_then(|()| git(&["reset", "--hard", "origin/HEAD", "--quiet"], Some(&cache)));
+        // Pinned: the cached repository's own config must not decide where
+        // these two write.
+        let refreshed =
+            run(Hardened::git_in(&cache, &["fetch", "origin", "--quiet"])).and_then(|()| {
+                run(Hardened::git_in(
+                    &cache,
+                    &["reset", "--hard", "origin/HEAD", "--quiet"],
+                ))
+            });
         return Ok(match refreshed {
             Ok(()) => (cache, None),
             Err(error) => (
@@ -60,10 +61,10 @@ pub fn sync(env: &Env, repo: &str, url: &str) -> Result<(PathBuf, Option<String>
     if let Some(parent) = cache.parent() {
         std::fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
     }
-    git(
+    run(Hardened::git(
         &["clone", "--quiet", url, &cache.display().to_string()],
         None,
-    )?;
+    ))?;
     Ok((cache, None))
 }
 
@@ -96,10 +97,8 @@ pub fn sync_sources(env: &Env, manifest: &Manifest) -> Result<Vec<String>> {
 /// The cache's current HEAD, for freshness display.
 pub fn cache_head(env: &Env, repo: &str) -> Option<String> {
     let cache = cache_dir(env, repo);
-    let output = Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
-        .current_dir(&cache)
-        .output()
+    let output = Hardened::git_in(&cache, &["rev-parse", "--short", "HEAD"])
+        .run()
         .ok()?;
     output
         .status
@@ -132,10 +131,8 @@ mod tests {
             ],
         ] {
             assert!(
-                Command::new("git")
-                    .args(&args)
-                    .current_dir(dir)
-                    .output()
+                Hardened::git(&args, Some(dir))
+                    .run()
                     .unwrap()
                     .status
                     .success()
@@ -163,8 +160,8 @@ mod tests {
         )
         .unwrap();
         assert!(
-            Command::new("git")
-                .args([
+            Hardened::git(
+                &[
                     "-c",
                     "user.email=t@t",
                     "-c",
@@ -172,12 +169,13 @@ mod tests {
                     "commit",
                     "-aqm",
                     "two"
-                ])
-                .current_dir(&upstream)
-                .output()
-                .unwrap()
-                .status
-                .success()
+                ],
+                Some(&upstream)
+            )
+            .run()
+            .unwrap()
+            .status
+            .success()
         );
         let (_, warning) = sync(&env, "owner/repo", &url).unwrap();
         assert!(warning.is_none());

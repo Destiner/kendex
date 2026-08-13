@@ -1,5 +1,7 @@
 use std::path::PathBuf;
-use std::process::Command;
+use std::time::Duration;
+
+use vstack_core::process::Hardened;
 
 use super::{CliResult, out, say};
 
@@ -25,9 +27,11 @@ fn target_triple() -> &'static str {
 }
 
 fn fetch(url: &str) -> Result<Vec<u8>, String> {
-    let output = Command::new("curl")
-        .args(["-fsSL", url])
-        .output()
+    // This fetches release binaries as well as the small feed, so it needs
+    // room for a slow download.
+    let output = Hardened::curl(&["-fsSL", url])
+        .timeout(Duration::from_secs(600))
+        .run()
         .map_err(|e| format!("curl unavailable: {e}"))?;
     if !output.status.success() {
         return Err(format!(

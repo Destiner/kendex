@@ -299,6 +299,13 @@ export type KindCaps = {
 	toggle: OpSupport,
 	remove: OpSupport,
 	refresh: OpSupport,
+	/**
+	 *  The kind the harness actually stores this one as, when it has no
+	 *  surface of its own to write to. `observe` keeps describing the
+	 *  item's own surfaces; what a mutation writes is observable at the
+	 *  emitted kind's, which is where the honesty check looks.
+	 */
+	installsAs: ItemKind | null,
 };
 
 export type Manifest = Manifest_Serialize | Manifest_Deserialize;

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde_json::{Map, Value, json};
 
-use super::desired::{Artifact, Desired, DesiredState, ItemCtx, native_dir};
+use super::desired::{Artifact, Desired, DesiredState, ItemCtx};
 use super::targets::{HookTarget, disabled_name, hook_target, mcp_registry, plugin_settings};
 use crate::configedit::ConfigEdit;
 use crate::env::Env;
@@ -15,7 +15,7 @@ use crate::model::{HarnessId, ItemKind, Scope};
 
 /// Hooks, commands, and MCP servers all declare the same way; only the
 /// artifact differs.
-fn declared(
+pub(super) fn declared(
     ctx: &ItemCtx,
     kind: ItemKind,
     harness: HarnessId,
@@ -39,6 +39,7 @@ fn declared(
             harness,
         )?,
         upstream_skills: None,
+        emitted: None,
         artifact,
     })
 }
@@ -175,29 +176,6 @@ fn registration_edits(
     }
 }
 
-pub(super) fn desired_command(ctx: &ItemCtx, state: &mut DesiredState) -> Result<()> {
-    let bytes = ctx.sealed.read(ctx.item_path)?;
-    for harness in ctx.harnesses.clone() {
-        let Some(dir) = native_dir(ctx.env, ctx.scope, harness, ItemKind::Command) else {
-            continue;
-        };
-        let file = dir.join(format!("{}.md", ctx.name));
-        let path = if ctx.decl.enabled {
-            file
-        } else {
-            disabled_name(&file)
-        };
-        let artifact = Artifact::File {
-            path,
-            bytes: bytes.clone(),
-        };
-        state
-            .items
-            .push(declared(ctx, ItemKind::Command, harness, artifact)?);
-    }
-    Ok(())
-}
-
 pub(super) fn desired_mcp(ctx: &ItemCtx, state: &mut DesiredState) -> Result<()> {
     let text = ctx.sealed.read_to_string(ctx.item_path)?;
     let value = match mcp_value(&text) {
@@ -316,6 +294,7 @@ pub(super) fn desired_plugins(
                 provenance: "marketplace".to_owned(),
                 hash: hash_bytes(format!("plugin:{key}:{}", decl.enabled).as_bytes()),
                 upstream_skills: None,
+                emitted: None,
                 artifact: Artifact::Registration {
                     script: None,
                     edits: vec![(

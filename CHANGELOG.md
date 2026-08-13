@@ -6,6 +6,26 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ## [Unreleased]
 
+### Added
+
+- **Breaking:** commands install on Codex, which retired its prompt
+  directory in favor of skills. A declared command lands on Codex's skill
+  surface as a generated skill — frontmatter, the generated-file banner,
+  then the command body — at both scopes, and it toggles and comes off
+  disk there like any skill. The install record keeps the name and paths
+  the command actually took, so removal and refresh target what was
+  written. A command whose name a skill already holds installs as
+  `<name>__command`, or `<name>__cmd` when that is taken too, with a
+  warning naming it. OpenCode and Cursor still only read commands.
+  Migration: refresh creates these — no Codex command artifacts existed
+  before, and `~/.codex/prompts` is still never written to.
+
+- Catalog downloads are hardened against the repositories they fetch. A
+  source repository can no longer redirect a refresh at files outside its
+  own cache, no git call can stall the app waiting on a credential or SSH
+  prompt, and every external command gives up with an error rather than
+  hanging forever.
+
 ### Changed
 
 - **Breaking:** agent tool permissions are typed intent, preserved from

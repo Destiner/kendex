@@ -121,6 +121,7 @@ pub(super) fn desired_skill(ctx: &ItemCtx, state: &mut DesiredState) -> Result<(
                     *harness,
                 )?,
                 upstream_skills: None,
+                emitted: None,
                 artifact: Artifact::Tree {
                     canonical: canonical.clone(),
                     files: variant.files.clone(),

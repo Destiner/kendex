@@ -193,6 +193,7 @@ pub(super) fn desired_agent(
                 harness,
             )?,
             upstream_skills: Some(skills.upstream_now.clone()),
+            emitted: None,
             artifact: Artifact::File {
                 path: file,
                 bytes: rendered.text.into_bytes(),

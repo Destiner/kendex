@@ -39,6 +39,11 @@ pub struct KindCaps {
     pub toggle: OpSupport,
     pub remove: OpSupport,
     pub refresh: OpSupport,
+    /// The kind the harness actually stores this one as, when it has no
+    /// surface of its own to write to. `observe` keeps describing the
+    /// item's own surfaces; what a mutation writes is observable at the
+    /// emitted kind's, which is where the honesty check looks.
+    pub installs_as: Option<ItemKind>,
 }
 
 const fn unsupported() -> KindCaps {
@@ -49,6 +54,7 @@ const fn unsupported() -> KindCaps {
         toggle: NONE,
         remove: NONE,
         refresh: NONE,
+        installs_as: None,
     }
 }
 
@@ -61,6 +67,7 @@ const fn managed(scopes: OpSupport) -> KindCaps {
         toggle: scopes,
         remove: scopes,
         refresh: scopes,
+        installs_as: None,
     }
 }
 
@@ -73,6 +80,7 @@ const fn observe_only(scopes: OpSupport) -> KindCaps {
         toggle: NONE,
         remove: NONE,
         refresh: NONE,
+        installs_as: None,
     }
 }
 
@@ -113,8 +121,19 @@ pub fn capabilities(harness: HarnessId, kind: ItemKind) -> KindCaps {
         (Claude, PiExtension) => unsupported(),
 
         (Codex, Agent | Skill | Hook) => managed(BOTH),
-        // `~/.codex/prompts` is a deprecated-but-loading surface: never write.
-        (Codex, Command) => observe_only(GLOBAL),
+        // Codex deprecated `~/.codex/prompts` in favor of skills, so a
+        // command installs as a skill and is read back from the skill
+        // surface. The prompts dir still loads, so it is still scanned —
+        // and never written, which is why adopt stays off.
+        (Codex, Command) => KindCaps {
+            observe: GLOBAL,
+            adopt: NONE,
+            install: BOTH,
+            toggle: BOTH,
+            remove: BOTH,
+            refresh: BOTH,
+            installs_as: Some(Skill),
+        },
         (Codex, McpServer) => observe_only(BOTH),
         (Codex, Plugin) => observe_only(GLOBAL),
         (Codex, PiExtension) => unsupported(),

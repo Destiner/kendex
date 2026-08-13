@@ -89,7 +89,10 @@ lives in one capability table read by core and UI.
     builds every invocation: environment that can redirect it
     (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`) cleared, every
     prompt path closed (`GIT_TERMINAL_PROMPT=0`, SSH `BatchMode=yes`),
-    a timeout on every call. An unhardened invocation is not
+    a timeout on every call. Work inside a downloaded cache also pins
+    `--git-dir` and `--work-tree` on the command line, which outranks
+    config: a cached repository's own `core.worktree` cannot point a
+    refresh at files outside its cache. An unhardened invocation is not
     constructible — the raw-`Command` pattern is guard-banned, because
     a per-call-site discipline reliably misses call sites.
 
@@ -106,7 +109,11 @@ lives in one capability table read by core and UI.
   has a CLI verb. No CI until first release; `tools/guard` is the gate.
 - Multi-harness kept (v1 fleet workflows depend on Pi). Every capability
   ships cross-harness through the capability table; a harness without
-  native support for a kind is marked unsupported — never shimmed.
+  native support for a kind is marked unsupported — never shimmed. Where
+  a vendor has itself replaced one surface with another (Codex retired
+  its prompt directory in favor of skills), the table names the kind the
+  artifact is stored as and the lock records what was written: that is a
+  native surface, not a shim.
 - Fresh manifest schema + one-time v1 importer; no compat shims. v1
   extras/theme packs are not carried over.
 - **Propagation into consuming repos is local, never a pull request.**

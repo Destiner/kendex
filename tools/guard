@@ -86,6 +86,17 @@ hits=$(scan '#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?\b|rgba?\(|hsla?\(' '^ui/src/.*\.ts
   say "raw color literal in UI code — use theme tokens; color lives in the stylesheet"
 }
 
+# One hardened constructor builds every external process (invariant 13);
+# a per-call-site discipline misses call sites. crates/app is out of scope:
+# its only Command re-execs this app, replacing the process rather than
+# launching a tool. Integration tests under crates/*/tests run our own
+# binary and are likewise not tool launches.
+hits=$(scan 'Command::new' '^crates/(core|cli)/src/' | grep -v '^crates/core/src/process\.rs:')
+[ -n "$hits" ] && {
+  echo "$hits" | head -5
+  say "raw Command::new — external processes go through process::Hardened"
+}
+
 # Structural invariants.
 [ "$(readlink .claude/CLAUDE.md 2>/dev/null)" = "../AGENTS.md" ] ||
   say ".claude/CLAUDE.md must be a symlink to ../AGENTS.md"

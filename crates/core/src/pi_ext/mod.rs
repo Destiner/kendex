@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -16,6 +16,7 @@ use crate::configedit::{remove_marker_block, upsert_marker_block};
 use crate::env::Env;
 use crate::error::{CoreError, Result};
 use crate::fs::{atomic_write, read_if_exists};
+use crate::process::Hardened;
 
 mod files;
 mod renames;
@@ -221,11 +222,11 @@ fn npm_install(name: &str, package_dir: &Path) -> Result<()> {
         name: name.to_owned(),
         message: format!("{detail}. Recovery: `{recovery}`"),
     };
-    let output = Command::new("npm")
-        .args(NPM_INSTALL_ARGS)
-        .current_dir(package_dir)
-        .stdin(Stdio::null())
-        .output()
+    // A cold install pulls its whole tree over the network; minutes is a
+    // slow install, not a wedged one.
+    let output = Hardened::npm(NPM_INSTALL_ARGS, Some(package_dir))
+        .timeout(Duration::from_secs(600))
+        .run()
         .map_err(|e| {
             failed(format!(
                 "declares production dependencies, but npm could not run: {e}"

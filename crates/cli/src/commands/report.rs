@@ -1,9 +1,9 @@
 use std::path::PathBuf;
-use std::process::Command;
 
 use vstack_core::env::Env;
 use vstack_core::lock::{load as load_lock, lock_path};
 use vstack_core::model::ItemKind;
+use vstack_core::process::Hardened;
 use vstack_core::report::DEFAULT_UPSTREAM;
 
 use super::{CliResult, out, resolve_scopes, say};
@@ -153,7 +153,8 @@ pub fn run(env: &Env, args: ReportArgs) -> CliResult {
         return Ok(());
     }
 
-    let output = Command::new("gh").args(&gh_args).output();
+    let gh_args: Vec<&str> = gh_args.iter().map(String::as_str).collect();
+    let output = Hardened::gh(&gh_args).run();
     match output {
         Ok(result) if result.status.success() => {
             let url = String::from_utf8_lossy(&result.stdout).trim().to_owned();

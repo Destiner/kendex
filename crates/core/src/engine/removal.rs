@@ -36,11 +36,17 @@ fn installed(env: &Env, scope: &Scope, entry: &LockEntry) -> Owned {
                 files.push(canonical);
             }
         }
-        ItemKind::Command => {
-            if let Some(dir) = native_dir(env, scope, entry.harness, ItemKind::Command) {
-                files.push(dir.join(format!("{}.md", entry.name)));
+        // A codex command was written as a skill tree, under a name the
+        // collision rules may have changed: the record of what landed
+        // beats deriving a path this install never took.
+        ItemKind::Command => match &entry.emitted {
+            Some(emitted) => files.extend(emitted.paths.iter().cloned()),
+            None => {
+                if let Some(dir) = native_dir(env, scope, entry.harness, ItemKind::Command) {
+                    files.push(dir.join(format!("{}.md", entry.name)));
+                }
             }
-        }
+        },
         ItemKind::Hook => match hook_target(env, scope, entry.harness, &entry.name) {
             Some(HookTarget::Script {
                 path,

@@ -15,6 +15,7 @@ pub mod manifest;
 pub mod mapping;
 pub mod model;
 pub mod pi_ext;
+pub mod process;
 pub mod remote;
 pub mod render;
 pub mod report;

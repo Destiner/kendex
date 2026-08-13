@@ -22,7 +22,16 @@ const cap = (
   toggle,
   remove: manage,
   refresh: manage,
+  installsAs: null,
 });
+
+// Codex retired its prompt directory: a command is written, toggled and
+// removed as a skill, while the prompts it still loads are only read.
+const codexCommand: KindCaps = {
+  ...cap(G, PG),
+  adopt: NO,
+  installsAs: "skill",
+};
 
 // Mirrors crates/core/src/harness/caps.rs closely enough for UI gating;
 // the real table stays the only authority inside the app itself.
@@ -39,7 +48,7 @@ const KIND_CAPS: Record<HarnessId, Partial<Record<ItemKind, KindCaps>>> = {
     agent: cap(PG, PG),
     skill: cap(PG, PG),
     hook: cap(PG, PG),
-    command: cap(G, NO),
+    command: codexCommand,
     "mcp-server": cap(PG, NO),
     plugin: cap(G, NO),
   },

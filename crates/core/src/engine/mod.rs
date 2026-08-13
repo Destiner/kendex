@@ -15,6 +15,7 @@ pub mod adopt;
 mod config_edits;
 pub mod desired;
 mod desired_agent;
+mod desired_command;
 mod desired_kinds;
 mod desired_skill;
 mod item_plan;

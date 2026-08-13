@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
 use vstack_core::env::Env;
 use vstack_core::harness::HarnessAdapter;
 use vstack_core::harness::pi::Pi;
 use vstack_core::manifest::ManifestFile;
 use vstack_core::model::Scope;
+use vstack_core::process::Hardened;
 use vstack_core::{manifest, pi_ext, settings, source};
 
 use super::{CliResult, out, resolve_scopes, say};
@@ -242,10 +242,8 @@ fn installed_version(root: &Path, name: &str) -> Option<String> {
 /// Best effort: no npm, no network, or an unpublished package all read as an
 /// unknown latest version rather than a failed run.
 fn npm_latest(name: &str) -> Option<String> {
-    let output = Command::new("npm")
-        .args(["view", name, "version", "--json"])
-        .stdin(Stdio::null())
-        .output()
+    let output = Hardened::npm(&["view", name, "version", "--json"], None)
+        .run()
         .ok()?;
     if !output.status.success() {
         return None;
