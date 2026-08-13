@@ -8,6 +8,26 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- Skills can require other skills: a required companion installs with
+  its parent (for the tools that support it, with a warning where one
+  cannot), an optional companion is a real install-time choice that
+  survives refresh and other machines, and removing something warns
+  about what still needs it — with an optional sweep of leftovers
+  nothing needs anymore. Removing a required companion sticks: it stays
+  removed across refreshes and the parent shows a "missing required
+  dependency" note instead of it silently coming back.
+- **Breaking:** every installation records the reasons it exists —
+  asked for directly, required by another item, or part of a bundle —
+  and those reasons drive removal decisions. Migration: existing
+  install records gain a single "asked for directly" reason, the only
+  safe reading.
+- **Breaking:** `vstack refresh` no longer changes what is installed
+  without asking. Regenerating what is already installed stays
+  automatic; anything being added or removed (including dependencies a
+  catalog gained or dropped) is shown first and needs confirmation or
+  `--yes`. Scripts add `--yes`; a non-interactive run refuses before
+  touching anything.
+
 - **Breaking:** vstack can now be pointed at a marketplace-style
   catalog — a repository that ships its content one plugin at a time,
   with a `marketplace.json` listing what it offers — and install straight

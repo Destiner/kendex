@@ -259,7 +259,7 @@ fn invariant_6_never_touch_the_unowned() {
     let stray = f.project.join(".claude/skills/handmade");
     fs::create_dir_all(&stray).unwrap();
     fs::write(stray.join("SKILL.md"), "mine").unwrap();
-    let report = ops::remove(&f.env, &f.scope, &["gh".into()]).unwrap();
+    let report = ops::remove(&f.env, &f.scope, &["gh".into()], false).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     assert_eq!(fs::read_to_string(stray.join("SKILL.md")).unwrap(), "mine");
     assert!(!f.project.join(".claude/skills/gh").is_symlink());

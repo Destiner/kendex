@@ -13,6 +13,7 @@ pub struct AddArgs {
     pub harness: Vec<String>,
     pub agent: Vec<String>,
     pub skill: Vec<String>,
+    pub optional: Vec<String>,
     pub hook: Vec<String>,
     pub pi_extension: Vec<String>,
     pub copy: bool,
@@ -70,6 +71,7 @@ pub fn run(env: &Env, args: AddArgs) -> CliResult {
         },
         copy: args.copy,
         no_auto_skills: args.no_auto_skills,
+        optional: split(&args.optional),
     };
     let report = match ops::add(env, &scope, &request) {
         Err(vstack_core::error::CoreError::SourcePending { .. }) => {

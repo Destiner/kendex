@@ -15,6 +15,7 @@ pub mod adopt;
 mod catalog;
 mod config_edits;
 mod copilot;
+pub mod deps;
 pub mod desired;
 mod desired_agent;
 mod desired_command;
@@ -27,6 +28,7 @@ mod item_plan;
 pub mod ops;
 mod removal;
 mod scope_writes;
+mod set_change;
 mod targets;
 mod tree_plan;
 mod unmanaged;
@@ -35,6 +37,8 @@ use item_plan::plan_item;
 use scope_writes::{
     plan_config_edits, plan_lock_write, plan_schema_upgrade, plan_settings_seed, source_revisions,
 };
+use set_change::set_changes;
+pub use set_change::{SetChange, SetDirection};
 use unmanaged::unmanaged_rows;
 
 use desired::desired_state;
@@ -85,6 +89,11 @@ pub struct EngineReport {
     pub plan: Plan,
     pub notes: Vec<String>,
     pub warnings: Vec<ItemWarning>,
+    /// What this plan would add to or drop from the installed set.
+    pub set_changes: Vec<SetChange>,
+    /// Installations this plan leaves alone that nothing needs anymore —
+    /// what a removal offers to take with it.
+    pub sweepable: Vec<SetChange>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -94,6 +103,10 @@ pub struct PlanOptions {
     pub remove_orphans: bool,
     /// Restrict orphan removal to these names (the `remove` verb).
     pub removal_filter: Option<Vec<String>>,
+    /// Also remove installations nothing asked for that nothing needs
+    /// anymore — a dependency whose last dependent went away, or one an
+    /// upstream item stopped requiring.
+    pub sweep_unneeded: bool,
 }
 
 /// Compute drift and the plan that would fix it, in one pass — the Audit
@@ -161,7 +174,7 @@ pub fn plan_scope(
     // planned, so anything still wanted is known, and no path goes to the
     // trash twice.
     let mut guard = removal::TrashGuard::new(&state.items);
-    removal::stale_emitted(&state, lock, &mut guard, &mut ops);
+    removal::stale_emitted(&state, lock, &mut guard, &mut ops)?;
 
     let refused_keys = plan_refusals(
         env,
@@ -174,7 +187,7 @@ pub fn plan_scope(
         &mut config_edits,
     )?;
 
-    removal::orphans(
+    let sweepable = removal::orphans(
         env,
         scope,
         manifest,
@@ -190,6 +203,7 @@ pub fn plan_scope(
     )?;
 
     plan_config_edits(config_edits, &mut ops)?;
+    let set_changes = set_changes(scope, lock, &new_lock);
     plan_lock_write(env, scope, lock, new_lock, &mut ops)?;
 
     let mut report = EngineReport {
@@ -200,6 +214,8 @@ pub fn plan_scope(
         },
         notes: state.notes,
         warnings: state.warnings,
+        set_changes,
+        sweepable,
     };
     unmanaged_rows(env, scope, manifest, lock, &state.items, &mut report.drift);
     Ok(report)
@@ -257,13 +273,30 @@ fn plan_refusals(
 /// Read-only audit for a scope. A legacy or absent manifest still reports
 /// unmanaged items; nothing is planned that would touch a legacy file.
 pub fn audit(env: &Env, scope: &Scope) -> Result<EngineReport> {
+    plan_declared(env, scope, &PlanOptions::default())
+}
+
+/// What a refresh would do: regenerate everything declared, and re-derive
+/// the closure in both directions — a dependency that appeared upstream is
+/// an addition, one that went away leaves an installation nothing needs. The
+/// caller previews the set changes before any of it is applied.
+pub fn plan_refresh(env: &Env, scope: &Scope) -> Result<EngineReport> {
+    plan_declared(
+        env,
+        scope,
+        &PlanOptions {
+            sweep_unneeded: true,
+            ..PlanOptions::default()
+        },
+    )
+}
+
+fn plan_declared(env: &Env, scope: &Scope, options: &PlanOptions) -> Result<EngineReport> {
     let scope = &scope.canonical();
     let manifest_file = manifest::load(&manifest::manifest_path(env, scope))?;
     let lock = crate::lock::load(&lock_path(env, scope))?;
     match manifest_file {
-        ManifestFile::Current(manifest) => {
-            plan_scope(env, scope, &manifest, &lock, &PlanOptions::default())
-        }
+        ManifestFile::Current(manifest) => plan_scope(env, scope, &manifest, &lock, options),
         other => {
             let mut report = EngineReport {
                 drift: Vec::new(),
@@ -273,6 +306,8 @@ pub fn audit(env: &Env, scope: &Scope) -> Result<EngineReport> {
                 },
                 notes: Vec::new(),
                 warnings: Vec::new(),
+                set_changes: Vec::new(),
+                sweepable: Vec::new(),
             };
             if matches!(other, ManifestFile::Legacy { .. }) {
                 report

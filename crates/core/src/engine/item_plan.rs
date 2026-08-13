@@ -109,6 +109,7 @@ pub(super) fn plan_item(
             enabled: item.enabled,
             upstream_skills: item.upstream_skills.clone(),
             emitted: item.emitted.clone(),
+            reasons: item.reasons.clone(),
         },
     );
     Ok(())

@@ -30,6 +30,8 @@ pub struct Desired {
     /// Set when the artifact is not this kind's native form — the lock
     /// records it so removal targets what was written.
     pub emitted: Option<crate::lock::EmittedArtifact>,
+    /// Every reason this installation is wanted, derived fresh each pass.
+    pub reasons: BTreeSet<crate::lock::Reason>,
     pub artifact: Artifact,
 }
 
@@ -191,9 +193,12 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
     let collisions = super::catalog::Collisions::find(manifest, scope, &mut state);
     let mut updated_manifest = manifest.clone();
     let mut manifest_changed = false;
+    // Skills are planned from the closure — the declared ones plus what they
+    // require — while the manifest keeps holding only what was chosen.
+    let expansion = super::deps::expand(env, scope, manifest, &mut state);
 
     for (kind, table) in [
-        (ItemKind::Skill, &manifest.skills),
+        (ItemKind::Skill, &expansion.items),
         (ItemKind::Agent, &manifest.agents),
         (ItemKind::Hook, &manifest.hooks),
         (ItemKind::Command, &manifest.commands),
@@ -235,6 +240,7 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
                 ));
             }
             harnesses.retain(|harness| collisions.allows(kind, name, *harness));
+            let reasons = reasons_for(kind, name, &harnesses, &expansion);
             let ctx = ItemCtx {
                 env,
                 scope,
@@ -247,6 +253,7 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
                 item_path: &item_path,
                 provenance: &provenance,
                 harnesses,
+                reasons: &reasons,
             };
             let outcome = match kind {
                 ItemKind::Skill => desired_skill(&ctx, &mut state),
@@ -290,6 +297,27 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
     Ok(state)
 }
 
+/// Why each of an item's installations is wanted. Only skills carry
+/// dependencies; every other kind installs for exactly one reason, which is
+/// that it is declared.
+fn reasons_for(
+    kind: ItemKind,
+    name: &str,
+    harnesses: &[HarnessId],
+    expansion: &super::deps::Expansion,
+) -> BTreeMap<HarnessId, BTreeSet<crate::lock::Reason>> {
+    harnesses
+        .iter()
+        .map(|harness| {
+            let why = match kind {
+                ItemKind::Skill => expansion.reasons(name, *harness),
+                _ => BTreeSet::from([crate::lock::Reason::Requested]),
+            };
+            (*harness, why)
+        })
+        .collect()
+}
+
 pub(super) struct ItemCtx<'a> {
     pub(super) env: &'a Env,
     pub(super) scope: &'a Scope,
@@ -302,6 +330,13 @@ pub(super) struct ItemCtx<'a> {
     pub(super) item_path: &'a std::path::Path,
     pub(super) provenance: &'a str,
     pub(super) harnesses: Vec<HarnessId>,
+    reasons: &'a BTreeMap<HarnessId, BTreeSet<crate::lock::Reason>>,
+}
+
+impl ItemCtx<'_> {
+    pub(super) fn reasons_for(&self, harness: HarnessId) -> BTreeSet<crate::lock::Reason> {
+        self.reasons.get(&harness).cloned().unwrap_or_default()
+    }
 }
 
 /// Every path an artifact occupies. Cursor keeps hook rules in the same dir

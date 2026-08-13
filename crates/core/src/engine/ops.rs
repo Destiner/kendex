@@ -10,6 +10,9 @@ use crate::manifest::{
 use crate::model::{HarnessId, ItemKind, Scope};
 use crate::source::{self, find_item, list_items, source_config};
 
+mod persist;
+use persist::ensure_manifest_persisted;
+
 /// Every kind a manifest declares by name. Plugins are excluded: they carry
 /// only an enabled flag, in their own table.
 const DECLARED_KINDS: [ItemKind; 6] = [
@@ -56,6 +59,9 @@ pub struct AddRequest {
     pub harnesses: Option<Vec<HarnessId>>,
     pub copy: bool,
     pub no_auto_skills: bool,
+    /// Optional dependencies to take, by name. The choice is recorded under
+    /// every item from this source that offers one by that name.
+    pub optional: Vec<String>,
 }
 
 /// Declare items (and their auto-expanded skills), then plan the scope.
@@ -104,9 +110,13 @@ pub fn add(env: &Env, scope: &Scope, request: &AddRequest) -> Result<EngineRepor
                 }
             }
         }
-        expand_dependencies(&sealed, &config, &mut wanted);
         skills = wanted.into_iter().collect();
     }
+
+    // Every check runs before the first declaration is written (invariant
+    // 11): a choice naming an optional dependency nothing offers is an error
+    // that leaves the manifest exactly as it was.
+    let chosen = optional_choices(&sealed, &config, &manifest, &skills, &source_name, request)?;
 
     for (kind, names) in [(ItemKind::Agent, agents), (ItemKind::Skill, skills)] {
         for name in names {
@@ -120,6 +130,13 @@ pub fn add(env: &Env, scope: &Scope, request: &AddRequest) -> Result<EngineRepor
                 &source_name,
                 request,
             )?;
+        }
+    }
+    for (parent, name) in chosen {
+        let taken = manifest.optional_dependencies.entry(parent).or_default();
+        if !taken.contains(&name) {
+            taken.push(name);
+            taken.sort();
         }
     }
 
@@ -165,75 +182,65 @@ fn declare(
     if request.copy {
         decl.method = Some(Method::Copy);
     }
+    // Asking for something back is the plainest possible statement that it
+    // is wanted, so it outranks a removal recorded earlier.
+    if let Some(held) = manifest.suppressed.get_mut(&kind) {
+        held.retain(|suppressed| suppressed != name);
+    }
+    manifest.suppressed.retain(|_, held| !held.is_empty());
     Ok(())
 }
 
-/// Transitive closure over `dependencies.required` in skill frontmatter.
-fn expand_dependencies(
+/// Which item each chosen optional dependency belongs to. Choices are
+/// recorded against the item that offers them, so a refresh knows what was
+/// taken without having to guess from what is installed. A name nothing
+/// offers is an error, not a silently ignored flag.
+fn optional_choices(
     sealed: &crate::source_read::SealedSource,
     config: &crate::source::SourceConfig,
-    wanted: &mut BTreeSet<String>,
-) {
-    let mut queue: Vec<String> = wanted.iter().cloned().collect();
-    while let Some(name) = queue.pop() {
-        let Some(dir) = find_item(sealed, config, ItemKind::Skill, &name) else {
-            continue;
-        };
-        let Ok(Some(text)) = sealed.read_if_exists(&dir.join("SKILL.md")) else {
-            continue;
-        };
-        for dep in required_dependencies(&text) {
-            if wanted.insert(dep.clone()) {
-                queue.push(dep);
+    manifest: &Manifest,
+    adding: &[String],
+    source_name: &str,
+    request: &AddRequest,
+) -> Result<Vec<(String, String)>> {
+    if request.optional.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut offers: BTreeSet<String> = adding.iter().cloned().collect();
+    offers.extend(
+        manifest
+            .skills
+            .iter()
+            .filter(|(_, decl)| decl.source == source_name)
+            .map(|(name, _)| name.clone()),
+    );
+    let mut chosen = Vec::new();
+    for wanted in &request.optional {
+        let mut offered_by = Vec::new();
+        for parent in &offers {
+            let Some(dir) = find_item(sealed, config, ItemKind::Skill, parent) else {
+                continue;
+            };
+            if super::deps::declared_dependencies(sealed, &dir)?
+                .optional
+                .contains(wanted)
+            {
+                offered_by.push(parent.clone());
             }
         }
+        if offered_by.is_empty() {
+            return Err(CoreError::NoSuchOptional {
+                name: wanted.clone(),
+                source_name: source_name.to_owned(),
+            });
+        }
+        chosen.extend(
+            offered_by
+                .into_iter()
+                .map(|parent| (parent, wanted.clone())),
+        );
     }
-}
-
-/// `dependencies: {required: [a, b]}` — flat and nested YAML list forms.
-fn required_dependencies(skill_md: &str) -> Vec<String> {
-    let Some(front) = skill_md
-        .strip_prefix("---")
-        .and_then(|rest| rest.find("\n---").map(|end| &rest[..end]))
-    else {
-        return Vec::new();
-    };
-    let mut deps = Vec::new();
-    let mut in_dependencies = false;
-    let mut in_required = false;
-    for line in front.lines() {
-        let trimmed = line.trim();
-        if !line.starts_with(' ') {
-            in_dependencies = trimmed.starts_with("dependencies:");
-            in_required = false;
-            continue;
-        }
-        if !in_dependencies {
-            continue;
-        }
-        if let Some(rest) = trimmed.strip_prefix("required:") {
-            let rest = rest.trim();
-            if let Some(list) = rest.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
-                deps.extend(
-                    list.split(',')
-                        .map(|s| s.trim().trim_matches('"').to_owned())
-                        .filter(|s| !s.is_empty()),
-                );
-                in_required = false;
-            } else {
-                in_required = true;
-            }
-            continue;
-        }
-        if trimmed.starts_with("optional:") {
-            in_required = false;
-            continue;
-        }
-        if in_required && let Some(item) = trimmed.strip_prefix("- ") {
-            deps.push(item.trim().trim_matches('"').to_owned());
-        }
-    }
-    deps
+    Ok(chosen)
 }
 
 /// Map a CLI source argument to a declared source name, declaring it when
@@ -299,8 +306,13 @@ fn ensure_source(manifest: &mut Manifest, requested: Option<&str>) -> Result<Str
     Ok(name)
 }
 
-/// Drop declarations and plan the removal of exactly those items.
-pub fn remove(env: &Env, scope: &Scope, names: &[String]) -> Result<EngineReport> {
+/// Drop declarations and plan the removal of exactly those items. A removal
+/// is durable: an item something else still requires is written down as
+/// suppressed rather than re-derived on the next plan, and every item that
+/// requires it says so in the audit instead of quietly getting it back.
+/// `sweep` also removes what nothing needs anymore — the dependencies whose
+/// last dependent is going away.
+pub fn remove(env: &Env, scope: &Scope, names: &[String], sweep: bool) -> Result<EngineReport> {
     let mut manifest = manifest_for_mutation(env, scope)?;
     let lock = crate::lock::load(&lock_path(env, scope))?;
     for name in names {
@@ -310,14 +322,36 @@ pub fn remove(env: &Env, scope: &Scope, names: &[String]) -> Result<EngineReport
         manifest.plugins.remove(name);
         manifest.agent_skills.remove(name);
         manifest.skill_instructions.remove(name);
+        manifest.optional_dependencies.remove(name);
+        // Taking an item away also un-takes it wherever it was chosen as an
+        // optional extra: that choice is the whole reason it would return.
+        for taken in manifest.optional_dependencies.values_mut() {
+            taken.retain(|chosen| chosen != name);
+        }
+    }
+    manifest.optional_dependencies.retain(|_, t| !t.is_empty());
+    for name in still_required(env, scope, &manifest, names) {
+        manifest.suppress(ItemKind::Skill, &name);
     }
     let options = PlanOptions {
         remove_orphans: true,
         removal_filter: Some(names.to_vec()),
+        sweep_unneeded: sweep,
     };
     let mut report = plan_scope(env, scope, &manifest, &lock, &options)?;
     ensure_manifest_persisted(env, scope, &manifest, &mut report)?;
     Ok(report)
+}
+
+/// Which of these names something that stays would pull straight back in.
+fn still_required(env: &Env, scope: &Scope, manifest: &Manifest, names: &[String]) -> Vec<String> {
+    let mut state = crate::engine::desired::DesiredState::default();
+    let expansion = super::deps::expand(env, scope, manifest, &mut state);
+    names
+        .iter()
+        .filter(|name| expansion.items.contains_key(*name))
+        .cloned()
+        .collect()
 }
 
 /// Flip declarations; disabling is non-destructive (invariant 5).
@@ -337,35 +371,4 @@ pub fn toggle(env: &Env, scope: &Scope, names: &[String], enabled: bool) -> Resu
     let mut report = plan_scope(env, scope, &manifest, &lock, &PlanOptions::default())?;
     ensure_manifest_persisted(env, scope, &manifest, &mut report)?;
     Ok(report)
-}
-
-/// The plan must persist the mutated manifest exactly once; plan_scope adds
-/// its own write only when upstream skill merges changed it further.
-fn ensure_manifest_persisted(
-    env: &Env,
-    scope: &Scope,
-    manifest: &Manifest,
-    report: &mut EngineReport,
-) -> Result<()> {
-    let already = report
-        .plan
-        .ops
-        .iter()
-        .any(|op| matches!(op.op, crate::apply::Op::WriteManifest { .. }));
-    if already {
-        return Ok(());
-    }
-    let path = manifest::manifest_path(env, scope);
-    report.plan.ops.insert(
-        0,
-        crate::apply::PlannedOp {
-            description: "Save vstack.toml".into(),
-            op: crate::apply::Op::WriteManifest {
-                pre: crate::apply::Pre::observed(&path)?,
-                path,
-                manifest: Box::new(manifest.clone()),
-            },
-        },
-    );
-    Ok(())
 }

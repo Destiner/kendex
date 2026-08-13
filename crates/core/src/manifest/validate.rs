@@ -28,6 +28,8 @@ const TOP_LEVEL: &[&str] = &[
     "mcp-servers",
     "plugins",
     "pi-extensions",
+    "suppressed",
+    "optional-dependencies",
     "agent-skills",
     "agent-launch-instructions",
     "agent-additional-instructions",
@@ -41,23 +43,6 @@ const TOP_LEVEL: &[&str] = &[
 /// a remote to read — a commit id pins, a tag or branch tracks.
 const SOURCE_KEYS: &[&str] = &["repo", "path", "rev", "enabled"];
 
-/// Kind tables whose entries name an item from a source. Plugins are not
-/// among them: they come from a marketplace and carry only an enabled flag.
-const ITEM_TABLES: &[&str] = &[
-    "agents",
-    "skills",
-    "hooks",
-    "commands",
-    "mcp-servers",
-    "pi-extensions",
-];
-
-/// The kinds a marketplace-shaped catalog offers, and so the only ones whose
-/// names may carry the plugin they came from. A hook or a server has no
-/// namespaced spelling anywhere — a `/` in one of those names would just be
-/// a directory on disk that nothing knows to remove.
-const NAMESPACED_TABLES: &[&str] = &["agents", "commands", "skills"];
-
 /// The tools a manifest may name: the ones vstack writes to. Read from the
 /// capability table rather than listed here, so a tool can never be
 /// accepted as a target before anything it declares would be installed.
@@ -65,19 +50,6 @@ fn harnesses() -> Vec<&'static str> {
     crate::model::HarnessId::ALL
         .into_iter()
         .filter(|harness| crate::harness::installable(*harness))
-        .map(crate::model::HarnessId::name)
-        .collect()
-}
-
-/// The tools whose plugin switch vstack can write. Naming any other one
-/// asks for a write that has nowhere to land.
-fn plugin_harnesses() -> Vec<&'static str> {
-    crate::model::HarnessId::ALL
-        .into_iter()
-        .filter(|h| {
-            let toggle = crate::harness::capabilities(*h, crate::model::ItemKind::Plugin).toggle;
-            toggle.project || toggle.global
-        })
         .map(crate::model::HarnessId::name)
         .collect()
 }
@@ -122,8 +94,9 @@ pub fn validate(table: &Table) -> Vec<Finding> {
     }
     validate_sources(table, &mut findings);
     validate_install(table, &mut findings);
-    validate_items(table, &mut findings);
-    validate_plugins(table, &mut findings);
+    items::validate_items(table, &mut findings);
+    items::validate_plugins(table, &mut findings);
+    items::validate_dependency_choices(table, &mut findings);
     validate_frontmatter(table, &mut findings);
     validate_hooks(table, &mut findings);
     findings
@@ -198,116 +171,6 @@ fn validate_install(table: &Table, findings: &mut Vec<Finding>) {
     }
 }
 
-fn validate_items(table: &Table, findings: &mut Vec<Finding>) {
-    let source_names: Vec<String> = table
-        .get("sources")
-        .and_then(Value::as_table)
-        .map(|s| s.keys().cloned().collect())
-        .unwrap_or_default();
-    for &kind_table in ITEM_TABLES {
-        let Some(items) = table.get(kind_table).and_then(Value::as_table) else {
-            continue;
-        };
-        for (name, decl) in items {
-            let location = format!("{kind_table}.{name}");
-            // Pi extensions are npm packages, where `@scope/name` is a
-            // legitimate shape. Every other name becomes a file or a
-            // directory, and the only `/` one may hold is the plugin a
-            // marketplace-shaped catalog keeps the item in.
-            let scoped_ok = kind_table == "pi-extensions"
-                && name.starts_with('@')
-                && name.matches('/').count() == 1
-                && !name.ends_with('/');
-            let namespaced = NAMESPACED_TABLES.contains(&kind_table);
-            let problem = match (scoped_ok, namespaced) {
-                (true, _) => None,
-                (false, true) => crate::names::item_problem(name),
-                (false, false) => crate::names::segment_problem(name),
-            };
-            if let Some(problem) = problem {
-                findings.push(Finding {
-                    location: location.clone(),
-                    problem,
-                    fix: match namespaced {
-                        true => "rename the item — a plain name, or `<plugin>/<item>` for an item from a marketplace catalog".into(),
-                        false => format!(
-                            "rename the item — a {} is named without a `/`, since no marketplace catalog offers one",
-                            kind_table.strip_suffix('s').unwrap_or(kind_table)
-                        ),
-                    },
-                });
-            }
-            let Some(decl) = decl.as_table() else {
-                findings.push(Finding {
-                    location,
-                    problem: "declaration must be a table".into(),
-                    fix: format!("write [{kind_table}.{name}] with source = \"<source-name>\""),
-                });
-                continue;
-            };
-            match decl.get("source").and_then(Value::as_str) {
-                None => findings.push(Finding {
-                    location,
-                    problem: "missing source".into(),
-                    fix: "add source = \"<source-name>\" (or \"local\")".into(),
-                }),
-                Some(source) => {
-                    if source != super::LOCAL_SOURCE_NAME
-                        && !source_names.iter().any(|s| s == source)
-                    {
-                        findings.push(Finding {
-                            location,
-                            problem: format!("references undeclared source '{source}'"),
-                            fix: format!(
-                                "declare [sources.{source}] or change source to one of: {}",
-                                if source_names.is_empty() {
-                                    "local".to_owned()
-                                } else {
-                                    format!("{}, local", source_names.join(", "))
-                                }
-                            ),
-                        });
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn validate_plugins(table: &Table, findings: &mut Vec<Finding>) {
-    let Some(plugins) = table.get("plugins").and_then(Value::as_table) else {
-        return;
-    };
-    for (key, decl) in plugins {
-        let decl = decl.as_table();
-        let well_formed = decl.is_some_and(|decl| {
-            decl.keys().all(|k| k == "enabled" || k == "harness")
-                && decl.get("enabled").is_none_or(Value::is_bool)
-        });
-        if !well_formed {
-            findings.push(Finding {
-                location: format!("plugins.{key}"),
-                problem: "a plugin declares whether it is enabled and which tool it belongs to"
-                    .into(),
-                fix: format!("write [plugins.\"{key}\"] with enabled = true or false"),
-            });
-        }
-        // A plugin belongs to one tool, and only some tools have a plugin
-        // switch to write at all.
-        if let Some(harness) = decl
-            .and_then(|decl| decl.get("harness"))
-            .and_then(Value::as_str)
-            && !plugin_harnesses().contains(&harness)
-        {
-            findings.push(Finding {
-                location: format!("plugins.{key}.harness"),
-                problem: format!("{harness} has no plugin switch vstack can write"),
-                fix: format!("set harness to one of: {}", plugin_harnesses().join(", ")),
-            });
-        }
-    }
-}
-
 fn validate_frontmatter(table: &Table, findings: &mut Vec<Finding>) {
     let Some(frontmatter) = table.get("agent-frontmatter").and_then(Value::as_table) else {
         return;
@@ -360,6 +223,8 @@ fn validate_hooks(table: &Table, findings: &mut Vec<Finding>) {
         }
     }
 }
+
+mod items;
 
 #[cfg(test)]
 mod tests;

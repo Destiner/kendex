@@ -131,6 +131,26 @@ struct Owned {
     edits: Vec<(PathBuf, ConfigEdit)>,
 }
 
+/// A removal binds to what the preview showed, like every other mutation
+/// (invariant 7): the exact bytes for a file or tree, the exact target for a
+/// link we manage. Anything edited between preview and apply fails the
+/// precondition and the whole apply rolls back, instead of moving work
+/// nobody looked at into the trash.
+fn trash(description: String, path: PathBuf) -> Result<PlannedOp> {
+    let pre = match path.is_symlink() {
+        true => Pre::SymlinkTo {
+            target: std::fs::read_link(&path).map_err(|e| crate::error::CoreError::io(&path, e))?,
+        },
+        false => Pre::HashIs {
+            hash: crate::hash::hash_tree(&path)?,
+        },
+    };
+    Ok(PlannedOp {
+        description,
+        op: Op::Trash { path, pre },
+    })
+}
+
 /// Everything undoing one installation takes: the artifacts we wrote go to
 /// the trash, registrations are reversed by a structured edit routed
 /// through the per-file collector — a removal and an install editing the
@@ -148,17 +168,14 @@ pub(super) fn removal_ops(
     for path in files {
         for candidate in [disabled_name(&path), path] {
             if candidate.exists() || candidate.is_symlink() {
-                ops.push(PlannedOp {
-                    description: format!(
+                ops.push(trash(
+                    format!(
                         "Move {} {}'s files to the trash",
                         entry.kind.name(),
                         entry.name
                     ),
-                    op: Op::Trash {
-                        path: candidate,
-                        pre: Pre::Any,
-                    },
-                });
+                    candidate,
+                )?);
             }
         }
     }
@@ -233,7 +250,7 @@ pub(super) fn stale_emitted(
     lock: &Lock,
     guard: &mut TrashGuard,
     ops: &mut Vec<PlannedOp>,
-) {
+) -> Result<()> {
     for item in &state.items {
         let Some(previous) = lock
             .entries
@@ -250,20 +267,18 @@ pub(super) fn stale_emitted(
             if !path.exists() && !path.is_symlink() {
                 continue;
             }
-            let planned = PlannedOp {
-                description: format!(
+            let planned = trash(
+                format!(
                     "Move {} {}'s old files to the trash",
                     item.kind.name(),
                     item.name
                 ),
-                op: Op::Trash {
-                    path: path.clone(),
-                    pre: Pre::Any,
-                },
-            };
+                path.clone(),
+            )?;
             guard.extend(ops, [planned]);
         }
     }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -280,8 +295,9 @@ pub(super) fn orphans(
     ops: &mut Vec<PlannedOp>,
     config_edits: &mut super::config_edits::ConfigEditPlan,
     new_lock: &mut Lock,
-) -> Result<()> {
+) -> Result<Vec<super::SetChange>> {
     let desired_keys: BTreeSet<&String> = state.items.iter().map(|d| &d.key).collect();
+    let mut sweepable = Vec::new();
 
     for (key, entry) in &lock.entries {
         if desired_keys.contains(key) || refused_keys.contains(key) {
@@ -294,15 +310,22 @@ pub(super) fn orphans(
         // is stranded and must be cleaned up like any other orphan.
         let unreachable_source = manifest.declared(entry.kind).contains_key(&entry.name)
             && !state.processed.contains(&(entry.kind, entry.name.clone()));
-        if unreachable_source {
+        // An installation nobody declared was derived from one that was, and
+        // the catalog it came from is where its reason is written down. With
+        // that catalog offline, "nothing requires it anymore" is not
+        // something this pass knows — so it keeps what it cannot account for.
+        let unreadable_origin =
+            derived_only(entry) && !origin_readable(env, scope, manifest, state, &entry.source);
+        if unreachable_source || unreadable_origin {
             new_lock.entries.insert(key.clone(), entry.clone());
             continue;
         }
-        let removable = options.remove_orphans
-            && options
-                .removal_filter
-                .as_ref()
-                .is_none_or(|names| names.contains(&entry.name));
+        let named = options
+            .removal_filter
+            .as_ref()
+            .is_none_or(|names| names.contains(&entry.name));
+        let unneeded = derived_only(entry);
+        let removable = (options.remove_orphans && named) || (options.sweep_unneeded && unneeded);
         drift.push(DriftRow {
             kind: entry.kind,
             name: entry.name.clone(),
@@ -316,10 +339,39 @@ pub(super) fn orphans(
             },
         });
         if !removable {
+            if unneeded {
+                sweepable.push(super::SetChange::dropped(scope, entry));
+            }
             new_lock.entries.insert(key.clone(), entry.clone());
             continue;
         }
         guard.extend(ops, removal_ops(env, scope, entry, config_edits)?);
     }
-    Ok(())
+    Ok(sweepable)
+}
+
+/// Whether this installation only ever existed for another item's sake —
+/// nobody asked for it by name, so once nothing needs it, nothing does.
+fn derived_only(entry: &crate::lock::LockEntry) -> bool {
+    !entry.reasons.contains(&crate::lock::Reason::Requested)
+}
+
+/// Whether the catalog behind an installation can be read right now. The
+/// pass has usually resolved it already; a source no declaration named this
+/// time is resolved here, because the last item that needed it going away is
+/// exactly when this question gets asked.
+fn origin_readable(
+    env: &Env,
+    scope: &Scope,
+    manifest: &Manifest,
+    state: &desired::DesiredState,
+    source: &str,
+) -> bool {
+    match state.sources.get(source) {
+        Some(resolution) => matches!(resolution, crate::source::SourceState::Ready(_)),
+        None => matches!(
+            crate::source::resolve(env, scope, source, manifest),
+            Ok(crate::source::SourceState::Ready(_))
+        ),
+    }
 }

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -40,6 +40,48 @@ pub struct SourceRev {
     pub commit: String,
 }
 
+/// One installation an edge points at: the counterpart named the way the
+/// manifest and the lock name an installation.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallRef {
+    /// Declared source name — dependencies stay inside one catalog, so this
+    /// is the source both ends share.
+    pub source: String,
+    pub kind: ItemKind,
+    pub name: String,
+    pub harness: HarnessId,
+    pub scope: Scope,
+}
+
+/// The bundle an installation came in with.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BundleRef {
+    pub source: String,
+    pub name: String,
+    pub scope: Scope,
+}
+
+/// Why one installation exists. An installation holds a *set* of these — the
+/// user asked for it, two bundles carry it, three items require it — and
+/// each is a structured value, never a sentence to parse back.
+///
+/// The set is a cache, not intent: the manifest records the choices (what
+/// was requested, which optional dependencies were taken, what is kept
+/// removed) and the plan derives the closure again from those choices plus
+/// the catalogs. A lost lock therefore loses nothing.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Type)]
+#[serde(tag = "reason", rename_all = "kebab-case")]
+pub enum Reason {
+    /// The user asked for this item by name.
+    Requested,
+    /// Another installed item declares it as a dependency.
+    RequiredBy { by: InstallRef },
+    /// An installed bundle carries it as a member.
+    MemberOf { bundle: BundleRef },
+}
+
 /// One installation the engine wrote: item × harness within this scope's
 /// lock file. Provenance is durable — a recorded source is never silently
 /// rebound (invariant 4).
@@ -68,6 +110,11 @@ pub struct LockEntry {
     /// never took.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub emitted: Option<EmittedArtifact>,
+    /// Every reason this installation exists. Never empty once written: an
+    /// installation nothing can account for would be swept the moment
+    /// anything looked at it.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub reasons: BTreeSet<Reason>,
 }
 
 /// The artifact one installation actually put on disk, in the harness's own
@@ -98,7 +145,7 @@ pub fn load(path: &Path) -> Result<Lock> {
             ..Lock::default()
         }),
         Some(text) => {
-            let lock: Lock = serde_json::from_str(&text).map_err(|e| CoreError::JsonParse {
+            let mut lock: Lock = serde_json::from_str(&text).map_err(|e| CoreError::JsonParse {
                 path: path.to_path_buf(),
                 message: e.to_string(),
             })?;
@@ -107,6 +154,15 @@ pub fn load(path: &Path) -> Result<Lock> {
                     path: path.to_path_buf(),
                     found: i64::from(lock.version),
                 });
+            }
+            // A record written before installations carried their reasons:
+            // everything installed then was installed because it was asked
+            // for, which is the only reading that cannot invent a dependency
+            // nobody declared. The next write records it.
+            for entry in lock.entries.values_mut() {
+                if entry.reasons.is_empty() {
+                    entry.reasons.insert(Reason::Requested);
+                }
             }
             Ok(lock)
         }
@@ -181,11 +237,46 @@ mod tests {
                 enabled: true,
                 upstream_skills: None,
                 emitted: None,
+                reasons: BTreeSet::from([
+                    Reason::Requested,
+                    Reason::RequiredBy {
+                        by: InstallRef {
+                            source: "vstack".into(),
+                            kind: ItemKind::Skill,
+                            name: "dev".into(),
+                            harness: HarnessId::Claude,
+                            scope: Scope::Global,
+                        },
+                    },
+                    Reason::MemberOf {
+                        bundle: BundleRef {
+                            source: "vstack".into(),
+                            name: "starter".into(),
+                            scope: Scope::Global,
+                        },
+                    },
+                ]),
             },
         );
         save(&path, &lock).unwrap();
         assert_eq!(load(&path).unwrap(), lock);
         assert!(std::fs::read_to_string(&path).unwrap().ends_with('\n'));
+    }
+
+    /// A record from before installations carried reasons reads back as one
+    /// the user asked for — the only reading that invents nothing.
+    #[test]
+    fn entries_without_reasons_read_as_requested() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".vstack-lock.json");
+        std::fs::write(
+            &path,
+            r#"{"version":2,"entries":{"skill:gh:claude":{"name":"gh","kind":"skill","harness":"claude","source":"vstack","sourceRepo":"vanillagreencom/vstack","method":"symlink","installedAt":"2026-01-01T00:00:00Z","sourceHash":"abc","enabled":true}}}"#,
+        )
+        .unwrap();
+        let lock = load(&path).unwrap();
+        let entry = &lock.entries["skill:gh:claude"];
+        assert_eq!(entry.reasons, BTreeSet::from([Reason::Requested]));
     }
 
     #[test]

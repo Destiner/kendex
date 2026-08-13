@@ -157,7 +157,7 @@ fn a_stale_plan_cannot_revert_a_newer_manifest() {
         },
     )
     .unwrap();
-    let removal = ops::remove(&w.env, &scope, &["gh".to_owned()]).unwrap();
+    let removal = ops::remove(&w.env, &scope, &["gh".to_owned()], false).unwrap();
     apply::execute(&w.env, &removal.plan, None).unwrap();
 
     let error = apply::execute(&w.env, &stale.plan, None).unwrap_err();
@@ -266,6 +266,7 @@ fn narrowing_harnesses_orphans_the_stranded_installation() {
         &PlanOptions {
             remove_orphans: true,
             removal_filter: None,
+            ..PlanOptions::default()
         },
     )
     .unwrap();
@@ -294,6 +295,7 @@ fn an_unreadable_source_item_never_orphans_its_installation() {
         &PlanOptions {
             remove_orphans: true,
             removal_filter: None,
+            ..PlanOptions::default()
         },
     )
     .unwrap();

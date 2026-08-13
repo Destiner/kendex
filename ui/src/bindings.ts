@@ -42,6 +42,19 @@ export const commands = {
 	 */
 	plugins?: { [key in string]: PluginDecl },
 	"pi-extensions"?: { [key in string]: ItemDecl_Serialize },
+	/**
+	 *  Items the user removed and wants kept removed, by kind: a dependency
+	 *  another item requires, or a member of an installed bundle. A refresh
+	 *  honors these instead of re-deriving what was taken away, and the item
+	 *  that wanted them says so in the audit.
+	 */
+	suppressed?: Partial<{ [key in ItemKind]: string[] }>,
+	/**
+	 *  Optional dependencies taken at install time, per item that offers
+	 *  them. A choice, so it belongs here and survives refresh, cache loss,
+	 *  and other machines; what those choices pull in does not.
+	 */
+	"optional-dependencies"?: { [key in string]: string[] },
 	"agent-skills"?: { [key in string]: string[] },
 	"agent-launch-instructions"?: { [key in string]: string },
 	"agent-additional-instructions"?: { [key in string]: string },
@@ -347,6 +360,19 @@ export type Manifest_Deserialize = {
 	 */
 	plugins?: { [key in string]: PluginDecl },
 	"pi-extensions"?: { [key in string]: ItemDecl_Deserialize },
+	/**
+	 *  Items the user removed and wants kept removed, by kind: a dependency
+	 *  another item requires, or a member of an installed bundle. A refresh
+	 *  honors these instead of re-deriving what was taken away, and the item
+	 *  that wanted them says so in the audit.
+	 */
+	suppressed?: Partial<{ [key in ItemKind]: string[] }>,
+	/**
+	 *  Optional dependencies taken at install time, per item that offers
+	 *  them. A choice, so it belongs here and survives refresh, cache loss,
+	 *  and other machines; what those choices pull in does not.
+	 */
+	"optional-dependencies"?: { [key in string]: string[] },
 	"agent-skills"?: { [key in string]: string[] },
 	"agent-launch-instructions"?: { [key in string]: string },
 	"agent-additional-instructions"?: { [key in string]: string },
@@ -372,6 +398,19 @@ export type Manifest_Serialize = {
 	 */
 	plugins?: { [key in string]: PluginDecl },
 	"pi-extensions"?: { [key in string]: ItemDecl_Serialize },
+	/**
+	 *  Items the user removed and wants kept removed, by kind: a dependency
+	 *  another item requires, or a member of an installed bundle. A refresh
+	 *  honors these instead of re-deriving what was taken away, and the item
+	 *  that wanted them says so in the audit.
+	 */
+	suppressed?: Partial<{ [key in ItemKind]: string[] }>,
+	/**
+	 *  Optional dependencies taken at install time, per item that offers
+	 *  them. A choice, so it belongs here and survives refresh, cache loss,
+	 *  and other machines; what those choices pull in does not.
+	 */
+	"optional-dependencies"?: { [key in string]: string[] },
 	"agent-skills"?: { [key in string]: string[] },
 	"agent-launch-instructions"?: { [key in string]: string },
 	"agent-additional-instructions"?: { [key in string]: string },

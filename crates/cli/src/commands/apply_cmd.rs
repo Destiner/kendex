@@ -20,6 +20,7 @@ pub fn run(env: &Env, filter: ScopeFilter, plan_only: bool, yes: bool) -> CliRes
         let options = PlanOptions {
             remove_orphans: true,
             removal_filter: None,
+            ..PlanOptions::default()
         };
         let report = plan_scope(env, &scope, &loaded, &lock, &options)?;
         say(&format!("{}:", scope.label()));

@@ -66,6 +66,7 @@ pub fn apply_plan(scope: Scope, remove_orphans: bool) -> Result<AuditView, Strin
     let options = PlanOptions {
         remove_orphans,
         removal_filter: None,
+        ..PlanOptions::default()
     };
     let report =
         engine::plan_scope(&env, &scope, &loaded, &lock, &options).map_err(|e| e.to_string())?;
@@ -104,8 +105,11 @@ pub fn toggle_item(scope: Scope, name: String, enabled: bool) -> Result<AuditVie
 #[specta::specta]
 pub fn remove_item(scope: Scope, name: String) -> Result<AuditView, String> {
     let env = env()?;
+    // Removing one item never takes its unneeded leftovers with it here:
+    // the page has nowhere to preview that yet, and a sweep the user did
+    // not see is exactly the surprise the preview step exists to stop.
     let report =
-        ops::remove(&env, &scope, std::slice::from_ref(&name)).map_err(|e| e.to_string())?;
+        ops::remove(&env, &scope, std::slice::from_ref(&name), false).map_err(|e| e.to_string())?;
     apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
     view(&env, &scope)
 }

@@ -252,7 +252,7 @@ fn removing_a_command_takes_the_generated_skill_with_it() {
     let tree = f.project.join(".agents/skills/ship");
     assert!(tree.is_dir());
 
-    let report = ops::remove(&f.env, &f.scope, &["ship".to_owned()]).unwrap();
+    let report = ops::remove(&f.env, &f.scope, &["ship".to_owned()], false).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     assert!(!tree.exists(), "the emitted tree is what comes off disk");
     assert!(is_clean(&f));

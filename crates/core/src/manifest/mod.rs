@@ -195,6 +195,21 @@ pub struct Manifest {
     pub plugins: BTreeMap<String, PluginDecl>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub pi_extensions: BTreeMap<String, ItemDecl>,
+    /// Items the user removed and wants kept removed, by kind: a dependency
+    /// another item requires, or a member of an installed bundle. A refresh
+    /// honors these instead of re-deriving what was taken away, and the item
+    /// that wanted them says so in the audit.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub suppressed: BTreeMap<crate::model::ItemKind, Vec<String>>,
+    /// Optional dependencies taken at install time, per item that offers
+    /// them. A choice, so it belongs here and survives refresh, cache loss,
+    /// and other machines; what those choices pull in does not.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        rename = "optional-dependencies"
+    )]
+    pub optional_dependencies: BTreeMap<String, Vec<String>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub agent_skills: BTreeMap<String, Vec<String>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -229,6 +244,23 @@ impl Manifest {
             crate::model::ItemKind::PiExtension => &self.pi_extensions,
             crate::model::ItemKind::Plugin => &EMPTY,
         }
+    }
+
+    pub fn is_suppressed(&self, kind: crate::model::ItemKind, name: &str) -> bool {
+        self.suppressed
+            .get(&kind)
+            .is_some_and(|names| names.iter().any(|held| held == name))
+    }
+
+    /// Record that this item stays removed. Re-suppressing is a no-op, so a
+    /// second removal of the same name writes nothing new.
+    pub fn suppress(&mut self, kind: crate::model::ItemKind, name: &str) {
+        if self.is_suppressed(kind, name) {
+            return;
+        }
+        let names = self.suppressed.entry(kind).or_default();
+        names.push(name.to_owned());
+        names.sort();
     }
 
     pub fn declared_mut(

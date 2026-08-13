@@ -91,6 +91,9 @@ pub enum CoreError {
     #[error("'{name}' not found in source '{source_name}'")]
     ItemNotInSource { name: String, source_name: String },
 
+    #[error("no item from source '{source_name}' offers '{name}' as an optional dependency")]
+    NoSuchOptional { name: String, source_name: String },
+
     #[error("apply failed and was rolled back: {reason}")]
     RolledBack { reason: String },
 

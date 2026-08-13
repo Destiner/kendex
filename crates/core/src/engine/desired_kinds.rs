@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use super::desired::{Artifact, Desired, DesiredState, ItemCtx};
@@ -9,7 +10,7 @@ use crate::env::Env;
 use crate::error::Result;
 use crate::hash::{hash_bytes, installation_hash};
 use crate::hook::{HookSource, codex_event, parse_hook};
-use crate::lock::entry_key;
+use crate::lock::{Reason, entry_key};
 use crate::manifest::{Manifest, Method};
 use crate::model::{HarnessId, ItemKind, Scope};
 
@@ -40,6 +41,7 @@ pub(super) fn declared(
         )?,
         upstream_skills: None,
         emitted: None,
+        reasons: ctx.reasons_for(harness),
         artifact,
     })
 }
@@ -247,6 +249,7 @@ pub(super) fn desired_plugins(
             hash: hash_bytes(format!("plugin:{key}:{}", decl.enabled).as_bytes()),
             upstream_skills: None,
             emitted: None,
+            reasons: BTreeSet::from([Reason::Requested]),
             artifact: Artifact::Registration {
                 script: None,
                 edits: vec![(

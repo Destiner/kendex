@@ -41,6 +41,9 @@ struct AddFlags {
     /// Install specific skills (comma-separated)
     #[arg(short = 's', long)]
     skill: Vec<String>,
+    /// Also take these optional dependencies (comma-separated)
+    #[arg(long = "with")]
+    optional: Vec<String>,
     /// Install specific hooks (comma-separated)
     #[arg(long)]
     hook: Vec<String>,
@@ -72,6 +75,7 @@ impl AddFlags {
             harness: self.harness,
             agent: self.agent,
             skill: self.skill,
+            optional: self.optional,
             hook: self.hook,
             pi_extension: self.pi_extension,
             copy: self.copy,
@@ -158,6 +162,12 @@ enum Command {
         /// project | global | all (default project)
         #[arg(long)]
         scope: Option<String>,
+        /// Also remove what nothing needs anymore
+        #[arg(long)]
+        sweep: bool,
+        /// Keep what nothing needs anymore
+        #[arg(long, conflicts_with = "sweep")]
+        no_sweep: bool,
     },
     /// Regenerate every declared installation from its source
     Refresh {
@@ -169,6 +179,9 @@ enum Command {
         /// Per-item detail instead of the compact summary
         #[arg(short = 'v', long)]
         verbose: bool,
+        /// Accept changes to what is installed without asking
+        #[arg(short = 'y', long)]
+        yes: bool,
     },
     /// Check installs against the lock; non-zero exit on drift
     Verify {
@@ -296,17 +309,25 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             names,
             global,
             scope,
+            sweep,
+            no_sweep,
         } => {
             let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::Project)?;
-            commands::remove::run(&env, names, filter)?;
+            let sweep = match (sweep, no_sweep) {
+                (true, _) => Some(true),
+                (_, true) => Some(false),
+                _ => None,
+            };
+            commands::remove::run(&env, names, filter, sweep)?;
         }
         Command::Refresh {
             global,
             scope,
             verbose,
+            yes,
         } => {
             let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::All)?;
-            commands::refresh::run(&env, filter, verbose)?;
+            commands::refresh::run(&env, filter, verbose, yes)?;
         }
         Command::Verify {
             names,
