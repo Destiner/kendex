@@ -28,6 +28,11 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Fixed
 
+- **Breaking:** a skill too large for Codex's loader now splits into a
+  head plus `references/details.md` instead of silently truncating at
+  load; tools without the cap keep the whole body on their own copy. A
+  skill whose single code block cannot fit is refused with a clear
+  message rather than cut mid-block. Migration: refresh regenerates.
 - The editor's skill list no longer breaks on a machine where nothing
   was ever adopted; the reserved local source reads as missing until
   adopt creates it.

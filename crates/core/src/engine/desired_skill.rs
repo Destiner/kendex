@@ -19,10 +19,13 @@ struct SurfaceGroup {
     members: Vec<HarnessId>,
 }
 
-/// One rendered variant: the tree's files and their content hash.
+/// One rendered variant: the tree's files and their content hash. A group
+/// whose cap cannot be honored produces a refused placeholder and installs
+/// nothing.
 struct Variant {
     files: Vec<(PathBuf, Vec<u8>)>,
     hash: String,
+    refused: bool,
 }
 
 fn surface_groups(ctx: &ItemCtx) -> Vec<SurfaceGroup> {
@@ -61,17 +64,8 @@ pub(super) fn desired_skill(ctx: &ItemCtx, state: &mut DesiredState) -> Result<(
         return Ok(());
     }
     let mut variants: Vec<Variant> = Vec::new();
-    for _group in &groups {
-        let mut files = render_skill(ctx.sealed, ctx.item_path, ctx.manifest, ctx.name)?;
-        if !enabled {
-            for (rel, _) in &mut files {
-                if rel == std::path::Path::new("SKILL.md") {
-                    *rel = PathBuf::from("SKILL.md.disabled");
-                }
-            }
-        }
-        let hash = hash_files(&files);
-        variants.push(Variant { files, hash });
+    for group in &groups {
+        variants.push(render_variant(ctx, state, group, enabled)?);
     }
 
     // The base tree is the scope's shared location; the group that natively
@@ -85,7 +79,11 @@ pub(super) fn desired_skill(ctx: &ItemCtx, state: &mut DesiredState) -> Result<(
         .unwrap_or(0);
     for (index, group) in groups.iter().enumerate() {
         let variant = &variants[index];
-        let deduped = index == owner || variant.hash == variants[owner].hash;
+        if variant.refused {
+            continue;
+        }
+        let deduped =
+            index == owner || (!variants[owner].refused && variant.hash == variants[owner].hash);
         let (canonical, link) = if method == Method::Copy {
             (group.native.clone(), None)
         } else if deduped {
@@ -132,4 +130,72 @@ pub(super) fn desired_skill(ctx: &ItemCtx, state: &mut DesiredState) -> Result<(
         }
     }
     Ok(())
+}
+
+/// Render one group's variant under its combined constraints: the tightest
+/// byte cap any member enforces, applied after instruction injection.
+fn render_variant(
+    ctx: &ItemCtx,
+    state: &mut DesiredState,
+    group: &SurfaceGroup,
+    enabled: bool,
+) -> Result<Variant> {
+    let mut files = render_skill(ctx.sealed, ctx.item_path, ctx.manifest, ctx.name)?;
+    let cap = group
+        .members
+        .iter()
+        .filter_map(|h| crate::harness::format_caps(*h).skill_body_max_bytes)
+        .min();
+    if let Some(cap) = cap {
+        let outcome = crate::render::split::enforce_body_cap(files, cap);
+        if let Some(reason) = outcome.refusal {
+            for harness in &group.members {
+                state.refused.push(super::desired::Refused {
+                    kind: ItemKind::Skill,
+                    name: ctx.name.to_owned(),
+                    harness: *harness,
+                    reason: reason.clone(),
+                });
+            }
+            return Ok(Variant {
+                files: Vec::new(),
+                hash: String::new(),
+                refused: true,
+            });
+        }
+        let capped_by = group
+            .members
+            .iter()
+            .copied()
+            .filter(|h| {
+                crate::harness::format_caps(*h)
+                    .skill_body_max_bytes
+                    .is_some()
+            })
+            .min_by_key(|h| crate::harness::format_caps(*h).skill_body_max_bytes)
+            .unwrap_or(group.members[0]);
+        for warning in outcome.warnings {
+            state.warnings.push(super::ItemWarning {
+                kind: ItemKind::Skill,
+                name: ctx.name.to_owned(),
+                harness: Some(capped_by),
+                message: warning.message,
+                remediation: warning.remediation,
+            });
+        }
+        files = outcome.files;
+    }
+    if !enabled {
+        for (rel, _) in &mut files {
+            if rel == std::path::Path::new("SKILL.md") {
+                *rel = PathBuf::from("SKILL.md.disabled");
+            }
+        }
+    }
+    let hash = hash_files(&files);
+    Ok(Variant {
+        files,
+        hash,
+        refused: false,
+    })
 }

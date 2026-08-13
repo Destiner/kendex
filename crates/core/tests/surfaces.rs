@@ -58,3 +58,65 @@ fn codex_and_pi_share_one_project_variant_and_claude_links_while_equal() {
     }
     assert!(audit(&env, &scope).unwrap().drift.is_empty());
 }
+
+/// An oversized skill splits for the byte-capped codex+pi surface and stays
+/// whole for Claude, whose variant then diverges onto its own tree instead
+/// of truncating anyone.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn an_oversized_skill_splits_per_surface_instead_of_truncating() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().to_path_buf();
+    let env = Env::fake(&home, FakeOs::Linux);
+    let project = home.join("dev/app");
+    fs::create_dir_all(project.join(".claude")).unwrap();
+
+    let source = home.join("catalog");
+    fs::create_dir_all(source.join("skills/big")).unwrap();
+    let mut body = String::from("---\nname: big\ndescription: long\n---\n\n# Big\n\nIntro.\n");
+    for section in 0..40 {
+        body.push_str(&format!(
+            "\n## Section {section}\n\n{}\n",
+            "prose ".repeat(80)
+        ));
+    }
+    assert!(body.len() > 8192);
+    fs::write(source.join("skills/big/SKILL.md"), &body).unwrap();
+    fs::write(
+        project.join("vstack.toml"),
+        format!(
+            "schema = 2\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\", \"codex\", \"pi\"]\nmethod = \"symlink\"\n\n[skills.big]\nsource = \"cat\"\n",
+            source.display()
+        ),
+    )
+    .unwrap();
+
+    let scope = Scope::Project {
+        root: project.clone(),
+    };
+    let report = audit(&env, &scope).unwrap();
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.name == "big" && w.message.contains("references/")),
+        "the split is loud: {:?}",
+        report.warnings
+    );
+    apply::execute(&env, &report.plan, None).unwrap();
+
+    let shared = project.join(".agents/skills/big");
+    let head = fs::read_to_string(shared.join("SKILL.md")).unwrap();
+    assert!(head.len() <= 8192);
+    assert!(shared.join("references/details.md").is_file());
+
+    // Claude's variant kept the whole body, so it diverged onto its own
+    // tree — a real directory, not a link into the split one.
+    let claude = project.join(".claude/skills/big");
+    assert!(!claude.is_symlink());
+    let full = fs::read_to_string(claude.join("SKILL.md")).unwrap();
+    assert_eq!(full, body);
+    assert!(!claude.join("references/details.md").exists());
+
+    assert!(audit(&env, &scope).unwrap().drift.is_empty());
+}
