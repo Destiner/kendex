@@ -8,11 +8,30 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- Gemini CLI is now fully managed — agents, skills, commands, hooks, and
+  MCP servers install, switch on and off, and come off disk like every
+  other tool, personally and per project. Each lands in the shape Gemini
+  actually reads: agents as its own subagent files naming its own tools
+  (`read_file`, `run_shell_command` — not the names other tools use),
+  commands as Gemini command files, hooks registered under Gemini's own
+  event names with the timeout in the units it reads. Two things about
+  Gemini are said plainly instead of glossed over: whether an MCP server is
+  switched on is recorded once for the whole machine, so a project can
+  bring a server in but has to remove it rather than switch it off there;
+  and an agent installed while Gemini's subagents are turned off is
+  reported as installed-but-doing-nothing rather than as ready. Where the
+  installed Gemini is older than the settings file vstack writes, or where
+  a machine-wide settings file outranks what vstack puts in a project,
+  vstack says so and leaves the file alone instead of writing something
+  that would never be read. Gemini's extensions stay read-only: they
+  install in one place for the whole machine and switch on through a rules
+  file nobody has documented.
+
 - vstack now sees Gemini CLI and GitHub Copilot setups, personally and per
   project, listed beside every other tool: Gemini's agents, skills,
   commands, hooks, MCP servers, and extensions, and Copilot's agents,
   skills, and MCP servers. Reading only for now — installing and toggling
-  on those two lands next — and Copilot's folder is found where Copilot
+  on Copilot lands next — and Copilot's folder is found where Copilot
   actually keeps it, including a relocated one. Files the two tools borrow
   from each other, like Copilot reading Claude Code's skills, stay listed
   once under the tool they belong to instead of being counted twice.

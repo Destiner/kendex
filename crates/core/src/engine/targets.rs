@@ -104,10 +104,35 @@ pub(super) fn hook_target(
             }),
             Scope::Global => None,
         },
+        // Gemini registers in the `hooks` key of its settings.json, in the
+        // same matcher-plus-handlers shape claude's takes (matrix §1). The
+        // script is ours to place; `.gemini/hooks` is not a surface Gemini
+        // scans, so nothing reads it except the command we register.
+        HarnessId::Gemini => {
+            let root = match scope {
+                Scope::Global => adapter(harness).default_global_root(env),
+                Scope::Project { root } => root.join(".gemini"),
+            };
+            let path = root.join("hooks").join(format!("{name}.sh"));
+            let command = match scope {
+                Scope::Global => format!("bash {}", path.display()),
+                // Gemini documents no project-directory variable, so the
+                // path resolves through the repo root itself.
+                Scope::Project { .. } => {
+                    format!("bash \"$(git rev-parse --show-toplevel)/.gemini/hooks/{name}.sh\"")
+                }
+            };
+            Some(HookTarget::Script {
+                path,
+                command,
+                registry: root.join("settings.json"),
+                feature: None,
+            })
+        }
         // pi hooks belong to the pi-hooks extension, not to files we manage.
         HarnessId::Pi => None,
-        // Both run hooks of their own, and vstack writes neither yet.
-        HarnessId::Gemini | HarnessId::Copilot => None,
+        // Copilot runs hooks of its own, and vstack writes none of them yet.
+        HarnessId::Copilot => None,
     }
 }
 
@@ -121,16 +146,18 @@ pub(super) fn claude_settings(env: &Env, scope: &Scope) -> PathBuf {
     }
 }
 
-/// The file `mcpServers` entries are written to. Project servers belong to
-/// the repo's `.mcp.json`; global ones to the user file.
+/// The file `mcpServers` entries are written to. Claude's project servers
+/// belong to the repo's `.mcp.json` and its global ones to the user file;
+/// Gemini keeps both in the settings file for that scope (matrix §1).
 pub(super) fn mcp_registry(env: &Env, scope: &Scope, harness: HarnessId) -> Option<PathBuf> {
-    if harness != HarnessId::Claude {
-        return None;
+    match harness {
+        HarnessId::Claude => Some(match scope {
+            Scope::Global => env.home.join(".claude.json"),
+            Scope::Project { root } => root.join(".mcp.json"),
+        }),
+        HarnessId::Gemini => Some(crate::harness::gemini::settings::settings_file(env, scope)),
+        _ => None,
     }
-    Some(match scope {
-        Scope::Global => env.home.join(".claude.json"),
-        Scope::Project { root } => root.join(".mcp.json"),
-    })
 }
 
 pub(super) fn plugin_settings(env: &Env, scope: &Scope, harness: HarnessId) -> Option<PathBuf> {

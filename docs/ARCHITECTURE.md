@@ -4,7 +4,7 @@ Cross-platform desktop app (Rust + Tauri) managing AI coding-harness
 customizations — agents, skills, hooks, commands, MCP servers, plugins, Pi
 extensions — across global and per-project scopes. Claude Code first-class;
 codex, opencode, cursor, pi, gemini, and copilot behind the same adapter
-seam, the last two observed while their management lands. No server; a
+seam, copilot observed while its management lands. No server; a
 thin CLI mirrors every core operation so consuming-repo automation
 (refresh, report, …) keeps working.
 

@@ -291,13 +291,21 @@ pub fn capabilities(harness: HarnessId, kind: ItemKind) -> KindCaps {
         (Pi, Plugin) => unsupported(),
         (Pi, PiExtension) => managed(BOTH),
 
-        // Gemini and Copilot are read-only: every management verb waits for
-        // the adapters that write those surfaces. The rows below say what
-        // vstack can see today, not what the tools can do (matrix §7).
-        (Gemini, Agent | Skill | Command | McpServer) => observe_only(BOTH),
+        // Both scopes hold the same file layout under their own root, and
+        // only `.toml` loads from the commands dir, so the rename toggle is
+        // safe there (matrix §1, §7).
+        (Gemini, Agent | Skill | Command) => managed(BOTH),
         // Gemini runs hooks from the `hooks` key of settings.json at either
         // scope — 11 events, regex matchers, exit codes honored (matrix §D1).
-        (Gemini, Hook) => enforced(observe_only(BOTH)),
+        (Gemini, Hook) => enforced(managed(BOTH)),
+        // A server is declared per scope, but the file recording whether it
+        // is on is a single global one, so switching one off is a global
+        // act; doing it under a project lock would write outside the scope
+        // that holds the lock (matrix §1, plan Phase 2).
+        (Gemini, McpServer) => KindCaps {
+            toggle: GLOBAL,
+            ..managed(BOTH)
+        },
         // Extensions install globally only, and their enablement is an
         // undocumented path-rule file, so nothing here is written (§R1).
         (Gemini, Plugin) => observe_only(GLOBAL),

@@ -172,6 +172,12 @@ pub(super) fn desired_agent(
         let Some(native) = native_dir(ctx.env, ctx.scope, harness, ItemKind::Agent) else {
             continue;
         };
+        // Gemini keeps subagents behind a feature flag and lets a system
+        // settings layer outrank the project, so a file about to be written
+        // may sit there inert.
+        if harness == crate::model::HarnessId::Gemini {
+            super::gemini::agent_notices(ctx, state);
+        }
         let (overrides, permissions) = harness_overrides(ctx, &source_agent, harness);
         let effective = EffectiveAgent {
             source: &source_agent,

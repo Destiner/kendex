@@ -65,6 +65,10 @@ pub enum Reader {
     ClaudeUserMcp,
     /// `~/.claude.json` `projects.<root>.mcpServers`
     ClaudeUserProjectMcp { project: PathBuf },
+    /// gemini settings `mcpServers`, joined with the global file recording
+    /// whether each server is switched on and the settings `mcp.excluded`
+    /// list
+    GeminiMcp,
     /// codex `config.toml` `[mcp_servers.<name>]`
     McpServersToml,
     /// opencode config `mcp` key — jsonc tolerated, per-entry `enabled`
@@ -254,11 +258,11 @@ mod tests {
         );
     }
 
-    /// Gemini and Copilot are observed, never written: the management verbs
-    /// arrive with the adapters that implement them, and until then neither
-    /// is offered anywhere an install target is chosen.
+    /// Copilot is observed, never written: its management verbs arrive with
+    /// the adapter that implements them, and until then it is not offered
+    /// anywhere an install target is chosen.
     #[test]
-    fn the_new_harnesses_only_read() {
+    fn copilot_only_reads() {
         let install_targets: Vec<_> = HarnessId::ALL
             .into_iter()
             .filter(|h| installable(*h))
@@ -271,28 +275,48 @@ mod tests {
                 HarnessId::Opencode,
                 HarnessId::Cursor,
                 HarnessId::Pi,
+                HarnessId::Gemini,
             ]
         );
-        for harness in [HarnessId::Gemini, HarnessId::Copilot] {
-            for kind in ItemKind::ALL {
-                let c = capabilities(harness, kind);
-                for (op, support) in [
-                    ("adopt", c.adopt),
-                    ("install", c.install),
-                    ("toggle", c.toggle),
-                    ("remove", c.remove),
-                    ("refresh", c.refresh),
-                ] {
-                    assert_eq!(
-                        support,
-                        caps::NONE,
-                        "{}/{} {op}",
-                        harness.name(),
-                        kind.name(),
-                    );
-                }
+        for kind in ItemKind::ALL {
+            let c = capabilities(HarnessId::Copilot, kind);
+            for (op, support) in [
+                ("adopt", c.adopt),
+                ("install", c.install),
+                ("toggle", c.toggle),
+                ("remove", c.remove),
+                ("refresh", c.refresh),
+            ] {
+                assert_eq!(support, caps::NONE, "copilot/{} {op}", kind.name());
             }
         }
+    }
+
+    /// Gemini declares an MCP server per scope but records whether it is on
+    /// in one global file, so the switch exists only where that file lives.
+    /// Everything else it manages works the same at both scopes.
+    #[test]
+    fn a_gemini_server_installs_per_scope_and_switches_off_globally() {
+        let mcp = capabilities(HarnessId::Gemini, ItemKind::McpServer);
+        assert_eq!(mcp.install, caps::BOTH);
+        assert_eq!(mcp.remove, caps::BOTH);
+        assert_eq!(mcp.toggle, caps::GLOBAL);
+        for kind in [
+            ItemKind::Agent,
+            ItemKind::Skill,
+            ItemKind::Command,
+            ItemKind::Hook,
+        ] {
+            let c = capabilities(HarnessId::Gemini, kind);
+            assert_eq!(c.install, caps::BOTH, "{} install", kind.name());
+            assert_eq!(c.toggle, caps::BOTH, "{} toggle", kind.name());
+        }
+        // Extensions install globally only and their enablement is an
+        // undocumented path-rule file, so they stay read-only (matrix §R1).
+        assert_eq!(
+            capabilities(HarnessId::Gemini, ItemKind::Plugin).install,
+            caps::NONE
+        );
     }
 
     /// Nothing may be mutable where what it writes cannot be observed. A

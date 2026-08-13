@@ -43,7 +43,10 @@ fn installed(env: &Env, scope: &Scope, entry: &LockEntry) -> Owned {
             Some(emitted) => files.extend(emitted.paths.iter().cloned()),
             None => {
                 if let Some(dir) = native_dir(env, scope, entry.harness, ItemKind::Command) {
-                    files.push(dir.join(format!("{}.md", entry.name)));
+                    files.push(dir.join(super::desired_command::command_file(
+                        entry.harness,
+                        &entry.name,
+                    )));
                 }
             }
         },
@@ -82,6 +85,17 @@ fn installed(env: &Env, scope: &Scope, entry: &LockEntry) -> Owned {
                     registry,
                     ConfigEdit::RemoveMcpServer {
                         name: entry.name.clone(),
+                    },
+                ));
+            }
+            // Gemini's record of whether a server is on lives in a file of
+            // its own and would outlive the declaration it describes.
+            if entry.harness == crate::model::HarnessId::Gemini {
+                edits.push((
+                    crate::harness::gemini::settings::mcp_enablement_file(env),
+                    ConfigEdit::SetGeminiMcpEnabled {
+                        name: entry.name.clone(),
+                        enabled: None,
                     },
                 ));
             }

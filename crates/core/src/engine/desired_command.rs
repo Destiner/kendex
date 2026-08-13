@@ -2,11 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use crate::error::Result;
-use crate::frontmatter::Value;
 use crate::lock::EmittedArtifact;
 use crate::model::{HarnessId, ItemKind};
-use crate::render::agent::GENERATED_BANNER;
-use crate::render::yaml_scalar;
 
 use super::ItemWarning;
 use super::desired::{
@@ -19,7 +16,7 @@ pub(super) fn desired_command(ctx: &ItemCtx, state: &mut DesiredState) -> Result
     let bytes = ctx.sealed.read(ctx.item_path)?;
     for harness in ctx.harnesses.clone() {
         let item = match crate::harness::capabilities(harness, ItemKind::Command).installs_as {
-            None => native_file(ctx, harness, &bytes)?,
+            None => native_file(ctx, state, harness, &bytes)?,
             Some(ItemKind::Skill) => as_skill(ctx, state, harness, &bytes)?,
             Some(kind) => {
                 state.notes.push(format!(
@@ -36,19 +33,71 @@ pub(super) fn desired_command(ctx: &ItemCtx, state: &mut DesiredState) -> Result
     Ok(())
 }
 
+/// The filename a command takes in the harness's own commands dir. Gemini
+/// loads nothing but `.toml` from its, which is also what makes the rename
+/// toggle safe there (matrix §1).
+pub(super) fn command_file(harness: HarnessId, name: &str) -> String {
+    match harness {
+        HarnessId::Gemini => format!("{name}.toml"),
+        _ => format!("{name}.md"),
+    }
+}
+
 /// The harness reads commands from a directory of its own: one file, named
 /// for the command, parked under `.disabled` while it is turned off.
-fn native_file(ctx: &ItemCtx, harness: HarnessId, bytes: &[u8]) -> Result<Option<Desired>> {
+fn native_file(
+    ctx: &ItemCtx,
+    state: &mut DesiredState,
+    harness: HarnessId,
+    bytes: &[u8],
+) -> Result<Option<Desired>> {
     let Some(dir) = native_dir(ctx.env, ctx.scope, harness, ItemKind::Command) else {
         return Ok(None);
     };
-    let file = dir.join(format!("{}.md", ctx.name));
+    // Every other harness reads the author's own file, which installs byte
+    // for byte; Gemini reads a table, so its file is generated.
+    let bytes = match harness {
+        HarnessId::Gemini => match crate::render::command::gemini(bytes, ctx.name) {
+            Ok(text) => text.into_bytes(),
+            Err(reason) => {
+                state.refused.push(super::desired::Refused {
+                    kind: ItemKind::Command,
+                    name: ctx.name.to_owned(),
+                    harness,
+                    reason,
+                });
+                return Ok(None);
+            }
+        },
+        _ => bytes.to_vec(),
+    };
+    let findings =
+        crate::render::validate::validate_command(harness, &String::from_utf8_lossy(&bytes));
+    if let Some(reason) = refusal_reason(&findings) {
+        state.refused.push(super::desired::Refused {
+            kind: ItemKind::Command,
+            name: ctx.name.to_owned(),
+            harness,
+            reason,
+        });
+        return Ok(None);
+    }
+    for finding in findings.iter().filter(|finding| !finding.is_breakage()) {
+        state.warnings.push(ItemWarning {
+            kind: ItemKind::Command,
+            name: ctx.name.to_owned(),
+            harness: Some(harness),
+            message: finding.message.clone(),
+            remediation: Some(finding.remediation.clone()),
+        });
+    }
+    let file = dir.join(command_file(harness, ctx.name));
     let artifact = Artifact::File {
         path: match ctx.decl.enabled {
             true => file,
             false => disabled_name(&file),
         },
-        bytes: bytes.to_vec(),
+        bytes,
     };
     Ok(Some(declared(ctx, ItemKind::Command, harness, artifact)?))
 }
@@ -72,7 +121,7 @@ fn as_skill(
     let tree = dir.join(&name);
     let mut files = vec![(
         PathBuf::from("SKILL.md"),
-        skill_text(&name, &body, ctx.name).into_bytes(),
+        crate::render::command::codex_skill(&name, &body, ctx.name).into_bytes(),
     )];
     // A command is one file the author cannot split themselves, so an
     // oversized one is cut into references/ exactly like a skill — nothing
@@ -265,110 +314,4 @@ fn claimed_skill_names(ctx: &ItemCtx, harness: HarnessId) -> BTreeSet<String> {
         ItemKind::Skill,
     ));
     names
-}
-
-/// The generated SKILL.md: the frontmatter the loader needs, the banner
-/// every generated file carries, then the command's prose. The command's own
-/// frontmatter stays out — carried through, `argument-hint` and
-/// `allowed-tools` would read as literal text inside the skill.
-fn skill_text(emitted: &str, body: &str, name: &str) -> String {
-    let (front, prose) = match crate::frontmatter::split(body) {
-        Ok((front, prose)) => (Some(front), prose),
-        Err(_) => (None, body),
-    };
-    format!(
-        "---\nname: {}\ndescription: {}\n---\n\n{GENERATED_BANNER}\n\n{}",
-        yaml_scalar(emitted),
-        yaml_scalar(&description(front, prose, name)),
-        prose.trim_start_matches('\n'),
-    )
-}
-
-/// One line saying what the command does: the `description` its own
-/// frontmatter declares, else its first line of prose. The frontmatter is
-/// parsed, not scanned — a `description` nested under another key describes
-/// that key, not the command.
-fn description(front: Option<&str>, prose: &str, name: &str) -> String {
-    let declared = front
-        .and_then(|yaml| crate::frontmatter::parse_tolerant(yaml).ok())
-        .and_then(|parsed| {
-            parsed
-                .map
-                .get("description")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .map(str::to_owned)
-        })
-        .filter(|text| !text.is_empty());
-    if let Some(declared) = declared {
-        return declared;
-    }
-    for line in prose.lines() {
-        let line = line.trim().trim_start_matches('#').trim();
-        if !line.is_empty() {
-            return line.to_owned();
-        }
-    }
-    format!("command {name}")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn described(body: &str, name: &str) -> String {
-        match crate::frontmatter::split(body) {
-            Ok((front, prose)) => description(Some(front), prose, name),
-            Err(_) => description(None, body, name),
-        }
-    }
-
-    #[test]
-    fn a_description_comes_from_frontmatter_then_prose_then_the_name() {
-        assert_eq!(
-            described(
-                "---\ndescription: Ship it\nmodel: opus\n---\n\n# Ship\n",
-                "ship"
-            ),
-            "Ship it"
-        );
-        assert_eq!(
-            described("\n# Ship the branch\n\nSteps.\n", "ship"),
-            "Ship the branch"
-        );
-        assert_eq!(described("---\nmodel: opus\n---\n", "ship"), "command ship");
-        assert_eq!(described("", "ship"), "command ship");
-    }
-
-    /// A `description` indented under another key describes that key. Taking
-    /// it as the command's own is how a scanner reads frontmatter; a parser
-    /// sees the nesting.
-    #[test]
-    fn a_nested_description_never_beats_the_command_s_own() {
-        let text = skill_text(
-            "ship",
-            "---\nallowed-tools:\n  description: NESTED WINS\ndescription: Ship the branch\n---\n\nBody.\n",
-            "ship",
-        );
-        assert!(
-            text.starts_with("---\nname: ship\ndescription: Ship the branch\n---\n"),
-            "{text}"
-        );
-    }
-
-    #[test]
-    fn the_generated_skill_keeps_the_prose_and_drops_the_command_s_frontmatter() {
-        let text = skill_text(
-            "ship",
-            "---\ndescription: do: it\nargument-hint: <branch>\n---\n\nBody.\n",
-            "ship",
-        );
-        assert!(
-            text.starts_with("---\nname: ship\ndescription: \"do: it\"\n---\n"),
-            "{text}"
-        );
-        assert!(text.contains(GENERATED_BANNER));
-        assert!(!text.contains("argument-hint"), "{text}");
-        assert!(text.ends_with("Body.\n"));
-    }
 }

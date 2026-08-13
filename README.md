@@ -2,14 +2,14 @@
 
 One place to manage AI coding-tool customizations — agents, skills, hooks,
 commands, MCP servers, plugins, and Pi extensions — across Claude Code,
-Codex, OpenCode, Cursor, and Pi, personally and per-project. Gemini CLI and
+Codex, OpenCode, Cursor, Pi, and Gemini CLI, personally and per-project.
 GitHub Copilot setups are read too, with management next.
 
 Desktop app + CLI over one engine.
 
 ## Features
 
-- **Install once, use everywhere** — one library serves all five managed
+- **Install once, use everywhere** — one library serves all six managed
   tools.
 - **Author once** — one markdown file per agent or skill; vstack renders
   each tool's native format (Claude markdown, Codex TOML, Cursor rules…).
@@ -33,21 +33,25 @@ Desktop app + CLI over one engine.
 
 ## What's supported
 
-| | Claude Code | Codex | OpenCode | Cursor* | Pi | Gemini CLI† | GitHub Copilot† |
+| | Claude Code | Codex | OpenCode | Cursor* | Pi | Gemini CLI | GitHub Copilot† |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| Agents | ● | ● | ● | ● | ● | ○ | ○ |
-| Skills | ● | ● | ● | ● | ● | ○ | ○ |
-| Hooks | ● | ● | ● | ● | — | ○ | — |
-| Commands | ● | ○ | ○ | ○ | ○ | ○ | — |
-| MCP servers | ● | ○ | ○ | ○ | — | ○ | ○ |
+| Agents | ● | ● | ● | ● | ● | ● | ○ |
+| Skills | ● | ● | ● | ● | ● | ● | ○ |
+| Hooks | ● | ● | ● | ● | — | ● | — |
+| Commands | ● | ○ | ○ | ○ | ○ | ● | — |
+| MCP servers | ● | ○ | ○ | ○ | — | ●‡ | ○ |
 | Plugins | ◐ | ○ | ○ | ○ | — | ○ | — |
 | Pi extensions | — | — | — | — | ● | — | — |
 
 ● managed · ◐ enable/disable · ○ shown read-only · — no such surface.
 *Cursor is project-only.
-†Gemini CLI and GitHub Copilot are read-only for now; management lands
-next. Copilot's hooks and plugins are real — vstack just does not read them
-yet — while Copilot commands genuinely do not exist.
+†GitHub Copilot is read-only for now; management lands next. Its hooks and
+plugins are real — vstack just does not read them yet — while Copilot
+commands genuinely do not exist.
+‡Gemini records whether an MCP server is on in one file for the whole
+machine, so a project can declare a server but not switch it off there.
+Gemini's extensions install globally and switch on through an undocumented
+rules file, so they stay read-only.
 
 ## How vstack works
 

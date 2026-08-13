@@ -2,9 +2,47 @@ use std::path::{Path, PathBuf};
 
 use super::{HarnessAdapter, ProjectMarker, Reader, Surface};
 use crate::env::Env;
+use crate::hook::HookSource;
 use crate::model::{HarnessId, ItemKind};
 
+pub mod settings;
+
 pub struct Gemini;
+
+/// Gemini's own hook events, and the fleet event each one answers to
+/// ([hooks reference](https://github.com/google-gemini/gemini-cli/blob/main/docs/hooks/reference.md),
+/// accessed 2026-08-13; matrix §1). Pairings are one-for-one in meaning:
+/// an event with no counterpart is left unmapped rather than hung on a
+/// near-miss, because a safety hook on the wrong event is worse than one
+/// the user is told did not install.
+fn event(fleet: &str) -> Option<&'static str> {
+    match fleet {
+        "PreToolUse" | "BeforeTool" => Some("BeforeTool"),
+        "PostToolUse" | "AfterTool" => Some("AfterTool"),
+        "PreCompact" | "PreCompress" => Some("PreCompress"),
+        "SessionStart" => Some("SessionStart"),
+        "SessionEnd" => Some("SessionEnd"),
+        "Notification" => Some("Notification"),
+        "BeforeModel" => Some("BeforeModel"),
+        "AfterModel" => Some("AfterModel"),
+        "BeforeToolSelection" => Some("BeforeToolSelection"),
+        "BeforeAgent" => Some("BeforeAgent"),
+        "AfterAgent" => Some("AfterAgent"),
+        _ => None,
+    }
+}
+
+/// The same hook said in Gemini's words: its own event name, and the timeout
+/// in the milliseconds its loader reads rather than the seconds the source
+/// declares (hooks reference — `timeout` is milliseconds, default 60000).
+/// `None` when Gemini has no event that means what this one means.
+pub fn hook_for(hook: &HookSource) -> Option<HookSource> {
+    Some(HookSource {
+        event: event(&hook.event)?.to_owned(),
+        timeout: hook.timeout.map(|seconds| seconds.saturating_mul(1000)),
+        ..hook.clone()
+    })
+}
 
 /// Both scopes hold the same layout under their own root, which is why the
 /// surface lists below differ only in where they start (matrix §1).
@@ -25,7 +63,7 @@ fn surfaces(kind: ItemKind, root: &Path) -> Vec<Surface> {
         }],
         ItemKind::McpServer => vec![Surface::Structured {
             path: root.join("settings.json"),
-            reader: Reader::McpServersJson,
+            reader: Reader::GeminiMcp,
         }],
         // Extensions are global-only, so the project list stays empty; the
         // caller decides which root reaches here (matrix §1, §R1).
@@ -97,7 +135,7 @@ mod tests {
                 Gemini.project_surfaces(ItemKind::McpServer, Path::new("/p"), &env),
                 [Surface::Structured {
                     path: PathBuf::from("/p/.gemini/settings.json"),
-                    reader: Reader::McpServersJson,
+                    reader: Reader::GeminiMcp,
                 }]
             );
         }

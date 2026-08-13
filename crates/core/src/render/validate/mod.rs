@@ -15,6 +15,12 @@
 //! | OpenCode permission values are allow, ask or deny | breakage |
 //! | OpenCode `model` names its provider | advisory |
 //! | Claude agent has frontmatter naming the installed agent | breakage |
+//! | Gemini agent has frontmatter naming the installed agent | breakage |
+//! | Gemini agent carries a description | breakage |
+//! | Gemini agent `model` is a Gemini id or `inherit` | advisory |
+//! | Gemini command parses as TOML | breakage |
+//! | Gemini command carries a prompt | breakage |
+//! | Gemini command carries a description | advisory |
 //! | SKILL.md present, with frontmatter | breakage |
 //! | SKILL.md `name` matches the installed directory | breakage |
 //! | SKILL.md fits the harness's body cap | breakage |
@@ -27,6 +33,7 @@ use crate::harness::{NameRule, format_caps};
 use crate::model::HarnessId;
 
 mod agent;
+mod command;
 mod skill;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,10 +86,23 @@ pub fn validate_agent(harness: HarnessId, name: &str, text: &str) -> Vec<Finding
         // Pi reads plain markdown and enforces no frontmatter schema, so
         // the name rule above is the whole of what can be checked.
         HarnessId::Pi => Vec::new(),
-        // No renderer produces these yet; the format rules arrive with it.
-        HarnessId::Gemini | HarnessId::Copilot => Vec::new(),
+        HarnessId::Gemini => agent::gemini(name, text),
+        // No renderer produces a Copilot agent yet; its format rules arrive
+        // with the renderer that has to obey them.
+        HarnessId::Copilot => Vec::new(),
     });
     findings
+}
+
+/// Everything wrong with a command file as this harness reads it. The name
+/// is not checked here: every harness but Gemini installs the author's own
+/// file untouched, and Gemini's commands dir turns a `/` in a name into the
+/// namespace separator it lists the command under.
+pub fn validate_command(harness: HarnessId, text: &str) -> Vec<Finding> {
+    match harness {
+        HarnessId::Gemini => command::gemini(text),
+        _ => Vec::new(),
+    }
 }
 
 /// Everything wrong with a rendered skill tree as this harness reads it.

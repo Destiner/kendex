@@ -18,6 +18,7 @@ mod desired_agent;
 mod desired_command;
 mod desired_kinds;
 mod desired_skill;
+mod gemini;
 mod item_plan;
 pub mod ops;
 mod removal;

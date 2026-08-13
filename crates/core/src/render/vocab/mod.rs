@@ -31,6 +31,35 @@ pub fn claude_tool_name(tool: &str) -> String {
     }
 }
 
+/// Gemini's built-in tool identifiers (matrix §1 "Built-in tool
+/// identifiers", §D3 — six of the eight names in circulation are wrong, and
+/// a wrong one drops the tool in silence).
+fn gemini_tool(tool: &str) -> Option<&'static str> {
+    Some(match normalize(tool).as_str() {
+        "read" => "read_file",
+        "grep" => "grep_search",
+        "glob" | "find" => "glob",
+        "ls" | "list" => "list_directory",
+        "bash" | "shell" => "run_shell_command",
+        "edit" | "multiedit" => "replace",
+        "write" => "write_file",
+        "webfetch" => "web_fetch",
+        "websearch" => "google_web_search",
+        "todowrite" => "write_todos",
+        "question" | "askuserquestion" => "ask_user",
+        _ => return None,
+    })
+}
+
+/// What an agent's `tools:` allowlist has to name on Gemini. An unmapped
+/// name passes through so an MCP tool keeps its own id; Gemini then simply
+/// does not offer it, which is narrower, never wider.
+pub fn gemini_tool_name(tool: &str) -> String {
+    gemini_tool(tool)
+        .map(str::to_owned)
+        .unwrap_or_else(|| tool.trim().to_owned())
+}
+
 /// OpenCode gates tools by permission key, not tool name. `None` is the
 /// empty name — nothing to gate; an unknown name passes through so an MCP
 /// tool can still be denied by its own id.
@@ -93,9 +122,10 @@ fn word(tool: &str, harness: HarnessId) -> Option<Word> {
     match harness {
         // Bodies are already written in Claude's words.
         HarnessId::Claude => None,
-        // Nothing renders for these yet. Gemini's real tool identifiers are
-        // in matrix §1 and belong here with the renderer that uses them.
-        HarnessId::Gemini | HarnessId::Copilot => None,
+        // Nothing renders for Copilot yet.
+        HarnessId::Copilot => None,
+        // Gemini names a tool the same way in prose as in an allowlist.
+        HarnessId::Gemini => Some(Word::Name(gemini_tool(&tool)?)),
         HarnessId::Codex => Some(Word::Phrase(match tool.as_str() {
             "read" => "open the file",
             "grep" => "search",

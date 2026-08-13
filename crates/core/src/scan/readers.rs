@@ -18,6 +18,7 @@ pub fn read_structured(path: &Path, reader: &Reader, env: &Env) -> Result<Vec<Ra
                 .and_then(|p| p.get("mcpServers"));
             Ok(mcp_object(servers))
         }
+        Reader::GeminiMcp => gemini_mcp(path, env),
         Reader::McpServersToml => mcp_toml(path),
         Reader::OpencodeMcp => opencode_mcp(path),
         Reader::OpencodePluginRefs => opencode_plugin_refs(path),
@@ -68,6 +69,45 @@ fn mcp_summary(entry: &serde_json::Value) -> Option<String> {
                 .collect::<Vec<_>>()
                 .join(" ")
         })
+}
+
+/// Gemini declares servers per scope but records whether each one is
+/// switched on in a single file for the whole machine, and the settings
+/// `mcp.excluded` list gates them too — so a server a project declared can
+/// still be off, and reading the declaration alone would say otherwise
+/// (matrix §1). Nothing said about a server means Gemini's own default: on.
+fn gemini_mcp(path: &Path, env: &Env) -> Result<Vec<RawEntry>, String> {
+    let settings = read_json(path)?;
+    let state = crate::harness::gemini::settings::mcp_enablement_file(env);
+    let state = read_if_exists(&state)
+        .ok()
+        .flatten()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .unwrap_or(serde_json::Value::Null);
+    let excluded = settings
+        .get("mcp")
+        .and_then(|mcp| mcp.get("excluded"))
+        .and_then(|list| list.as_array())
+        .map(|list| {
+            list.iter()
+                .filter_map(|name| name.as_str().map(str::to_owned))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Ok(mcp_object(settings.get("mcpServers"))
+        .into_iter()
+        .map(|entry| RawEntry {
+            enabled: Some(
+                !excluded.contains(&entry.name)
+                    && state
+                        .get(&entry.name)
+                        .and_then(|server| server.get("enabled"))
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(true),
+            ),
+            ..entry
+        })
+        .collect())
 }
 
 fn mcp_toml(path: &Path) -> Result<Vec<RawEntry>, String> {
@@ -200,6 +240,42 @@ mod tests {
         let mut entries = mcp_toml(&path).unwrap();
         entries.sort_by(|a, b| a.name.cmp(&b.name));
         assert_eq!(entries[0].name, "db");
+        assert_eq!(entries[1].description.as_deref(), Some("gh-mcp"));
+    }
+
+    /// A project can declare a Gemini server, but whether it is switched on
+    /// is machine-wide — so the declaration alone never settles the answer.
+    #[test]
+    fn a_gemini_server_reads_off_when_the_machine_says_it_is() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env = crate::env::Env::fake(tmp.path(), crate::env::FakeOs::Linux);
+        let settings = tmp.path().join(".gemini/settings.json");
+        std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+        std::fs::write(
+            &settings,
+            r#"{"mcpServers": {"gh": {"command": "gh-mcp"}, "docs": {"url": "https://d"},
+                "old": {"command": "x"}}, "mcp": {"excluded": ["old"]}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join(".gemini/mcp-server-enablement.json"),
+            r#"{"gh": {"enabled": false}}"#,
+        )
+        .unwrap();
+
+        let mut entries = gemini_mcp(&settings, &env).unwrap();
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+        assert_eq!(
+            entries
+                .iter()
+                .map(|e| (e.name.as_str(), e.enabled))
+                .collect::<Vec<_>>(),
+            [
+                ("docs", Some(true)),
+                ("gh", Some(false)),
+                ("old", Some(false))
+            ]
+        );
         assert_eq!(entries[1].description.as_deref(), Some("gh-mcp"));
     }
 

@@ -48,7 +48,16 @@ const ITEM_TABLES: &[&str] = &[
     "pi-extensions",
 ];
 
-const HARNESSES: &[&str] = &["claude", "codex", "opencode", "cursor", "pi"];
+/// The tools a manifest may name: the ones vstack writes to. Read from the
+/// capability table rather than listed here, so a tool can never be
+/// accepted as a target before anything it declares would be installed.
+fn harnesses() -> Vec<&'static str> {
+    crate::model::HarnessId::ALL
+        .into_iter()
+        .filter(|harness| crate::harness::installable(*harness))
+        .map(crate::model::HarnessId::name)
+        .collect()
+}
 
 const FRONTMATTER_KEYS: &[&str] = &[
     "color",
@@ -125,18 +134,18 @@ fn validate_sources(table: &Table, findings: &mut Vec<Finding>) {
 }
 
 fn validate_install(table: &Table, findings: &mut Vec<Finding>) {
-    let harnesses = table
+    let declared = table
         .get("install")
         .and_then(Value::as_table)
         .and_then(|install| install.get("harnesses"))
         .and_then(Value::as_array);
-    for entry in harnesses.into_iter().flatten() {
+    for entry in declared.into_iter().flatten() {
         let name = entry.as_str().unwrap_or_default();
-        if !HARNESSES.contains(&name) {
+        if !harnesses().contains(&name) {
             findings.push(Finding {
                 location: "install.harnesses".into(),
                 problem: format!("unknown harness '{name}'"),
-                fix: format!("use one of: {}", HARNESSES.join(", ")),
+                fix: format!("use one of: {}", harnesses().join(", ")),
             });
         }
     }
@@ -227,11 +236,11 @@ fn validate_frontmatter(table: &Table, findings: &mut Vec<Finding>) {
         return;
     };
     for (harness, agents) in frontmatter {
-        if !HARNESSES.contains(&harness.as_str()) {
+        if !harnesses().contains(&harness.as_str()) {
             findings.push(Finding {
                 location: format!("agent-frontmatter.{harness}"),
                 problem: format!("unknown harness '{harness}'"),
-                fix: format!("use one of: {}", HARNESSES.join(", ")),
+                fix: format!("use one of: {}", harnesses().join(", ")),
             });
             continue;
         }

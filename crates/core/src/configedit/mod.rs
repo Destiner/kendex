@@ -34,6 +34,13 @@ pub enum ConfigEdit {
         key: String,
         enabled: Option<bool>,
     },
+    /// gemini `mcp-server-enablement.json`, whose whole content is
+    /// `{"<server>": {"enabled": bool}}` — one global file recording
+    /// whether a server is on, wherever it was declared (matrix §1).
+    SetGeminiMcpEnabled {
+        name: String,
+        enabled: Option<bool>,
+    },
     /// opencode.json: ensure `instructions[]` carries `reference`; for
     /// PreToolUse:Bash hooks also `permission.bash = {"*": "ask"}`.
     OpencodeAddInstruction {
@@ -137,6 +144,9 @@ impl ConfigEdit {
                 }
                 Ok(())
             }
+            ConfigEdit::SetGeminiMcpEnabled { name, enabled } => {
+                set_gemini_mcp_enabled(object, name, *enabled)
+            }
             ConfigEdit::OpencodeAddInstruction {
                 reference,
                 bash_permission,
@@ -186,6 +196,24 @@ fn ensure_object<'a>(
         .or_insert_with(|| json!({}))
         .as_object_mut()
         .ok_or(format!("{key} is not an object"))
+}
+
+/// The whole file is a map of server name to its state, so clearing our
+/// entry takes the name with it rather than leaving an empty object behind.
+fn set_gemini_mcp_enabled(
+    root: &mut Map<String, Value>,
+    name: &str,
+    enabled: Option<bool>,
+) -> Result<(), String> {
+    match enabled {
+        Some(enabled) => {
+            ensure_object(root, name)?.insert("enabled".into(), Value::Bool(enabled));
+        }
+        None => {
+            root.remove(name);
+        }
+    }
+    Ok(())
 }
 
 fn upsert_hook(

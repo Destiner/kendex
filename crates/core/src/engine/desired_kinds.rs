@@ -73,6 +73,16 @@ pub(super) fn desired_hook(ctx: &ItemCtx, state: &mut DesiredState) -> Result<()
             ));
             continue;
         }
+        // Gemini names the lifecycle events its own way and reads timeouts
+        // in milliseconds, so the hook is restated in its words before
+        // anything is registered.
+        let hook = match harness {
+            HarnessId::Gemini => match super::gemini::hook(ctx, &hook, state) {
+                Some(hook) => hook,
+                None => continue,
+            },
+            _ => hook.clone(),
+        };
         let Some(target) = hook_target(ctx.env, ctx.scope, harness, ctx.name) else {
             continue;
         };
@@ -190,22 +200,32 @@ pub(super) fn desired_mcp(ctx: &ItemCtx, state: &mut DesiredState) -> Result<()>
         }
     };
     for harness in ctx.harnesses.clone() {
-        let Some(registry) = mcp_registry(ctx.env, ctx.scope, harness) else {
-            continue;
-        };
-        let edit = if ctx.decl.enabled {
-            ConfigEdit::UpsertMcpServer {
-                name: ctx.name.to_owned(),
-                value: value.clone(),
+        // Gemini splits the declaration from the record of whether it is on,
+        // and the two live in different files at different scopes.
+        let edits = if harness == HarnessId::Gemini {
+            match super::gemini::mcp_edits(ctx, state, &value) {
+                Some(edits) => edits,
+                None => continue,
             }
         } else {
-            ConfigEdit::RemoveMcpServer {
-                name: ctx.name.to_owned(),
-            }
+            let Some(registry) = mcp_registry(ctx.env, ctx.scope, harness) else {
+                continue;
+            };
+            let edit = if ctx.decl.enabled {
+                ConfigEdit::UpsertMcpServer {
+                    name: ctx.name.to_owned(),
+                    value: value.clone(),
+                }
+            } else {
+                ConfigEdit::RemoveMcpServer {
+                    name: ctx.name.to_owned(),
+                }
+            };
+            registration_edits(&registry, edit, ctx.decl.enabled)
         };
         let artifact = Artifact::Registration {
             script: None,
-            edits: registration_edits(&registry, edit, ctx.decl.enabled),
+            edits,
         };
         state
             .items

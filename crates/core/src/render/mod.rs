@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod command;
 mod fences;
 pub mod permission;
 pub mod skill;

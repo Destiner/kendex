@@ -31,6 +31,11 @@ fn a_fresh_manifest_targets_only_the_tools_vstack_writes_to() {
         [HarnessId::Claude, HarnessId::Gemini, HarnessId::Copilot]
     );
 
+    // Copilot is the read-only one: it is found and reported, and left out
+    // of the manifest because every write to it would be a no-op.
     let manifest = ops::manifest_for_mutation(&env, &Scope::Global).unwrap();
-    assert_eq!(manifest.install.harnesses, [HarnessId::Claude]);
+    assert_eq!(
+        manifest.install.harnesses,
+        [HarnessId::Claude, HarnessId::Gemini]
+    );
 }

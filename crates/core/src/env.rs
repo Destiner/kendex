@@ -4,13 +4,16 @@ use std::path::{Path, PathBuf};
 use crate::error::{CoreError, Result};
 
 /// Process env vars that relocate harness roots.
-const HARNESS_VARS: [&str; 6] = [
+const HARNESS_VARS: [&str; 7] = [
     "CODEX_HOME",
     "OPENCODE_CONFIG",
     "OPENCODE_CONFIG_DIR",
     "PI_CODING_AGENT_DIR",
     // Relocates Copilot's whole config root (matrix §3, §R4).
     "COPILOT_HOME",
+    // Moves the Gemini settings layer that outranks project scope, which is
+    // the only way to see it anywhere but its machine-wide path (matrix §R2).
+    "GEMINI_CLI_SYSTEM_SETTINGS_PATH",
     // Rebases `owner/repo` source shorthands onto another git host —
     // release smokes and tests point it at a file:// fixture tree.
     "VSTACK_GIT_BASE",
