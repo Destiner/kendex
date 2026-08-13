@@ -38,7 +38,9 @@ pub fn generate(agent: &EffectiveAgent) -> Result<RenderedAgent, String> {
     }
     let mut warnings = Vec::new();
     let (model, model_warning) = model(agent);
-    warnings.extend(model_warning);
+    warnings.extend(model_warning.map(|w| {
+        crate::render::RenderWarning::with_fix(w, "use a provider/model id or a tier alias")
+    }));
     if let Some(model) = model {
         out.push_str(&format!("model: {}\n", yaml_scalar(&model)));
     }

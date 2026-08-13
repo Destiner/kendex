@@ -21,7 +21,10 @@ export function AuditPage() {
     return view.scope.scope === "project" && view.scope.root === scope.project;
   });
   const active = visible.filter(
-    (view) => view.drift.length > 0 || view.notes.length > 0,
+    (view) =>
+      view.drift.length > 0 ||
+      view.notes.length > 0 ||
+      view.warnings.length > 0,
   );
   const allClean = !auditing && active.length === 0;
 

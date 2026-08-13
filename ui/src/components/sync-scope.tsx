@@ -98,6 +98,16 @@ export function SyncScopeCard({
             {note}
           </p>
         ))}
+        {view.warnings.map((warning) => (
+          <p
+            key={`${warning.name}-${warning.harness ?? ""}-${warning.message}`}
+            className="text-xs text-muted-foreground"
+          >
+            {warning.name}
+            {warning.harness ? ` (${warning.harness})` : ""}: {warning.message}
+            {warning.remediation ? ` — fix: ${warning.remediation}` : ""}
+          </p>
+        ))}
       </CardContent>
       <ConfirmDialog
         open={reviewOpen}

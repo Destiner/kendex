@@ -22,7 +22,13 @@ export const same = (a: Scope, b: Scope): boolean => label(a) === label(b);
 export function view(scope: Scope): AuditView {
   const found = store.state.views.find((v) => same(v.scope, scope));
   if (found) return found;
-  const fresh: AuditView = { scope, drift: [], plan: [], notes: [] };
+  const fresh: AuditView = {
+    scope,
+    drift: [],
+    plan: [],
+    notes: [],
+    warnings: [],
+  };
   store.state.views.push(fresh);
   return fresh;
 }

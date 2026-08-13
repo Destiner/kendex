@@ -114,7 +114,13 @@ pub(super) fn desired_agent(
         }
     };
     for warning in &source_agent.warnings {
-        state.notes.push(format!("{}: {warning}", ctx.name));
+        state.warnings.push(super::ItemWarning {
+            kind: ItemKind::Agent,
+            name: ctx.name.to_owned(),
+            harness: None,
+            message: warning.clone(),
+            remediation: None,
+        });
     }
     let skills = assigned_skills(ctx, source_agent.role, updated_manifest, manifest_changed);
     for harness in ctx.harnesses.clone() {
@@ -155,11 +161,13 @@ pub(super) fn desired_agent(
             }
         };
         for warning in &rendered.warnings {
-            state.notes.push(format!(
-                "{} ({}): {warning}",
-                ctx.name,
-                harness.display_name()
-            ));
+            state.warnings.push(super::ItemWarning {
+                kind: ItemKind::Agent,
+                name: ctx.name.to_owned(),
+                harness: Some(harness),
+                message: warning.message.clone(),
+                remediation: warning.remediation.clone(),
+            });
         }
         let base = file_name(harness, ctx.name);
         let file = if enabled {

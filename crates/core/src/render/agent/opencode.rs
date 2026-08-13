@@ -23,7 +23,9 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
     out.push_str(&format!("mode: {mode}\n"));
     let model = o.model.as_deref().unwrap_or(&source.model);
     let resolved = resolve_model(HarnessId::Opencode, model);
-    warnings.extend(resolved.warning);
+    warnings.extend(resolved.warning.map(|w| {
+        crate::render::RenderWarning::with_fix(w, "use a provider/model id or a tier alias")
+    }));
     // No model line means "inherit the default" — OpenCode has no literal
     // for it, and `openai/inherit` is exactly the invalid id this replaces.
     if let Some(id) = &resolved.id {
@@ -85,7 +87,7 @@ const KNOWN_PERMISSIONS: [&str; 10] = [
 fn denied_permissions(
     agent: &EffectiveAgent,
     mode: &str,
-    warnings: &mut Vec<String>,
+    warnings: &mut Vec<crate::render::RenderWarning>,
 ) -> Vec<String> {
     let mut tools: Vec<String> = Vec::new();
     if mode == "subagent" {
@@ -106,9 +108,9 @@ fn denied_permissions(
         for tool in allow {
             match permission_name(tool) {
                 Some(known) if KNOWN_PERMISSIONS.contains(&known.as_str()) => allowed.push(known),
-                _ => warnings.push(format!(
+                _ => warnings.push(crate::render::RenderWarning::new(format!(
                     "tool `{tool}` has no OpenCode permission — it passes through unenforced"
-                )),
+                ))),
             }
         }
         for known in KNOWN_PERMISSIONS {
@@ -287,7 +289,12 @@ mod tests {
         for kept in ["read", "grep", "skill"] {
             assert!(!rendered.text.contains(&format!("  {kept}: deny\n")));
         }
-        assert!(rendered.warnings.iter().any(|w| w.contains("mcp__gh")));
+        assert!(
+            rendered
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("mcp__gh"))
+        );
     }
 
     #[test]
@@ -308,7 +315,7 @@ mod tests {
             rendered
                 .warnings
                 .iter()
-                .any(|w| w.contains("mcp__github__search"))
+                .any(|w| w.message.contains("mcp__github__search"))
         );
     }
 
@@ -329,7 +336,12 @@ mod tests {
         agent.overrides.model = Some("mystery".into());
         let rendered = generate(&agent);
         assert!(rendered.text.contains("model: mystery\n"));
-        assert!(rendered.warnings.iter().any(|w| w.contains("mystery")));
+        assert!(
+            rendered
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("mystery"))
+        );
     }
 
     #[test]

@@ -54,11 +54,26 @@ pub struct DriftRow {
     pub detail: String,
 }
 
+/// A per-item render or parse warning, with the fix when there is one —
+/// shown in plan previews, the CLI, and the Audit page.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemWarning {
+    pub kind: ItemKind,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub harness: Option<HarnessId>,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remediation: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct EngineReport {
     pub drift: Vec<DriftRow>,
     pub plan: Plan,
     pub notes: Vec<String>,
+    pub warnings: Vec<ItemWarning>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -188,6 +203,7 @@ pub fn plan_scope(
             ops,
         },
         notes: state.notes,
+        warnings: state.warnings,
     };
     unmanaged_rows(env, scope, manifest, lock, &state.items, &mut report.drift);
     Ok(report)
@@ -335,6 +351,7 @@ pub fn audit(env: &Env, scope: &Scope) -> Result<EngineReport> {
                     ops: Vec::new(),
                 },
                 notes: Vec::new(),
+                warnings: Vec::new(),
             };
             if matches!(other, ManifestFile::Legacy { .. }) {
                 report

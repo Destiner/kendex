@@ -26,7 +26,7 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
     ));
     let model = o.model.as_deref().unwrap_or(&source.model);
     let resolved = resolve_model(HarnessId::Claude, model);
-    warnings.extend(resolved.warning);
+    warnings.extend(resolved.warning.map(crate::render::RenderWarning::new));
     // Claude spells inherit-the-session-model literally.
     push(format!(
         "model: {}",

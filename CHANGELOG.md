@@ -50,6 +50,10 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- Render and parse warnings are now first-class: each names its item and
+  tool, says what happened, and carries the fix when there is one —
+  shown in the plan preview, the Sync page, and every CLI verb that
+  prints a plan.
 - Every catalog read goes through one sealed API: reads resolve against
   the canonical source root, symlinks in a catalog are refused loudly (a
   hostile catalog can no longer pull host files into generated artifacts

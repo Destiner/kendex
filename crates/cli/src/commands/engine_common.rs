@@ -21,6 +21,16 @@ pub fn print_report(report: &EngineReport) {
     for note in &report.notes {
         say(&format!("note: {note}"));
     }
+    for warning in &report.warnings {
+        let target = match warning.harness {
+            Some(harness) => format!("{} ({})", warning.name, harness.display_name()),
+            None => warning.name.clone(),
+        };
+        say(&format!("warning: {target}: {}", warning.message));
+        if let Some(fix) = &warning.remediation {
+            say(&format!("  fix: {fix}"));
+        }
+    }
     if report.plan.is_empty() {
         say("nothing to do");
         return;

@@ -22,11 +22,11 @@ export const commands = {
 	 *  (with a prefilled issue link) or the user's own repo.
 	 */
 	reportRoute: (scope: Scope, name: string, kind: "agent" | "skill" | "hook" | "command" | "mcp-server" | "plugin" | "pi-extension" | null) => typedError<ReportRouteView, string>(__TAURI_INVOKE("report_route", { scope, name, kind })),
-	auditAll: () => typedError<AuditView[], string>(__TAURI_INVOKE("audit_all")),
-	applyPlan: (scope: Scope, removeOrphans: boolean) => typedError<AuditView, string>(__TAURI_INVOKE("apply_plan", { scope, removeOrphans })),
-	adoptItem: (scope: Scope, kind: ItemKind, name: string, harness: HarnessId) => typedError<AuditView, string>(__TAURI_INVOKE("adopt_item", { scope, kind, name, harness })),
-	toggleItem: (scope: Scope, name: string, enabled: boolean) => typedError<AuditView, string>(__TAURI_INVOKE("toggle_item", { scope, name, enabled })),
-	removeItem: (scope: Scope, name: string) => typedError<AuditView, string>(__TAURI_INVOKE("remove_item", { scope, name })),
+	auditAll: () => typedError<AuditView_Serialize[], string>(__TAURI_INVOKE("audit_all")),
+	applyPlan: (scope: Scope, removeOrphans: boolean) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("apply_plan", { scope, removeOrphans })),
+	adoptItem: (scope: Scope, kind: ItemKind, name: string, harness: HarnessId) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("adopt_item", { scope, kind, name, harness })),
+	toggleItem: (scope: Scope, name: string, enabled: boolean) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("toggle_item", { scope, name, enabled })),
+	removeItem: (scope: Scope, name: string) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("remove_item", { scope, name })),
 	getManifest: (scope: Scope) => typedError<{
 	schema: number,
 	sources?: { [key in string]: SourceDecl_Serialize },
@@ -52,7 +52,7 @@ export const commands = {
 	"project-skills-dir"?: string | null,
 } | null, string>(__TAURI_INVOKE("get_manifest", { scope })),
 	/**  Write an edited manifest and reconcile the scope to it. */
-	updateManifest: (scope: Scope, manifest: Manifest_Deserialize) => typedError<AuditView, string>(__TAURI_INVOKE("update_manifest", { scope, manifest })),
+	updateManifest: (scope: Scope, manifest: Manifest_Deserialize) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("update_manifest", { scope, manifest })),
 	editorInventory: (scope: Scope) => typedError<EditorInventory, string>(__TAURI_INVOKE("editor_inventory", { scope })),
 	/**  Every declared source in every scope — the Sources page's one query. */
 	sourcesOverview: () => typedError<SourceRow[], string>(__TAURI_INVOKE("sources_overview")),
@@ -82,11 +82,30 @@ export type Appearance = "system" | "light" | "dark";
  *  What the Audit page renders: drift rows plus the human-readable plan
  *  that would fix them.
  */
-export type AuditView = {
+export type AuditView = AuditView_Serialize | AuditView_Deserialize;
+
+/**
+ *  What the Audit page renders: drift rows plus the human-readable plan
+ *  that would fix them.
+ */
+export type AuditView_Deserialize = {
 	scope: Scope,
 	drift: DriftRow[],
 	plan: string[],
 	notes: string[],
+	warnings: ItemWarning_Deserialize[],
+};
+
+/**
+ *  What the Audit page renders: drift rows plus the human-readable plan
+ *  that would fix them.
+ */
+export type AuditView_Serialize = {
+	scope: Scope,
+	drift: DriftRow[],
+	plan: string[],
+	notes: string[],
+	warnings: ItemWarning_Serialize[],
 };
 
 export type CapabilityRow = {
@@ -237,6 +256,36 @@ export type ItemDecl_Serialize = {
 };
 
 export type ItemKind = "agent" | "skill" | "hook" | "command" | "mcp-server" | "plugin" | "pi-extension";
+
+/**
+ *  A per-item render or parse warning, with the fix when there is one —
+ *  shown in plan previews, the CLI, and the Audit page.
+ */
+export type ItemWarning = ItemWarning_Serialize | ItemWarning_Deserialize;
+
+/**
+ *  A per-item render or parse warning, with the fix when there is one —
+ *  shown in plan previews, the CLI, and the Audit page.
+ */
+export type ItemWarning_Deserialize = {
+	kind: ItemKind,
+	name: string,
+	harness: HarnessId | null,
+	message: string,
+	remediation: string | null,
+};
+
+/**
+ *  A per-item render or parse warning, with the fix when there is one —
+ *  shown in plan previews, the CLI, and the Audit page.
+ */
+export type ItemWarning_Serialize = {
+	kind: ItemKind,
+	name: string,
+	harness?: HarnessId | null,
+	message: string,
+	remediation?: string | null,
+};
 
 /**
  *  What each operation supports for one harness × kind. `observe` is derived

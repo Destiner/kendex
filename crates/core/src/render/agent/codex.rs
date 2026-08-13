@@ -27,7 +27,7 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
     ));
     let model = o.model.as_deref().unwrap_or(&source.model);
     let resolved = resolve_model(HarnessId::Codex, model);
-    warnings.extend(resolved.warning);
+    warnings.extend(resolved.warning.map(crate::render::RenderWarning::new));
     // No model key means Codex's own default — its dialect for inherit.
     if let Some(id) = &resolved.id {
         out.push_str(&format!("model = \"{}\"\n", escape(id)));
@@ -46,10 +46,10 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
         sandbox_mode(agent, &mut warnings)
     ));
     if matches!(agent.permissions, PermissionIntent::AllowOnly { .. }) {
-        warnings.push(
-            "Codex has no tool allowlist; the sandbox is the closest enforceable restriction — the tool list itself is not enforced"
-                .to_owned(),
-        );
+        warnings.push(crate::render::RenderWarning::with_fix(
+            "Codex has no tool allowlist; the sandbox is the closest enforceable restriction — the tool list itself is not enforced",
+            "tighten sandbox-mode further with an override, or exclude Codex from this agent's harnesses",
+        ));
     }
     out.push_str("developer_instructions = '''\n");
     out.push_str(&fence_safe(&instructions(agent)));
@@ -67,12 +67,18 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
 /// with a warning when it widens past a read-only intent. Without an
 /// allowlist, only an explicit Engineer role earns full access — a missing
 /// role never escalates.
-fn sandbox_mode(agent: &EffectiveAgent, warnings: &mut Vec<String>) -> String {
+fn sandbox_mode(
+    agent: &EffectiveAgent,
+    warnings: &mut Vec<crate::render::RenderWarning>,
+) -> String {
     let allowlisted = matches!(agent.permissions, PermissionIntent::AllowOnly { .. });
     if let Some(mode) = &agent.overrides.sandbox_mode {
         if agent.permissions.is_read_only() && mode != "read-only" {
-            warnings.push(format!(
-                "sandbox-mode override '{mode}' widens beyond the read-only tool allowlist"
+            warnings.push(crate::render::RenderWarning::with_fix(
+                format!(
+                    "sandbox-mode override '{mode}' widens beyond the read-only tool allowlist"
+                ),
+                "drop the sandbox-mode override or set it to read-only",
             ));
         }
         return mode.clone();
@@ -83,9 +89,9 @@ fn sandbox_mode(agent: &EffectiveAgent, warnings: &mut Vec<String>) -> String {
             false => "workspace-write",
         };
         if agent.source.role == Some(Role::Engineer) {
-            warnings.push(format!(
+            warnings.push(crate::render::RenderWarning::new(format!(
                 "role engineer's full access narrowed to {capped} by the tool allowlist"
-            ));
+            )));
         }
         return capped.to_owned();
     }
@@ -255,7 +261,12 @@ mod tests {
         let rendered = generate(&agent);
         assert!(rendered.text.contains("sandbox_mode = \"read-only\""));
         assert!(!rendered.text.contains("danger-full-access"));
-        assert!(rendered.warnings.iter().any(|w| w.contains("allowlist")));
+        assert!(
+            rendered
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("allowlist"))
+        );
 
         let plain = parse_source_agent("---\nname: helper\ndescription: d\n---\nBody.\n").unwrap();
         let agent = effective(&plain, &scope);
@@ -278,7 +289,12 @@ mod tests {
         let rendered = generate(&agent);
         assert!(rendered.text.contains("sandbox_mode = \"read-only\""));
         assert!(!rendered.text.contains("danger-full-access"));
-        assert!(rendered.warnings.iter().any(|w| w.contains("narrowed")));
+        assert!(
+            rendered
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("narrowed"))
+        );
 
         agent.permissions = PermissionIntent::allow_only(vec!["Read".into(), "Bash".into()]);
         let rendered = generate(&agent);
@@ -292,7 +308,12 @@ mod tests {
                 .text
                 .contains("sandbox_mode = \"danger-full-access\"")
         );
-        assert!(rendered.warnings.iter().any(|w| w.contains("widens")));
+        assert!(
+            rendered
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("widens"))
+        );
     }
 
     #[test]

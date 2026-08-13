@@ -1,6 +1,6 @@
 use serde::Serialize;
 use specta::Type;
-use vstack_core::engine::{self, DriftRow, PlanOptions, ops};
+use vstack_core::engine::{self, DriftRow, ItemWarning, PlanOptions, ops};
 use vstack_core::env::Env;
 use vstack_core::lock::{load as load_lock, lock_path};
 use vstack_core::model::{HarnessId, ItemKind, Scope};
@@ -19,6 +19,7 @@ pub struct AuditView {
     pub drift: Vec<DriftRow>,
     pub plan: Vec<String>,
     pub notes: Vec<String>,
+    pub warnings: Vec<ItemWarning>,
 }
 
 pub(crate) fn view(env: &Env, scope: &Scope) -> Result<AuditView, String> {
@@ -33,6 +34,7 @@ pub(crate) fn view(env: &Env, scope: &Scope) -> Result<AuditView, String> {
             .map(|op| op.description.clone())
             .collect(),
         notes: report.notes,
+        warnings: report.warnings,
     })
 }
 

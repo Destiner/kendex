@@ -2,6 +2,30 @@ pub mod agent;
 pub mod permission;
 pub mod skill;
 
+/// One thing the user should hear about a rendering, with the fix when
+/// there is one — every render lint travels through this shape.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RenderWarning {
+    pub message: String,
+    pub remediation: Option<String>,
+}
+
+impl RenderWarning {
+    pub fn new(message: impl Into<String>) -> RenderWarning {
+        RenderWarning {
+            message: message.into(),
+            remediation: None,
+        }
+    }
+
+    pub fn with_fix(message: impl Into<String>, remediation: impl Into<String>) -> RenderWarning {
+        RenderWarning {
+            message: message.into(),
+            remediation: Some(remediation.into()),
+        }
+    }
+}
+
 /// Emit a YAML scalar that parses back as exactly this string. Values that
 /// could read as another type (YAML 1.1 reserved words, leading digits),
 /// open a construct (`*`, `&`, `[`, …), or smuggle structure (newlines,

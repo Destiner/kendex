@@ -8,10 +8,10 @@ use crate::render::permission::PermissionIntent;
 pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
     let mut warnings = Vec::new();
     if !matches!(agent.permissions, PermissionIntent::Unspecified) {
-        warnings.push(
-            "Cursor rules carry no tool permissions — this agent's tool restrictions are advisory text only"
-                .to_owned(),
-        );
+        warnings.push(crate::render::RenderWarning::with_fix(
+            "Cursor rules carry no tool permissions — this agent's tool restrictions are advisory text only",
+            "exclude Cursor from this agent's harnesses if the restriction must be enforced",
+        ));
     }
     let source = agent.source;
     let mut out = String::from("---\n");
@@ -117,6 +117,11 @@ mod tests {
         let mut agent = effective(&source, &scope, vec![]);
         agent.permissions = PermissionIntent::allow_only(vec!["Read".into()]);
         let rendered = generate(&agent);
-        assert!(rendered.warnings.iter().any(|w| w.contains("advisory")));
+        assert!(
+            rendered
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("advisory"))
+        );
     }
 }

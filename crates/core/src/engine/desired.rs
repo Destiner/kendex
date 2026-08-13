@@ -69,6 +69,7 @@ pub struct DesiredState {
     /// Sources that could not be read (pending remotes, missing paths) and
     /// declared items the source no longer carries.
     pub notes: Vec<String>,
+    pub warnings: Vec<super::ItemWarning>,
     pub refused: Vec<Refused>,
     /// Declarations whose source resolved and whose item was found. What
     /// these produced is the complete truth about them, so a lock entry
