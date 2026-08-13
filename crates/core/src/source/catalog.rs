@@ -180,7 +180,7 @@ fn group(
             if let Some(problem) = names::segment_problem(&leaf) {
                 findings.push(CatalogFinding::new(
                     at,
-                    format!("`{leaf}` cannot be installed: {problem}"),
+                    format!("`{}` cannot be installed: {problem}", names::shown(&leaf)),
                     "rename it in the catalog",
                 ));
                 continue;
@@ -242,13 +242,15 @@ fn check_manifest(
             return Ok(());
         }
     };
+    // A plugin's own manifest is a downloaded file whose text reaches a
+    // terminal, so what it says is read as words and never acted on.
     let field = |key: &str| {
         manifest
             .get(key)
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|text| !text.is_empty())
-            .map(str::to_owned)
+            .map(names::shown)
     };
     if let Some(name) = field("name")
         && name != entry.name
@@ -315,7 +317,10 @@ fn check_component(
     if !inside {
         findings.push(CatalogFinding::new(
             format!("{at}/{PLUGIN_MANIFEST}"),
-            format!("`{key}` points at `{declared}`, which is outside this plugin"),
+            format!(
+                "`{key}` points at `{}`, which is outside this plugin",
+                names::shown(declared)
+            ),
             "point it at a directory inside the plugin, such as `./skills`",
         ));
         return;
@@ -325,7 +330,10 @@ fn check_component(
     if !sealed.is_dir(&resolved) && !sealed.is_file(&resolved) {
         findings.push(CatalogFinding::new(
             format!("{at}/{PLUGIN_MANIFEST}"),
-            format!("`{key}` points at `{declared}`, which is not a readable part of this plugin"),
+            format!(
+                "`{key}` points at `{}`, which is not a readable part of this plugin",
+                names::shown(declared)
+            ),
             "point it at a directory or file the plugin really ships, or drop the key",
         ));
     }

@@ -122,9 +122,18 @@ pub fn cached(env: &Env, repo: &str, rev: Option<&str>) -> Result<Option<Resolut
         // The mirror holds the objects even when the checkout is missing or
         // no longer matches what was published: rebuilding it is local.
         if store::has_commit(&mirror, &commit) {
-            let _guard = store::lock_repo(env, &key)?;
-            let root = store::publish(env, &key, &mirror, &commit)?;
-            return Ok(Some(Resolution::at(&commit, root)));
+            match store::lock_repo(env, &key) {
+                Ok(_guard) => {
+                    let root = store::publish(env, &key, &mirror, &commit)?;
+                    return Ok(Some(Resolution::at(&commit, root)));
+                }
+                // Someone else is materializing this repository. Reading is
+                // never worth failing a whole scope over: this one source
+                // reads as unfetched, like any other content that is not
+                // here yet, and the next pass picks it up.
+                Err(CoreError::CacheBusy { .. }) => {}
+                Err(error) => return Err(error),
+            }
         }
     }
     // A pin is answered by that commit or not at all. The pre-2.0 clone

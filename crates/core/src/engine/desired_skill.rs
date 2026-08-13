@@ -242,8 +242,12 @@ fn render_variant(
     // reads. Advisory findings are said once, whichever member raised them.
     let mut advisories: Vec<(HarnessId, crate::render::validate::Finding)> = Vec::new();
     for harness in &group.members {
-        let findings =
-            crate::render::validate::validate_skill_tree(*harness, &group.installed, &files);
+        let findings = crate::render::validate::validate_skill_tree(
+            *harness,
+            ctx.name,
+            &group.installed,
+            &files,
+        );
         if let Some(reason) = super::desired::refusal_reason(&findings) {
             for member in &group.members {
                 state.refused.push(super::desired::Refused {

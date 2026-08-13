@@ -37,11 +37,14 @@ pub fn is_pin(rev: &str) -> bool {
 /// Filesystem-safe key naming one repository's mirror, checkouts, and lock.
 /// Keyed off the clone URL rather than the declared shorthand, so the same
 /// repository reached by two spellings shares one mirror, and two hosts
-/// serving the same `owner/repo` never share anything.
+/// serving the same `owner/repo` never share anything. The endings that say
+/// nothing about which repository it is — a trailing slash, a `.git` suffix
+/// — come off first, so writing one out in full does not fetch a second
+/// copy of what a shorthand already downloaded.
 pub fn repo_key(url: &str) -> String {
+    let url = url.trim_end_matches('/');
+    let url = url.strip_suffix(".git").unwrap_or(url);
     let base: String = url
-        .trim_end_matches('/')
-        .trim_end_matches(".git")
         .rsplit(['/', ':'])
         .next()
         .unwrap_or("repo")

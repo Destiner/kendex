@@ -167,6 +167,48 @@ fn a_command_getting_its_name_back_leaves_no_old_tree() {
     assert!(settled(&f));
 }
 
+/// A command from a marketplace catalog has to reserve the name it really
+/// writes. The catalog's own skills are held back under the spelling they
+/// would install as, or declaring one later moves a tree the user has
+/// already learned to type.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_catalog_holds_back_the_names_its_skills_would_install_as() {
+    let f = fixture();
+    put(
+        &f.source.join(".claude-plugin/marketplace.json"),
+        r#"{"name": "cat", "owner": {"name": "o"},
+            "plugins": [{"name": "p", "source": "./plugins/p"}]}"#,
+    );
+    put(
+        &f.source.join("plugins/p/skills/thing/SKILL.md"),
+        "---\nname: thing\ndescription: thing\n---\n\nThe real skill.\n",
+    );
+    put(
+        &f.source.join("plugins/p/commands/thing.md"),
+        "---\ndescription: thing\n---\n\nShip the branch.\n",
+    );
+    declare(&f, "[commands.\"p/thing\"]\nsource = \"cat\"\n");
+    apply_now(&f);
+
+    assert!(body_of(&f.skills.join("p__thing__command")).contains("Ship the branch."));
+    assert!(
+        !f.skills.join("p__thing").exists(),
+        "the command took the tree the catalog's own skill installs into"
+    );
+
+    // Declaring that skill is a single edit away, and it must not move
+    // anything the user is already using.
+    declare(
+        &f,
+        "[skills.\"p/thing\"]\nsource = \"cat\"\n\n[commands.\"p/thing\"]\nsource = \"cat\"\n",
+    );
+    apply_now(&f);
+    assert!(body_of(&f.skills.join("p__thing")).contains("The real skill."));
+    assert!(body_of(&f.skills.join("p__thing__command")).contains("Ship the branch."));
+    assert!(settled(&f));
+}
+
 /// A command is one file its author cannot split. Over Codex's byte cap it
 /// must split into references/ like any other skill — refusing it leaves the
 /// user a fix they cannot make.

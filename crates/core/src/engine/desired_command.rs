@@ -142,7 +142,7 @@ fn as_skill(
     }
     // Installed as a skill, it answers to the skill loader's rules — under
     // the emitted name, which is the one the user will type.
-    let findings = crate::render::validate::validate_skill_tree(harness, &name, &files);
+    let findings = crate::render::validate::validate_skill_tree(harness, ctx.name, &name, &files);
     if let Some(reason) = refusal_reason(&findings) {
         state.refused.push(super::desired::Refused {
             kind: ItemKind::Command,
@@ -310,10 +310,13 @@ fn claimed_skill_names(ctx: &ItemCtx, harness: HarnessId) -> BTreeSet<String> {
         })
         .map(|(name, _)| crate::harness::rendered_name(harness, name))
         .collect();
-    names.extend(crate::source::list_items(
-        ctx.sealed,
-        ctx.config,
-        ItemKind::Skill,
-    ));
+    // A catalog offers names as it declares them; what a skill would take
+    // from a command is the name it installs under, which for an item that
+    // carries its plugin is a different spelling.
+    names.extend(
+        crate::source::list_items(ctx.sealed, ctx.config, ItemKind::Skill)
+            .iter()
+            .map(|name| crate::harness::rendered_name(harness, name)),
+    );
     names
 }

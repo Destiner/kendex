@@ -258,9 +258,10 @@ fn a_failed_checkout_publishes_nothing() {
     assert!(leftovers.is_empty(), "staging left behind: {leftovers:?}");
 }
 
-/// Two resolvers must not materialize one repository at once. The second
-/// waits briefly and is then told the cache is busy, rather than sitting
-/// on someone else's download.
+/// Two resolvers must not materialize one repository at once. A refresh is
+/// told the cache is busy rather than sitting on someone else's download,
+/// while a read — which never has to write anything — answers what it can
+/// without failing the whole scope over a neighbour.
 #[test]
 fn a_busy_repository_cache_is_reported_not_waited_on() {
     let f = fixture();
@@ -269,8 +270,20 @@ fn a_busy_repository_cache_is_reported_not_waited_on() {
         sync(&f.env, REPO, None),
         Err(CoreError::CacheBusy { .. })
     ));
+    assert!(cached(&f.env, REPO, None).unwrap().is_none());
     drop(guard);
     sync(&f.env, REPO, None).unwrap();
+}
+
+/// One repository written three ways is one repository: the endings that
+/// name no repository of their own share a mirror, a checkout tree and a
+/// lock, and a different host never shares any of them.
+#[test]
+fn one_repository_spelled_three_ways_keeps_one_cache_entry() {
+    let key = store::repo_key("https://example.test/owner/repo");
+    assert_eq!(key, store::repo_key("https://example.test/owner/repo.git"));
+    assert_eq!(key, store::repo_key("https://example.test/owner/repo/"));
+    assert_ne!(key, store::repo_key("https://other.test/owner/repo"));
 }
 
 /// The v0.1 mutable clone still answers while the new layout has nothing,

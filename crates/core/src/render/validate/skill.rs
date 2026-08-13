@@ -14,8 +14,13 @@ fn skill_md(files: &[(PathBuf, Vec<u8>)]) -> Option<&[u8]> {
     })
 }
 
+/// `declared` is the name the user wrote down and `name` the one this tool
+/// installs it under: they differ when the item carries the plugin it came
+/// from, and then a fix that asks for either name to be changed is a fix
+/// nobody can apply.
 pub(super) fn findings(
     harness: HarnessId,
+    declared: &str,
     name: &str,
     files: &[(PathBuf, Vec<u8>)],
 ) -> Vec<Finding> {
@@ -34,22 +39,34 @@ pub(super) fn findings(
         Err(finding) => return vec![finding],
     };
     let mut findings = Vec::new();
-    let declared = map
+    let in_file = map
         .get("name")
         .and_then(Value::as_str)
         .unwrap_or_default()
         .trim();
-    if declared.is_empty() {
+    if in_file.is_empty() {
         findings.push(Finding::breakage(
             format!("SKILL.md has no `name:`, so {tool} has nothing to list `{name}` under"),
             format!("add `name: {name}` to the skill's SKILL.md in the catalog"),
         ));
-    } else if declared != name {
+    } else if in_file != name {
         findings.push(Finding::breakage(
             format!(
-                "SKILL.md calls the skill `{declared}` but it installs as `{name}`, so {tool} offers a name nobody declared"
+                "SKILL.md calls the skill `{in_file}` but it installs as `{name}`, so {tool} offers a name nobody declared"
             ),
-            format!("set `name: {name}` in the skill's SKILL.md, or declare the skill as `{declared}`"),
+            match declared == name {
+                true => format!(
+                    "set `name: {name}` in the skill's SKILL.md, or declare the skill as `{in_file}`"
+                ),
+                // The installed name carries the plugin the item lives in,
+                // which no catalog file knows and no declaration can spell.
+                // vstack writes it into its own copy, and the one shape it
+                // cannot write into is frontmatter that is not a plain
+                // `---` block.
+                false => format!(
+                    "give this skill's SKILL.md a plain `---` frontmatter block — that is what vstack writes `name: {name}` into when it installs `{declared}`"
+                ),
+            },
         ));
     }
     let described = map

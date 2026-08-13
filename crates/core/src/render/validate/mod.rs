@@ -107,14 +107,17 @@ pub fn validate_command(harness: HarnessId, text: &str) -> Vec<Finding> {
 
 /// Everything wrong with a rendered skill tree as this harness reads it.
 /// `name` is the directory the tree installs into, which is the name the
-/// user types — SKILL.md must agree with it.
+/// user types — SKILL.md must agree with it. `declared` is what the manifest
+/// calls the item: the same name, unless it carries the plugin it came from,
+/// and which one it is decides whose file a fix can ask to change.
 pub fn validate_skill_tree(
     harness: HarnessId,
+    declared: &str,
     name: &str,
     files: &[(PathBuf, Vec<u8>)],
 ) -> Vec<Finding> {
     let mut findings = name_findings(harness, name);
-    findings.extend(skill::findings(harness, name, files));
+    findings.extend(skill::findings(harness, declared, name, files));
     findings
 }
 

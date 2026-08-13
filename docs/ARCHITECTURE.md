@@ -178,12 +178,21 @@ lives in one capability table read by core and UI.
   under a per-repository cache lock; a second resolver waits half a
   second — enough to ride out a neighbour that is only starting up — and
   is then told the cache is busy rather than left waiting on someone
-  else's download.
+  else's download. A refresh treats that as an error; a read does not —
+  planning degrades to "not fetched yet" for that one source, since a
+  neighbour's download must not decide whether the rest of a scope can be
+  planned. The lock's recorded commit is a fallback only for the exact
+  declaration that produced it: a manifest now naming another repository,
+  or another revision, is never served the previous one under the new
+  one's name.
   Reuse is verified against a publish receipt written outside the
   checkout: a full content hash of the tree, which costs a read of the
   catalog per plan and is the only check a same-size edit cannot fool.
   The pre-2.0 clones are read where the new layout has nothing yet, and
-  deleted never.
+  deleted never. Neither are published commits: the store keeps one tree
+  per commit it has ever resolved, so a tracked branch grows the cache by
+  a catalog per upstream change, and nothing prunes it yet — the cache is
+  rebuildable, so deleting it is the only cleanup there is.
 - **A marketplace-shaped catalog is recognized, never guessed.** A source
   is read one plugin deep (`plugins/<name>/{agents,commands,skills}`)
   exactly when it carries `.claude-plugin/marketplace.json`; a `plugins/`
@@ -214,9 +223,17 @@ lives in one capability table read by core and UI.
   copies carry the installed name (SKILL.md and agent frontmatter are
   rewritten; the catalog keeps what it wrote), and two declarations that
   would land on one file — `a/b` against a literal `a__b`, or two names a
-  filesystem folds together — install neither, naming both. Names that
+  filesystem folds together — install neither, naming both. Folding is
+  what one filesystem would do to two names: case, trailing dots and
+  spaces, and Unicode composition, since macOS hands a composed and a
+  decomposed accent to the same file. Only the kinds a marketplace offers
+  — agents, commands, skills — may carry a plugin segment at all; a hook
+  or an MCP server has no namespaced spelling anywhere, so a `/` in one of
+  those names is a directory nothing would ever clean up. Names that
   cannot be a path at all (`..`, device names, trailing dots, overlong
-  components) are refused where they are written down, in `vstack.toml`.
+  components, a stray `/`) are refused where they are written down, in
+  `vstack.toml`. A catalog's own words travel into findings and onto a
+  terminal, so control characters in them are shown, never acted on.
 - **The surface model.** Rendered skills are per-harness variants,
   deduplicated by content hash. Harnesses that read the same physical
   directory form a surface group carrying exactly one variant rendered

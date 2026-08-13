@@ -8,9 +8,10 @@ use crate::hash::{hash_bytes, hash_files};
 use crate::lock::Lock;
 use crate::manifest::{ItemDecl, Manifest, Method};
 use crate::model::{HarnessId, ItemKind, Scope};
-use crate::source::{self, SourceState, find_item, source_config};
+use crate::source::{SourceState, find_item};
 use crate::source_read::SealedSource;
 
+use super::desired_source::{read_catalog, resolve_source};
 use super::{desired_agent, desired_kinds, desired_skill::desired_skill};
 
 /// One installation as declaration says it should exist on disk.
@@ -204,19 +205,10 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
             else {
                 continue;
             };
-            // Every read below goes through the sealed root; a source whose
-            // root cannot even be opened is skipped like a missing one.
-            let sealed = match SealedSource::open(&root) {
-                Ok(sealed) => sealed,
-                Err(problem) => {
-                    state.notes.push(format!(
-                        "{name}: source '{}' unreadable ({problem}) — skipped",
-                        decl.source
-                    ));
-                    continue;
-                }
+            let Some((sealed, config)) = read_catalog(&root, name, &decl.source, &mut state)?
+            else {
+                continue;
             };
-            let config = source_config(&sealed)?;
             super::catalog::notes(&config, &decl.source, &mut state);
             let Some(item_path) = find_item(&sealed, &config, kind, name) else {
                 state
@@ -296,56 +288,6 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
         state.manifest_update = Some(updated_manifest);
     }
     Ok(state)
-}
-
-/// The source root and provenance to build an item from, or `None` with the
-/// note that says why this declaration produces nothing this pass.
-fn resolve_source(
-    env: &Env,
-    scope: &Scope,
-    name: &str,
-    decl: &ItemDecl,
-    manifest: &Manifest,
-    state: &mut DesiredState,
-) -> Result<Option<(PathBuf, String)>> {
-    let resolution = match state.sources.get(&decl.source) {
-        Some(resolution) => resolution.clone(),
-        None => {
-            let resolution = source::resolve(env, scope, &decl.source, manifest)?;
-            state
-                .sources
-                .insert(decl.source.clone(), resolution.clone());
-            resolution
-        }
-    };
-    let notes = &mut state.notes;
-    match resolution {
-        SourceState::Ready(ready) => Ok(Some((ready.root, ready.provenance))),
-        // A disabled source deactivates its installations in place; they stay
-        // declared and are not drift.
-        SourceState::Disabled { .. } => {
-            notes.push(format!(
-                "{name}: source '{}' disabled — inactive",
-                decl.source
-            ));
-            Ok(None)
-        }
-        SourceState::Pending { repo, .. } => {
-            notes.push(format!(
-                "{name}: source '{}' ({repo}) not fetched yet — skipped",
-                decl.source
-            ));
-            Ok(None)
-        }
-        SourceState::Missing { path, .. } => {
-            notes.push(format!(
-                "{name}: source '{}' missing at {} — skipped",
-                decl.source,
-                path.display()
-            ));
-            Ok(None)
-        }
-    }
 }
 
 pub(super) struct ItemCtx<'a> {

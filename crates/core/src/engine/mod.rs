@@ -21,6 +21,7 @@ mod desired_command;
 mod desired_kinds;
 mod desired_mcp;
 mod desired_skill;
+mod desired_source;
 mod gemini;
 mod item_plan;
 pub mod ops;

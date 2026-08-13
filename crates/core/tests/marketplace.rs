@@ -107,6 +107,35 @@ fn is_clean(f: &Fixture) -> bool {
     audit(&f.env, &f.scope).unwrap().drift.is_empty()
 }
 
+/// A catalog written on Windows installs like any other: CRLF is not a
+/// reason to refuse a skill for a name it was never given the chance to
+/// carry.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_windows_written_catalog_installs_under_its_plugin() {
+    let f = fixture(
+        "\"claude\"",
+        "[skills.\"data-science/eda\"]\nsource = \"market\"\n",
+    );
+    write(
+        &f.market,
+        "plugins/data-science/skills/eda/SKILL.md",
+        &EDA.replace('\n', "\r\n"),
+    );
+    let report = apply_now(&f);
+    assert!(
+        !report.notes.iter().any(|note| note.contains("eda")),
+        "{:?}",
+        report.notes
+    );
+    let installed = read(&f, ".claude/skills/data-science__eda/SKILL.md");
+    assert!(
+        installed.starts_with("---\r\nname: data-science__eda\r\n"),
+        "{installed:?}"
+    );
+    assert!(is_clean(&f));
+}
+
 #[test]
 #[allow(clippy::unwrap_used)]
 fn every_tool_lists_a_marketplace_item_under_its_plugin() {
@@ -187,11 +216,12 @@ fn the_separator_each_tool_gets_is_one_its_own_loader_accepts() {
             PathBuf::from("SKILL.md"),
             format!("---\nname: {rendered}\ndescription: explore\n---\n").into_bytes(),
         )];
-        let breakage: Vec<String> = validate_skill_tree(harness, &rendered, &files)
-            .into_iter()
-            .filter(vstack_core::render::validate::Finding::is_breakage)
-            .map(|finding| finding.message)
-            .collect();
+        let breakage: Vec<String> =
+            validate_skill_tree(harness, "data-science/eda", &rendered, &files)
+                .into_iter()
+                .filter(vstack_core::render::validate::Finding::is_breakage)
+                .map(|finding| finding.message)
+                .collect();
         assert!(
             breakage.is_empty(),
             "{}: {breakage:?}",
@@ -310,6 +340,34 @@ fn adding_everything_a_catalog_offers_writes_names_that_load_again() {
     assert!(manifest.agents.contains_key("code-review/reviewer"));
     assert!(f.project.join(".claude/skills/data-science__eda").exists());
     assert!(is_clean(&f));
+}
+
+/// A registry dressed up to read a file outside the catalog is that
+/// catalog's problem. The refusal is reported and the healthy source in the
+/// same project installs as usual.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_registry_that_reaches_outside_costs_only_its_own_source() {
+    let f = fixture(
+        "\"claude\"",
+        "[skills.\"data-science/eda\"]\nsource = \"market\"\n\n[skills.gh]\nsource = \"plain\"\n",
+    );
+    let registry = f.market.join(".claude-plugin/marketplace.json");
+    fs::remove_file(&registry).unwrap();
+    std::os::unix::fs::symlink("/etc/hostname", &registry).unwrap();
+
+    let report = audit(&f.env, &f.scope).unwrap();
+    assert!(
+        report
+            .notes
+            .iter()
+            .any(|note| note.contains("refused catalog read")),
+        "{:?}",
+        report.notes
+    );
+    apply::execute(&f.env, &report.plan, None).unwrap();
+    read(&f, ".claude/skills/gh/SKILL.md");
+    assert!(!f.project.join(".claude/skills/data-science__eda").exists());
 }
 
 #[test]

@@ -48,6 +48,7 @@ fn a_sound_rendering_of_every_kind_has_nothing_to_say() {
         validate_skill_tree(
             HarnessId::Codex,
             "gh",
+            "gh",
             &skill_tree("---\nname: gh\ndescription: GitHub\n---\nBody.\n")
         ),
         Vec::new()
@@ -60,7 +61,7 @@ fn every_finding_carries_a_fix() {
         validate_agent(HarnessId::Codex, "rust", "name = broken"),
         validate_agent(HarnessId::Opencode, "My_Agent", "no frontmatter\n"),
         validate_agent(HarnessId::Claude, "rust", "---\nname: other\n---\n"),
-        validate_skill_tree(HarnessId::Codex, "gh", &[]),
+        validate_skill_tree(HarnessId::Codex, "gh", "gh", &[]),
     ];
     for findings in all {
         assert!(!findings.is_empty());
@@ -182,6 +183,7 @@ fn other_harnesses_refuse_names_that_leave_their_own_directory() {
         let findings = validate_skill_tree(
             HarnessId::Claude,
             name,
+            name,
             &skill_tree(&format!("---\nname: {name}\ndescription: d\n---\n")),
         );
         assert!(
@@ -193,12 +195,13 @@ fn other_harnesses_refuse_names_that_leave_their_own_directory() {
 
 #[test]
 fn a_skill_tree_must_carry_a_skill_md_that_names_its_own_directory() {
-    let missing = validate_skill_tree(HarnessId::Claude, "gh", &[]);
+    let missing = validate_skill_tree(HarnessId::Claude, "gh", "gh", &[]);
     assert_eq!(blocking(&missing).len(), 1);
     assert!(spoken(&missing).contains("no SKILL.md"), "{missing:?}");
 
     let mismatch = validate_skill_tree(
         HarnessId::Claude,
+        "gh",
         "gh",
         &skill_tree("---\nname: github\ndescription: d\n---\n"),
     );
@@ -207,8 +210,22 @@ fn a_skill_tree_must_carry_a_skill_md_that_names_its_own_directory() {
     assert!(said.contains("calls the skill `github`"), "{said}");
     assert!(said.contains("set `name: gh`"), "{said}");
 
+    // An item that carries its plugin installs under a name no catalog file
+    // knows and no declaration can spell, so the fix has to be about the
+    // file vstack rewrites — never about renaming what nobody controls.
+    let derived = validate_skill_tree(
+        HarnessId::Claude,
+        "data-science/eda",
+        "data-science__eda",
+        &skill_tree("---\nname: eda\ndescription: d\n---\n"),
+    );
+    let said = spoken(&derived);
+    assert!(!said.contains("declare the skill as"), "{said}");
+    assert!(said.contains("frontmatter"), "{said}");
+
     let no_description = validate_skill_tree(
         HarnessId::Claude,
+        "gh",
         "gh",
         &skill_tree("---\nname: gh\n---\nBody.\n"),
     );
@@ -220,7 +237,7 @@ fn a_skill_tree_must_carry_a_skill_md_that_names_its_own_directory() {
         PathBuf::from("SKILL.md.disabled"),
         b"---\nname: gh\ndescription: d\n---\n".to_vec(),
     )];
-    assert!(validate_skill_tree(HarnessId::Claude, "gh", &disabled).is_empty());
+    assert!(validate_skill_tree(HarnessId::Claude, "gh", "gh", &disabled).is_empty());
 }
 
 #[test]
@@ -230,10 +247,10 @@ fn a_skill_over_the_codex_cap_is_refused_there_and_installs_on_claude() {
         "prose ".repeat(2000)
     );
     let files = skill_tree(&body);
-    let codex = validate_skill_tree(HarnessId::Codex, "gh", &files);
+    let codex = validate_skill_tree(HarnessId::Codex, "gh", "gh", &files);
     let said = spoken(&codex);
     assert_eq!(blocking(&codex).len(), 1, "{said}");
     assert!(said.contains("stops reading at 8192"), "{said}");
     assert!(said.contains("references/"), "{said}");
-    assert!(validate_skill_tree(HarnessId::Claude, "gh", &files).is_empty());
+    assert!(validate_skill_tree(HarnessId::Claude, "gh", "gh", &files).is_empty());
 }

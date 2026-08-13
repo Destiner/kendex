@@ -80,6 +80,55 @@ harness = "copilot"
     assert_eq!(validate(&table), Vec::new());
 }
 
+/// A plugin segment is only a name for the kinds a marketplace catalog
+/// offers. A hook or a server named with a `/` would install into a
+/// directory nothing ever cleans up, so it is refused where it is written.
+#[test]
+fn only_the_kinds_a_catalog_offers_may_carry_a_plugin_segment() {
+    let table = parse(
+        r#"
+schema = 2
+[sources.market]
+repo = "owner/market"
+[skills."tools/eda"]
+source = "market"
+[agents."tools/reviewer"]
+source = "market"
+[commands."tools/report"]
+source = "market"
+[pi-extensions."@scope/pkg"]
+source = "market"
+"#,
+    );
+    assert_eq!(validate(&table), Vec::new());
+
+    let table = parse(
+        r#"
+schema = 2
+[sources.market]
+repo = "owner/market"
+[hooks."tools/guard"]
+source = "market"
+[mcp-servers."tools/gh"]
+source = "market"
+[pi-extensions."tools/ext"]
+source = "market"
+"#,
+    );
+    let findings = validate(&table);
+    let located: Vec<&str> = findings.iter().map(|f| f.location.as_str()).collect();
+    for location in [
+        "hooks.tools/guard",
+        "mcp-servers.tools/gh",
+        "pi-extensions.tools/ext",
+    ] {
+        assert!(located.contains(&location), "{located:?}");
+    }
+    for finding in &findings {
+        assert!(finding.fix.contains("without a `/`"), "{finding}");
+    }
+}
+
 /// A revision belongs to a repository, and a key nobody reads is a typo
 /// the user should hear about rather than a setting that quietly does
 /// nothing.

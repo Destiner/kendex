@@ -52,6 +52,12 @@ const ITEM_TABLES: &[&str] = &[
     "pi-extensions",
 ];
 
+/// The kinds a marketplace-shaped catalog offers, and so the only ones whose
+/// names may carry the plugin they came from. A hook or a server has no
+/// namespaced spelling anywhere — a `/` in one of those names would just be
+/// a directory on disk that nothing knows to remove.
+const NAMESPACED_TABLES: &[&str] = &["agents", "commands", "skills"];
+
 /// The tools a manifest may name: the ones vstack writes to. Read from the
 /// capability table rather than listed here, so a tool can never be
 /// accepted as a target before anything it declares would be installed.
@@ -212,14 +218,23 @@ fn validate_items(table: &Table, findings: &mut Vec<Finding>) {
                 && name.starts_with('@')
                 && name.matches('/').count() == 1
                 && !name.ends_with('/');
-            if let Some(problem) = (!scoped_ok)
-                .then(|| crate::names::item_problem(name))
-                .flatten()
-            {
+            let namespaced = NAMESPACED_TABLES.contains(&kind_table);
+            let problem = match (scoped_ok, namespaced) {
+                (true, _) => None,
+                (false, true) => crate::names::item_problem(name),
+                (false, false) => crate::names::segment_problem(name),
+            };
+            if let Some(problem) = problem {
                 findings.push(Finding {
                     location: location.clone(),
                     problem,
-                    fix: "rename the item — a plain name, or `<plugin>/<item>` for an item from a marketplace catalog".into(),
+                    fix: match namespaced {
+                        true => "rename the item — a plain name, or `<plugin>/<item>` for an item from a marketplace catalog".into(),
+                        false => format!(
+                            "rename the item — a {} is named without a `/`, since no marketplace catalog offers one",
+                            kind_table.strip_suffix('s').unwrap_or(kind_table)
+                        ),
+                    },
                 });
             }
             let Some(decl) = decl.as_table() else {

@@ -157,7 +157,9 @@ fn read_entry(sealed: &SealedSource, index: usize, entry: &Value, registry: &mut
         ));
         return;
     };
-    let at = format!("{REGISTRY}: {name}");
+    // The name is a downloaded catalog's own text, and every finding below
+    // carries it to a terminal: it is shown, never acted on.
+    let at = format!("{REGISTRY}: {}", names::shown(&name));
     if let Some(problem) = names::segment_problem(&name) {
         registry.findings.push(CatalogFinding::new(
             at,
@@ -195,7 +197,10 @@ fn read_entry(sealed: &SealedSource, index: usize, entry: &Value, registry: &mut
     if !sealed.is_dir(&sealed.root().join(&dir)) {
         registry.findings.push(CatalogFinding::new(
             at,
-            format!("`{}` is not a directory in this catalog", dir.display()),
+            format!(
+                "`{}` is not a directory in this catalog",
+                names::shown(&dir.display().to_string())
+            ),
             "point the entry at a directory that exists, or drop the entry",
         ));
         return;
@@ -272,7 +277,10 @@ fn relative_dir(at: &str, name: &str, path: &str, registry: &mut Registry) -> Op
     if hostile {
         registry.findings.push(CatalogFinding::new(
             at,
-            format!("`{name}` points at `{path}`, which leads out of the catalog"),
+            format!(
+                "`{name}` points at `{}`, which leads out of the catalog",
+                names::shown(path)
+            ),
             format!("point it at a directory inside the catalog, such as `./plugins/{name}`"),
         ));
         return None;

@@ -118,6 +118,31 @@ fn phase_three_kinds_live_at_fixed_catalog_paths() {
     }
 }
 
+/// A catalog's own words end up on a terminal. Whatever it writes about
+/// itself is reported as text, never as the escape sequence it was.
+#[test]
+fn a_catalog_never_talks_to_the_terminal_through_a_finding() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join(".claude-plugin")).unwrap();
+    std::fs::write(
+        tmp.path().join(".claude-plugin/marketplace.json"),
+        r#"{"name": "cat", "owner": {"name": "o"}, "plugins": [
+             {"name": "we\u001b[31mird", "source": "./plugins/weird"},
+             {"name": "quiet", "source": "./plugins/q\u0000uiet"}]}"#,
+    )
+    .unwrap();
+    let metadata = catalog_metadata(&SealedSource::open(tmp.path()).unwrap())
+        .unwrap()
+        .unwrap();
+    let said = metadata
+        .findings
+        .iter()
+        .map(CatalogFinding::to_string)
+        .collect::<String>();
+    assert!(said.contains("\\u{1b}") && said.contains("\\0"), "{said:?}");
+    assert!(!said.contains('\u{1b}') && !said.contains('\0'), "{said:?}");
+}
+
 #[test]
 fn v1_catalog_tables_parse_leniently() {
     let tmp = tempfile::tempdir().unwrap();

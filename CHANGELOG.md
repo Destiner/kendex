@@ -31,9 +31,11 @@ changes carry a **Breaking** call-out with their migration note inline.
   the tool only accepts lowercase words joined by hyphens. If two
   declarations would end up as the same file — a namespaced name against a
   flat one already spelled that way, or two names that differ only by
-  capitals — neither is installed, and the conflict names both so you can
-  rename one. Names that cannot be a file at all are refused when
-  `vstack.toml` is read.
+  capitals or by how an accent is typed — neither is installed, and the
+  conflict names both so you can rename one. Only agents, commands and
+  skills come from these catalogs, so only those carry a plugin in their
+  name: a hook or an MCP server is still written without a `/`, and a name
+  that cannot be a file at all is refused when `vstack.toml` is read.
 
 - **Breaking:** a source can now say which revision it reads, and
   downloaded catalogs are kept one folder per version instead of one
@@ -50,9 +52,14 @@ changes carry a **Breaking** call-out with their migration note inline.
   downloaded is an error naming the pin; everything already installed
   keeps working. *Migration:* the download cache rebuilds itself on the
   next refresh — no user content is involved — and the old cache folders
-  are left in place, still readable, rather than deleted. Nothing in
-  `vstack.toml` has to change: a source with no `rev` follows its
-  repository's default branch exactly as before.
+  are left in place, still readable, rather than deleted. The new layout
+  keeps one folder per version it has read, which is what lets two
+  projects sit on different ones; a catalog you follow by branch therefore
+  gains a folder each time it changes upstream, and nothing tidies them up
+  yet. Deleting the whole cache folder is safe whenever it gets large — it
+  is rebuilt on the next refresh. Nothing in `vstack.toml` has to change:
+  a source with no `rev` follows its repository's default branch exactly
+  as before.
 
 - GitHub Copilot is now fully managed — agents, skills, hooks, and MCP
   servers install, switch on and off, and come off disk like every other

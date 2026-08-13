@@ -27,31 +27,55 @@ pub fn segment_problem(segment: &str) -> Option<String> {
     }
     if segment.starts_with('-') {
         return Some(format!(
-            "`{segment}` starts with `-`, which reads as a flag"
+            "`{}` starts with `-`, which reads as a flag",
+            shown(segment)
         ));
     }
     if let Some(bad) = segment
         .chars()
-        .find(|c| c.is_control() || "\\:*?\"<>|".contains(*c))
+        .find(|c| c.is_control() || "/\\:*?\"<>|".contains(*c))
     {
-        return Some(format!("`{segment}` holds `{bad}`, which no filename may"));
+        let bad = shown(&bad.to_string());
+        return Some(format!(
+            "`{}` holds `{bad}`, which no filename may",
+            shown(segment)
+        ));
     }
     if segment.ends_with('.') || segment.ends_with(' ') {
         return Some(format!(
-            "`{segment}` ends in a dot or a space, which Windows silently drops"
+            "`{}` ends in a dot or a space, which Windows silently drops",
+            shown(segment)
         ));
     }
     let stem = segment.split('.').next().unwrap_or(segment);
     if DEVICE_NAMES.contains(&stem.to_ascii_lowercase().as_str()) {
-        return Some(format!("`{segment}` is a reserved device name on Windows"));
+        return Some(format!(
+            "`{}` is a reserved device name on Windows",
+            shown(segment)
+        ));
     }
     if segment.len() > MAX_SEGMENT {
         return Some(format!(
-            "`{segment}` is {} bytes and a name may be {MAX_SEGMENT}",
+            "`{}` is {} bytes and a name may be {MAX_SEGMENT}",
+            shown(segment),
             segment.len()
         ));
     }
     None
+}
+
+/// A catalog's own text, safe to print. Names travel from a downloaded
+/// repository into terminal output, where a control character would move
+/// the cursor or colour the line instead of being read as the name it is.
+pub fn shown(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c.is_control() {
+            true => out.extend(c.escape_debug()),
+            false => out.push(c),
+        }
+    }
+    out
 }
 
 /// Why this item name cannot be installed. A name from a marketplace-shaped
@@ -82,11 +106,16 @@ pub fn split(name: &str) -> Option<(&str, &str)> {
 }
 
 /// The spelling two names collide under. Case is folded because macOS and
-/// Windows hand the same file to both spellings, and trailing dots because
-/// Windows drops them — on those systems the second install silently
-/// overwrites the first.
+/// Windows hand the same file to both spellings, accents are composed
+/// because macOS hands `café` written as one character and as `e` plus an
+/// accent to the same file, and trailing dots are dropped because Windows
+/// drops them — on those systems the second install silently overwrites the
+/// first.
 pub fn fold(name: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
     name.to_lowercase()
+        .nfc()
+        .collect::<String>()
         .split('/')
         .map(|segment| segment.trim_end_matches(['.', ' ']).to_owned())
         .collect::<Vec<_>>()
@@ -132,5 +161,27 @@ mod tests {
         assert_eq!(fold("Data-Science/EDA"), "data-science/eda");
         assert_eq!(fold("gh."), "gh");
         assert_ne!(fold("a/b"), fold("a-b"));
+        // Composed and decomposed accents are one file on macOS.
+        assert_eq!(fold("caf\u{e9}"), fold("cafe\u{301}"));
+        assert_ne!(fold("cafe"), fold("caf\u{e9}"));
+    }
+
+    /// One path segment holds no separator: only the kinds a marketplace
+    /// catalog offers are namespaced, and those are split before they get
+    /// here.
+    #[test]
+    fn a_single_segment_may_not_hold_a_separator() {
+        assert!(segment_problem("tools/guard").is_some());
+        assert!(item_problem("tools/guard").is_none());
+    }
+
+    /// A catalog's text reaches a terminal. Control characters are shown as
+    /// what they are rather than acted on.
+    #[test]
+    fn a_refusal_never_carries_the_control_characters_it_refuses() {
+        let said = segment_problem("gh\u{1b}[31m\0").unwrap_or_default();
+        assert!(!said.contains('\u{1b}'), "{said:?}");
+        assert!(!said.contains('\0'), "{said:?}");
+        assert!(said.contains("\\u{1b}") && said.contains("\\0"), "{said:?}");
     }
 }

@@ -114,7 +114,7 @@ pub fn resolve(env: &Env, scope: &Scope, name: &str, manifest: &Manifest) -> Res
         // Last resort: the commit this scope last resolved to. A tag that
         // has since been deleted upstream, or a mirror that was cleaned
         // away, still leaves the installed commit readable here.
-        if let Some(root) = last_resolved(env, scope, name, decl) {
+        if let Some(root) = last_resolved(env, scope, name, repo, decl) {
             return Ok(SourceState::Ready(ResolvedSource {
                 name: name.to_owned(),
                 root,
@@ -133,13 +133,19 @@ pub fn resolve(env: &Env, scope: &Scope, name: &str, manifest: &Manifest) -> Res
 }
 
 /// The checkout for the commit this scope's lock recorded, if the cache
-/// still holds it unmodified. Only for the selector that produced it: a
-/// manifest that now asks for another revision must not be served the
-/// previous one.
-fn last_resolved(env: &Env, scope: &Scope, name: &str, decl: &SourceDecl) -> Option<PathBuf> {
+/// still holds it unmodified. Only for the declaration that produced it: a
+/// manifest that now names another repository or another revision must not
+/// be served the previous one under the new one's name.
+fn last_resolved(
+    env: &Env,
+    scope: &Scope,
+    name: &str,
+    repo: &str,
+    decl: &SourceDecl,
+) -> Option<PathBuf> {
     let lock = crate::lock::load(&crate::lock::lock_path(env, scope)).ok()?;
     let recorded = lock.sources.get(name)?;
-    if recorded.rev != decl.rev {
+    if recorded.repo != repo || recorded.rev != decl.rev {
         return None;
     }
     let key = crate::remote::store::repo_key(&crate::remote::clone_url(env, &recorded.repo));
