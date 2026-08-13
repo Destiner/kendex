@@ -13,21 +13,15 @@
 >   preview; hardened process constructor; byte-faithful + uncompared
 >   tests. Three adversarial review rounds folded in (14 + 3 + 18
 >   findings). ARCHITECTURE.md carries the durable decisions.
-> - Phase 2 ⏳ ~85%: foundation (d2c6e13), Gemini fully managed
->   (fff7481), Copilot fully managed incl. B11 plugin harness targeting,
->   hook/enabledPlugins readers, disable-only direction, cross-read
->   duplicate-definition notes (affc32a). Remaining before the phase
->   closes: walk the Phase 2 done-when list against the tree
->   (detection-root fixtures both scopes ✓ per adapter tests; §7 rows +
->   honesty tests ✓; enforcement shown in UI/plan preview — VERIFY the
->   UI actually shows it, may need a small Sync/labels touch), then an
->   adversarial review DONE (recover from subagents/agent-aadv-review-4)
->   — 2 blockers (project-scope gemini MCP enable rewrote the global
->   enablement file; hook matchers not translated per harness) + the
->   enforcement-display done-when gap + stale UI mock caps + further
->   numbered findings. A `review4-fixes` subagent is applying the batch
->   (uncommitted); verify guard, commit, then consume the Phase 2
->   section.
+> - Phase 2 ✅ (through 886b2c5) — caps v2 (toggle direction, hook
+>   enforcement shown end to end, MCP transports), Gemini CLI and GitHub
+>   Copilot fully managed in doc-verified formats, B11 plugin harness
+>   targeting, effective-state/inert reporting, cross-read
+>   duplicate-definition notes, hook-matcher vocabulary translation.
+>   Adversarial review #4 folded (10 findings).
+> - Phase 3 ⏳ next: catalog layout v2 + marketplace consumption + the
+>   immutable pinned source store (B12). Then Phase 4 bundles+deps,
+>   Phase 5 quality gates, Phase 6 UI (owner IA gate), Phase 7 release.
 > - Standing: subagent reports may arrive only as idle notifications —
 >   recover them from the session's `subagents/*.jsonl` (user CLAUDE.md).
 >   Engine/render changes get adversarial review before merge. Commits
@@ -106,87 +100,6 @@ evidence in `docs/research/harnesskit.md`.
 | Score presentation | **adopt** (HarnessKit) | Safety and quality are two scores, never averaged; Audit rows gain a findings column, no new page. |
 
 ## Phases
-
-### Phase 2 — Gemini CLI + GitHub Copilot (directive 3)
-
-Follow the proven pattern: observation first, then capability-gated
-management. The observation matrix is already written and doc-verified
-(`docs/research/gemini-copilot-matrix.md`); its §7 table is the caps
-seed.
-
-**Capability model v2 comes first.** Op × scope booleans cannot state
-the truth about these tools: Copilot project scope can disable but not
-enable skills/MCP (directional merges), hooks are manageable file-backed
-but observe-only inline, Gemini MCP servers declare per-project but
-toggle in a global file, Gemini agents sit behind an experimental flag,
-MCP transports differ per harness (Codex takes Streamable HTTP, not
-SSE). The table gains the axes to say so — toggle direction, surface
-subtype, transport, feature-flag dependency — generated into the UI
-bindings like everything else, and the honesty tests extend to the new
-axes. Claiming `managed(BOTH)` where only half the verbs work would
-break "the capability table gates everything".
-
-**Enforcement is one of those axes.** `managed` today says vstack can
-write and track an artifact; it does not say the harness will run it.
-Both are `managed(BOTH)` for Hook, yet Claude registers an executable
-whose exit code gates the tool call, while Cursor gets a `.mdc` rule
-with no registration (`engine/targets.rs`), OpenCode gets instruction
-files plus config refs (`caps.rs`), and Codex is native only for the
-events `hook.rs` maps and advisory prose otherwise. Gemini and Copilot
-both arrive with real hook systems (research §D1, §D9), which makes the
-gap wider, not narrower. So caps gain an **enforcement level** —
-enforced (the harness runs the command and honors its result) vs
-advisory (rendered as text the model may ignore) — resolved per
-(harness, kind, event), carried into plan preview, Audit, and the item
-UI. A safety hook must never read as protection on a harness that can
-only suggest it. `(Pi, Hook) => unsupported()` is the model working
-correctly and stays as is.
-
-Adapter facts that shape the code:
-
-- Copilot's global root honors `$COPILOT_HOME`; resolve through `Env`.
-- Each adapter claims only its own namespace — Copilot claims
-  `.github/**` + `~/.copilot/**`, Gemini claims `.gemini/**` +
-  `~/.gemini/**`. Copilot genuinely reads `.claude/` files; those
-  cross-reads are *inputs to Copilot's effective state* (a
-  `disableAllHooks` in `.claude/settings.json` disables Copilot's hooks
-  too) and Audit reports duplicate effective definitions — but never a
-  second installation (no double-counting).
-- Copilot commands are **unsupported** (no such surface). Gemini
-  extensions: observe global-only (undocumented enablement file).
-- Gemini MCP *enablement* is modeled global-only (its state file is
-  global) — a project-scope toggle writing a global file under a project
-  lock would break one-writer-per-scope. Project-scope declaration
-  install/remove stays project-scoped.
-- **Effective-state scanning, honestly bounded:** read the observable
-  layers that can defeat a write — Gemini system-override settings,
-  `experimental.enableAgents`, Copilot's repo-scope key allowlist,
-  folder trust, `.github/allowed_models.txt`, the `.claude` cross-reads
-  — and let Audit say "present but inert (overridden)". Invocation-time
-  overrides (env vars, CLI flags) are unobservable; Audit language
-  stays "as configured", never claiming runtime behavior.
-- Both tools' configs migrated recently: scanners tolerate old and new
-  shapes on read, write only the current one — and when a machine has
-  *only* the old shape (an un-upgraded CLI), management for that surface
-  is reported unsupported rather than writing files the installed tool
-  won't read.
-- Plugin declarations gain a harness target before any Copilot plugin
-  toggle lands — today `PluginDecl` broadcasts to every harness, which
-  would write Copilot plugin keys into Claude settings (register B11).
-- Models: Gemini tiers map to `gemini-3-*-preview` with `inherit`
-  preferred when unset; Copilot gets **no hardcoded tier map** — emit
-  `auto` or pass user strings through (plan/org/allowlist-gated).
-- Two new readers (Copilot hook JSON, `enabledPlugins` map).
-- README support matrix + `labels.ts` gain both tools.
-
-**Done when:** detection roots proven against fixtures for both tools and
-both scopes; every §7 caps row implemented with the v2 axes and covered
-by the extended honesty tests; every hook-capable harness carries an
-enforcement level that the UI and plan preview show, with an advisory
-install stating plainly that it is not enforced; managed kinds round-trip
-install/toggle/remove; an inert-but-present installation is reported as
-such; renderers produce doc-valid output (Phase 1 validators assert it);
-suite green.
 
 ### Phase 3 — catalog layout v2 + marketplace consumption (directive 5)
 
