@@ -110,27 +110,6 @@ evidence in `docs/research/harnesskit.md`.
 
 ## Phases
 
-### Phase 0 — changelog + release skill (directive 6)
-
-- Create `CHANGELOG.md`, Keep-a-Changelog style: `Unreleased` section,
-  backfilled `0.1.0` entry, breaking changes called out per entry. Adopt
-  v1's two good habits: entries written per-change (not batched at
-  release) and inline **Breaking** / **Migration** call-outs.
-- Create `.claude/skills/app-deploy/SKILL.md` — a few lines: bump the
-  workspace version + `tauri.conf.json`, update the changelog, tag per
-  `docs/RELEASING.md`. Leave the seam for distro pipelines (Arch, Fedora,
-  Ubuntu…); do not build them. Known and fine: Copilot also reads
-  `.claude/skills`, so this skill is visible to both tools.
-- Changelog enforcement: a `commit-msg` hook (a pre-commit hook cannot
-  see the commit subject): commits whose staged paths touch `crates/` or
-  `ui/` must also touch `CHANGELOG.md`, escape hatch `[no-changelog]`
-  in the subject for pure refactors. The hook is a tracked script wired
-  the same way the repo wires `tools/guard` (hooksPath, not a loose
-  `.git/hooks` file) so every clone gets it.
-
-**Done when:** both files exist, the hook blocks a test commit without a
-changelog entry and passes with `[no-changelog]`, suite green.
-
 ### Phase 1 — render pipeline v2 + engine foundations (directives 1 + 2)
 
 Implement every **adopt**/**hybrid** row of decision table 1, plus the

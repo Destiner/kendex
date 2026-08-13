@@ -4,3 +4,14 @@ head -1 "$1" | grep -qE '^((feat|fix|docs|chore|refactor|test|perf|ci|build)(\([
   echo "commit-msg: use conventional format: type(scope): subject (subject <= 72 chars)"
   exit 1
 }
+
+# Code changes ship with a changelog entry; [no-changelog] is the escape
+# hatch for pure refactors. Only commit-msg sees the subject, so the rule
+# lives here rather than in the pre-commit guard.
+staged=$(git diff --cached --name-only)
+if echo "$staged" | grep -qE '^(crates|ui)/' &&
+  ! echo "$staged" | grep -qx 'CHANGELOG.md' &&
+  ! head -1 "$1" | grep -qF '[no-changelog]'; then
+  echo "commit-msg: crates/ or ui/ changed without a CHANGELOG.md entry — add one or put [no-changelog] in the subject"
+  exit 1
+fi
