@@ -10,9 +10,10 @@
 >   Pi refusal → conflict + removal), bounded tolerant YAML frontmatter
 >   parser, YAML/TOML output quoting (injection-proof), `allow-tools`
 >   override, v1 import keeps legacy `tools` incl. harness-agnostic
->   tables; adversarially reviewed (14 findings fixed). `harness/models.rs`
->   exists but is not yet wired. Next in sequence: model-alias table wiring
->   (bug 2), sealed source reads (bug 3), coalesced config edits (bug 4),
+>   tables; adversarially reviewed (14 findings fixed). Bug 2 fixed: one
+>   model-alias table (`harness/models.rs`) wired through all renderers;
+>   `model_id_for`/`codex_model` deleted. Next in sequence: sealed source
+>   reads (bug 3), coalesced config edits (bug 4),
 >   scope canonicalization, schema v2 + migration, format caps + warnings
 >   channel, body-split + tool swap + commands→skills + name legality,
 >   validators, hardened process constructor, byte-faithful writes,

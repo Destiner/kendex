@@ -12,24 +12,6 @@ mod source;
 
 pub use source::{Role, SourceAgent, default_pane, parse_source_agent};
 
-/// v1 canonical model tiers translate per harness; exact ids pass through.
-pub fn model_id_for(provider: &str, model: &str) -> String {
-    let base = model.to_lowercase();
-    if base.contains('/') {
-        return model.to_owned();
-    }
-    match provider {
-        "openai" => match base.as_str() {
-            "opus" | "sonnet" | "haiku" => "openai/gpt-5.6-sol".to_owned(),
-            other => format!("openai/{other}"),
-        },
-        "claude-code" => match base.as_str() {
-            "opus" => "inherit".to_owned(),
-            other => other.to_owned(),
-        },
-        _ => base,
-    }
-}
 /// Everything a per-harness generator needs, already merged. `permissions`
 /// is the effective intent — source `tools:` narrowed by manifest overrides;
 /// renderers read it, never `overrides.deny_tools` directly.
@@ -140,15 +122,6 @@ pub struct RenderedAgent {
     pub warnings: Vec<String>,
 }
 
-impl RenderedAgent {
-    fn clean(text: String) -> RenderedAgent {
-        RenderedAgent {
-            text,
-            warnings: Vec::new(),
-        }
-    }
-}
-
 /// `Err` is a refusal: the harness cannot express the agent's permission
 /// intent and rendering anyway would widen access. The caller surfaces the
 /// reason and produces no artifact for that harness.
@@ -244,14 +217,5 @@ mod tests {
             merged.deny_tools,
             Some(vec!["WebSearch".into(), "WebFetch".into()])
         );
-    }
-
-    #[test]
-    fn model_tiers_map_per_provider() {
-        assert_eq!(model_id_for("claude-code", "opus"), "inherit");
-        assert_eq!(model_id_for("claude-code", "sonnet"), "sonnet");
-        assert_eq!(model_id_for("openai", "haiku"), "openai/gpt-5.6-sol");
-        assert_eq!(model_id_for("openai", "o9"), "openai/o9");
-        assert_eq!(model_id_for("claude-code", "custom/id"), "custom/id");
     }
 }

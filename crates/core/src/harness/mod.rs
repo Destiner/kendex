@@ -10,6 +10,7 @@ pub mod opencode;
 pub mod pi;
 
 mod caps;
+pub mod models;
 pub use caps::{KindCaps, OpSupport, capabilities};
 
 /// What marks a directory as a project for this harness during discovery.

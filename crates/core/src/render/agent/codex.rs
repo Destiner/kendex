@@ -1,5 +1,6 @@
 use super::{EffectiveAgent, GENERATED_BANNER, RenderedAgent, Role, hooks_prose, skills_prose};
-use crate::model::Scope;
+use crate::harness::models::resolve_model;
+use crate::model::{HarnessId, Scope};
 use crate::render::permission::PermissionIntent;
 
 const NICKNAME_SUFFIXES: [&str; 6] = ["Atlas", "Delta", "Echo", "Nova", "Orion", "Vector"];
@@ -25,7 +26,12 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
         escape(&source.description)
     ));
     let model = o.model.as_deref().unwrap_or(&source.model);
-    out.push_str(&format!("model = \"{}\"\n", codex_model(model)));
+    let resolved = resolve_model(HarnessId::Codex, model);
+    warnings.extend(resolved.warning);
+    // No model key means Codex's own default — its dialect for inherit.
+    if let Some(id) = &resolved.id {
+        out.push_str(&format!("model = \"{}\"\n", escape(id)));
+    }
     let effort = o
         .model_reasoning_effort
         .as_deref()
@@ -86,13 +92,6 @@ fn sandbox_mode(agent: &EffectiveAgent, warnings: &mut Vec<String>) -> String {
     match agent.source.role {
         Some(Role::Engineer) => "danger-full-access".to_owned(),
         _ => "workspace-write".to_owned(),
-    }
-}
-
-fn codex_model(model: &str) -> String {
-    match model.to_lowercase().as_str() {
-        "opus" | "sonnet" | "haiku" => "gpt-5.6-sol".to_owned(),
-        other => other.to_owned(),
     }
 }
 

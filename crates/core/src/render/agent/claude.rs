@@ -1,4 +1,6 @@
-use super::{EffectiveAgent, GENERATED_BANNER, RenderedAgent, default_pane, model_id_for};
+use super::{EffectiveAgent, GENERATED_BANNER, RenderedAgent, default_pane};
+use crate::harness::models::resolve_model;
+use crate::model::HarnessId;
 use crate::render::permission::PermissionIntent;
 use crate::render::{yaml_quoted as forced_quote, yaml_scalar};
 
@@ -10,6 +12,7 @@ use crate::render::{yaml_quoted as forced_quote, yaml_scalar};
 pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
     let source = agent.source;
     let o = &agent.overrides;
+    let mut warnings = Vec::new();
     let mut fm = String::new();
     let mut push = |line: String| {
         fm.push_str(&line);
@@ -22,9 +25,12 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
         forced_quote(&source.description)
     ));
     let model = o.model.as_deref().unwrap_or(&source.model);
+    let resolved = resolve_model(HarnessId::Claude, model);
+    warnings.extend(resolved.warning);
+    // Claude spells inherit-the-session-model literally.
     push(format!(
         "model: {}",
-        yaml_scalar(&model_id_for("claude-code", model))
+        yaml_scalar(resolved.id.as_deref().unwrap_or("inherit"))
     ));
     let effort = o.effort.as_deref().or(source.effort.as_deref());
     if let Some(effort) = effort.filter(|e| effort_is_real(e)) {
@@ -78,7 +84,10 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
     if let Some(additional) = &agent.additional_instructions {
         body.push_str(&format!("\n## Additional Instructions\n\n{additional}\n"));
     }
-    RenderedAgent::clean(body)
+    RenderedAgent {
+        text: body,
+        warnings,
+    }
 }
 
 /// `Agent` is always denied to subagents; `AskUserQuestion` unless this is

@@ -1,8 +1,7 @@
-use super::{
-    EffectiveAgent, GENERATED_BANNER, RenderedAgent, hooks_prose, model_id_for, skills_prose,
-};
+use super::{EffectiveAgent, GENERATED_BANNER, RenderedAgent, hooks_prose, skills_prose};
+use crate::harness::models::resolve_model;
 use crate::manifest::FrontmatterOverrides;
-use crate::model::Scope;
+use crate::model::{HarnessId, Scope};
 use crate::render::permission::PermissionIntent;
 use crate::render::yaml_scalar;
 
@@ -23,10 +22,13 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
     let mode = mode(o);
     out.push_str(&format!("mode: {mode}\n"));
     let model = o.model.as_deref().unwrap_or(&source.model);
-    out.push_str(&format!(
-        "model: {}\n",
-        yaml_scalar(&model_id_for("openai", model))
-    ));
+    let resolved = resolve_model(HarnessId::Opencode, model);
+    warnings.extend(resolved.warning);
+    // No model line means "inherit the default" — OpenCode has no literal
+    // for it, and `openai/inherit` is exactly the invalid id this replaces.
+    if let Some(id) = &resolved.id {
+        out.push_str(&format!("model: {}\n", yaml_scalar(id)));
+    }
     if let Some(color) = o
         .color
         .as_deref()
@@ -308,6 +310,26 @@ mod tests {
                 .iter()
                 .any(|w| w.contains("mcp__github__search"))
         );
+    }
+
+    #[test]
+    fn inherit_omits_the_model_line_instead_of_minting_an_invalid_id() {
+        let source = source("rust");
+        let scope = Scope::Global;
+        let mut agent = effective(&source, &scope);
+        agent.overrides = FrontmatterOverrides {
+            model: Some("inherit".into()),
+            ..FrontmatterOverrides::default()
+        };
+        let rendered = generate(&agent);
+        assert!(!rendered.text.contains("model:"));
+        assert!(!rendered.text.contains("openai/inherit"));
+        assert!(rendered.warnings.is_empty());
+
+        agent.overrides.model = Some("mystery".into());
+        let rendered = generate(&agent);
+        assert!(rendered.text.contains("model: mystery\n"));
+        assert!(rendered.warnings.iter().any(|w| w.contains("mystery")));
     }
 
     #[test]

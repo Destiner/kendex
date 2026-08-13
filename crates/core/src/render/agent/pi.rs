@@ -36,7 +36,10 @@ pub fn generate(agent: &EffectiveAgent) -> Result<RenderedAgent, String> {
             yaml_scalar(&allowed.join(", "))
         ));
     }
-    if let Some(model) = model(agent) {
+    let mut warnings = Vec::new();
+    let (model, model_warning) = model(agent);
+    warnings.extend(model_warning);
+    if let Some(model) = model {
         out.push_str(&format!("model: {}\n", yaml_scalar(&model)));
     }
     if let Some(color) = o.color.as_deref().or(source.color.as_deref()) {
@@ -49,13 +52,14 @@ pub fn generate(agent: &EffectiveAgent) -> Result<RenderedAgent, String> {
     out.push_str(&body(agent));
     Ok(RenderedAgent {
         text: out,
-        warnings: Vec::new(),
+        warnings,
     })
 }
 
-/// Heavy agents (`opus`) omit `model` so the child inherits the parent
-/// session; cheaper tiers pin the codex model with the configured effort.
-fn model(agent: &EffectiveAgent) -> Option<String> {
+/// Heavy tiers omit `model` so the child inherits the parent session;
+/// everything else resolves through the shared alias table and carries the
+/// `:effort` suffix (v1 pi.rs:96-148).
+fn model(agent: &EffectiveAgent) -> (Option<String>, Option<String>) {
     let effort = agent
         .overrides
         .model_reasoning_effort
@@ -68,27 +72,11 @@ fn model(agent: &EffectiveAgent) -> Option<String> {
         .model
         .as_deref()
         .unwrap_or(&agent.source.model);
-    if is_inherit(model) {
-        return None;
-    }
-    with_effort(model, effort)
-}
-
-/// Tiers map to the codex model; anything else renders verbatim (original
-/// case) — both forms carry the `:effort` suffix (v1 pi.rs:96-148).
-fn with_effort(model: &str, effort: Option<&str>) -> Option<String> {
+    let resolved = crate::harness::models::resolve_model(crate::model::HarnessId::Pi, model);
     let suffix = effort.map(|e| format!(":{e}")).unwrap_or_default();
-    match model.to_lowercase().as_str() {
-        "opus" => None,
-        "sonnet" | "haiku" => Some(format!("openai-codex/gpt-5.6-sol{suffix}")),
-        _ => Some(format!("{model}{suffix}")),
-    }
-}
-
-fn is_inherit(value: &str) -> bool {
-    matches!(
-        value.trim().to_lowercase().as_str(),
-        "inherit" | "current" | "parent"
+    (
+        resolved.id.map(|id| format!("{id}{suffix}")),
+        resolved.warning,
     )
 }
 

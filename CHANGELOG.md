@@ -19,6 +19,13 @@ changes carry a **Breaking** call-out with their migration note inline.
   regenerates installed agents; an agent that wants full access declares
   `role: engineer` explicitly.
 
+- **Breaking:** model aliases resolve through one per-harness table
+  (`fable`, `opus`, `sonnet`, `haiku`, `inherit`); `inherit` now survives
+  every harness (OpenCode/Codex/Pi omit the field instead of emitting an
+  invalid id such as `openai/inherit`), explicit vendor ids pass through
+  untouched, and a bare unknown model warns where the harness's loader
+  requires a `provider/model` form. Migration: refresh regenerates.
+
 ### Added
 
 - Source frontmatter is parsed as real YAML (block scalars, arrays, nested
