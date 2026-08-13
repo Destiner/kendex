@@ -3,29 +3,18 @@
 > **Cycle progress** (updated every commit; deleted sections = landed):
 >
 > - Phase 0 ✅ (221f950) — changelog, app-deploy skill, commit-msg rule.
-> - Phase 1 ⏳ review fixes in flight, every commit suite-green. Landed: typed
->   `PermissionIntent` through all five renderers (bug 1: optional role,
->   Codex sandbox inference, Claude native allowlist, OpenCode permission
->   synthesis, Pi refusal → conflict row + removal of the wide artifact),
->   bounded tolerant YAML frontmatter parser + injection-proof output
->   quoting, `allow-tools` override, v1 import keeps `tools` incl.
->   harness-agnostic tables; one model-alias table (bug 2); sealed
->   catalog reads + guard ban + hostile-catalog e2e (bug 3); per-file
->   coalesced config edits (bug 4); scope canonicalization; schema v2 +
->   surgical journaled v0.1→v0.2 migration; typed warnings channel with
->   remediation (CLI + Sync page); surface groups with hash-dedup
->   (codex+pi share `.agents/skills`); two adversarial review rounds
->   folded in (14 + 3 blocking findings fixed).
-> - **Remaining for Phase 1** (items 1-6 of the former list are done —
->   splitter wired with per-surface divergence, review findings folded,
->   commands→skills on Codex with emitted-mapping lock records,
->   validators in plan preview incl. name legality, hardened process
->   constructor, byte-faithful + uncompared-reporting tests):
->   1. Fold in adversarial review #3 (running over 926ac5d..b160def).
->   2. Check the Phase-1 done-when list, then delete the Phase 1 section
->      and its landed decision-table rows; amend ARCHITECTURE.md with the
->      durable decisions (surface model, permission intent, sealed reads,
->      schema versioning) in the same change.
+> - Phase 1 ✅ (through 2002151) — all four live bugs fixed; typed
+>   permission intent; bounded tolerant YAML + injection-proof output;
+>   one model-alias table; sealed catalog reads; coalesced config edits;
+>   scope canonicalization; schema v2 + journaled migration; typed
+>   warnings channel; surface groups with per-tool byte caps and
+>   fence-safe splitting; commands→skills on Codex with emitted-mapping
+>   lock records; per-tool prose vocabulary; output validators in plan
+>   preview; hardened process constructor; byte-faithful + uncompared
+>   tests. Three adversarial review rounds folded in (14 + 3 + 18
+>   findings). ARCHITECTURE.md carries the durable decisions.
+> - Phase 2 ⏳ next: capability model v2, then Gemini CLI + GitHub
+>   Copilot adapters per `docs/research/gemini-copilot-matrix.md` §7.
 > - Standing: subagent reports may arrive only as idle notifications —
 >   recover them from the session's `subagents/*.jsonl` (user CLAUDE.md).
 >   Engine/render changes get adversarial review before merge. Commits
@@ -74,49 +63,13 @@ trees, the intent-vs-cache provenance split, centralized source
 containment, coalesced config edits, the immutable source store, the
 capability-model extension, and the Critical-blocks-independently gate.
 
-Live bugs the research surfaced — all fixed in Phase 1, first:
+## Decision table 1 — render & adapter mechanisms (landed in Phase 1)
 
-1. **Privilege escalation on import** — `parse_source_agent`
-   (`render/agent/mod.rs:83`) silently drops `tools:`, and a missing
-   `role:` defaults to Engineer, which `render/agent/codex.rs:45` renders
-   as `sandbox_mode = "danger-full-access"`. A read-only reviewer from any
-   foreign catalog becomes a full-access agent. The v1 importer has the
-   same hole: `import_v1/mod.rs:156` *deliberately drops* legacy `tools:`
-   allowlists, so a restricted v1 agent migrates unrestricted.
-2. **`model: inherit` breaks OpenCode** — `model_id_for("openai",
-   "inherit")` emits `"openai/inherit"`, an invalid model id, and
-   `inherit` is exactly what portable catalogs use.
-3. **Foreign catalogs can escape their source tree** — catalog reads
-   follow symlinks (`render/skill.rs` `collect` via `is_dir`/`fs::read`,
-   `source.rs:191` `find_item` via `is_file`), so a hostile catalog can
-   pull host files into generated artifacts or recurse forever.
-4. **Two structured edits to one config file cannot both apply** — each
-   registration plans an `EditFile` against the same original hash
-   (`engine/item_plan.rs:335`); the second precondition fails and the
-   transaction rolls back. Installing two MCP servers into one
-   `settings.json` in one apply is impossible today — bundles would make
-   this the common case.
-
-## Decision table 1 — render & adapter mechanisms (directive 1)
-
-Verdicts against wshobson/agents @ `c4b82b0`; evidence and file refs in
-`docs/research/wshobson-agents.md` §2.
-
-| Mechanism | Verdict | Rationale |
-|---|---|---|
-| Capability matrix drives every adapter | **hybrid** | Keep our op table and its honesty tests (they have none); add a sibling *format* table (byte caps, tool-name case, model dialect, MCP transport) so caps own format facts, not renderer literals. Phase 2 extends the model further — see "capability model v2". |
-| Tool-vocabulary remapping | **hybrid** | Adopt the identifier swap for structured fields *and* their conservative prose rewrite (shared pattern between rewriter and lint, rewrite visible in plan preview; code fences, inline literals, links, and generated path references are never rewritten) — deep idiomatic output is binding. Our tables come from official docs (6 of 8 of their Gemini mappings are wrong). Custom/MCP/unknown identifiers pass through with a warning; entries are never dropped from deny-lists (dropping widens access). |
-| Model-alias mapping across vendors | **adopt** | One table keyed `(harness, alias)`, tier-preserving (incl. a `fable` tier), warning on unknown alias; only bare aliases map — explicit vendor ids pass through untouched. Replaces our two disagreeing ad-hoc functions and fixes bug 2. |
-| Body-size caps + overflow into `references/` | **adopt** | We have no cap at all — a 40 KB skill silently truncates on Codex today; their fence-aware split and UTF-8-safe cut port as written. Split invariants: the cap check runs *after* instruction injection and accounts for the pointer note it appends; injected project instructions are never moved into references (they must stay authoritative); a single fenced block larger than the cap is a finding, never a mid-fence cut; overflow filenames have collision rules. |
-| Commands → skills where no command surface exists | **hybrid** | Codex only, where the vendor itself deprecated prompts in favor of skills (native surface, not a shim); take the collision-suffix logic. The lock records the logical→emitted mapping (emitted kind, name, paths) so removal and refresh target what was actually written. OpenCode/Cursor stay observe-only per the "never shimmed" rule. |
-| Permission/allowlist synthesis from `tools:` | **hybrid** | Permission intent becomes a typed, lossless value — `Unspecified | AllowOnly(list) | DenyExtra(list)` — preserved from source to renderer. A deny-only surface cannot express `AllowOnly`; converting by complement widens access the moment the tool grows a new built-in, so an adapter that cannot express the intent renders the most restrictive expressible form or refuses with a finding — it never widens. Adopt their missing-vs-empty distinction, OpenCode permission-block synthesis, and Codex read-only sandbox inference — this fixes bug 1. |
-| Namespacing + per-harness name legality | **adopt** | Required the moment a 91-plugin catalog lands; names like `My_Skill` currently render to OpenCode and fail its loader with no warning from us. |
-| Per-harness frontmatter stripping | **keep** | Our renderers build frontmatter from scratch; nothing to strip. |
-| YAML scalar quoting discipline | **adopt** | ~20 lines; a description of `no` currently type-coerces in OpenCode output. |
-| Warnings channel with fix strings | **adopt** | Extend `DesiredState.notes` into per-item render warnings with remediation strings, surfaced in plan preview and CLI — the delivery vehicle for every other lint here. |
-| Orphan pruning | **keep** | Lock-provenance sweep survives a broken source; their set-difference prune doesn't. |
-| Context-file budget management | **keep out** | Context files aren't an ItemKind; see open question 2 before this changes. |
-| Large-body file injection | **keep** | We have the pattern (`skills_prose`); reuse Gemini's native `@{path}` syntax in the new adapter where it applies. |
+Every row landed with Phase 1 and its evidence moved to
+`docs/ARCHITECTURE.md` Decisions; the one remainder is
+`<plugin>/<leaf>` namespacing for marketplace-shaped catalogs, which
+lands with Phase 3 (per-harness name legality already enforces loader
+rules).
 
 ## Decision table 2 — quality gates & scoring (directive 7)
 
@@ -140,105 +93,6 @@ evidence in `docs/research/harnesskit.md`.
 | Score presentation | **adopt** (HarnessKit) | Safety and quality are two scores, never averaged; Audit rows gain a findings column, no new page. |
 
 ## Phases
-
-### Phase 1 — render pipeline v2 + engine foundations (directives 1 + 2)
-
-Implement every **adopt**/**hybrid** row of decision table 1, plus the
-foundations the external reviews showed are prerequisites:
-
-1. Fix the four bugs (regression tests first): a `tools:`-restricted,
-   role-less agent must not render `danger-full-access` — in the source
-   parser *and* in `import_v1` (v1 allowlists become `AllowOnly` intent,
-   never dropped); `inherit` must survive every harness; catalog reads
-   must be contained; shared-config edits must coalesce (items 3 and 6).
-2. Replace the hand-rolled frontmatter parser with real YAML parsing
-   into typed per-kind source models (dependency justified in the
-   commit): preserves missing-vs-empty (the permission model depends on
-   it), handles block scalars, arrays, nested maps; unknown keys warn
-   instead of vanishing. Parsing is *bounded* — alias/depth/size/node
-   limits, duplicate security-relevant keys rejected — foreign YAML is
-   adversarial input, not just untidy input.
-3. **One sealed source-read API.** Every catalog read — items, skill
-   trees, source config, registries, plugin manifests — goes through one
-   API that resolves against the canonical source root, refuses symlinks
-   in foreign sources (`symlink_metadata`, loud finding), and enforces
-   depth/count/byte budgets. Path-local `is_dir`/`is_file`/`fs::read`
-   over catalog paths becomes a guard-able pattern to ban.
-4. **The surface model + per-harness rendered trees.** Today
-   `skill_canonical` renders one shared tree for all harnesses
-   (`engine/desired.rs:97`) — per-tool output is impossible, and the
-   deeper truth is that *physical surfaces are shared*: Codex and Pi
-   both consume `.agents/skills` (`harness/codex.rs:50`,
-   `harness/pi.rs:51`), and Copilot reads `.claude/skills` besides its
-   own dirs. So the model is: rendered artifacts are per-harness,
-   deduplicated by content hash — but a physical surface consumed by
-   several harnesses (a *surface group*) carries exactly one variant,
-   rendered to the group's combined constraints (tightest byte cap,
-   intersection of format features). If group members' requirements are
-   genuinely incompatible, that install is a finding, not a silent
-   pick-one. Cross-reads outside the group (Copilot seeing a Claude
-   variant) are surfaced in Audit as duplicate effective definitions.
-   Generated paths move: journaled apply migrates installs (B9).
-5. **Coalesced config edits.** The plan composes all edits to one
-   config file into a single deterministic mutation with a single
-   precondition (a mutation graph keyed by canonical path) — two hooks,
-   three MCP servers, and a plugin toggle in one apply become one write
-   per file. Prerequisite for bundles and for Gemini/Copilot settings
-   management.
-6. Scope identity is canonicalized inside core before planning and
-   applying — the scope lock must not depend on callers normalizing
-   paths (`apply/mod.rs:14` hashes path text today).
-7. **Manifest/lock schema v2 lands here**, versioned load + a
-   transactional, journaled v0.1→v0.2 migration with fixtures — before
-   the first schema-dependent change ships, not after (Phases 2–5 extend
-   the schema; "loads with defaults" is not a migration story).
-8. The format capability table beside the op table in `caps.rs`; the
-   model-alias table (delete `model_id_for` and `codex_model`); the
-   render-warnings channel with remediation strings through plan preview
-   and CLI.
-9. Body-size cap + `references/` overflow (split invariants per decision
-   table); tool-name swap + prose rewrite; typed permission synthesis;
-   commands→skills on Codex with lock-recorded emitted mapping; name
-   legality; YAML quoting.
-10. Per-adapter structural validators — they co-land here because they
-    assert exactly what the renderers emit; the rules engine itself
-    waits for Phase 5.
-11. **One hardened process constructor** (invariant 13). Every external
-    invocation is built by it: redirect vars cleared, prompt paths
-    closed, timeout set; `Command::new` outside it is guard-banned.
-    Prerequisite for Phase 3's source store — v1 has 27 unguarded
-    `Command::new("git")` sites and three `git reset --hard`, so a
-    cache repo whose `.git/config` sets `core.worktree` elsewhere (or
-    an inherited `GIT_WORK_TREE`) resets files outside the cache.
-12. **Byte-faithful writes + validate-before-mutate** (invariants 10
-    and 11). A round-trip test per writer proves the intended edit is
-    the only byte difference; a rejection test proves manifest, lock,
-    and install tree are byte-identical after a refused operation. No
-    "compare ignoring trailing newline" helper is written: v1 needs
-    `project_config.rs::same_ignoring_trailing_newline` only because two
-    of its section writers drop the trailing newline that twelve
-    siblings restore, and that comparison then pins the malformed output
-    as unchanged forever.
-13. **Verification compares content** (invariant 12): drift rows re-hash
-    installed artifacts, and an artifact that cannot be compared is
-    reported uncompared. v1's `verify` checks path existence for skills
-    and agents and counts an uncomparable install as OK
-    (`commands/verify.rs::verify_entry`), so a Codex agent widened to
-    `danger-full-access` after install still reports `install:✓`.
-
-**Done when:** decision-table rows checked off with a failing-first test
-each; an oversized skill produces a split, not a truncation; a foreign
-catalog agent imports with its restrictions intact (source parse and v1
-import both) and an inexpressible restriction refuses rather than
-widens; a symlinked catalog cannot read outside its root through *any*
-read path; a git operation cannot escape its cache directory through
-`core.worktree` or an inherited `GIT_WORK_TREE`, and cannot block on a
-credential prompt; every config writer round-trips byte-identically and
-a refused operation mutates nothing; a tampered install fails
-verification; a Codex+Pi project install shares one `.agents/skills`
-variant rendered to group constraints; two MCP servers install into one
-settings file in one apply; v0.1 fixtures migrate; render warnings show
-in plan preview; suite green.
 
 ### Phase 2 — Gemini CLI + GitHub Copilot (directive 3)
 
