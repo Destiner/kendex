@@ -2,27 +2,62 @@
 
 > **Cycle progress** (updated every commit; deleted sections = landed):
 >
-> - Phase 0 ✅ (commit 221f950) — changelog, app-deploy skill, commit-msg
->   changelog rule.
-> - Phase 1 ⏳ in flight. Landed: bug 1 (typed `PermissionIntent` through
->   all five renderers, optional role, Codex sandbox inference, Claude
->   native allowlist, OpenCode permission synthesis incl. MCP-only lists,
->   Pi refusal → conflict + removal), bounded tolerant YAML frontmatter
->   parser, YAML/TOML output quoting (injection-proof), `allow-tools`
->   override, v1 import keeps legacy `tools` incl. harness-agnostic
->   tables; adversarially reviewed (14 findings fixed). Bug 2 fixed: one
->   model-alias table (`harness/models.rs`) wired through all renderers;
->   `model_id_for`/`codex_model` deleted. Bug 3 fixed: sealed source reads
->   (`source_read::SealedSource`) through source/find/list/render/hash/
->   pi_ext paths, guard-banned raw reads, hostile-catalog e2e test. Bug 4
->   fixed: config edits coalesce per file (`ConfigEditPlan`), installs and
->   removals in one mutation with one precondition. Scope identity
->   canonicalized in core (1247ac3). Schema v2 + journaled surgical
->   v0.1→v0.2 migration with fixtures + too-new refusal. Next in sequence:
->   scope canonicalization, schema v2 + migration, format caps + warnings
->   channel, body-split + tool swap + commands→skills + name legality,
->   validators, hardened process constructor, byte-faithful writes,
->   content verification.
+> - Phase 0 ✅ (221f950) — changelog, app-deploy skill, commit-msg rule.
+> - Phase 1 ⏳ ~65%, every commit suite-green. Landed: typed
+>   `PermissionIntent` through all five renderers (bug 1: optional role,
+>   Codex sandbox inference, Claude native allowlist, OpenCode permission
+>   synthesis, Pi refusal → conflict row + removal of the wide artifact),
+>   bounded tolerant YAML frontmatter parser + injection-proof output
+>   quoting, `allow-tools` override, v1 import keeps `tools` incl.
+>   harness-agnostic tables; one model-alias table (bug 2); sealed
+>   catalog reads + guard ban + hostile-catalog e2e (bug 3); per-file
+>   coalesced config edits (bug 4); scope canonicalization; schema v2 +
+>   surgical journaled v0.1→v0.2 migration; typed warnings channel with
+>   remediation (CLI + Sync page); surface groups with hash-dedup
+>   (codex+pi share `.agents/skills`); two adversarial review rounds
+>   folded in (14 + 3 blocking findings fixed).
+> - **Next session, in order:**
+>   1. Wire `render/split.rs` (done, 15 tests, registered, unconsumed)
+>      into `engine/desired_skill.rs`: per-group cap =
+>      `min(format_caps(member).skill_body_max_bytes)`; on Some(cap) run
+>      `enforce_body_cap` after instruction injection; refusal →
+>      `state.refused` (same path as the Pi allowlist refusal); warnings
+>      → `state.warnings`; test: oversized skill splits for the codex+pi
+>      group while the claude variant stays whole and diverges onto its
+>      own tree (extend `tests/surfaces.rs`).
+>   2. Remaining adversarial-review findings (non-blocking): update-pi
+>      listing aborts on one bad package (`pi_ext/files.rs` package_hash
+>      error should become a per-package row, not `?`); `is_file`
+>      swallows containment errors so a symlinked entry point reads as
+>      "not found" (find_item / source_config on a symlinked
+>      vstack.toml) — misattributed message; `list_dir` allocates before
+>      bounding; extend the guard catalog-read ban to `engine/ops.rs`,
+>      `app/editor.rs`, `pi_ext/files.rs`; coalesced plan rows lost the
+>      harness name in copy; drop the `(v1 pi.rs:96-148)` comment
+>      pointer in render/agent/pi.rs; `kinds.rs` coalesce test comment
+>      mentions a hook but removes two MCP servers.
+>   3. Rest of item 9: tool-name swap + conservative prose rewrite
+>      (shared table; never in fences/inline literals/links; deny-list
+>      entries never dropped), commands→skills on Codex with the
+>      emitted mapping recorded in the lock (+ `__command`/`__cmd`
+>      collision suffixes), per-harness name legality checks (OpenCode
+>      lower-kebab ≤64).
+>   4. Item 10: per-adapter structural validators run inside plan
+>      preview (modeled on wshobson validate_generated.py — see research
+>      §4 table for per-harness checks).
+>   5. Item 11: hardened process constructor (env cleared:
+>      GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE, GIT_TERMINAL_PROMPT=0, SSH
+>      BatchMode, timeouts); convert remote.rs; guard-ban raw
+>      `Command::new`.
+>   6. Items 12–13: byte-faithful round-trip + rejection tests per
+>      writer; verification re-hashes installed content and reports
+>      uncomparable artifacts as uncompared.
+>   7. Adversarial review of the unreviewed batch (schema v2, warnings
+>      channel, surface groups, splitter wiring) before Phase 1 closes.
+> - Standing: subagent reports may arrive only as idle notifications —
+>   recover them from the session's `subagents/*.jsonl` (user CLAUDE.md).
+>   Engine/render changes get adversarial review before merge. Commits
+>   to `crates/`/`ui/` need a CHANGELOG entry (hook enforces).
 
 This file is consumed: delete items as they land, delete the file when the
 cycle ends (with the `docs/research/` reports and the ARCHITECTURE.md
