@@ -79,6 +79,9 @@ pub fn plan_scope(
     lock: &Lock,
     options: &PlanOptions,
 ) -> Result<EngineReport> {
+    // Identity first: every derived path and the eventual scope lock key
+    // off the canonical root, whatever spelling the caller passed.
+    let scope = &scope.canonical();
     let state = desired_state(env, scope, manifest, lock)?;
     let mut drift = Vec::new();
     let mut ops: Vec<PlannedOp> = Vec::new();
@@ -349,6 +352,7 @@ fn orphans(
 /// Read-only audit for a scope. A legacy or absent manifest still reports
 /// unmanaged items; nothing is planned that would touch a legacy file.
 pub fn audit(env: &Env, scope: &Scope) -> Result<EngineReport> {
+    let scope = &scope.canonical();
     let manifest_file = manifest::load(&manifest::manifest_path(env, scope))?;
     let lock = crate::lock::load(&lock_path(env, scope))?;
     match manifest_file {

@@ -10,9 +10,11 @@ mod op;
 
 pub use op::{Op, Plan, PlannedOp, Pre};
 
-/// Filesystem-safe key naming a scope's journal dir and lock file.
+/// Filesystem-safe key naming a scope's journal dir and lock file. Keys off
+/// the canonical scope so two spellings of one root can never hold two
+/// locks (invariant 8 depends on this, not on callers normalizing paths).
 pub fn scope_key(scope: &Scope) -> String {
-    match scope {
+    match scope.canonical() {
         Scope::Global => "global".to_owned(),
         Scope::Project { root } => {
             let text = root.display().to_string();
@@ -257,6 +259,26 @@ mod tests {
         let _guard = lock_scope(&env, &Scope::Global).unwrap();
         assert!(matches!(
             lock_scope(&env, &Scope::Global),
+            Err(CoreError::ScopeBusy { .. })
+        ));
+    }
+
+    /// Two spellings of one project root are one scope: the lock key comes
+    /// from the canonical root, never from the caller's path text.
+    #[test]
+    fn scope_identity_survives_path_spelling() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env = env_in(tmp.path());
+        let root = tmp.path().join("proj");
+        fs::create_dir_all(root.join("sub")).unwrap();
+        let plain = Scope::Project { root: root.clone() };
+        let dotted = Scope::Project {
+            root: root.join("sub").join(".."),
+        };
+        assert_eq!(scope_key(&plain), scope_key(&dotted));
+        let _guard = lock_scope(&env, &plain).unwrap();
+        assert!(matches!(
+            lock_scope(&env, &dotted),
             Err(CoreError::ScopeBusy { .. })
         ));
     }

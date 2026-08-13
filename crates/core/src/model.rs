@@ -111,6 +111,19 @@ impl Scope {
             Scope::Project { root } => root.display().to_string(),
         }
     }
+
+    /// Scope identity must not depend on the caller's path spelling — the
+    /// scope lock and every derived path key off the canonical root. A root
+    /// that cannot canonicalize (vanished mid-operation) keeps its given
+    /// form; its operations then fail on their own terms.
+    pub fn canonical(&self) -> Scope {
+        match self {
+            Scope::Global => Scope::Global,
+            Scope::Project { root } => Scope::Project {
+                root: root.canonicalize().unwrap_or_else(|_| root.clone()),
+            },
+        }
+    }
 }
 
 /// How an observed item exists on disk. Kinds that live as entries inside a

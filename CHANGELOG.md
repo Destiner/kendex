@@ -28,6 +28,10 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Fixed
 
+- A project's identity no longer depends on how its path was spelled:
+  the writer lock and every derived path key off the canonical root, so
+  two differently-written paths to one project can never write
+  concurrently.
 - Two or more settings changes to the same configuration file now apply
   together in one write: installing two MCP servers (or a hook plus a
   server, or any mix of registrations and removals) into one settings
