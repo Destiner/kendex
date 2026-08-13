@@ -140,7 +140,7 @@ fn segment_findings(harness: HarnessId, name: &str) -> Vec<Finding> {
     )]
 }
 
-fn kebab_findings(harness: HarnessId, name: &str, max_len: usize) -> Vec<Finding> {
+fn kebab_findings(harness: HarnessId, name: &str, max_len: Option<usize>) -> Vec<Finding> {
     let tool = harness.display_name();
     let mut findings = Vec::new();
     if !is_lower_kebab(name) {
@@ -160,7 +160,7 @@ fn kebab_findings(harness: HarnessId, name: &str, max_len: usize) -> Vec<Finding
         ));
     }
     let length = name.chars().count();
-    if length > max_len {
+    if let Some(max_len) = max_len.filter(|max| length > *max) {
         findings.push(Finding::breakage(
             format!("`{name}` is {length} characters and {tool} stops at {max_len}"),
             format!("shorten the name to {max_len} characters or fewer"),

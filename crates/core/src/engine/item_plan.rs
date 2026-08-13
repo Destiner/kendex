@@ -114,6 +114,17 @@ pub(super) fn plan_item(
     Ok(())
 }
 
+/// A hook the tool only reads is named as such wherever the plan is shown.
+/// An op that reads like protection must not hide that this tool is free to
+/// ignore what it installs.
+fn advisory(item: &Desired) -> &'static str {
+    use crate::harness::Enforcement;
+    match crate::harness::capabilities(item.harness, item.kind).enforcement {
+        Enforcement::Advisory => " (advisory)",
+        Enforcement::Enforced | Enforcement::NotApplicable => "",
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum Planned {
     Clean,
@@ -170,10 +181,11 @@ fn plan_written_file(
             }
             ops.push(PlannedOp {
                 description: format!(
-                    "Update {} {} for {}",
+                    "Update {} {} for {}{}",
                     item.kind.name(),
                     item.name,
-                    item.harness.display_name()
+                    item.harness.display_name(),
+                    advisory(item)
                 ),
                 op: Op::WriteFile {
                     path: path.to_path_buf(),
@@ -225,10 +237,11 @@ fn plan_absent_file(
         });
         ops.push(PlannedOp {
             description: format!(
-                "Update {} {} for {}",
+                "Update {} {} for {}{}",
                 item.kind.name(),
                 item.name,
-                item.harness.display_name()
+                item.harness.display_name(),
+                advisory(item)
             ),
             op: Op::WriteFile {
                 path: path.to_path_buf(),
@@ -240,10 +253,11 @@ fn plan_absent_file(
     }
     ops.push(PlannedOp {
         description: format!(
-            "Install {} {} for {}",
+            "Install {} {} for {}{}",
             item.kind.name(),
             item.name,
-            item.harness.display_name()
+            item.harness.display_name(),
+            advisory(item)
         ),
         op: Op::WriteFile {
             path: path.to_path_buf(),

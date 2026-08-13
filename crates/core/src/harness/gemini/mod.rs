@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use super::{HarnessAdapter, ProjectMarker, Reader, Surface};
 use crate::env::Env;
-use crate::hook::HookSource;
+use crate::hook::{HookSource, Registration};
 use crate::model::{HarnessId, ItemKind};
 
 pub mod settings;
@@ -32,16 +32,15 @@ fn event(fleet: &str) -> Option<&'static str> {
     }
 }
 
-/// The same hook said in Gemini's words: its own event name, and the timeout
-/// in the milliseconds its loader reads rather than the seconds the source
-/// declares (hooks reference — `timeout` is milliseconds, default 60000).
-/// `None` when Gemini has no event that means what this one means.
-pub fn hook_for(hook: &HookSource) -> Option<HookSource> {
-    Some(HookSource {
-        event: event(&hook.event)?.to_owned(),
-        timeout: hook.timeout.map(|seconds| seconds.saturating_mul(1000)),
-        ..hook.clone()
-    })
+/// The same hook said in Gemini's words: its own event name, its matcher in
+/// its own tool names, and the timeout in the milliseconds its loader reads
+/// rather than the seconds the source declares (hooks reference — `timeout`
+/// is milliseconds, default 60000). `None` when Gemini has no event that
+/// means what this one means.
+pub fn hook_for(hook: &HookSource) -> Option<Registration> {
+    let mut registered = Registration::new(hook, HarnessId::Gemini, event(&hook.event)?);
+    registered.hook.timeout = hook.timeout.map(|seconds| seconds.saturating_mul(1000));
+    Some(registered)
 }
 
 /// Both scopes hold the same layout under their own root, which is why the

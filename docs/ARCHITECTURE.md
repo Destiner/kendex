@@ -4,9 +4,8 @@ Cross-platform desktop app (Rust + Tauri) managing AI coding-harness
 customizations — agents, skills, hooks, commands, MCP servers, plugins, Pi
 extensions — across global and per-project scopes. Claude Code first-class;
 codex, opencode, cursor, pi, gemini, and copilot behind the same adapter
-seam, copilot observed while its management lands. No server; a
-thin CLI mirrors every core operation so consuming-repo automation
-(refresh, report, …) keeps working.
+seam. No server; a thin CLI mirrors every core operation so consuming-repo
+automation (refresh, report, …) keeps working.
 
 ## The one idea
 
@@ -124,11 +123,16 @@ lives in one capability table read by core and UI.
   artifact is stored as and the lock records what was written: that is a
   native surface, not a shim.
 - **The table says what a verb means, not only whether it exists.**
-  Beside op × scope it carries the direction a toggle can move (a config
-  layer that merges as a union can disable a name but never enable one),
-  whether a hook the tool loads is executed or only read as prose, and the
-  MCP transports the tool speaks. `managed` never implied enforcement — a
-  safety hook rendered as advisory text must not read as protection.
+  Beside op × scope it carries whether a hook the tool loads is executed
+  or only read as prose, and the MCP transports the tool speaks.
+  `managed` never implied enforcement — a safety hook rendered as
+  advisory text must not read as protection, so an advisory install says
+  so in the plan preview, the report, and the tool's card. A column only
+  earns its place if a verb reads it: what a tool's own configuration
+  holds down elsewhere (Copilot's `disabledSkills`, which a repository
+  may add to but never take from) is reported per item where it is read,
+  because vstack's own switch is a rename it can undo either way and a
+  column saying otherwise would forbid a working enable.
 - **An adapter claims only its own namespace.** Tools reading each other's
   directories is now common (Copilot reads Claude Code's skills and
   settings). A file belongs to the tool whose namespace it sits in, and

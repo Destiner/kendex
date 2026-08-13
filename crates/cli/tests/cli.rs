@@ -97,3 +97,49 @@ fn project_registry_round_trips() {
     let list = vstack(home, home, &["project", "list"]);
     assert_eq!(String::from_utf8_lossy(&list.stdout).trim(), "");
 }
+
+/// A hook can be installed exactly as declared and still do nothing. The one
+/// command built for pipelines has to say so rather than tick it green.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn verify_names_an_installation_that_cannot_act() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let project = home.join("dev/app");
+    fs::create_dir_all(project.join(".github")).unwrap();
+    // Walking up from the cwd settles on a directory carrying a harness
+    // folder, which is what makes this a project the CLI will act on.
+    fs::create_dir_all(project.join(".claude")).unwrap();
+    fs::create_dir_all(home.join(".copilot")).unwrap();
+    fs::write(
+        home.join(".copilot/settings.json"),
+        "{\"disableAllHooks\": true}",
+    )
+    .unwrap();
+
+    let catalog = home.join("catalog");
+    fs::create_dir_all(catalog.join("hooks")).unwrap();
+    fs::write(
+        catalog.join("hooks/audit.sh"),
+        "#!/usr/bin/env bash\n# ---\n# name: audit\n# event: PreToolUse\n# matcher: Bash\n# description: log shell commands\n# ---\nexit 0\n",
+    )
+    .unwrap();
+    fs::write(
+        project.join("vstack.toml"),
+        format!(
+            "schema = 2\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"copilot\"]\nmethod = \"copy\"\n\n[hooks.audit]\nsource = \"cat\"\n",
+            catalog.display()
+        ),
+    )
+    .unwrap();
+
+    assert!(vstack(home, &project, &["apply", "-y"]).status.success());
+    let output = vstack(home, &project, &["verify"]);
+    assert!(output.status.success());
+    let printed = String::from_utf8_lossy(&output.stderr);
+    assert!(printed.contains("✓ hook audit [copilot]"), "{printed}");
+    assert!(
+        printed.contains("!") && printed.contains("stays inert"),
+        "{printed}"
+    );
+}

@@ -324,12 +324,6 @@ export type KindCaps = {
 	 */
 	installsAs: ItemKind | null,
 	/**
-	 *  Holds for every scope in `toggle`. Where one scope switches both ways
-	 *  and another only off, the row takes the narrower reading: offering an
-	 *  enable that silently does nothing is the failure this axis prevents.
-	 */
-	toggleDirection: ToggleDirection,
-	/**
 	 *  Only Hook rows carry anything but `NotApplicable` — the axis exists
 	 *  to separate a hook the tool runs from one it merely reads.
 	 */
@@ -476,13 +470,6 @@ export type SourceRow = {
 	head: string | null,
 	declaredItems: string[],
 };
-
-/**
- *  Which way a toggle can move an item. A harness whose lower-scope config
- *  merges as a union can add a name to a disabled-list but cannot take one
- *  off it, so the enable half of the switch does not exist there.
- */
-export type ToggleDirection = "both" | "disable-only";
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

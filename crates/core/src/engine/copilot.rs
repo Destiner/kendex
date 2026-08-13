@@ -38,13 +38,27 @@ pub(super) fn hook(
     hook: &HookSource,
     state: &mut DesiredState,
 ) -> Option<HookSource> {
-    let Some(translated) = crate::harness::copilot::hook_for(hook) else {
+    let Some(registered) = crate::harness::copilot::hook_for(hook) else {
         state.notes.push(format!(
             "hook {}: event {} has no Copilot counterpart, and hanging it on a near-miss would run it at the wrong moment",
             ctx.name, hook.event
         ));
         return None;
     };
+    if registered.matcher_as_authored {
+        state.warnings.push(warning(
+            ctx,
+            ItemKind::Hook,
+            format!(
+                "Copilot matches `{}` against its own tool names, and this matcher carries syntax vstack cannot restate in them — it installs as written and may never match",
+                hook.matcher.as_deref().unwrap_or_default()
+            ),
+            Some(
+                "write the matcher as plain tool names separated by `|`, or check it against Copilot's names (`bash`, `read`, `write`)"
+                    .to_owned(),
+            ),
+        ));
+    }
     if let Some(path) = settings::hooks_switched_off_by(ctx.env, ctx.scope) {
         state.warnings.push(warning(
             ctx,
@@ -59,7 +73,7 @@ pub(super) fn hook(
             ),
         ));
     }
-    Some(translated)
+    Some(registered.hook)
 }
 
 /// A skill or server this project declares on that Copilot's own settings
@@ -131,35 +145,6 @@ pub(super) fn server(value: &Value) -> Value {
         object.insert("type".to_owned(), Value::String("local".to_owned()));
     }
     entry
-}
-
-/// Copilot also reads the directories other tools own, so one file can be a
-/// definition two tools see. It is still one installation — counting it
-/// twice would offer a removal that takes another tool's copy away — and the
-/// note is how the duplicate reaches the user (matrix §R6).
-pub(super) fn skill_cross_read(ctx: &ItemCtx, state: &mut DesiredState) {
-    if !matches!(ctx.scope, Scope::Project { .. }) {
-        return;
-    }
-    let installed = crate::harness::adapter(HarnessId::Copilot);
-    if installed
-        .detect(ctx.env, &installed.default_global_root(ctx.env))
-        .is_none()
-    {
-        return;
-    }
-    // The reach is a fact about the directories, not about any one skill,
-    // so it is said once however many skills a scope installs.
-    let note = format!(
-        "skills: Copilot reads `.agents/skills` and `.claude/skills` as well as its own directory, so the skills installed here are already visible to it{} — one definition, counted once",
-        match ctx.harnesses.contains(&HarnessId::Copilot) {
-            true => ", a skill installed for Copilot twice over",
-            false => "",
-        }
-    );
-    if !state.notes.contains(&note) {
-        state.notes.push(note);
-    }
 }
 
 /// Why a plugin toggle cannot be written for this scope, or `None` when it

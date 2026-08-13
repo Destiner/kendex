@@ -9,13 +9,13 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use vstack_core::apply;
-use vstack_core::engine::{EngineReport, audit};
+use vstack_core::engine::{EngineReport, audit, ops};
 use vstack_core::env::{Env, FakeOs};
 use vstack_core::model::Scope;
 
 const AGENT: &str = "---\nname: rust\ndescription: Rust engineer\nmodel: opus\nrole: engineer\n---\nUse the Grep tool.\n";
 
-const AUDIT_HOOK: &str = "#!/usr/bin/env bash\n# ---\n# name: audit\n# event: PreToolUse\n# matcher: run_shell_command\n# description: log shell commands\n# timeout: 10\n# ---\nexit 0\n";
+const AUDIT_HOOK: &str = "#!/usr/bin/env bash\n# ---\n# name: audit\n# event: PreToolUse\n# matcher: Bash\n# description: log shell commands\n# timeout: 10\n# ---\nexit 0\n";
 
 /// Gemini has no event that means "the turn ended".
 const DONE_HOOK: &str = "#!/usr/bin/env bash\n# ---\n# name: done\n# event: TaskCompleted\n# description: check the work\n# ---\nexit 0\n";
@@ -38,11 +38,19 @@ fn fixture(declarations: &str) -> Fixture {
     let env = Env::fake(&home, FakeOs::Linux);
     let project = home.join("dev/app");
     fs::create_dir_all(project.join(".gemini")).unwrap();
+    // Gemini is installed on this machine, which is what makes it a reader
+    // of the directories other tools own.
+    fs::create_dir_all(home.join(".gemini")).unwrap();
 
     let source = home.join("catalog");
-    for dir in ["agents", "hooks", "mcp"] {
+    for dir in ["agents", "hooks", "mcp", "skills/deploy"] {
         fs::create_dir_all(source.join(dir)).unwrap();
     }
+    fs::write(
+        source.join("skills/deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Ship it\n---\n\nSteps.\n",
+    )
+    .unwrap();
     fs::write(source.join("agents/rust.md"), AGENT).unwrap();
     fs::write(source.join("hooks/audit.sh"), AUDIT_HOOK).unwrap();
     fs::write(source.join("hooks/done.sh"), DONE_HOOK).unwrap();
@@ -189,4 +197,82 @@ fn a_system_wide_override_is_named_rather_than_argued_with() {
     );
     // Said, not obeyed: the registration still lands where Gemini reads it.
     assert!(json(&settings(&f))["hooks"]["BeforeTool"][0]["matcher"] == "run_shell_command");
+}
+
+/// Whether a server is on is recorded once for the whole machine. A project
+/// declaring one holds the project lock and nothing else, so that record is
+/// read and reported — never rewritten from here.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_project_declaration_leaves_the_machine_wide_record_exactly_as_it_was() {
+    let f = fixture("[mcp-servers.gh]\nsource = \"cat\"\n");
+    let record = f.env.home.join(".gemini/mcp-server-enablement.json");
+    let held_off = "{\n  \"gh\": {\"enabled\": false}\n}\n";
+    fs::write(&record, held_off).unwrap();
+
+    let report = apply_now(&f);
+    assert_eq!(json(&settings(&f))["mcpServers"]["gh"]["command"], "gh-mcp");
+    assert_eq!(fs::read_to_string(&record).unwrap(), held_off);
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.message.contains("stays inert")),
+        "{:?}",
+        report.warnings
+    );
+
+    // Removing the declaration takes the project's entry out and still
+    // leaves the machine's own switch where the user set it.
+    let removal = ops::remove(&f.env, &f.scope, &["gh".to_owned()]).unwrap();
+    apply::execute(&f.env, &removal.plan, None).unwrap();
+    assert!(json(&settings(&f))["mcpServers"].get("gh").is_none());
+    assert_eq!(fs::read_to_string(&record).unwrap(), held_off);
+}
+
+/// Gemini's settings can gate which servers load at all, whatever a scope
+/// declares.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_server_gemini_gates_out_of_its_list_is_reported_inert() {
+    let f = fixture("[mcp-servers.gh]\nsource = \"cat\"\n");
+    fs::write(settings(&f), "{\"mcp\": {\"excluded\": [\"gh\"]}}").unwrap();
+
+    let report = apply_now(&f);
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.message.contains("gate which servers load")),
+        "{:?}",
+        report.warnings
+    );
+    assert_eq!(json(&settings(&f))["mcpServers"]["gh"]["command"], "gh-mcp");
+}
+
+/// One tree, two readers. Gemini sees a skill installed for Claude Code
+/// through `.agents/skills`, and saying so must never turn one installation
+/// into two.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_skill_installed_for_another_tool_is_noted_as_visible_to_gemini() {
+    let f = fixture("[skills.deploy]\nsource = \"cat\"\nharnesses = [\"claude\"]\n");
+    let report = apply_now(&f);
+    assert!(
+        report
+            .notes
+            .iter()
+            .any(|note| note.contains("Gemini CLI reads `.agents/skills`")
+                && note.contains("one definition, counted once")),
+        "{:?}",
+        report.notes
+    );
+    assert!(f.project.join(".agents/skills/deploy/SKILL.md").is_file());
+    assert!(!f.project.join(".gemini/skills").exists());
+    assert!(
+        !report
+            .drift
+            .iter()
+            .any(|row| row.harness == vstack_core::model::HarnessId::Gemini)
+    );
 }

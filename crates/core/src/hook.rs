@@ -47,6 +47,33 @@ impl HookSource {
     }
 }
 
+/// One hook as a harness registers it: the harness's own event name, and the
+/// matcher in the harness's own tool names.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Registration {
+    pub hook: HookSource,
+    /// The matcher carries regex syntax around a tool name, so it is
+    /// registered exactly as authored and may match nothing here.
+    pub matcher_as_authored: bool,
+}
+
+impl Registration {
+    pub fn new(source: &HookSource, harness: HarnessId, event: &str) -> Registration {
+        let said = source
+            .matcher
+            .as_deref()
+            .map(|matcher| crate::render::vocab::hook_matcher(matcher, harness));
+        Registration {
+            hook: HookSource {
+                event: event.to_owned(),
+                matcher: said.as_ref().map(|(pattern, _)| pattern.clone()),
+                ..source.clone()
+            },
+            matcher_as_authored: said.is_some_and(|(_, said)| !said),
+        }
+    }
+}
+
 pub fn parse_hook(text: &str) -> Result<HookSource, String> {
     let mut in_frontmatter = false;
     let mut seen_frontmatter = false;

@@ -214,6 +214,23 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
                 continue;
             };
             state.processed.insert((kind, name.clone()));
+            let harnesses = target_harnesses(decl, manifest, kind, scope);
+            // Every tool this is declared for is one that holds no such kind
+            // here. Nothing installs, and silence would read as success.
+            if harnesses.is_empty() {
+                let asked: Vec<&str> = decl
+                    .harnesses
+                    .as_ref()
+                    .unwrap_or(&manifest.install.harnesses)
+                    .iter()
+                    .map(|harness| harness.display_name())
+                    .collect();
+                state.notes.push(format!(
+                    "{} {name}: {} cannot hold one at this scope — nothing was installed",
+                    kind.name(),
+                    asked.join(", ")
+                ));
+            }
             let ctx = ItemCtx {
                 env,
                 scope,
@@ -225,7 +242,7 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
                 decl,
                 item_path: &item_path,
                 provenance: &provenance,
-                harnesses: target_harnesses(decl, manifest, kind, scope),
+                harnesses,
             };
             let outcome = match kind {
                 ItemKind::Skill => desired_skill(&ctx, &mut state),
@@ -237,7 +254,7 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
                 ),
                 ItemKind::Hook => desired_kinds::desired_hook(&ctx, &mut state),
                 ItemKind::Command => super::desired_command::desired_command(&ctx, &mut state),
-                ItemKind::McpServer => desired_kinds::desired_mcp(&ctx, &mut state),
+                ItemKind::McpServer => super::desired_mcp::desired_mcp(&ctx, &mut state),
                 _ => Ok(()),
             };
             match outcome {
@@ -320,38 +337,6 @@ pub(super) struct ItemCtx<'a> {
     pub(super) item_path: &'a std::path::Path,
     pub(super) provenance: &'a str,
     pub(super) harnesses: Vec<HarnessId>,
-}
-
-/// Every path a declaration's artifacts occupy, derived from the
-/// declaration alone. A source that cannot be read this pass still leaves
-/// its installed artifacts on disk — they are ours, and calling them
-/// someone else's would invite the user to adopt our own output.
-pub(super) fn declared_paths(
-    env: &Env,
-    scope: &Scope,
-    manifest: &Manifest,
-    kind: ItemKind,
-    name: &str,
-    decl: &ItemDecl,
-) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    if kind == ItemKind::Skill {
-        paths.push(skill_canonical(env, scope, name));
-    }
-    for harness in target_harnesses(decl, manifest, kind, scope) {
-        let Some(native) = native_dir(env, scope, harness, kind) else {
-            continue;
-        };
-        match kind {
-            ItemKind::Agent => {
-                let base = crate::render::agent::file_name(harness, name);
-                paths.push(native.join(format!("{base}.disabled")));
-                paths.push(native.join(base));
-            }
-            _ => paths.push(native.join(name)),
-        }
-    }
-    paths
 }
 
 /// Every path an artifact occupies. Cursor keeps hook rules in the same dir

@@ -73,6 +73,20 @@ pub fn run(
                     entry.harness.name()
                 )),
             }
+            // An installation can match its declaration exactly and still do
+            // nothing — switched off machine-wide, outranked by a system
+            // file, or advisory on this tool. That is not drift, so it does
+            // not fail the run, but a pipeline must not read a clean tick
+            // where the thing installed cannot act.
+            for warning in report.warnings.iter().filter(|warning| {
+                warning.kind == entry.kind
+                    && warning.name == entry.name
+                    && warning
+                        .harness
+                        .is_none_or(|harness| harness == entry.harness)
+            }) {
+                say(&format!("  ! {}", warning.message));
+            }
         }
     }
 

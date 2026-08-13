@@ -18,6 +18,7 @@ pub mod desired;
 mod desired_agent;
 mod desired_command;
 mod desired_kinds;
+mod desired_mcp;
 mod desired_skill;
 mod gemini;
 mod item_plan;

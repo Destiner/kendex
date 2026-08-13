@@ -11,7 +11,8 @@ use super::ItemWarning;
 use super::desired::{DesiredState, ItemCtx};
 use crate::configedit::ConfigEdit;
 use crate::harness::gemini::settings::{
-    Settings, mcp_enablement_file, read, settings_file, system_defines, system_settings_file,
+    Settings, mcp_enablement_file, mcp_gated_out, mcp_switched_off, read, settings_file,
+    system_defines, system_settings_file,
 };
 use crate::hook::HookSource;
 use crate::model::{HarnessId, ItemKind, Scope};
@@ -79,17 +80,71 @@ pub(super) fn hook(
         ));
         return None;
     }
-    let Some(translated) = crate::harness::gemini::hook_for(hook) else {
+    let Some(registered) = crate::harness::gemini::hook_for(hook) else {
         state.notes.push(format!(
             "hook {}: event {} has no Gemini counterpart, and hanging it on a near-miss would run it at the wrong moment",
             ctx.name, hook.event
         ));
         return None;
     };
+    if registered.matcher_as_authored {
+        state.warnings.push(ItemWarning {
+            kind: ItemKind::Hook,
+            name: ctx.name.to_owned(),
+            harness: Some(HarnessId::Gemini),
+            message: format!(
+                "Gemini matches `{}` against its own tool names, and this matcher carries syntax vstack cannot restate in them — it installs as written and may never match",
+                hook.matcher.as_deref().unwrap_or_default()
+            ),
+            remediation: Some(
+                "write the matcher as plain tool names separated by `|`, or check it against Gemini's names (`run_shell_command`, `read_file`, `write_file`)"
+                    .to_owned(),
+            ),
+        });
+    }
     state
         .warnings
         .extend(overridden(ctx, ItemKind::Hook, "hooks"));
-    Some(translated)
+    Some(registered.hook)
+}
+
+/// A server this project declares that the machine-wide record has switched
+/// off. The record is one file for every scope, so a project cannot turn it
+/// back on — it says so instead of writing there (matrix §1).
+fn switched_off_machine_wide(ctx: &ItemCtx) -> Option<ItemWarning> {
+    (ctx.decl.enabled && mcp_switched_off(ctx.env, ctx.name)).then(|| ItemWarning {
+        kind: ItemKind::McpServer,
+        name: ctx.name.to_owned(),
+        harness: Some(HarnessId::Gemini),
+        message: format!(
+            "Gemini records whether a server is on in one file for the whole machine, and {} is switched off there — as configured, it is declared for this project but stays inert",
+            ctx.name
+        ),
+        remediation: Some(format!(
+            "switch it back on for the whole machine, in {}",
+            mcp_enablement_file(ctx.env).display()
+        )),
+    })
+}
+
+/// A server Gemini's own settings keep out of the list it loads, whatever
+/// this scope declares (matrix §1).
+fn gated_out(ctx: &ItemCtx) -> Option<ItemWarning> {
+    let path = mcp_gated_out(ctx.env, ctx.scope, ctx.name)?;
+    Some(ItemWarning {
+        kind: ItemKind::McpServer,
+        name: ctx.name.to_owned(),
+        harness: Some(HarnessId::Gemini),
+        message: format!(
+            "Gemini's settings in {} gate which servers load, and {} is not among them — as configured, it installs but stays inert",
+            path.display(),
+            ctx.name
+        ),
+        remediation: Some(format!(
+            "take it out of `mcp.excluded`, or add it to `mcp.allowed`, in {}",
+            path.display()
+        )),
+    })
 }
 
 /// The server entry as Gemini keys it: a streamable-HTTP endpoint is
@@ -137,7 +192,6 @@ pub(super) fn mcp_edits(
         ));
         return None;
     }
-    let enablement = mcp_enablement_file(ctx.env);
     let mut edits = vec![(
         settings_file(ctx.env, ctx.scope),
         ConfigEdit::UpsertMcpServer {
@@ -145,22 +199,29 @@ pub(super) fn mcp_edits(
             value: server(value),
         },
     )];
-    // Switching one off keeps the declaration and records the state; turning
-    // one back on drops our record so Gemini's own default applies again —
-    // and only when there is already a file holding it.
-    match (ctx.decl.enabled, enablement.exists()) {
-        (true, false) => {}
-        (enabled, _) => edits.push((
-            enablement,
-            ConfigEdit::SetGeminiMcpEnabled {
-                name: ctx.name.to_owned(),
-                enabled: match enabled {
-                    true => None,
-                    false => Some(false),
-                },
-            },
-        )),
+    // The record of whether a server is on is one file for the whole
+    // machine, so only a global-scope declaration writes it. A project holds
+    // the project lock and nothing else: editing that file from here would
+    // overwrite a choice the user made for every scope at once.
+    match ctx.scope {
+        // Switching one off keeps the declaration and records the state;
+        // turning one back on drops our record so Gemini's own default
+        // applies again — and only when there is already a file holding it.
+        Scope::Global => {
+            let enablement = mcp_enablement_file(ctx.env);
+            if !ctx.decl.enabled || enablement.exists() {
+                edits.push((
+                    enablement,
+                    ConfigEdit::SetGeminiMcpEnabled {
+                        name: ctx.name.to_owned(),
+                        enabled: (!ctx.decl.enabled).then_some(false),
+                    },
+                ));
+            }
+        }
+        Scope::Project { .. } => state.warnings.extend(switched_off_machine_wide(ctx)),
     }
+    state.warnings.extend(gated_out(ctx));
     state
         .warnings
         .extend(overridden(ctx, ItemKind::McpServer, "mcpServers"));

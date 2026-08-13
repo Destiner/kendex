@@ -201,3 +201,42 @@ fn rewriting_rewritten_text_changes_nothing() {
         assert_eq!(rewrite(&once, harness), once, "{harness:?} is not stable");
     }
 }
+
+/// Hook matchers are regexes over each tool's own names. Every alternative
+/// vstack can restate it restates; a token carrying regex syntax around a
+/// name stays exactly as authored and is reported as such.
+#[test]
+fn a_hook_matcher_is_restated_alternative_by_alternative() {
+    assert_eq!(
+        hook_matcher("Bash", HarnessId::Gemini),
+        ("run_shell_command".to_owned(), true)
+    );
+    assert_eq!(
+        hook_matcher("Bash", HarnessId::Copilot),
+        ("bash".to_owned(), true)
+    );
+    assert_eq!(
+        hook_matcher("Bash|Write", HarnessId::Gemini),
+        ("run_shell_command|write_file".to_owned(), true)
+    );
+    // A name neither tool documents narrows nothing and is left alone.
+    assert_eq!(
+        hook_matcher("mcp__gh", HarnessId::Copilot),
+        ("mcp__gh".to_owned(), true)
+    );
+    // Pure syntax names no tool, so there is nothing to restate.
+    assert_eq!(
+        hook_matcher(".*", HarnessId::Gemini),
+        (".*".to_owned(), true)
+    );
+    // Syntax around a name: kept as authored, and said out loud.
+    assert_eq!(
+        hook_matcher("Bash.*", HarnessId::Gemini),
+        ("Bash.*".to_owned(), false)
+    );
+    // Claude's own names are what a matcher is authored in.
+    assert_eq!(
+        hook_matcher("Bash", HarnessId::Claude),
+        ("Bash".to_owned(), true)
+    );
+}

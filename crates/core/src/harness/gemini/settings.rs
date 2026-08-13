@@ -86,6 +86,47 @@ pub fn mcp_enablement_file(env: &Env) -> PathBuf {
         .join("mcp-server-enablement.json")
 }
 
+/// Whether the machine-wide record has this server switched off. Nothing
+/// said about a server is Gemini's own default, which is on (matrix §1).
+pub fn mcp_switched_off(env: &Env, name: &str) -> bool {
+    json(&mcp_enablement_file(env))
+        .as_ref()
+        .and_then(|state| state.get(name))
+        .and_then(|server| server.get("enabled"))
+        .and_then(serde_json::Value::as_bool)
+        .is_some_and(|enabled| !enabled)
+}
+
+/// The settings file that keeps this server out of the list Gemini loads,
+/// if one does: `mcp.excluded` names it, or `mcp.allowed` exists and does
+/// not. A project reads its own file and the user's, so both are asked
+/// (matrix §1).
+pub fn mcp_gated_out(env: &Env, scope: &Scope, name: &str) -> Option<PathBuf> {
+    let mut files = vec![settings_file(env, scope)];
+    let global = settings_file(env, &Scope::Global);
+    if !files.contains(&global) {
+        files.push(global);
+    }
+    files.into_iter().find(|path| {
+        let Some(mcp) = json(path).and_then(|value| value.get("mcp").cloned()) else {
+            return false;
+        };
+        let names = |key: &str| -> Option<Vec<String>> {
+            let list = mcp.get(key)?.as_array()?;
+            Some(
+                list.iter()
+                    .filter_map(|n| n.as_str())
+                    .map(str::to_owned)
+                    .collect(),
+            )
+        };
+        let excluded = names("excluded").is_some_and(|list| list.iter().any(|n| n == name));
+        let unlisted = names("allowed")
+            .is_some_and(|list| !list.is_empty() && !list.iter().any(|n| n == name));
+        excluded || unlisted
+    })
+}
+
 /// The system settings layer, which outranks project scope on a managed
 /// machine (matrix §R2). `GEMINI_CLI_SYSTEM_SETTINGS_PATH` relocates it.
 pub fn system_settings_file(env: &Env) -> PathBuf {

@@ -98,8 +98,12 @@ fn installed(env: &Env, scope: &Scope, entry: &LockEntry) -> Owned {
                 ));
             }
             // Gemini's record of whether a server is on lives in a file of
-            // its own and would outlive the declaration it describes.
-            if entry.harness == crate::model::HarnessId::Gemini {
+            // its own and would outlive the declaration it describes. That
+            // file is one for the whole machine, so only a global-scope
+            // removal takes an entry out of it: a project holds the project
+            // lock, and clearing the record there would switch a server on
+            // everywhere for a removal that was never meant to leave.
+            if entry.harness == crate::model::HarnessId::Gemini && matches!(scope, Scope::Global) {
                 edits.push((
                     crate::harness::gemini::settings::mcp_enablement_file(env),
                     ConfigEdit::SetGeminiMcpEnabled {

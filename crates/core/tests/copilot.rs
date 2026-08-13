@@ -15,7 +15,7 @@ use vstack_core::model::Scope;
 
 const AGENT: &str = "---\nname: rust\ndescription: Rust engineer\nmodel: opus\nrole: engineer\n---\nUse the Grep tool.\n";
 
-const AUDIT_HOOK: &str = "#!/usr/bin/env bash\n# ---\n# name: audit\n# event: PreToolUse\n# matcher: shell\n# description: log shell commands\n# timeout: 10\n# ---\nexit 0\n";
+const AUDIT_HOOK: &str = "#!/usr/bin/env bash\n# ---\n# name: audit\n# event: PreToolUse\n# matcher: Bash\n# description: log shell commands\n# timeout: 10\n# ---\nexit 0\n";
 
 const GH_MCP: &str = "command = \"gh-mcp\"\nargs = [\"--stdio\"]\n";
 
@@ -171,7 +171,9 @@ fn a_hook_registers_in_a_hook_file_of_its_own() {
         entry["bash"],
         "bash \"$(git rev-parse --show-toplevel)/.github/hooks/audit.sh\""
     );
-    assert_eq!(entry["matcher"], "shell");
+    // The same `Bash` the source declares, said in Copilot's tool names —
+    // a case-sensitive regex of Claude's spelling would match nothing.
+    assert_eq!(entry["matcher"], "bash");
     // Copilot reads this one in seconds, which is what the source declares.
     assert_eq!(entry["timeoutSec"], 10);
     assert!(is_clean(&f));
@@ -210,7 +212,7 @@ fn a_registered_hook_is_read_back_from_copilots_own_directory() {
         .filter(|item| item.harness == vstack_core::model::HarnessId::Copilot)
         .map(|item| (item.name.as_str(), item.enabled))
         .collect();
-    assert_eq!(hooks, [("preToolUse:shell:audit", Some(true))]);
+    assert_eq!(hooks, [("preToolUse:bash:audit", Some(true))]);
 }
 
 #[test]

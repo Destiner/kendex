@@ -1,8 +1,19 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { AuditView, ScanResult, SourceRow } from "@/bindings";
+import type {
+  AuditView,
+  HarnessId,
+  ItemKind,
+  ScanResult,
+  SourceRow,
+} from "@/bindings";
 import bindingsSource from "../bindings.ts?raw";
+import { capabilityTable } from "./caps";
 import { ACME } from "./fixtures";
 import { handlers, mockInvoke, resetMock } from "./mock";
+
+const BOTH = { project: true, global: true };
+const GLOBAL = { project: false, global: true };
+const NEITHER = { project: false, global: false };
 
 const acme = { scope: "project", root: ACME } as const;
 
@@ -80,5 +91,35 @@ describe("mock bridge", () => {
       (r) => r.scope.scope === "global" && r.name === "vstack",
     );
     expect(row?.enabled).toBe(false);
+  });
+});
+
+// The browser mock hand-mirrors crates/core/src/harness/caps.rs. Where it
+// drifts, dev mode shows a tool as unmanageable that the app manages.
+describe("mock capability table", () => {
+  const caps = (harness: HarnessId, kind: ItemKind) =>
+    capabilityTable().find((r) => r.harness === harness && r.kind === kind)
+      ?.caps;
+
+  it("says Gemini and Copilot are managed where the real table does", () => {
+    for (const kind of ["agent", "skill", "command", "hook", "mcp-server"]) {
+      expect(caps("gemini", kind as ItemKind)?.install).toEqual(BOTH);
+    }
+    // Whether a Gemini server is on is recorded once for the whole machine.
+    expect(caps("gemini", "mcp-server")?.toggle).toEqual(GLOBAL);
+    expect(caps("gemini", "hook")?.enforcement).toBe("enforced");
+    // Extensions install in one place through a rules file nobody documents.
+    expect(caps("gemini", "plugin")?.install).toEqual(NEITHER);
+
+    for (const kind of ["agent", "skill", "hook", "mcp-server"]) {
+      expect(caps("copilot", kind as ItemKind)?.install).toEqual(BOTH);
+      expect(caps("copilot", kind as ItemKind)?.toggle).toEqual(BOTH);
+    }
+    expect(caps("copilot", "hook")?.enforcement).toBe("enforced");
+    // Copilot has no file-backed slash commands at all, and installing a
+    // plugin needs a marketplace vstack cannot resolve yet.
+    expect(caps("copilot", "command")?.observe).toEqual(NEITHER);
+    expect(caps("copilot", "plugin")?.install).toEqual(NEITHER);
+    expect(caps("copilot", "plugin")?.toggle).toEqual(BOTH);
   });
 });

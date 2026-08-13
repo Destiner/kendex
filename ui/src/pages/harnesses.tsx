@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { HarnessId, ItemKind } from "@/bindings";
+import type { Enforcement, HarnessId, ItemKind } from "@/bindings";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,10 +21,23 @@ const ALL_HARNESSES: HarnessId[] = [
   "copilot",
 ];
 
+// What a safety hook installed here actually does. A tool that only reads
+// the file must never look like one that acts on it.
+function hookLine(name: string, enforcement: Enforcement): string {
+  switch (enforcement) {
+    case "enforced":
+      return `${name} runs safety hooks and honors what they answer.`;
+    case "advisory":
+      return `${name} has no hooks of its own: a safety hook installs here as text the model can ignore.`;
+    case "not-applicable":
+      return `${name} has no place for safety hooks.`;
+  }
+}
+
 export function HarnessesPage() {
   const result = useScanStore((s) => s.result);
   const refreshScan = useScanStore((s) => s.refresh);
-  const { settings, setHarnessRoot } = useSettingsStore();
+  const { settings, capabilities, setHarnessRoot } = useSettingsStore();
 
   const anyDetected = ALL_HARNESSES.some((id) =>
     result?.harnesses.some((h) => h.harness === id),
@@ -58,6 +71,9 @@ export function HarnessesPage() {
             const items = result?.items.filter((i) => i.harness === id) ?? [];
             const counts = countByKind(items);
             const override = settings?.["harness-roots"]?.[id] ?? "";
+            const hooks = capabilities.find(
+              (row) => row.harness === id && row.kind === "hook",
+            );
             return (
               <HarnessCard
                 key={id}
@@ -65,6 +81,7 @@ export function HarnessesPage() {
                 detectedRoot={detected?.root ?? null}
                 version={detected?.version ?? null}
                 counts={[...counts.entries()]}
+                hooks={hooks?.caps.enforcement ?? "not-applicable"}
                 override={override}
                 onOverride={(root) => void setHarnessRoot(id, root)}
               />
@@ -81,6 +98,7 @@ function HarnessCard({
   detectedRoot,
   version,
   counts,
+  hooks,
   override,
   onOverride,
 }: {
@@ -88,6 +106,7 @@ function HarnessCard({
   detectedRoot: string | null;
   version: string | null;
   counts: [ItemKind, number][];
+  hooks: Enforcement;
   override: string;
   onOverride: (root: string) => void;
 }) {
@@ -115,6 +134,7 @@ function HarnessCard({
         ) : null}
       </CardHeader>
       <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">{hookLine(name, hooks)}</p>
         <div className="flex flex-wrap gap-1.5">
           {counts.length === 0 ? (
             <span className="text-sm text-muted-foreground">

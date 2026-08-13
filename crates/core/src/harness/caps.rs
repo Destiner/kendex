@@ -27,16 +27,6 @@ pub const NONE: OpSupport = OpSupport {
     global: false,
 };
 
-/// Which way a toggle can move an item. A harness whose lower-scope config
-/// merges as a union can add a name to a disabled-list but cannot take one
-/// off it, so the enable half of the switch does not exist there.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "kebab-case")]
-pub enum ToggleDirection {
-    Both,
-    DisableOnly,
-}
-
 /// Whether the harness runs what vstack writes, or only reads it as prose.
 /// `managed` says vstack can write and track an artifact; it never said the
 /// tool would act on it, and a safety hook must not read as protection on a
@@ -70,10 +60,6 @@ pub struct KindCaps {
     /// item's own surfaces; what a mutation writes is observable at the
     /// emitted kind's, which is where the honesty check looks.
     pub installs_as: Option<ItemKind>,
-    /// Holds for every scope in `toggle`. Where one scope switches both ways
-    /// and another only off, the row takes the narrower reading: offering an
-    /// enable that silently does nothing is the failure this axis prevents.
-    pub toggle_direction: ToggleDirection,
     /// Only Hook rows carry anything but `NotApplicable` — the axis exists
     /// to separate a hook the tool runs from one it merely reads.
     pub enforcement: Enforcement,
@@ -88,7 +74,6 @@ const fn unsupported() -> KindCaps {
         remove: NONE,
         refresh: NONE,
         installs_as: None,
-        toggle_direction: ToggleDirection::Both,
         enforcement: Enforcement::NotApplicable,
     }
 }
@@ -138,7 +123,8 @@ pub enum NameRule {
     /// Any name the manifest accepts, so long as it stays one path segment.
     Any,
     LowerKebab {
-        max_len: usize,
+        /// `None` where the harness documents the spelling but no length.
+        max_len: Option<usize>,
     },
 }
 
@@ -192,7 +178,7 @@ pub const fn format_caps(harness: HarnessId) -> FormatCaps {
         // Its servers are `local` (command) or `remote` (url) — no SSE
         // (opencode.ai/docs/mcp-servers).
         HarnessId::Opencode => FormatCaps {
-            name_rule: NameRule::LowerKebab { max_len: 64 },
+            name_rule: NameRule::LowerKebab { max_len: Some(64) },
             mcp_transports: &[Stdio, Http],
             ..format_defaults()
         },
@@ -204,9 +190,15 @@ pub const fn format_caps(harness: HarnessId) -> FormatCaps {
             mcp_transports: &[],
             ..format_defaults()
         },
-        // Gemini server entries carry `command`, `httpUrl`, or `url`
-        // (matrix §1); Copilot's `type` is local|stdio|http|sse (matrix §2).
-        HarnessId::Gemini | HarnessId::Copilot => format_defaults(),
+        // Gemini server entries carry `command`, `httpUrl`, or `url`, and its
+        // skills take any name (matrix §1).
+        HarnessId::Gemini => format_defaults(),
+        // Copilot's `type` is local|stdio|http|sse, and a SKILL.md `name` is
+        // required in lowercase-hyphen with no documented length (matrix §2).
+        HarnessId::Copilot => FormatCaps {
+            name_rule: NameRule::LowerKebab { max_len: None },
+            ..format_defaults()
+        },
     }
 }
 
@@ -311,14 +303,11 @@ pub fn capabilities(harness: HarnessId, kind: ItemKind) -> KindCaps {
         (Gemini, Plugin) => observe_only(GLOBAL),
         (Gemini, PiExtension) => unsupported(),
 
-        (Copilot, Agent) => managed(BOTH),
-        // A repository settings file may add a name to `disabledSkills` or
-        // `disabledMcpServers` but can never remove one a user file set, so
-        // the switch only turns things off (matrix §R7).
-        (Copilot, Skill | McpServer) => KindCaps {
-            toggle_direction: ToggleDirection::DisableOnly,
-            ..managed(BOTH)
-        },
+        // A skill or server switches by the rename and the entry vstack owns,
+        // both ways. Copilot's own `disabledSkills` list is a separate hold
+        // a repository cannot lift, and the audit says so per item rather
+        // than the table claiming vstack's switch is one-way (matrix §R7).
+        (Copilot, Agent | Skill | McpServer) => managed(BOTH),
         // No file-backed slash-command surface exists in any Copilot product
         // — prompt files are IDE-only (matrix §D8).
         (Copilot, Command) => unsupported(),

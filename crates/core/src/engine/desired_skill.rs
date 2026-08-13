@@ -28,6 +28,42 @@ struct Variant {
     refused: bool,
 }
 
+/// The tools that read a skill directory another tool owns, and what each
+/// one reaches into. One file on disk is then a definition several tools
+/// see; it is still one installation — counting it twice would offer a
+/// removal that takes another tool's copy away — and the note is how the
+/// duplicate reaches the user (matrix §R6).
+fn cross_read_note(ctx: &ItemCtx, state: &mut DesiredState) {
+    if !matches!(ctx.scope, Scope::Project { .. }) {
+        return;
+    }
+    let readers: Vec<String> = [
+        (HarnessId::Gemini, "`.agents/skills`"),
+        (HarnessId::Copilot, "`.agents/skills` and `.claude/skills`"),
+    ]
+    .into_iter()
+    .filter(|(harness, _)| {
+        let adapter = crate::harness::adapter(*harness);
+        adapter
+            .detect(ctx.env, &adapter.default_global_root(ctx.env))
+            .is_some()
+    })
+    .map(|(harness, dirs)| format!("{} reads {dirs}", harness.display_name()))
+    .collect();
+    if readers.is_empty() {
+        return;
+    }
+    // The reach is a fact about the directories, not about any one skill,
+    // so it is said once however many skills a scope installs.
+    let note = format!(
+        "skills: {}, as well as their own directories, so the skills installed here are already visible to them — one definition, counted once",
+        readers.join(", and ")
+    );
+    if !state.notes.contains(&note) {
+        state.notes.push(note);
+    }
+}
+
 fn surface_groups(ctx: &ItemCtx) -> Vec<SurfaceGroup> {
     let mut groups: Vec<SurfaceGroup> = Vec::new();
     for harness in &ctx.harnesses {
@@ -63,9 +99,10 @@ pub(super) fn desired_skill(ctx: &ItemCtx, state: &mut DesiredState) -> Result<(
     if groups.is_empty() {
         return Ok(());
     }
-    // Copilot reads the skill directories other tools own, so one tree can
-    // be a definition it sees too — said out loud, never counted twice.
-    super::copilot::skill_cross_read(ctx, state);
+    // Gemini and Copilot read the skill directories other tools own, so one
+    // tree can be a definition they see too — said out loud, never counted
+    // twice.
+    cross_read_note(ctx, state);
     if ctx.harnesses.contains(&HarnessId::Copilot) {
         super::copilot::switched_off_elsewhere(ctx, ItemKind::Skill, state);
     }

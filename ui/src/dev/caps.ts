@@ -5,7 +5,6 @@ import type {
   ItemKind,
   KindCaps,
   OpSupport,
-  ToggleDirection,
 } from "@/bindings";
 
 const PG: OpSupport = { project: true, global: true };
@@ -17,7 +16,6 @@ const cap = (
   observe: OpSupport,
   manage: OpSupport,
   toggle = manage,
-  toggleDirection: ToggleDirection = "both",
   enforcement: Enforcement = "not-applicable",
 ): KindCaps => ({
   observe,
@@ -27,15 +25,14 @@ const cap = (
   remove: manage,
   refresh: manage,
   installsAs: null,
-  toggleDirection,
   enforcement,
 });
 
 // A hook the tool runs, versus one it only reads as instructions.
 const enforcedHook = (observe: OpSupport, manage: OpSupport): KindCaps =>
-  cap(observe, manage, manage, "both", "enforced");
+  cap(observe, manage, manage, "enforced");
 const advisoryHook = (observe: OpSupport, manage: OpSupport): KindCaps =>
-  cap(observe, manage, manage, "both", "advisory");
+  cap(observe, manage, manage, "advisory");
 
 // Codex retired its prompt directory: a command is written, toggled and
 // removed as a skill, while the prompts it still loads are only read.
@@ -85,21 +82,22 @@ const KIND_CAPS: Record<HarnessId, Partial<Record<ItemKind, KindCaps>>> = {
     command: cap(PG, NO),
     "pi-extension": cap(PG, PG),
   },
-  // Read-only until their adapters land.
   gemini: {
-    agent: cap(PG, NO),
-    skill: cap(PG, NO),
-    hook: enforcedHook(PG, NO),
-    command: cap(PG, NO),
-    "mcp-server": cap(PG, NO),
+    agent: cap(PG, PG),
+    skill: cap(PG, PG),
+    hook: enforcedHook(PG, PG),
+    command: cap(PG, PG),
+    // A server is declared per scope, but whether it is on is recorded once
+    // for the whole machine, so only global scope switches it.
+    "mcp-server": cap(PG, PG, G),
     plugin: cap(G, NO),
   },
   copilot: {
-    agent: cap(PG, NO),
-    // A repository file can add to Copilot's disabled lists but never
-    // remove from them, so the switch only turns things off.
-    skill: cap(PG, NO, NO, "disable-only"),
-    "mcp-server": cap(PG, NO, NO, "disable-only"),
+    agent: cap(PG, PG),
+    skill: cap(PG, PG),
+    hook: enforcedHook(PG, PG),
+    "mcp-server": cap(PG, PG),
+    plugin: cap(PG, NO, PG),
   },
 };
 

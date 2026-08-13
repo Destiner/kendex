@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use super::{HarnessAdapter, ProjectMarker, Reader, Surface};
 use crate::env::Env;
-use crate::hook::HookSource;
+use crate::hook::{HookSource, Registration};
 use crate::model::{HarnessId, ItemKind};
 
 pub mod settings;
@@ -32,14 +32,16 @@ fn event(fleet: &str) -> Option<&'static str> {
     }
 }
 
-/// The same hook said in Copilot's words. Its `timeoutSec` is the seconds
-/// the source already declares, so only the event name changes. `None` when
-/// Copilot has no event that means what this one means.
-pub fn hook_for(hook: &HookSource) -> Option<HookSource> {
-    Some(HookSource {
-        event: event(&hook.event)?.to_owned(),
-        ..hook.clone()
-    })
+/// The same hook said in Copilot's words: its own event name and its matcher
+/// in its own tool names. `timeoutSec` is the seconds the source already
+/// declares, so the timeout travels as written. `None` when Copilot has no
+/// event that means what this one means.
+pub fn hook_for(hook: &HookSource) -> Option<Registration> {
+    Some(Registration::new(
+        hook,
+        HarnessId::Copilot,
+        event(&hook.event)?,
+    ))
 }
 
 /// Copilot claims its own namespace and nothing else. It genuinely reads

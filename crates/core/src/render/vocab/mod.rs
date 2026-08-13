@@ -91,6 +91,43 @@ pub fn copilot_tool_name(tool: &str) -> String {
         .unwrap_or_else(|| tool.trim().to_owned())
 }
 
+/// A hook matcher said in `harness`'s own tool names, and whether all of it
+/// could be. Matchers are regexes over tool names authored in Claude's
+/// vocabulary, so `Bash` left as written matches nothing on a tool whose
+/// shell is `run_shell_command`. Each alternative is translated on its own;
+/// one carrying regex syntax around a name is left exactly as authored and
+/// reported, because a matcher that never matches is a protection that
+/// never runs.
+pub fn hook_matcher(matcher: &str, harness: HarnessId) -> (String, bool) {
+    let name = match harness {
+        HarnessId::Gemini => gemini_tool_name,
+        HarnessId::Copilot => copilot_tool_name,
+        // Claude's own names are what a matcher is authored in; codex and
+        // cursor read the same spelling, and the rest register no matcher.
+        _ => return (matcher.to_owned(), true),
+    };
+    let mut said = true;
+    let pattern: Vec<String> = matcher
+        .split('|')
+        .map(|token| {
+            let alphanumeric = token.chars().any(|c| c.is_ascii_alphanumeric());
+            let plain = token
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+            match (alphanumeric, plain) {
+                (true, true) => name(token),
+                // Pure syntax — `.*` names no tool and needs no translation.
+                (false, _) => token.to_owned(),
+                (true, false) => {
+                    said = false;
+                    token.to_owned()
+                }
+            }
+        })
+        .collect();
+    (pattern.join("|"), said)
+}
+
 /// OpenCode gates tools by permission key, not tool name. `None` is the
 /// empty name — nothing to gate; an unknown name passes through so an MCP
 /// tool can still be denied by its own id.

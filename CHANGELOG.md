@@ -61,8 +61,7 @@ changes carry a **Breaking** call-out with their migration note inline.
 - vstack now sees Gemini CLI and GitHub Copilot setups, personally and per
   project, listed beside every other tool: Gemini's agents, skills,
   commands, hooks, MCP servers, and extensions, and Copilot's agents,
-  skills, and MCP servers. Reading only for now — installing and toggling
-  on Copilot lands next — and Copilot's folder is found where Copilot
+  skills, and MCP servers. Copilot's folder is found where Copilot
   actually keeps it, including a relocated one. Files the two tools borrow
   from each other, like Copilot reading Claude Code's skills, stay listed
   once under the tool they belong to instead of being counted twice.
@@ -134,6 +133,37 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Fixed
 
+- Bringing a Gemini MCP server into a project no longer switches that
+  server back on for your whole machine. Gemini records whether a server
+  is on in one file every project shares; a project now reads that file
+  and says "declared here, but switched off for this machine" instead of
+  rewriting it, and removing the server from a project leaves the
+  machine-wide switch exactly where you set it. Switching a server on and
+  off personally works as before.
+- A safety hook written for Claude Code now matches on Gemini CLI and
+  GitHub Copilot. Hooks name the tool they guard — "Bash" — and each tool
+  has its own name for it, so the name is translated on the way in
+  (`run_shell_command` on Gemini, `bash` on Copilot); before, the hook
+  installed looking correct and never fired. A matcher vstack cannot
+  translate — a regular expression rather than a plain name — installs
+  exactly as written and is flagged as possibly matching nothing.
+- Installing a safety hook on Cursor or OpenCode now says plainly that
+  neither tool runs hooks: the plan marks it "(advisory)" and the report
+  says it lands as text the model may ignore. Every tool's card also says
+  whether it runs safety hooks at all.
+- `vstack verify` no longer prints a clean tick for an installation that
+  cannot do anything — a hook switched off machine-wide, a server Gemini
+  gates out, an agent installed while subagents are off. The reason is
+  printed beside the row; it still does not fail the run, because nothing
+  is wrong with what was installed.
+- A skill named in a way GitHub Copilot will not load is refused with the
+  spelling that works, instead of installing where it is never listed.
+- A skill installed for another tool is now reported as visible to Gemini
+  CLI as well as to Copilot — both read the shared skills folder, and
+  neither gains a phantom installation of its own.
+- An item declared only for tools that cannot hold it — a slash command
+  for Copilot, which has none — now says so instead of silently
+  installing nowhere.
 - One unreadable Pi package no longer empties the whole `update-pi`
   listing — it gets its own note and the healthy rows still print.
 - A symlinked configuration file inside a catalog is refused loudly

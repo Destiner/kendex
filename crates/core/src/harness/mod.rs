@@ -14,8 +14,8 @@ pub mod pi;
 mod caps;
 pub mod models;
 pub use caps::{
-    Enforcement, FormatCaps, KindCaps, McpTransport, NameRule, OpSupport, ToggleDirection,
-    capabilities, format_caps, installable,
+    Enforcement, FormatCaps, KindCaps, McpTransport, NameRule, OpSupport, capabilities,
+    format_caps, installable,
 };
 
 /// What marks a directory as a project for this harness during discovery.
@@ -256,23 +256,6 @@ mod tests {
                 harness.name(),
             );
         }
-    }
-
-    /// Copilot's repository settings merge as a union: a repo file adds to
-    /// `disabledSkills` and `disabledMcpServers` but cannot take a name off
-    /// them, so the switch there only turns things off (matrix §R7).
-    #[test]
-    fn copilot_skills_and_servers_switch_off_only() {
-        for kind in [ItemKind::Skill, ItemKind::McpServer] {
-            assert_eq!(
-                capabilities(HarnessId::Copilot, kind).toggle_direction,
-                ToggleDirection::DisableOnly,
-            );
-        }
-        assert_eq!(
-            capabilities(HarnessId::Claude, ItemKind::Skill).toggle_direction,
-            ToggleDirection::Both,
-        );
     }
 
     /// Copilot is managed where its own documentation gives vstack a surface

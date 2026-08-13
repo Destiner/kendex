@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use crate::env::Env;
 use crate::lock::Lock;
-use crate::manifest::Manifest;
+use crate::manifest::{ItemDecl, Manifest};
 use crate::model::{ItemKind, Scope};
 
 use super::desired::{self, Desired};
@@ -68,6 +68,38 @@ fn declared_installation_keys(manifest: &Manifest, scope: &Scope) -> BTreeSet<St
     keys
 }
 
+/// Every path a declaration's artifacts occupy, derived from the
+/// declaration alone. A source that cannot be read this pass still leaves
+/// its installed artifacts on disk — they are ours, and calling them
+/// someone else's would invite the user to adopt our own output.
+fn declared_paths(
+    env: &Env,
+    scope: &Scope,
+    manifest: &Manifest,
+    kind: ItemKind,
+    name: &str,
+    decl: &ItemDecl,
+) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if kind == ItemKind::Skill {
+        paths.push(desired::skill_canonical(env, scope, name));
+    }
+    for harness in desired::target_harnesses(decl, manifest, kind, scope) {
+        let Some(native) = desired::native_dir(env, scope, harness, kind) else {
+            continue;
+        };
+        match kind {
+            ItemKind::Agent => {
+                let base = crate::render::agent::file_name(harness, name);
+                paths.push(native.join(format!("{base}.disabled")));
+                paths.push(native.join(base));
+            }
+            _ => paths.push(native.join(name)),
+        }
+    }
+    paths
+}
+
 /// Where those installations live, whether or not this pass could build
 /// them. Skills share one canonical tree across harnesses, so the path is
 /// what says "ours", not the harness the scanner attributes it to.
@@ -78,9 +110,7 @@ fn declared_artifact_paths(env: &Env, scope: &Scope, manifest: &Manifest) -> BTr
         (ItemKind::Skill, &manifest.skills),
     ] {
         for (name, decl) in table {
-            paths.extend(desired::declared_paths(
-                env, scope, manifest, kind, name, decl,
-            ));
+            paths.extend(declared_paths(env, scope, manifest, kind, name, decl));
         }
     }
     paths

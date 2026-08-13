@@ -16,7 +16,7 @@ use vstack_core::model::Scope;
 
 const AGENT: &str = "---\nname: rust\ndescription: Rust engineer\nmodel: claude-sonnet-4.6\nrole: engineer\n---\nUse the Grep tool.\n";
 
-const AUDIT_HOOK: &str = "#!/usr/bin/env bash\n# ---\n# name: audit\n# event: PreToolUse\n# matcher: shell\n# description: log shell commands\n# ---\nexit 0\n";
+const AUDIT_HOOK: &str = "#!/usr/bin/env bash\n# ---\n# name: audit\n# event: PreToolUse\n# matcher: Bash\n# description: log shell commands\n# ---\nexit 0\n";
 
 /// Copilot has no event that means "the turn's work was accepted".
 const DONE_HOOK: &str = "#!/usr/bin/env bash\n# ---\n# name: done\n# event: TaskCompleted\n# description: check the work\n# ---\nexit 0\n";
@@ -120,10 +120,7 @@ fn hooks_switched_off_in_claudes_settings_are_reported_inert() {
     );
     // Said, not obeyed: the registration still lands where Copilot reads it.
     let registry = f.project.join(".github/hooks/audit.json");
-    assert_eq!(
-        json(&registry)["hooks"]["preToolUse"][0]["matcher"],
-        "shell"
-    );
+    assert_eq!(json(&registry)["hooks"]["preToolUse"][0]["matcher"], "bash");
 
     fs::write(&claude, r#"{"disableAllHooks": false}"#).unwrap();
     let quiet = audit(&f.env, &f.scope).unwrap();
@@ -207,4 +204,54 @@ fn a_model_the_repository_will_not_run_is_named() {
         report.warnings
     );
     assert!(f.project.join(".github/agents/rust.agent.md").is_file());
+}
+
+/// Copilot's skills reference requires a lowercase-hyphen `name`, so a name
+/// it will not load is refused with the spelling that would work — the same
+/// treatment OpenCode's loader gets.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_name_copilots_loader_rejects_is_refused_with_the_one_that_works() {
+    let f = fixture("\"copilot\"", "[skills.Deploy_Thing]\nsource = \"cat\"\n");
+    let source = f.env.home.join("catalog/skills/Deploy_Thing");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(
+        source.join("SKILL.md"),
+        "---\nname: Deploy_Thing\ndescription: Ship it\n---\n\nSteps.\n",
+    )
+    .unwrap();
+
+    let report = apply_now(&f);
+    assert!(
+        report.drift.iter().any(|row| row.name == "Deploy_Thing"
+            && row.detail.contains("will not load `Deploy_Thing`")
+            && row.detail.contains("deploy-thing")),
+        "{:?}",
+        report.drift
+    );
+    assert!(!f.project.join(".github/skills/Deploy_Thing").exists());
+}
+
+/// Copilot has no slash commands of its own. A command declared only for
+/// Copilot installs nowhere, and silence there reads as success.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_command_declared_only_for_copilot_says_it_installed_nowhere() {
+    let f = fixture("\"copilot\"", "[commands.ship]\nsource = \"cat\"\n");
+    let source = f.env.home.join("catalog/commands");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(
+        source.join("ship.md"),
+        "---\ndescription: Ship the branch\n---\n\nRun the checklist.\n",
+    )
+    .unwrap();
+
+    let report = apply_now(&f);
+    assert!(
+        report.notes.iter().any(|note| note
+            .contains("command ship: GitHub Copilot cannot hold one at this scope")
+            && note.contains("nothing was installed")),
+        "{:?}",
+        report.notes
+    );
 }

@@ -15,7 +15,7 @@ use vstack_core::model::Scope;
 
 const AGENT: &str = "---\nname: rust\ndescription: Rust engineer\nmodel: opus\nrole: engineer\n---\nUse the Grep tool.\n";
 
-const AUDIT_HOOK: &str = "#!/usr/bin/env bash\n# ---\n# name: audit\n# event: PreToolUse\n# matcher: run_shell_command\n# description: log shell commands\n# timeout: 10\n# ---\nexit 0\n";
+const AUDIT_HOOK: &str = "#!/usr/bin/env bash\n# ---\n# name: audit\n# event: PreToolUse\n# matcher: Bash\n# description: log shell commands\n# timeout: 10\n# ---\nexit 0\n";
 
 /// Gemini has no event that means "the turn ended".
 const DONE_HOOK: &str = "#!/usr/bin/env bash\n# ---\n# name: done\n# event: TaskCompleted\n# description: check the work\n# ---\nexit 0\n";
@@ -201,6 +201,8 @@ fn a_hook_registers_under_geminis_event_name_in_milliseconds() {
     let registered = json(&settings(&f));
     assert_eq!(registered["ui"]["theme"], "Dark");
     let group = &registered["hooks"]["BeforeTool"][0];
+    // The source matches on `Bash`, Claude's name for the shell. Gemini
+    // matches its own name or nothing at all.
     assert_eq!(group["matcher"], "run_shell_command");
     assert_eq!(
         group["hooks"][0]["command"],

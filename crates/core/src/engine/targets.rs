@@ -1,8 +1,28 @@
 use std::path::PathBuf;
 
 use crate::env::Env;
-use crate::harness::adapter;
-use crate::model::{HarnessId, Scope};
+use crate::harness::{Enforcement, adapter, capabilities};
+use crate::model::{HarnessId, ItemKind, Scope};
+
+/// What installing a hook on this harness actually buys. A tool that only
+/// reads the file must never be presented as one that acts on it: the
+/// warning travels with the plan, the preview, and the audit page.
+pub(super) fn advisory_notice(harness: HarnessId, name: &str) -> Option<super::ItemWarning> {
+    let tool = harness.display_name();
+    (capabilities(harness, ItemKind::Hook).enforcement == Enforcement::Advisory).then(|| {
+        super::ItemWarning {
+            kind: ItemKind::Hook,
+            name: name.to_owned(),
+            harness: Some(harness),
+            message: format!(
+                "this protection is advisory on {tool} — it installs as text the model may ignore, not a check the tool runs"
+            ),
+            remediation: Some(format!(
+                "keep it for the tools that run hooks — Claude Code, Codex, Gemini CLI, GitHub Copilot — or accept it as guidance on {tool}"
+            )),
+        }
+    })
+}
 
 /// Which shape a registry file speaks. Claude, codex, cursor and Gemini all
 /// take the same matcher-with-handlers object; Copilot's hook files are a
