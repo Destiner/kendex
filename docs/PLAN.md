@@ -21,8 +21,13 @@
 >   (detection-root fixtures both scopes ✓ per adapter tests; §7 rows +
 >   honesty tests ✓; enforcement shown in UI/plan preview — VERIFY the
 >   UI actually shows it, may need a small Sync/labels touch), then an
->   adversarial review of d2c6e13..HEAD (same drill as Phase 1's) and
->   fold its findings, then consume the Phase 2 plan section.
+>   adversarial review DONE (recover from subagents/agent-aadv-review-4)
+>   — 2 blockers (project-scope gemini MCP enable rewrote the global
+>   enablement file; hook matchers not translated per harness) + the
+>   enforcement-display done-when gap + stale UI mock caps + further
+>   numbered findings. A `review4-fixes` subagent is applying the batch
+>   (uncommitted); verify guard, commit, then consume the Phase 2
+>   section.
 > - Standing: subagent reports may arrive only as idle notifications —
 >   recover them from the session's `subagents/*.jsonl` (user CLAUDE.md).
 >   Engine/render changes get adversarial review before merge. Commits
