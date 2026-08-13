@@ -2,6 +2,7 @@ use super::{EffectiveAgent, GENERATED_BANNER, RenderedAgent, Role, hooks_prose, 
 use crate::harness::models::resolve_model;
 use crate::model::{HarnessId, Scope};
 use crate::render::permission::PermissionIntent;
+use crate::render::vocab::rewrite_prose;
 
 const NICKNAME_SUFFIXES: [&str; 6] = ["Atlas", "Delta", "Echo", "Nova", "Orion", "Vector"];
 
@@ -52,7 +53,7 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
         ));
     }
     out.push_str("developer_instructions = '''\n");
-    out.push_str(&fence_safe(&instructions(agent)));
+    out.push_str(&fence_safe(&instructions(agent, &mut warnings)));
     out.push_str("'''\n");
     RenderedAgent {
         text: out,
@@ -147,12 +148,17 @@ fn capitalize(part: &str) -> String {
     }
 }
 
-fn instructions(agent: &EffectiveAgent) -> String {
+fn instructions(
+    agent: &EffectiveAgent,
+    warnings: &mut Vec<crate::render::RenderWarning>,
+) -> String {
     let mut out = format!("{GENERATED_BANNER}\n\n");
     if let Some(launch) = &agent.launch_instructions {
         out.push_str(&format!("## Launch Instructions\n\n{launch}\n\n"));
     }
-    out.push_str(agent.source.body.trim_end());
+    let (prose, reworded) = rewrite_prose(agent.source.body.trim_end(), HarnessId::Codex);
+    warnings.extend(reworded);
+    out.push_str(&prose);
     out.push('\n');
     let skill_root = match agent.scope {
         Scope::Global => "$CODEX_HOME/skills",
@@ -347,6 +353,28 @@ mod tests {
         assert!(text.contains("model = \"o9-preview\""));
         assert!(text.contains("model_reasoning_effort = \"xhigh\""));
         assert!(text.contains("nickname_candidates = [\"Rust-One\"]"));
+    }
+
+    #[test]
+    fn the_body_speaks_codex_vocabulary_and_project_instructions_do_not() {
+        let mut source = source("rust", "engineer");
+        source.body = "Use the Read tool.".into();
+        let scope = Scope::Global;
+        let mut agent = effective(&source, &scope);
+        agent.additional_instructions = Some("Use the Read tool.".into());
+        let rendered = generate(&agent);
+        assert!(rendered.text.contains("Use open the file.\n"));
+        assert!(
+            rendered
+                .text
+                .contains("## Additional Instructions\n\nUse the Read tool.\n")
+        );
+        assert!(
+            rendered
+                .warnings
+                .iter()
+                .any(|w| w.message == "tool references reworded for Codex: Read")
+        );
     }
 
     #[test]

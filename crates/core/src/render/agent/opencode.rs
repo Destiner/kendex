@@ -3,6 +3,7 @@ use crate::harness::models::resolve_model;
 use crate::manifest::FrontmatterOverrides;
 use crate::model::{HarnessId, Scope};
 use crate::render::permission::PermissionIntent;
+use crate::render::vocab::{opencode_permission, rewrite_prose};
 use crate::render::yaml_scalar;
 
 /// OpenCode agent: YAML frontmatter + markdown system prompt. Tools are
@@ -58,7 +59,7 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
         }
     }
     out.push_str("---\n\n");
-    out.push_str(&body(agent));
+    out.push_str(&body(agent, &mut warnings));
     RenderedAgent {
         text: out,
         warnings,
@@ -98,7 +99,7 @@ fn denied_permissions(
     }
     tools.extend(agent.permissions.denies().iter().cloned());
     let mut permissions: Vec<String> = Vec::new();
-    for permission in tools.iter().filter_map(|tool| permission_name(tool)) {
+    for permission in tools.iter().filter_map(|tool| opencode_permission(tool)) {
         if !permissions.contains(&permission) {
             permissions.push(permission);
         }
@@ -106,7 +107,7 @@ fn denied_permissions(
     if let PermissionIntent::AllowOnly { allow, .. } = &agent.permissions {
         let mut allowed: Vec<String> = Vec::new();
         for tool in allow {
-            match permission_name(tool) {
+            match opencode_permission(tool) {
                 Some(known) if KNOWN_PERMISSIONS.contains(&known.as_str()) => allowed.push(known),
                 _ => warnings.push(crate::render::RenderWarning::new(format!(
                     "tool `{tool}` has no OpenCode permission — it passes through unenforced"
@@ -123,25 +124,6 @@ fn denied_permissions(
         }
     }
     permissions
-}
-
-fn permission_name(tool: &str) -> Option<String> {
-    let normalized = tool.trim().to_lowercase().replace(['_', '-'], "");
-    let permission = match normalized.as_str() {
-        "read" => "read",
-        "edit" | "write" | "patch" | "applypatch" | "multiedit" | "notebookedit" => "edit",
-        "glob" | "find" | "ls" | "list" => "glob",
-        "grep" => "grep",
-        "bash" | "shell" => "bash",
-        "task" | "agent" | "subagent" | "spawnagent" | "spawnagentsoncsv" => "task",
-        "skill" => "skill",
-        "lsp" => "lsp",
-        "question" => "question",
-        "webfetch" | "websearch" | "web" | "webresearch" | "webanswer" | "codesearch" => "webfetch",
-        "" => return None,
-        _ => return Some(tool.trim().to_owned()),
-    };
-    Some(permission.to_owned())
 }
 
 fn color_hex(color: &str) -> Option<String> {
@@ -167,12 +149,14 @@ fn color_hex(color: &str) -> Option<String> {
     Some(hex.to_owned())
 }
 
-fn body(agent: &EffectiveAgent) -> String {
+fn body(agent: &EffectiveAgent, warnings: &mut Vec<crate::render::RenderWarning>) -> String {
     let mut out = format!("{GENERATED_BANNER}\n\n");
     if let Some(launch) = &agent.launch_instructions {
         out.push_str(&format!("## Launch Instructions\n\n{launch}\n\n"));
     }
-    out.push_str(agent.source.body.trim_end());
+    let (prose, reworded) = rewrite_prose(agent.source.body.trim_end(), HarnessId::Opencode);
+    warnings.extend(reworded);
+    out.push_str(&prose);
     out.push('\n');
     let skill_root = match agent.scope {
         Scope::Global => "~/.config/opencode/skills",
@@ -355,6 +339,28 @@ mod tests {
             Some(&["mcp__github".to_owned()]),
         );
         assert!(generate(&agent).text.contains("  mcp__github: deny\n"));
+    }
+
+    #[test]
+    fn the_body_speaks_opencode_vocabulary_and_project_instructions_do_not() {
+        let mut source = source("rust");
+        source.body = "Use the Read tool.".into();
+        let scope = Scope::Global;
+        let mut agent = effective(&source, &scope);
+        agent.additional_instructions = Some("Use the Read tool.".into());
+        let rendered = generate(&agent);
+        assert!(rendered.text.contains("Use the read tool.\n"));
+        assert!(
+            rendered
+                .text
+                .contains("## Additional Instructions\n\nUse the Read tool.\n")
+        );
+        assert!(
+            rendered
+                .warnings
+                .iter()
+                .any(|w| w.message == "tool references reworded for OpenCode: Read")
+        );
     }
 
     #[test]

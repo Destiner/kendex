@@ -1,5 +1,7 @@
 use super::{EffectiveAgent, GENERATED_BANNER, RenderedAgent};
+use crate::model::HarnessId;
 use crate::render::permission::PermissionIntent;
+use crate::render::vocab::rewrite_prose;
 
 /// Cursor has no agents — an agent installs as a rule file. Rules carry no
 /// model, tool, skill or hook fields, so only the prompt survives. A rule
@@ -24,7 +26,9 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
     if let Some(launch) = &agent.launch_instructions {
         out.push_str(&format!("## Launch Instructions\n\n{launch}\n\n"));
     }
-    out.push_str(source.body.trim_end());
+    let (prose, reworded) = rewrite_prose(source.body.trim_end(), HarnessId::Cursor);
+    warnings.extend(reworded);
+    out.push_str(&prose);
     out.push('\n');
     if let Some(additional) = &agent.additional_instructions {
         out.push_str(&format!("\n## Additional Instructions\n\n{additional}\n"));
@@ -106,6 +110,28 @@ mod tests {
         assert!(text.contains("## Launch Instructions\n\nstart here"));
         assert!(text.contains("Body text."));
         assert!(text.trim_end().ends_with("end here"));
+    }
+
+    #[test]
+    fn the_rule_speaks_cursor_vocabulary_and_project_instructions_do_not() {
+        let mut source = source();
+        source.body = "Use the Bash tool.".into();
+        let scope = Scope::Project {
+            root: "/tmp/proj".into(),
+        };
+        let rendered = generate(&effective(&source, &scope, vec![]));
+        assert!(rendered.text.contains("Use the bash tool.\n"));
+        assert!(
+            rendered
+                .text
+                .contains("## Additional Instructions\n\nend here\n")
+        );
+        assert!(
+            rendered
+                .warnings
+                .iter()
+                .any(|w| w.message == "tool references reworded for Cursor: Bash")
+        );
     }
 
     #[test]

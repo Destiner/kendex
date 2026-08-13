@@ -80,7 +80,11 @@ lives in one capability table read by core and UI.
     runs before its first durable write — not merely before the apply
     it guards — and a rejected operation leaves manifest, lock, and
     install tree byte-identical. No failure path leaves persistent
-    state changed.
+    state changed. Output is checked on the same side of the write:
+    every rendering is read back through the target harness's own
+    format rules inside plan preview, and one the harness's loader
+    would reject is refused there, with the fix, for that harness
+    alone.
 12. Verification compares content, not provenance. Installed artifacts
     are re-hashed against what they should be; a matching lock entry
     alone never reports OK, and an artifact vstack cannot compare is

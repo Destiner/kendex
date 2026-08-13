@@ -2,6 +2,8 @@ pub mod agent;
 pub mod permission;
 pub mod skill;
 pub mod split;
+pub mod validate;
+pub mod vocab;
 
 /// One thing the user should hear about a rendering, with the fix when
 /// there is one — every render lint travels through this shape.

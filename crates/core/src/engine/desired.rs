@@ -96,6 +96,21 @@ impl DesiredState {
     }
 }
 
+/// Why the plan must refuse a rendering: the structural findings saying the
+/// harness's own loader would reject it, each with its fix. Advisory
+/// findings never appear here — they install, and warn.
+pub(super) fn refusal_reason(findings: &[crate::render::validate::Finding]) -> Option<String> {
+    let blocking: Vec<String> = findings
+        .iter()
+        .filter(|finding| finding.is_breakage())
+        .map(|finding| format!("{} — {}", finding.message, finding.remediation))
+        .collect();
+    match blocking.is_empty() {
+        true => None,
+        false => Some(blocking.join("; ")),
+    }
+}
+
 /// The dir a harness natively reads `kind` from at this scope, taken from
 /// the same adapter surface declarations the scanner uses.
 pub fn native_dir(env: &Env, scope: &Scope, harness: HarnessId, kind: ItemKind) -> Option<PathBuf> {

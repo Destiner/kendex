@@ -8,7 +8,9 @@ use crate::render::agent::GENERATED_BANNER;
 use crate::render::yaml_scalar;
 
 use super::ItemWarning;
-use super::desired::{Artifact, Desired, DesiredState, ItemCtx, native_dir, target_harnesses};
+use super::desired::{
+    Artifact, Desired, DesiredState, ItemCtx, native_dir, refusal_reason, target_harnesses,
+};
 use super::desired_kinds::declared;
 use super::targets::disabled_name;
 
@@ -71,12 +73,34 @@ fn as_skill(
         false => "SKILL.md.disabled",
     };
     let tree = dir.join(&name);
+    let files = vec![(
+        PathBuf::from(marker),
+        skill_text(&name, &body, ctx.name).into_bytes(),
+    )];
+    // Installed as a skill, it answers to the skill loader's rules — under
+    // the emitted name, which is the one the user will type.
+    let findings = crate::render::validate::validate_skill_tree(harness, &name, &files);
+    if let Some(reason) = refusal_reason(&findings) {
+        state.refused.push(super::desired::Refused {
+            kind: ItemKind::Command,
+            name: ctx.name.to_owned(),
+            harness,
+            reason,
+        });
+        return Ok(None);
+    }
+    for finding in findings.iter().filter(|finding| !finding.is_breakage()) {
+        state.warnings.push(ItemWarning {
+            kind: ItemKind::Command,
+            name: ctx.name.to_owned(),
+            harness: Some(harness),
+            message: finding.message.clone(),
+            remediation: Some(finding.remediation.clone()),
+        });
+    }
     let artifact = Artifact::Tree {
         canonical: tree.clone(),
-        files: vec![(
-            PathBuf::from(marker),
-            skill_text(&name, &body, ctx.name).into_bytes(),
-        )],
+        files,
         link: None,
     };
     let mut item = declared(ctx, ItemKind::Command, harness, artifact)?;

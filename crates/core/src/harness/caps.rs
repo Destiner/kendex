@@ -84,6 +84,18 @@ const fn observe_only(scopes: OpSupport) -> KindCaps {
     }
 }
 
+/// The names a harness's loader can find an item under. Outside the rule,
+/// the item is not merely untidy — the tool either skips it or lists it
+/// under a spelling nobody typed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NameRule {
+    /// Any name the manifest accepts, so long as it stays one path segment.
+    Any,
+    LowerKebab {
+        max_len: usize,
+    },
+}
+
 /// Format facts per harness — owned here beside the op table so renderers
 /// and the surface model read one source of truth instead of scattering
 /// literals. Extended axis by axis as consumers land.
@@ -93,15 +105,24 @@ pub struct FormatCaps {
     /// truncates; `None` means no known cap. Oversized bodies split into
     /// `references/` rather than truncating.
     pub skill_body_max_bytes: Option<usize>,
+    pub name_rule: NameRule,
 }
 
 pub const fn format_caps(harness: HarnessId) -> FormatCaps {
     match harness {
         HarnessId::Codex => FormatCaps {
             skill_body_max_bytes: Some(8192),
+            name_rule: NameRule::Any,
+        },
+        // OpenCode keys agents and skills by a slug it will not coerce:
+        // capitals and underscores make the item unloadable, not renamed.
+        HarnessId::Opencode => FormatCaps {
+            skill_body_max_bytes: None,
+            name_rule: NameRule::LowerKebab { max_len: 64 },
         },
         _ => FormatCaps {
             skill_body_max_bytes: None,
+            name_rule: NameRule::Any,
         },
     }
 }

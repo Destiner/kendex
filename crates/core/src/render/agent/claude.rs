@@ -2,6 +2,7 @@ use super::{EffectiveAgent, GENERATED_BANNER, RenderedAgent, default_pane};
 use crate::harness::models::resolve_model;
 use crate::model::HarnessId;
 use crate::render::permission::PermissionIntent;
+use crate::render::vocab::claude_tool_name;
 use crate::render::{yaml_quoted as forced_quote, yaml_scalar};
 
 /// Claude Code agent: YAML frontmatter + markdown body. An `AllowOnly`
@@ -104,35 +105,6 @@ fn deny_list(agent: &EffectiveAgent) -> Vec<String> {
         }
     }
     deny
-}
-
-/// v1's alias table: manifests write generic lowercase tool names, Claude
-/// matches exact PascalCase — an unmapped name silently fails to deny.
-fn claude_tool_name(tool: &str) -> String {
-    match tool
-        .trim()
-        .to_ascii_lowercase()
-        .replace(['_', '-'], "")
-        .as_str()
-    {
-        "read" => "Read".into(),
-        "grep" => "Grep".into(),
-        "glob" | "find" => "Glob".into(),
-        "ls" | "list" => "LS".into(),
-        "bash" => "Bash".into(),
-        "edit" => "Edit".into(),
-        "multiedit" => "MultiEdit".into(),
-        "write" => "Write".into(),
-        "webfetch" => "WebFetch".into(),
-        "websearch" => "WebSearch".into(),
-        "todowrite" => "TodoWrite".into(),
-        "todoread" => "TodoRead".into(),
-        "task" | "agent" | "subagent" | "spawnagent" | "spawnagentsoncsv" => "Agent".into(),
-        "question" | "askuserquestion" => "AskUserQuestion".into(),
-        "notebookread" => "NotebookRead".into(),
-        "notebookedit" => "NotebookEdit".into(),
-        _ => tool.trim().to_owned(),
-    }
 }
 
 fn effort_is_real(effort: &str) -> bool {

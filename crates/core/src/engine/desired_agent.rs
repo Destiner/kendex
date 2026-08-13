@@ -5,10 +5,11 @@ use crate::manifest::{Manifest, Method};
 use crate::mapping::{EffectiveSkills, effective_skills};
 use crate::model::ItemKind;
 use crate::render::agent::{
-    EffectiveAgent, Role, file_name, generate, hooks_for_agent, merge_overrides,
+    EffectiveAgent, RenderedAgent, Role, file_name, generate, hooks_for_agent, merge_overrides,
     merged_instructions, parse_source_agent,
 };
 use crate::render::permission::PermissionIntent;
+use crate::render::validate::validate_agent;
 use crate::source::list_items;
 
 use super::desired::{Artifact, Desired, DesiredState, ItemCtx, native_dir};
@@ -92,6 +93,50 @@ fn harness_overrides(
     (overrides, permissions)
 }
 
+/// Whether the rendering may be installed, having said everything there is
+/// to say about it — what the renderer noticed, and what the harness's own
+/// loader makes of the result. Breakage is refused for the same reason a
+/// permission refusal is: installing an agent the tool cannot read leaves
+/// the user with one that is ignored in silence.
+fn loadable(
+    ctx: &ItemCtx,
+    state: &mut DesiredState,
+    harness: crate::model::HarnessId,
+    rendered: &RenderedAgent,
+) -> bool {
+    let findings = validate_agent(harness, ctx.name, &rendered.text);
+    // A refusal says everything: the rest is advice about a file that is
+    // not being written.
+    if let Some(reason) = super::desired::refusal_reason(&findings) {
+        state.refused.push(super::desired::Refused {
+            kind: ItemKind::Agent,
+            name: ctx.name.to_owned(),
+            harness,
+            reason,
+        });
+        return false;
+    }
+    for warning in &rendered.warnings {
+        state.warnings.push(super::ItemWarning {
+            kind: ItemKind::Agent,
+            name: ctx.name.to_owned(),
+            harness: Some(harness),
+            message: warning.message.clone(),
+            remediation: warning.remediation.clone(),
+        });
+    }
+    for finding in findings.iter().filter(|finding| !finding.is_breakage()) {
+        state.warnings.push(super::ItemWarning {
+            kind: ItemKind::Agent,
+            name: ctx.name.to_owned(),
+            harness: Some(harness),
+            message: finding.message.clone(),
+            remediation: Some(finding.remediation.clone()),
+        });
+    }
+    true
+}
+
 /// Agents are generated, never linked: every harness gets its own rendering
 /// of the same source agent, overwritten on each apply.
 pub(super) fn desired_agent(
@@ -160,14 +205,8 @@ pub(super) fn desired_agent(
                 continue;
             }
         };
-        for warning in &rendered.warnings {
-            state.warnings.push(super::ItemWarning {
-                kind: ItemKind::Agent,
-                name: ctx.name.to_owned(),
-                harness: Some(harness),
-                message: warning.message.clone(),
-                remediation: warning.remediation.clone(),
-            });
+        if !loadable(ctx, state, harness, &rendered) {
+            continue;
         }
         let base = file_name(harness, ctx.name);
         let file = if enabled {

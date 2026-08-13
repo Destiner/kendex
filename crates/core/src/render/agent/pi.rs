@@ -1,8 +1,9 @@
 use super::{
     EffectiveAgent, GENERATED_BANNER, RenderedAgent, Role, default_pane, hooks_prose, skills_prose,
 };
-use crate::model::Scope;
+use crate::model::{HarnessId, Scope};
 use crate::render::permission::PermissionIntent;
+use crate::render::vocab::rewrite_prose;
 use crate::render::yaml_scalar;
 
 /// Pi agent: YAML frontmatter + markdown body. Delegation is the whole story
@@ -51,7 +52,7 @@ pub fn generate(agent: &EffectiveAgent) -> Result<RenderedAgent, String> {
         out.push_str("pane: true\n");
     }
     out.push_str("---\n\n");
-    out.push_str(&body(agent));
+    out.push_str(&body(agent, &mut warnings));
     Ok(RenderedAgent {
         text: out,
         warnings,
@@ -146,12 +147,14 @@ fn normalize(tool: &str) -> String {
     tool.trim().to_lowercase().replace('-', "_")
 }
 
-fn body(agent: &EffectiveAgent) -> String {
+fn body(agent: &EffectiveAgent, warnings: &mut Vec<crate::render::RenderWarning>) -> String {
     let mut out = format!("{GENERATED_BANNER}\n\n");
     if let Some(launch) = &agent.launch_instructions {
         out.push_str(&format!("## Launch Instructions\n\n{launch}\n\n"));
     }
-    out.push_str(agent.source.body.trim_end());
+    let (prose, reworded) = rewrite_prose(agent.source.body.trim_end(), HarnessId::Pi);
+    warnings.extend(reworded);
+    out.push_str(&prose);
     out.push('\n');
     let skill_root = match agent.scope {
         Scope::Global => "~/.pi/agent/skills",
@@ -269,6 +272,28 @@ mod tests {
         agent.permissions = PermissionIntent::allow_only(vec!["read".into()]);
         let refusal = generate(&agent).unwrap_err();
         assert!(refusal.contains("widen"));
+    }
+
+    #[test]
+    fn the_body_speaks_pi_vocabulary_and_project_instructions_do_not() {
+        let mut source = source("rust", "engineer", "opus");
+        source.body = "Use the Grep tool.".into();
+        let scope = Scope::Global;
+        let mut agent = effective(&source, &scope);
+        agent.additional_instructions = Some("Use the Grep tool.".into());
+        let rendered = generate(&agent).unwrap();
+        assert!(rendered.text.contains("Use the grep tool.\n"));
+        assert!(
+            rendered
+                .text
+                .contains("## Additional Instructions\n\nUse the Grep tool.\n")
+        );
+        assert!(
+            rendered
+                .warnings
+                .iter()
+                .any(|w| w.message == "tool references reworded for Pi: Grep")
+        );
     }
 
     #[test]

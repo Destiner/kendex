@@ -8,6 +8,17 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- Every generated file is checked against its tool's real format before
+  anything is written. A file that tool would not load — an unparseable
+  Codex agent, an OpenCode agent whose mode or permissions it cannot read,
+  a skill whose SKILL.md names a different skill than the folder it sits
+  in, a name OpenCode's loader rejects like `My_Skill` — is blocked in the
+  plan with the fix spelled out, instead of installing broken and going
+  quiet. Only the tool that rejects it is blocked: the same item still
+  installs everywhere its format is valid. Files that load but not as
+  written, like a Cursor rule carrying keys Cursor ignores, install with a
+  warning rather than a block.
+
 - **Breaking:** commands install on Codex, which retired its prompt
   directory in favor of skills. A declared command lands on Codex's skill
   surface as a generated skill — frontmatter, the generated-file banner,
@@ -19,6 +30,16 @@ changes carry a **Breaking** call-out with their migration note inline.
   warning naming it. OpenCode and Cursor still only read commands.
   Migration: refresh creates these — no Codex command artifacts existed
   before, and `~/.codex/prompts` is still never written to.
+
+- Agent instructions now speak each tool's own vocabulary. A body written
+  in Claude's words — "use the Read tool" — is reworded as it installs on
+  Codex, OpenCode, Cursor, and Pi, so the agent reading it gets an
+  instruction about a tool it actually has instead of a name it does not
+  recognize. Only unmistakable references are touched: code samples,
+  inline literals, links, generated skill paths, and the project's own
+  launch and additional instructions keep every byte. A custom or MCP tool
+  name is never guessed at — it passes through as written, and the plan
+  preview names both what was reworded and what was left alone.
 
 - Catalog downloads are hardened against the repositories they fetch. A
   source repository can no longer redirect a refresh at files outside its

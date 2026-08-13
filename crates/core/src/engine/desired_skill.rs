@@ -186,6 +186,49 @@ fn render_variant(
         }
         files = outcome.files;
     }
+    // The group's members share one physical tree, so a rendering one of
+    // their loaders rejects is refused for all of them — installing it for
+    // the others would put the rejected file exactly where the first one
+    // reads. Advisory findings are said once, whichever member raised them.
+    let mut advisories: Vec<(HarnessId, crate::render::validate::Finding)> = Vec::new();
+    for harness in &group.members {
+        let findings = crate::render::validate::validate_skill_tree(*harness, ctx.name, &files);
+        if let Some(reason) = super::desired::refusal_reason(&findings) {
+            for member in &group.members {
+                state.refused.push(super::desired::Refused {
+                    kind: ItemKind::Skill,
+                    name: ctx.name.to_owned(),
+                    harness: *member,
+                    reason: reason.clone(),
+                });
+            }
+            return Ok(Variant {
+                files: Vec::new(),
+                hash: String::new(),
+                refused: true,
+            });
+        }
+        for finding in findings
+            .into_iter()
+            .filter(|finding| !finding.is_breakage())
+        {
+            if !advisories
+                .iter()
+                .any(|(_, said)| said.message == finding.message)
+            {
+                advisories.push((*harness, finding));
+            }
+        }
+    }
+    for (harness, finding) in advisories {
+        state.warnings.push(super::ItemWarning {
+            kind: ItemKind::Skill,
+            name: ctx.name.to_owned(),
+            harness: Some(harness),
+            message: finding.message,
+            remediation: Some(finding.remediation),
+        });
+    }
     if !enabled {
         for (rel, _) in &mut files {
             if rel == std::path::Path::new("SKILL.md") {
