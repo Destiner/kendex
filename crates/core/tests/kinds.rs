@@ -257,8 +257,8 @@ fn two_mcp_servers_install_into_one_settings_file_in_one_apply() {
     assert_eq!(installed["mcpServers"]["lin"]["command"], "lin-mcp");
     assert!(is_clean(&f));
 
-    // A hook and an MCP removal against the same settings file coalesce
-    // with fresh registrations too: flip both in one reconcile.
+    // Removals against the same settings file coalesce too: both servers
+    // come out in one mutation.
     let report = ops::remove(&f.env, &f.scope, &["gh".to_owned(), "lin".to_owned()]).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     let after = json(&file);

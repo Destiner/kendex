@@ -104,8 +104,12 @@ impl SealedSource {
         })
     }
 
+    /// `None` means genuinely absent. A path that exists but fails
+    /// containment (a symlinked config, say) errors loudly — treating it
+    /// as absent would silently drop a catalog's layout tables.
     pub fn read_if_exists(&self, path: &Path) -> Result<Option<String>> {
-        if !self.is_file(path) {
+        self.contained(path)?;
+        if !path.is_file() {
             return Ok(None);
         }
         self.read_to_string(path).map(Some)
@@ -115,16 +119,20 @@ impl SealedSource {
     /// listed too — reading through one is what fails, loudly.
     pub fn list_dir(&self, dir: &Path) -> Result<Vec<PathBuf>> {
         self.contained(dir)?;
-        let mut entries: Vec<PathBuf> = fs::read_dir(dir)
+        let mut entries: Vec<PathBuf> = Vec::new();
+        for entry in fs::read_dir(dir)
             .map_err(|e| CoreError::io(dir, e))?
             .flatten()
-            .map(|entry| entry.path())
-            .collect();
-        if entries.len() > MAX_DIR_ENTRIES {
-            return Err(CoreError::SourceEscape {
-                path: dir.to_path_buf(),
-                reason: format!("more than {MAX_DIR_ENTRIES} entries in one catalog directory"),
-            });
+        {
+            // The bound holds while collecting — a million-entry directory
+            // must not get a million-entry allocation first.
+            if entries.len() >= MAX_DIR_ENTRIES {
+                return Err(CoreError::SourceEscape {
+                    path: dir.to_path_buf(),
+                    reason: format!("more than {MAX_DIR_ENTRIES} entries in one catalog directory"),
+                });
+            }
+            entries.push(entry.path());
         }
         entries.sort();
         Ok(entries)

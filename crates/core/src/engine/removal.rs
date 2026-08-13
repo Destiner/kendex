@@ -147,7 +147,11 @@ pub(super) fn removal_ops(
         if updated == current {
             continue;
         }
-        config_edits.push(path, format!("remove {}", entry.name), edit);
+        config_edits.push(
+            path,
+            format!("remove {} for {}", entry.name, entry.harness.display_name()),
+            edit,
+        );
     }
     Ok(ops)
 }

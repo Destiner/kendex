@@ -60,7 +60,7 @@ pub fn generate(agent: &EffectiveAgent) -> Result<RenderedAgent, String> {
 
 /// Heavy tiers omit `model` so the child inherits the parent session;
 /// everything else resolves through the shared alias table and carries the
-/// `:effort` suffix (v1 pi.rs:96-148).
+/// `:effort` suffix.
 fn model(agent: &EffectiveAgent) -> (Option<String>, Option<String>) {
     let effort = agent
         .overrides

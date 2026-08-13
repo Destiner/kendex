@@ -132,19 +132,27 @@ fn plan_scope(
     for name in &installed_names {
         let status = match sources.get(name) {
             None => Status::Unsourced,
-            Some(source_dir) => {
-                let installed = pi_ext::installed_hash(&root, name)?;
-                if installed.is_some() && installed == pi_ext::package_hash(source_dir)? {
+            // One unreadable package (a symlink in its source, a blown
+            // budget) must not empty the whole listing — it gets its own
+            // note and the healthy rows still print.
+            Some(source_dir) => match (
+                pi_ext::installed_hash(&root, name),
+                pi_ext::package_hash(source_dir),
+            ) {
+                (Ok(installed), Ok(source)) if installed.is_some() && installed == source => {
                     Status::Current
-                } else {
-                    guard(
-                        name,
-                        Status::Stale {
-                            source_dir: source_dir.clone(),
-                        },
-                    )
                 }
-            }
+                (Ok(_), Ok(_)) => guard(
+                    name,
+                    Status::Stale {
+                        source_dir: source_dir.clone(),
+                    },
+                ),
+                (Err(error), _) | (_, Err(error)) => {
+                    notes.push(format!("{name}: unreadable — {error}"));
+                    continue;
+                }
+            },
         };
         let version = installed_version(&root, name);
         rows.push(Row {

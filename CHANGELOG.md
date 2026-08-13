@@ -28,6 +28,11 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Fixed
 
+- One unreadable Pi package no longer empties the whole `update-pi`
+  listing — it gets its own note and the healthy rows still print.
+- A symlinked configuration file inside a catalog is refused loudly
+  instead of being silently treated as absent, and plan rows for
+  settings changes name the tool again.
 - **Breaking:** a skill too large for Codex's loader now splits into a
   head plus `references/details.md` instead of silently truncating at
   load; tools without the cap keep the whole body on their own copy. A
