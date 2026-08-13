@@ -19,15 +19,14 @@
 >   targeting, effective-state/inert reporting, cross-read
 >   duplicate-definition notes, hook-matcher vocabulary translation.
 >   Adversarial review #4 folded (10 findings).
-> - Phase 3 ⏳: immutable pinned per-commit source store landed
->   (59008e6, B12); marketplace-shaped catalog consumption landed
->   (explicit recognition, cross-file validation with fixes,
->   `<plugin>/<item>` namespacing with per-harness separators derived from
->   the name rule, collision refusals, local entries only, read-side
->   catalog metadata carrying each plugin as a group, hostile fixtures).
->   Remaining: adversarial review #5 over the phase. Then
->   Phase 4 bundles+deps, Phase 5 quality gates, Phase 6 UI (owner IA
->   gate), Phase 7 release.
+> - Phase 3 ✅ — immutable pinned per-commit source store (B12),
+>   marketplace-shaped catalog consumption with plugin/leaf namespacing
+>   (B7), catalog metadata + bundle group identity for Phase 4.
+>   Adversarial review #5 folded (10 findings incl. repointed-source
+>   identity).
+> - Phase 4 ⏳ next: bundles + dependencies (reason edges, suppressions,
+>   optional selections, dependency-aware remove, preview-first refresh
+>   B10, removal preconditions).
 > - Standing: subagent reports may arrive only as idle notifications —
 >   recover them from the session's `subagents/*.jsonl` (user CLAUDE.md).
 >   Engine/render changes get adversarial review before merge. Commits
@@ -106,60 +105,6 @@ evidence in `docs/research/harnesskit.md`.
 | Score presentation | **adopt** (HarnessKit) | Safety and quality are two scores, never averaged; Audit rows gain a findings column, no new page. |
 
 ## Phases
-
-### Phase 3 — catalog layout v2 + marketplace consumption (directive 5)
-
-The current v1-shaped catalog (kind dirs at the root) stays supported.
-Added: a wshobson-shaped repo (`plugins/<name>/{agents,commands,skills}`
-+ registry) is consumable directly as a catalog — safely.
-
-- **Recognition is explicit, not heuristic:** a source is
-  marketplace-shaped iff it carries the recognized registry file
-  (`.claude-plugin/marketplace.json`) that parses and validates.
-  Validation is cross-file: component paths must resolve beneath their
-  plugin root (through the sealed source API), duplicate plugin
-  identities, registry↔plugin.json name/version disagreement, and
-  Unicode/case-fold/trailing-dot filename collisions are findings. Only
-  local-path entries are consumed in v0.2; `git-subdir` and URL entries
-  are skipped with a finding naming the entry (4/95 in the reference
-  repo). No guessing from a `plugins/` directory.
-- Namespacing: items from marketplace-shaped catalogs are named
-  `<plugin>/<leaf>` in manifest and UI; per-harness rendering maps to
-  each tool's legal separator (`__` where `/` is illegal), with
-  collision rules (case-fold collisions, `a/b` vs a literal `a__b`,
-  path-hostile names: `..`, device names, overlong components — all
-  findings, never silent). Flat names from v1-shaped catalogs are
-  unchanged.
-- **The source store becomes immutable and pinned-safe.** Today one
-  mutable checkout per repo is hard-reset on refresh (`remote.rs`) —
-  two scopes pinning different revisions would fight over it, and a
-  refresh mid-plan can shift bytes under a render. Replace with
-  per-commit checkouts keyed by (repo identity, full commit OID),
-  published atomically, verified unmodified on reuse, under a
-  repository-level cache lock. **Pin semantics, decided:** a *commit* is
-  a pin — durable intent, recorded in the manifest. A *tag or branch*
-  is a tracking selector — it re-resolves on refresh, and the lock
-  records the resolved commit as reproducibility cache (losing the lock
-  loses no intent either way; a moved tag is followed on the next
-  refresh, previewed like any upstream change). Offline with an
-  uncached pin: hard error; existing installs keep working from
-  rendered state.
-- Catalog-item metadata (category, version, author, license, homepage)
-  gets a read-side struct feeding Phase 4's browse UI — deliberately not
-  part of the manifest. A dedicated store-like registry experience
-  (multiple browsable marketplaces, Vercel skills marketplace,
-  add-your-own registries) is out of scope for v0.2 by owner decision —
-  recorded in `docs/roadmaps/future.md`.
-- A wshobson "plugin" maps to a vstack **bundle** (Phase 4) — the group
-  identity is preserved at parse time so Phase 4 can install it as a
-  unit; nothing in this phase installs groups yet.
-
-**Done when:** the default catalog and a pinned wshobson clone both
-enumerate, install, and refresh correctly; two scopes pinning different
-revisions of one repo coexist (test); a hostile catalog fixture
-(symlink escape anywhere, path-hostile names, oversized tree,
-cross-file registry lies) is rejected with findings; a moved tag
-re-resolves preview-first; breaking changes registered; suite green.
 
 ### Phase 4 — bundles + dependencies (directive 4)
 
