@@ -1,12 +1,15 @@
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use super::desired::native_dir;
+use super::desired::{self, Artifact, native_dir};
 use super::targets::{HookTarget, disabled_name, hook_target, mcp_registry, plugin_settings};
+use super::{DriftRow, DriftState, PlanOptions};
 use crate::apply::{Op, PlannedOp, Pre};
 use crate::configedit::ConfigEdit;
 use crate::env::Env;
 use crate::error::Result;
-use crate::lock::LockEntry;
+use crate::lock::{Lock, LockEntry};
+use crate::manifest::Manifest;
 use crate::model::{ItemKind, Scope};
 use crate::render::agent::file_name;
 
@@ -147,4 +150,79 @@ pub(super) fn removal_ops(
         config_edits.push(path, format!("remove {}", entry.name), edit);
     }
     Ok(ops)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn orphans(
+    env: &Env,
+    scope: &Scope,
+    manifest: &Manifest,
+    lock: &Lock,
+    state: &desired::DesiredState,
+    options: &PlanOptions,
+    refused_keys: &BTreeSet<String>,
+    drift: &mut Vec<DriftRow>,
+    ops: &mut Vec<PlannedOp>,
+    config_edits: &mut super::config_edits::ConfigEditPlan,
+    new_lock: &mut Lock,
+) -> Result<()> {
+    let desired = &state.items;
+    let desired_keys: BTreeSet<&String> = desired.iter().map(|d| &d.key).collect();
+    let keep_canonical: BTreeSet<PathBuf> = desired
+        .iter()
+        .filter_map(|d| match &d.artifact {
+            Artifact::Tree { canonical, .. } => Some(canonical.clone()),
+            Artifact::File { .. } | Artifact::Registration { .. } => None,
+        })
+        .collect();
+    let mut trashed: BTreeSet<PathBuf> = BTreeSet::new();
+
+    for (key, entry) in &lock.entries {
+        if desired_keys.contains(key) || refused_keys.contains(key) {
+            continue;
+        }
+        // Declared but skipped this pass (pending/disabled source, missing
+        // from source): keep the record, it is not an orphan. A declaration
+        // that did resolve has already said everything it wants installed,
+        // so an entry it did not ask for — a harness dropped from its list —
+        // is stranded and must be cleaned up like any other orphan.
+        let unreachable_source = manifest.declared(entry.kind).contains_key(&entry.name)
+            && !state.processed.contains(&(entry.kind, entry.name.clone()));
+        if unreachable_source {
+            new_lock.entries.insert(key.clone(), entry.clone());
+            continue;
+        }
+        let removable = options.remove_orphans
+            && options
+                .removal_filter
+                .as_ref()
+                .is_none_or(|names| names.contains(&entry.name));
+        drift.push(DriftRow {
+            kind: entry.kind,
+            name: entry.name.clone(),
+            harness: entry.harness,
+            scope: scope.clone(),
+            state: DriftState::Orphaned,
+            detail: if removable {
+                "no longer wanted — will be removed".into()
+            } else {
+                "left over from an earlier setup; nothing needs it anymore".into()
+            },
+        });
+        if !removable {
+            new_lock.entries.insert(key.clone(), entry.clone());
+            continue;
+        }
+        for planned in removal_ops(env, scope, entry, config_edits)? {
+            // A skill tree another installation still wants stays put:
+            // shared physical targets are reference-counted, not deleted.
+            if let Op::Trash { path, .. } = &planned.op
+                && (keep_canonical.contains(path.as_path()) || !trashed.insert(path.clone()))
+            {
+                continue;
+            }
+            ops.push(planned);
+        }
+    }
+    Ok(())
 }

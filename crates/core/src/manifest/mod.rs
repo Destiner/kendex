@@ -12,7 +12,11 @@ use crate::model::{HarnessId, Scope};
 mod validate;
 pub use validate::{Finding, validate};
 
-pub const MANIFEST_SCHEMA: u32 = 1;
+/// Current manifest schema. Schema 1 (v0.1) still loads; the first apply
+/// upgrades it in place through the normal journaled plan. A schema newer
+/// than this build refuses to load — downgrades must never corrupt.
+pub const MANIFEST_SCHEMA: u32 = 2;
+pub const OLDEST_READABLE_SCHEMA: u32 = 1;
 pub const DEFAULT_SOURCE_NAME: &str = "vstack";
 pub const DEFAULT_SOURCE_REPO: &str = "vanillagreencom/vstack";
 /// The reserved source name for content adopted into this scope.
@@ -253,6 +257,14 @@ pub fn load(path: &Path) -> Result<ManifestFile> {
     if !table.contains_key("schema") {
         return Ok(ManifestFile::Legacy { raw: text });
     }
+    if let Some(schema) = table.get("schema").and_then(toml::Value::as_integer)
+        && schema > i64::from(MANIFEST_SCHEMA)
+    {
+        return Err(CoreError::SchemaTooNew {
+            path: path.to_path_buf(),
+            found: schema,
+        });
+    }
     let findings = validate(&table);
     if !findings.is_empty() {
         return Err(CoreError::ManifestInvalid {
@@ -277,13 +289,18 @@ pub fn save(path: &Path, manifest: &Manifest) -> Result<()> {
 }
 
 /// Load for mutation: a legacy file is a hard error, never a write target.
+/// Whatever schema was read, a mutation writes the current one — every
+/// write path upgrades as a side effect of writing at all.
 pub fn load_for_mutation(path: &Path) -> Result<Option<Manifest>> {
     match load(path)? {
         ManifestFile::Absent => Ok(None),
         ManifestFile::Legacy { .. } => Err(CoreError::LegacyManifest {
             path: path.to_path_buf(),
         }),
-        ManifestFile::Current(manifest) => Ok(Some(*manifest)),
+        ManifestFile::Current(mut manifest) => {
+            manifest.schema = MANIFEST_SCHEMA;
+            Ok(Some(*manifest))
+        }
     }
 }
 

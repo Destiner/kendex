@@ -26,7 +26,7 @@ mod unmanaged;
 use item_plan::plan_item;
 use unmanaged::unmanaged_rows;
 
-use desired::{Artifact, desired_state};
+use desired::desired_state;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "kebab-case")]
@@ -94,14 +94,18 @@ pub fn plan_scope(
 
     if let Some(updated) = &state.manifest_update {
         let path = manifest::manifest_path(env, scope);
+        let mut updated = updated.clone();
+        updated.schema = manifest::MANIFEST_SCHEMA;
         ops.push(PlannedOp {
             description: "Add new catalog skills to vstack.toml".into(),
             op: Op::WriteManifest {
                 pre: crate::apply::Pre::observed(&path)?,
                 path,
-                manifest: Box::new(updated.clone()),
+                manifest: Box::new(updated),
             },
         });
+    } else if manifest.schema < manifest::MANIFEST_SCHEMA {
+        plan_schema_upgrade(env, scope, manifest, &mut ops)?;
     }
 
     for item in &state.items {
@@ -129,7 +133,7 @@ pub fn plan_scope(
         &mut config_edits,
     )?;
 
-    orphans(
+    removal::orphans(
         env,
         scope,
         manifest,
@@ -161,7 +165,11 @@ pub fn plan_scope(
         });
     }
 
-    if new_lock.entries != lock.entries {
+    // An old-version lock rewrites even when its entries are unchanged —
+    // the version bump is itself the change.
+    if new_lock.entries != lock.entries
+        || (lock.version != crate::lock::LOCK_VERSION && !lock.entries.is_empty())
+    {
         let path = lock_path(env, scope);
         ops.push(PlannedOp {
             description: "Update the install record".into(),
@@ -183,6 +191,41 @@ pub fn plan_scope(
     };
     unmanaged_rows(env, scope, manifest, lock, &state.items, &mut report.drift);
     Ok(report)
+}
+
+/// Upgrade an older-schema manifest through the normal journaled apply.
+/// The bump is a surgical text edit — the schema line changes and nothing
+/// else does (invariant 10); only if the line has an unexpected spelling
+/// does the plan fall back to a full rewrite.
+fn plan_schema_upgrade(
+    env: &Env,
+    scope: &Scope,
+    manifest: &Manifest,
+    ops: &mut Vec<PlannedOp>,
+) -> Result<()> {
+    let path = manifest::manifest_path(env, scope);
+    let description = "Upgrade vstack.toml to the current format".to_owned();
+    let old_line = format!("schema = {}", manifest.schema);
+    let new_line = format!("schema = {}", manifest::MANIFEST_SCHEMA);
+    let current = crate::fs::read_if_exists(&path)?.unwrap_or_default();
+    let op = match current.lines().any(|line| line.trim() == old_line) {
+        true => Op::WriteFile {
+            pre: crate::apply::Pre::observed(&path)?,
+            path,
+            bytes: current.replacen(&old_line, &new_line, 1).into_bytes(),
+        },
+        false => {
+            let mut upgraded = manifest.clone();
+            upgraded.schema = manifest::MANIFEST_SCHEMA;
+            Op::WriteManifest {
+                pre: crate::apply::Pre::observed(&path)?,
+                path,
+                manifest: Box::new(upgraded),
+            }
+        }
+    };
+    ops.push(PlannedOp { description, op });
+    Ok(())
 }
 
 /// A refusal is a conflict the user must resolve, and any previous, wider
@@ -271,81 +314,6 @@ fn plan_settings_seed(
             bytes: text.into_bytes(),
         },
     });
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-fn orphans(
-    env: &Env,
-    scope: &Scope,
-    manifest: &Manifest,
-    lock: &Lock,
-    state: &desired::DesiredState,
-    options: &PlanOptions,
-    refused_keys: &BTreeSet<String>,
-    drift: &mut Vec<DriftRow>,
-    ops: &mut Vec<PlannedOp>,
-    config_edits: &mut config_edits::ConfigEditPlan,
-    new_lock: &mut Lock,
-) -> Result<()> {
-    let desired = &state.items;
-    let desired_keys: BTreeSet<&String> = desired.iter().map(|d| &d.key).collect();
-    let keep_canonical: BTreeSet<PathBuf> = desired
-        .iter()
-        .filter_map(|d| match &d.artifact {
-            Artifact::Tree { canonical, .. } => Some(canonical.clone()),
-            Artifact::File { .. } | Artifact::Registration { .. } => None,
-        })
-        .collect();
-    let mut trashed: BTreeSet<PathBuf> = BTreeSet::new();
-
-    for (key, entry) in &lock.entries {
-        if desired_keys.contains(key) || refused_keys.contains(key) {
-            continue;
-        }
-        // Declared but skipped this pass (pending/disabled source, missing
-        // from source): keep the record, it is not an orphan. A declaration
-        // that did resolve has already said everything it wants installed,
-        // so an entry it did not ask for — a harness dropped from its list —
-        // is stranded and must be cleaned up like any other orphan.
-        let unreachable_source = manifest.declared(entry.kind).contains_key(&entry.name)
-            && !state.processed.contains(&(entry.kind, entry.name.clone()));
-        if unreachable_source {
-            new_lock.entries.insert(key.clone(), entry.clone());
-            continue;
-        }
-        let removable = options.remove_orphans
-            && options
-                .removal_filter
-                .as_ref()
-                .is_none_or(|names| names.contains(&entry.name));
-        drift.push(DriftRow {
-            kind: entry.kind,
-            name: entry.name.clone(),
-            harness: entry.harness,
-            scope: scope.clone(),
-            state: DriftState::Orphaned,
-            detail: if removable {
-                "no longer wanted — will be removed".into()
-            } else {
-                "left over from an earlier setup; nothing needs it anymore".into()
-            },
-        });
-        if !removable {
-            new_lock.entries.insert(key.clone(), entry.clone());
-            continue;
-        }
-        for planned in removal::removal_ops(env, scope, entry, config_edits)? {
-            // A skill tree another installation still wants stays put:
-            // shared physical targets are reference-counted, not deleted.
-            if let Op::Trash { path, .. } = &planned.op
-                && (keep_canonical.contains(path) || !trashed.insert(path.clone()))
-            {
-                continue;
-            }
-            ops.push(planned);
-        }
-    }
     Ok(())
 }
 

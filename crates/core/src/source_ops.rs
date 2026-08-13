@@ -178,7 +178,7 @@ mod tests {
         fs::write(
             project.join("vstack.toml"),
             format!(
-                "schema = 1\n[sources.cat]\npath = \"{}\"\n[install]\nharnesses = [\"claude\"]\n[skills.gh]\nsource = \"cat\"\n",
+                "schema = 2\n[sources.cat]\npath = \"{}\"\n[install]\nharnesses = [\"claude\"]\n[skills.gh]\nsource = \"cat\"\n",
                 source.display()
             ),
         )

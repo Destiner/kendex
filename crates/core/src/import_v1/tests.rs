@@ -59,7 +59,7 @@ const V1_LOCK: &str = r#"{
 fn converts_tables_with_aliases_and_drops_the_dead_ones() {
     let outcome = convert(Some(V1_MANIFEST), None).unwrap();
     let m = &outcome.manifest;
-    assert_eq!(m.schema, 1);
+    assert_eq!(m.schema, crate::manifest::MANIFEST_SCHEMA);
     assert_eq!(
         m.agent_launch_instructions.get("rust").map(String::as_str),
         Some("Read docs/architecture.md before coding.")

@@ -10,7 +10,10 @@ use crate::fs::{atomic_write, read_if_exists};
 use crate::manifest::Method;
 use crate::model::{HarnessId, ItemKind, Scope};
 
-pub const LOCK_VERSION: u32 = 1;
+/// Current lock version. Version 1 (v0.1) still loads — the shape is
+/// compatible and the next lock write records the current version. A lock
+/// newer than this build refuses to load.
+pub const LOCK_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
 pub struct Lock {
@@ -61,10 +64,19 @@ pub fn load(path: &Path) -> Result<Lock> {
             version: LOCK_VERSION,
             entries: BTreeMap::new(),
         }),
-        Some(text) => serde_json::from_str(&text).map_err(|e| CoreError::JsonParse {
-            path: path.to_path_buf(),
-            message: e.to_string(),
-        }),
+        Some(text) => {
+            let lock: Lock = serde_json::from_str(&text).map_err(|e| CoreError::JsonParse {
+                path: path.to_path_buf(),
+                message: e.to_string(),
+            })?;
+            if lock.version > LOCK_VERSION {
+                return Err(CoreError::SchemaTooNew {
+                    path: path.to_path_buf(),
+                    found: i64::from(lock.version),
+                });
+            }
+            Ok(lock)
+        }
     }
 }
 

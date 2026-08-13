@@ -16,7 +16,9 @@
 >   (`source_read::SealedSource`) through source/find/list/render/hash/
 >   pi_ext paths, guard-banned raw reads, hostile-catalog e2e test. Bug 4
 >   fixed: config edits coalesce per file (`ConfigEditPlan`), installs and
->   removals in one mutation with one precondition. Next in sequence:
+>   removals in one mutation with one precondition. Scope identity
+>   canonicalized in core (1247ac3). Schema v2 + journaled surgical
+>   v0.1→v0.2 migration with fixtures + too-new refusal. Next in sequence:
 >   scope canonicalization, schema v2 + migration, format caps + warnings
 >   channel, body-split + tool swap + commands→skills + name legality,
 >   validators, hardened process constructor, byte-faithful writes,

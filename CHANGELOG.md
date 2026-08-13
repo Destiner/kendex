@@ -38,6 +38,16 @@ changes carry a **Breaking** call-out with their migration note inline.
   file in one apply used to fail and roll back; each file now gets a
   single composed mutation with a single precondition.
 
+### Changed
+
+- **Breaking:** the manifest schema and install-record version move to 2.
+  v0.1 files still load; the first apply upgrades them in place through
+  the normal journaled, previewed plan — the upgrade changes the schema
+  line and nothing else, and an interrupted upgrade rolls back
+  byte-identically. Files written by a newer vstack refuse to load
+  instead of being corrupted. Migration: automatic on first apply;
+  `vstack import` still covers v1.
+
 ### Added
 
 - Every catalog read goes through one sealed API: reads resolve against

@@ -70,11 +70,13 @@ const FRONTMATTER_KEYS: &[&str] = &[
 pub fn validate(table: &Table) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    if table.get("schema").and_then(Value::as_integer) != Some(1) {
+    let schema = table.get("schema").and_then(Value::as_integer);
+    let readable = i64::from(super::OLDEST_READABLE_SCHEMA)..=i64::from(super::MANIFEST_SCHEMA);
+    if !schema.is_some_and(|s| readable.contains(&s)) {
         findings.push(Finding {
             location: "schema".into(),
             problem: "missing or unsupported schema version".into(),
-            fix: "set schema = 1".into(),
+            fix: format!("set schema = {}", super::MANIFEST_SCHEMA),
         });
     }
     for key in table.keys() {
@@ -285,7 +287,7 @@ mod tests {
     fn every_finding_carries_a_fix() {
         let table = parse(
             r#"
-schema = 2
+schema = 99
 typo-table = 1
 
 [sources.bad]

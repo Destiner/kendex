@@ -40,6 +40,11 @@ pub enum CoreError {
     )]
     LegacyManifest { path: PathBuf },
 
+    #[error(
+        "{path} was written by a newer vstack (format {found}) — update this app before touching it"
+    )]
+    SchemaTooNew { path: PathBuf, found: i64 },
+
     #[error("{path}: refused catalog read — {reason}")]
     SourceEscape { path: PathBuf, reason: String },
 
