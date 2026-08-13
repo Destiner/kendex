@@ -13,14 +13,16 @@
 >   preview; hardened process constructor; byte-faithful + uncompared
 >   tests. Three adversarial review rounds folded in (14 + 3 + 18
 >   findings). ARCHITECTURE.md carries the durable decisions.
-> - Phase 2 ⏳: foundation landed (d2c6e13 — caps v2 axes, both ids,
->   read-only detection); Gemini fully managed (previous commit).
->   Remaining: Copilot mirror adapter (agent fan-out next), B11 plugin
->   harness targeting, Copilot hook/enabledPlugins readers +
->   effective-state scanning (`disableAllHooks`, folder trust,
->   allowed_models, `.claude` cross-reads as duplicate effective
->   definitions — never a second installation), README/labels already
->   carry both, then adversarial review of the whole phase.
+> - Phase 2 ⏳ ~85%: foundation (d2c6e13), Gemini fully managed
+>   (fff7481), Copilot fully managed incl. B11 plugin harness targeting,
+>   hook/enabledPlugins readers, disable-only direction, cross-read
+>   duplicate-definition notes (affc32a). Remaining before the phase
+>   closes: walk the Phase 2 done-when list against the tree
+>   (detection-root fixtures both scopes ✓ per adapter tests; §7 rows +
+>   honesty tests ✓; enforcement shown in UI/plan preview — VERIFY the
+>   UI actually shows it, may need a small Sync/labels touch), then an
+>   adversarial review of d2c6e13..HEAD (same drill as Phase 1's) and
+>   fold its findings, then consume the Phase 2 plan section.
 > - Standing: subagent reports may arrive only as idle notifications —
 >   recover them from the session's `subagents/*.jsonl` (user CLAUDE.md).
 >   Engine/render changes get adversarial review before merge. Commits
