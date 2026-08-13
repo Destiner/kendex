@@ -335,9 +335,9 @@ mod tests {
 
         agent.overrides.model = Some("mystery".into());
         let rendered = generate(&agent);
-        assert!(rendered.text.contains("model: mystery\n"));
+        assert!(rendered.text.contains("model: openai/mystery\n"));
         assert!(
-            rendered
+            !rendered
                 .warnings
                 .iter()
                 .any(|w| w.message.contains("mystery"))

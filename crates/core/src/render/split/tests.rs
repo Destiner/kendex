@@ -1,0 +1,217 @@
+use super::*;
+
+const NOTE: &str = "\n> Continued in references/details.md — read it for the remaining sections.\n";
+
+fn skill(body: &str) -> String {
+    format!("---\nname: x\n---\n{body}")
+}
+
+fn tree(text: &str) -> Vec<(PathBuf, Vec<u8>)> {
+    vec![(PathBuf::from(SKILL_FILE), text.as_bytes().to_vec())]
+}
+
+/// `count` sections of a fixed size, so a cap can be aimed between them.
+fn sections(count: usize) -> String {
+    (1..=count)
+        .map(|n| format!("\n## S{n}\n\n{}\n", "x".repeat(200)))
+        .collect()
+}
+
+fn instructions() -> String {
+    format!("{INSTRUCTIONS_START}\n## Project Instructions\n\nuse gh\n{INSTRUCTIONS_END}\n")
+}
+
+fn read(outcome: &SplitOutcome, name: &str) -> String {
+    let (_, bytes) = outcome
+        .files
+        .iter()
+        .find(|(path, _)| path == Path::new(name))
+        .unwrap_or_else(|| panic!("{name} is not in the tree"));
+    String::from_utf8(bytes.clone()).unwrap()
+}
+
+#[test]
+fn a_body_under_the_cap_is_left_alone() {
+    let files = tree(&skill("\n## One\n\nshort\n"));
+    let outcome = enforce_body_cap(files.clone(), 4096);
+    assert_eq!(outcome.files, files);
+    assert!(outcome.warnings.is_empty());
+    assert!(outcome.refusal.is_none());
+}
+
+#[test]
+fn a_tree_without_a_skill_file_is_left_alone() {
+    let files = vec![(PathBuf::from("references/details.md"), vec![b'x'; 900])];
+    let outcome = enforce_body_cap(files.clone(), 10);
+    assert_eq!(outcome.files, files);
+    assert!(outcome.refusal.is_none());
+}
+
+#[test]
+fn a_split_lands_on_a_heading_and_loses_no_bytes() {
+    let text = skill(&sections(6));
+    let outcome = enforce_body_cap(tree(&text), 400);
+    let head = read(&outcome, "SKILL.md");
+    let overflow = read(&outcome, "references/details.md");
+
+    assert!(head.len() <= 400);
+    assert!(head.starts_with("---\nname: x\n---\n"));
+    assert!(head.contains("## S1") && !head.contains("## S2"));
+    assert!(overflow.starts_with(&format!("{PROVENANCE}## S2")));
+    assert_eq!(
+        format!(
+            "{}{}",
+            head.strip_suffix(NOTE).unwrap(),
+            overflow.strip_prefix(PROVENANCE).unwrap()
+        ),
+        text
+    );
+    assert_eq!(outcome.warnings.len(), 1);
+    assert_eq!(outcome.warnings[0].remediation.as_deref(), Some(FIX));
+    assert!(outcome.refusal.is_none());
+}
+
+#[test]
+fn a_heading_inside_a_fence_is_not_a_split_point() {
+    let fence = format!("```md\n{}```\n", "## fake\n".repeat(30));
+    let text = skill(&format!("{}\n{fence}\n## Last\n\ntail\n", sections(2)));
+    // The cap falls inside the fence: a fake heading would win if fences
+    // were not tracked.
+    let outcome = enforce_body_cap(tree(&text), 640);
+    let head = read(&outcome, "SKILL.md");
+    let overflow = read(&outcome, "references/details.md");
+
+    assert!(!head.contains("```"));
+    assert!(head.contains("## S1") && !head.contains("## S2"));
+    assert!(overflow.contains(&fence));
+}
+
+#[test]
+fn a_longer_fence_run_is_not_closed_by_a_shorter_one() {
+    let body = "````\n```\n## fake\n```\n````\n\n## Real\n";
+    let fenced = fenced_ranges(body);
+    assert_eq!(fenced, vec![(0, 26)]);
+    assert_eq!(headings(body, &fenced), vec![27]);
+}
+
+#[test]
+fn an_unclosed_fence_swallows_the_rest_of_the_body() {
+    let body = "## Real\n\n```\ncode\n\n## fake\n";
+    let fenced = fenced_ranges(body);
+    assert_eq!(fenced, vec![(9, body.len())]);
+    assert_eq!(headings(body, &fenced), vec![0]);
+}
+
+#[test]
+fn a_multibyte_character_is_never_cut_in_half() {
+    let text = skill(&"é".repeat(400));
+    let outcome = enforce_body_cap(tree(&text), 201);
+    let head = read(&outcome, "SKILL.md");
+    let overflow = read(&outcome, "references/details.md");
+
+    // The budget lands mid-character; the cut walks back one byte.
+    assert_eq!(head.len(), 200);
+    assert_eq!(head.matches('é').count(), 53);
+    assert_eq!(
+        format!(
+            "{}{}",
+            head.strip_suffix(NOTE).unwrap(),
+            overflow.strip_prefix(PROVENANCE).unwrap()
+        ),
+        text
+    );
+}
+
+#[test]
+fn a_fenced_block_larger_than_the_cap_is_refused() {
+    let files = tree(&skill(&format!("```\n{}```\n", "line\n".repeat(200))));
+    let outcome = enforce_body_cap(files.clone(), 300);
+
+    assert_eq!(outcome.files, files);
+    assert!(outcome.warnings.is_empty());
+    assert!(outcome.refusal.unwrap().contains("fenced code block"));
+}
+
+#[test]
+fn the_instructions_block_stays_in_the_head_when_it_comes_late() {
+    let text = skill(&format!(
+        "{}\n{}\n## Tail\n\nz\n",
+        sections(3),
+        instructions()
+    ));
+    let outcome = enforce_body_cap(tree(&text), 700);
+    let head = read(&outcome, "SKILL.md");
+    let overflow = read(&outcome, "references/details.md");
+
+    assert!(head.len() <= 700);
+    assert!(head.contains(&instructions()));
+    assert!(!overflow.contains(INSTRUCTIONS_START));
+    // Content that preceded the block moved out so the block could stay.
+    assert!(overflow.contains("## S3") && overflow.contains("## Tail"));
+    assert_eq!(
+        head.len() - NOTE.len() + overflow.len() - PROVENANCE.len(),
+        text.len()
+    );
+}
+
+#[test]
+fn a_heading_inside_the_instructions_block_is_not_a_split_point() {
+    // The block's own `## Project Instructions` is the last heading under
+    // the cap; taking it would leave the markers in different files.
+    let text = skill(&format!(
+        "{}\n{}{}\n## Later\n\nz\n",
+        sections(2),
+        instructions(),
+        "y".repeat(300)
+    ));
+    let outcome = enforce_body_cap(tree(&text), 694);
+    let head = read(&outcome, "SKILL.md");
+    let overflow = read(&outcome, "references/details.md");
+
+    assert!(head.contains(&instructions()));
+    assert!(!overflow.contains(INSTRUCTIONS_START) && !overflow.contains(INSTRUCTIONS_END));
+    assert!(overflow.contains("## S2") && overflow.contains("## Later"));
+}
+
+#[test]
+fn a_cap_below_the_instructions_block_is_refused() {
+    let text = skill(&format!("{}{}", instructions(), sections(2)));
+    let outcome = enforce_body_cap(tree(&text), 100);
+    assert!(
+        outcome
+            .refusal
+            .unwrap()
+            .contains("frontmatter and project instructions")
+    );
+}
+
+#[test]
+fn an_existing_details_file_pushes_the_overflow_to_a_free_name() {
+    let mut files = tree(&skill(&sections(6)));
+    files.push((PathBuf::from("references/details.md"), b"prior\n".to_vec()));
+    let outcome = enforce_body_cap(files.clone(), 400);
+
+    assert_eq!(read(&outcome, "references/details.md"), "prior\n");
+    assert!(read(&outcome, "references/details_overflow.md").starts_with(PROVENANCE));
+    assert!(read(&outcome, "SKILL.md").contains("references/details_overflow.md"));
+
+    files.push((
+        PathBuf::from("references/details_overflow.md"),
+        b"prior\n".to_vec(),
+    ));
+    let outcome = enforce_body_cap(files, 400);
+    assert!(read(&outcome, "references/details_overflow-2.md").starts_with(PROVENANCE));
+}
+
+#[test]
+fn the_returned_tree_stays_sorted() {
+    let mut files = tree(&skill(&sections(6)));
+    files.push((PathBuf::from("assets/logo.svg"), b"<svg/>".to_vec()));
+    let outcome = enforce_body_cap(files, 400);
+
+    let paths: Vec<&PathBuf> = outcome.files.iter().map(|(path, _)| path).collect();
+    let mut sorted = paths.clone();
+    sorted.sort();
+    assert_eq!(paths, sorted);
+    assert_eq!(paths.len(), 3);
+}

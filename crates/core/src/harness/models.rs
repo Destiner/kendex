@@ -50,11 +50,15 @@ pub fn resolve_model(harness: HarnessId, model: &str) -> ResolvedModel {
             (HarnessId::Cursor, _) => resolved(None),
         };
     }
-    // Explicit ids pass through. Where the harness's loader requires a
-    // `provider/model` form, a bare unknown almost certainly will not load —
-    // say so instead of emitting it silently.
-    let needs_provider = matches!(harness, HarnessId::Opencode | HarnessId::Pi);
-    let warning = (needs_provider && !model.contains('/')).then(|| {
+    // Explicit ids pass through. OpenCode's loader requires the
+    // `provider/model` form and its historical default provider is openai,
+    // so a bare vendor id keeps working by gaining that prefix; Pi has no
+    // such default, so a bare unknown passes through with a warning.
+    let bare = !model.contains('/');
+    if harness == HarnessId::Opencode && bare {
+        return resolved(Some(&format!("openai/{}", model.trim())));
+    }
+    let warning = (harness == HarnessId::Pi && bare).then(|| {
         format!(
             "model '{model}' is neither a known alias nor a provider/model id — {} may not load it",
             harness.display_name()
@@ -112,11 +116,12 @@ mod tests {
     }
 
     #[test]
-    fn bare_unknowns_warn_only_where_a_provider_prefix_is_required() {
-        let opencode = resolve_model(HarnessId::Opencode, "mystery-model");
-        assert_eq!(opencode.id.as_deref(), Some("mystery-model"));
-        assert!(opencode.warning.unwrap().contains("mystery-model"));
+    fn bare_ids_gain_opencodes_default_provider_and_warn_on_pi() {
+        let opencode = resolve_model(HarnessId::Opencode, "gpt-5.6-sol");
+        assert_eq!(opencode.id.as_deref(), Some("openai/gpt-5.6-sol"));
+        assert_eq!(opencode.warning, None);
         let pi = resolve_model(HarnessId::Pi, "mystery-model");
+        assert_eq!(pi.id.as_deref(), Some("mystery-model"));
         assert!(pi.warning.is_some());
         assert!(
             resolve_model(HarnessId::Claude, "claude-sonnet-5")

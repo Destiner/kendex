@@ -73,6 +73,7 @@ pub fn refresh_failures(report: &EngineReport) -> Vec<String> {
             n.contains("not found in source")
                 || n.contains("missing at")
                 || n.contains("not fetched yet")
+                || n.contains("refused catalog read")
         })
         .cloned()
         .collect()

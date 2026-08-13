@@ -28,6 +28,13 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Fixed
 
+- The editor's skill list no longer breaks on a machine where nothing
+  was ever adopted; the reserved local source reads as missing until
+  adopt creates it.
+- A catalog item refused for a hostile read now fails `vstack verify`
+  and `vstack refresh` instead of printing a green tick.
+- OpenCode agents pinned to a bare vendor model id keep loading: the id
+  gains OpenCode's default `openai/` provider prefix as before.
 - A project's identity no longer depends on how its path was spelled:
   the writer lock and every derived path key off the canonical root, so
   two differently-written paths to one project can never write

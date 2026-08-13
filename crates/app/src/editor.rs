@@ -130,8 +130,11 @@ pub fn editor_inventory(scope: Scope) -> Result<EditorInventory, String> {
         let SourceState::Ready(ready) = resolved else {
             continue;
         };
-        let sealed =
-            vstack_core::source_read::SealedSource::open(&ready.root).map_err(|e| e.to_string())?;
+        // A source that cannot be opened offers nothing; it must not take
+        // the whole editor inventory down with it.
+        let Ok(sealed) = vstack_core::source_read::SealedSource::open(&ready.root) else {
+            continue;
+        };
         let config = source::source_config(&sealed).map_err(|e| e.to_string())?;
         available.extend(source::list_items(&sealed, &config, ItemKind::Skill));
     }

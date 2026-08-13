@@ -44,9 +44,18 @@ pub fn local_source_root(env: &Env, scope: &Scope) -> PathBuf {
 
 pub fn resolve(env: &Env, scope: &Scope, name: &str, manifest: &Manifest) -> Result<SourceState> {
     if name == LOCAL_SOURCE_NAME {
+        // Adopt creates this root; until then the reserved source has no
+        // content and reads as missing, never as an open-able Ready root.
+        let root = local_source_root(env, scope);
+        if !root.is_dir() {
+            return Ok(SourceState::Missing {
+                name: name.to_owned(),
+                path: root,
+            });
+        }
         return Ok(SourceState::Ready(ResolvedSource {
             name: name.to_owned(),
-            root: local_source_root(env, scope),
+            root,
             provenance: LOCAL_SOURCE_NAME.to_owned(),
         }));
     }
@@ -258,142 +267,4 @@ pub fn list_items(sealed: &SealedSource, config: &SourceConfig, kind: ItemKind) 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::env::FakeOs;
-    use crate::manifest::{MANIFEST_SCHEMA, SourceDecl};
-
-    fn manifest_with(name: &str, decl: SourceDecl) -> Manifest {
-        let mut manifest = Manifest {
-            schema: MANIFEST_SCHEMA,
-            ..Manifest::default()
-        };
-        manifest.sources.insert(name.to_owned(), decl);
-        manifest
-    }
-
-    #[test]
-    fn remote_without_cache_is_pending_not_an_error() {
-        let tmp = tempfile::tempdir().unwrap();
-        let env = Env::fake(tmp.path(), FakeOs::Linux);
-        let manifest = manifest_with(
-            "vstack",
-            SourceDecl {
-                repo: Some("vanillagreencom/vstack".into()),
-                path: None,
-                enabled: true,
-            },
-        );
-        let state = resolve(&env, &Scope::Global, "vstack", &manifest).unwrap();
-        assert!(matches!(state, SourceState::Pending { .. }));
-        assert!(matches!(
-            require_ready(&env, &Scope::Global, "vstack", &manifest),
-            Err(CoreError::SourcePending { .. })
-        ));
-    }
-
-    #[test]
-    fn path_sources_resolve_relative_to_scope_root() {
-        let tmp = tempfile::tempdir().unwrap();
-        let project = tmp.path().join("proj");
-        std::fs::create_dir_all(project.join("catalog/skills/gh")).unwrap();
-        std::fs::write(project.join("catalog/skills/gh/SKILL.md"), "x").unwrap();
-        let env = Env::fake(tmp.path(), FakeOs::Linux);
-        let manifest = manifest_with(
-            "cat",
-            SourceDecl {
-                repo: None,
-                path: Some("catalog".into()),
-                enabled: true,
-            },
-        );
-        let scope = Scope::Project {
-            root: project.clone(),
-        };
-        let source = require_ready(&env, &scope, "cat", &manifest).unwrap();
-        assert_eq!(source.root, project.join("catalog").canonicalize().unwrap());
-
-        let sealed = SealedSource::open(&source.root).unwrap();
-        let config = source_config(&sealed).unwrap();
-        assert_eq!(
-            find_item(&sealed, &config, ItemKind::Skill, "gh"),
-            Some(source.root.join("skills/gh"))
-        );
-        assert_eq!(list_items(&sealed, &config, ItemKind::Skill), ["gh"]);
-    }
-
-    #[test]
-    fn disabled_and_missing_and_unknown_sources_are_distinct() {
-        let tmp = tempfile::tempdir().unwrap();
-        let env = Env::fake(tmp.path(), FakeOs::Linux);
-        let mut manifest = manifest_with(
-            "off",
-            SourceDecl {
-                repo: Some("a/b".into()),
-                path: None,
-                enabled: false,
-            },
-        );
-        manifest.sources.insert(
-            "gone".into(),
-            SourceDecl {
-                repo: None,
-                path: Some("nowhere".into()),
-                enabled: true,
-            },
-        );
-        assert!(matches!(
-            resolve(&env, &Scope::Global, "off", &manifest).unwrap(),
-            SourceState::Disabled { .. }
-        ));
-        assert!(matches!(
-            resolve(&env, &Scope::Global, "gone", &manifest).unwrap(),
-            SourceState::Missing { .. }
-        ));
-        assert!(matches!(
-            resolve(&env, &Scope::Global, "nope", &manifest),
-            Err(CoreError::UnknownSource { .. })
-        ));
-    }
-
-    #[test]
-    fn phase_three_kinds_live_at_fixed_catalog_paths() {
-        let tmp = tempfile::tempdir().unwrap();
-        let sealed = SealedSource::open(tmp.path()).unwrap();
-        let (root, config) = (sealed.root().to_path_buf(), SourceConfig::default());
-        for (kind, rel) in [
-            (ItemKind::Hook, "hooks/guard.sh"),
-            (ItemKind::Command, "commands/ship.md"),
-            (ItemKind::McpServer, "mcp/gh.toml"),
-        ] {
-            assert_eq!(find_item(&sealed, &config, kind, "guard"), None);
-            let path = root.join(rel);
-            std::fs::create_dir_all(root.join(rel).parent().unwrap()).unwrap();
-            std::fs::write(&path, "x").unwrap();
-            let name = path.file_stem().unwrap().to_string_lossy();
-            assert_eq!(find_item(&sealed, &config, kind, &name), Some(path));
-        }
-    }
-
-    #[test]
-    fn v1_catalog_tables_parse_leniently() {
-        let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(
-            tmp.path().join("vstack.toml"),
-            r#"
-is_source_catalog = true
-[catalog]
-skills = ["skills", "extra-skills"]
-[agent-skills]
-rust = ["clippy"]
-[role-skills]
-engineer = ["dev"]
-"#,
-        )
-        .unwrap();
-        let config = source_config(&SealedSource::open(tmp.path()).unwrap()).unwrap();
-        assert_eq!(config.skill_dirs, ["skills", "extra-skills"]);
-        assert_eq!(config.agent_skills["rust"], ["clippy"]);
-        assert_eq!(config.role_skills["engineer"], ["dev"]);
-    }
-}
+mod tests;

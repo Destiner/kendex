@@ -225,12 +225,14 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
                 // One hostile item must not take the whole scope down: the
                 // refused read becomes an unreadable note, and what it
                 // already installed stays out of the orphan sweep.
+                // "unreadable" is the phrase verify keys on: a refused item
+                // must fail verification, never print a green tick.
                 Err(crate::error::CoreError::SourceEscape { path, reason }) => {
                     state.unreadable(
                         kind,
                         name,
                         format!(
-                            "{name}: refused catalog read — {reason} ({})",
+                            "{name}: unreadable — refused catalog read: {reason} ({})",
                             path.display()
                         ),
                     );
