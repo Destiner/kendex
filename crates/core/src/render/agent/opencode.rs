@@ -1,26 +1,39 @@
-use super::{EffectiveAgent, GENERATED_BANNER, hooks_prose, model_id_for, skills_prose};
+use super::{
+    EffectiveAgent, GENERATED_BANNER, RenderedAgent, hooks_prose, model_id_for, skills_prose,
+};
 use crate::manifest::FrontmatterOverrides;
 use crate::model::Scope;
+use crate::render::permission::PermissionIntent;
+use crate::render::yaml_scalar;
 
 /// OpenCode agent: YAML frontmatter + markdown system prompt. Tools are
-/// controlled by a deny-only `permission:` map keyed by permission name, not
-/// tool name, so every deny-tool is translated first.
-pub fn generate(agent: &EffectiveAgent) -> String {
+/// controlled by a `permission:` map keyed by permission name, not tool
+/// name, so every entry is translated first. An allowlist synthesizes
+/// denies over the known permission set — `skill` stays allowed (Claude
+/// authors never list it) and unknown entries warn instead of enforcing.
+pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
     let source = agent.source;
     let o = &agent.overrides;
+    let mut warnings = Vec::new();
     let mut out = String::from("---\n");
-    out.push_str(&format!("description: {}\n", yaml_str(&source.description)));
+    out.push_str(&format!(
+        "description: {}\n",
+        yaml_scalar(&source.description)
+    ));
     let mode = mode(o);
     out.push_str(&format!("mode: {mode}\n"));
     let model = o.model.as_deref().unwrap_or(&source.model);
-    out.push_str(&format!("model: {}\n", model_id_for("openai", model)));
+    out.push_str(&format!(
+        "model: {}\n",
+        yaml_scalar(&model_id_for("openai", model))
+    ));
     if let Some(color) = o
         .color
         .as_deref()
         .or(source.color.as_deref())
         .and_then(color_hex)
     {
-        out.push_str(&format!("color: {}\n", yaml_str(&color)));
+        out.push_str(&format!("color: {}\n", yaml_scalar(&color)));
     }
     let effort = o
         .model_reasoning_effort
@@ -33,16 +46,19 @@ pub fn generate(agent: &EffectiveAgent) -> String {
             "options:\n  reasoningEffort: {effort}\n  reasoningSummary: auto\n  textVerbosity: medium\n"
         ));
     }
-    let denied = denied_permissions(agent, mode);
+    let denied = denied_permissions(agent, mode, &mut warnings);
     if !denied.is_empty() {
         out.push_str("permission:\n");
         for permission in denied {
-            out.push_str(&format!("  {permission}: deny\n"));
+            out.push_str(&format!("  {}: deny\n", yaml_scalar(&permission)));
         }
     }
     out.push_str("---\n\n");
     out.push_str(&body(agent));
-    out
+    RenderedAgent {
+        text: out,
+        warnings,
+    }
 }
 
 /// `all` means "usable either way", which opencode spells `subagent`.
@@ -53,9 +69,22 @@ fn mode(o: &FrontmatterOverrides) -> &str {
     }
 }
 
+/// Every permission OpenCode's loader knows; the deny set for an allowlist
+/// is enumerated over exactly these.
+const KNOWN_PERMISSIONS: [&str; 10] = [
+    "read", "edit", "glob", "grep", "bash", "task", "skill", "lsp", "question", "webfetch",
+];
+
 /// Subagents never spawn further agents, and only the planner may interrupt
-/// the user. Primary agents keep both.
-fn denied_permissions(agent: &EffectiveAgent, mode: &str) -> Vec<String> {
+/// the user. Primary agents keep both. Policy denies win even over an
+/// allowlist entry — restriction always beats permission. An allowlist that
+/// maps to no known permission still denies every built-in: `tools:
+/// mcp__x` grants exactly the MCP tool, not the MCP tool plus everything.
+fn denied_permissions(
+    agent: &EffectiveAgent,
+    mode: &str,
+    warnings: &mut Vec<String>,
+) -> Vec<String> {
     let mut tools: Vec<String> = Vec::new();
     if mode == "subagent" {
         tools.push("task".to_owned());
@@ -63,13 +92,30 @@ fn denied_permissions(agent: &EffectiveAgent, mode: &str) -> Vec<String> {
             tools.push("question".to_owned());
         }
     }
-    if let Some(extra) = &agent.overrides.deny_tools {
-        tools.extend(extra.iter().cloned());
-    }
+    tools.extend(agent.permissions.denies().iter().cloned());
     let mut permissions: Vec<String> = Vec::new();
     for permission in tools.iter().filter_map(|tool| permission_name(tool)) {
         if !permissions.contains(&permission) {
             permissions.push(permission);
+        }
+    }
+    if let PermissionIntent::AllowOnly { allow, .. } = &agent.permissions {
+        let mut allowed: Vec<String> = Vec::new();
+        for tool in allow {
+            match permission_name(tool) {
+                Some(known) if KNOWN_PERMISSIONS.contains(&known.as_str()) => allowed.push(known),
+                _ => warnings.push(format!(
+                    "tool `{tool}` has no OpenCode permission — it passes through unenforced"
+                )),
+            }
+        }
+        for known in KNOWN_PERMISSIONS {
+            if known != "skill"
+                && !allowed.iter().any(|a| a == known)
+                && !permissions.iter().any(|p| p == known)
+            {
+                permissions.push(known.to_owned());
+            }
         }
     }
     permissions
@@ -140,18 +186,6 @@ fn body(agent: &EffectiveAgent) -> String {
     out
 }
 
-fn yaml_str(text: &str) -> String {
-    let starts_safe = text
-        .chars()
-        .next()
-        .is_some_and(|c| c.is_ascii_alphanumeric());
-    let body_safe = !text.contains([':', '#', '"', '\'', '\n', '\t']);
-    if starts_safe && body_safe {
-        return text.to_owned();
-    }
-    format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
-}
-
 fn is_none_value(value: &str) -> bool {
     matches!(
         value.trim().to_lowercase().as_str(),
@@ -179,6 +213,7 @@ mod tests {
             scope,
             skills: vec![],
             overrides: FrontmatterOverrides::default(),
+            permissions: PermissionIntent::Unspecified,
             launch_instructions: None,
             additional_instructions: None,
             custom_hooks: vec![],
@@ -189,7 +224,7 @@ mod tests {
     fn subagents_deny_task_and_questions_with_named_color_mapped_to_hex() {
         let source = source("reviewer");
         let scope = Scope::Global;
-        let text = generate(&effective(&source, &scope));
+        let text = generate(&effective(&source, &scope)).text;
         assert!(text.contains("mode: subagent\n"));
         assert!(text.contains("model: openai/gpt-5.6-sol\n"));
         assert!(text.contains("color: \"#22c55e\"\n"));
@@ -206,7 +241,7 @@ mod tests {
             color: Some("#336699".into()),
             ..FrontmatterOverrides::default()
         };
-        let text = generate(&agent);
+        let text = generate(&agent).text;
         assert!(text.contains("color: \"#336699\"\n"));
         assert!(text.contains("  task: deny\n"));
         assert!(!text.contains("question: deny"));
@@ -217,21 +252,75 @@ mod tests {
         let source = source("rust");
         let scope = Scope::Global;
         let mut agent = effective(&source, &scope);
-        agent.overrides = FrontmatterOverrides {
-            deny_tools: Some(vec![
-                "write".into(),
-                "apply_patch".into(),
-                "subagent".into(),
-                "WebSearch".into(),
-                "mcp__custom".into(),
-            ]),
-            ..FrontmatterOverrides::default()
-        };
-        let text = generate(&agent);
+        agent.permissions = PermissionIntent::DenyExtra(vec![
+            "write".into(),
+            "apply_patch".into(),
+            "subagent".into(),
+            "WebSearch".into(),
+            "mcp__custom".into(),
+        ]);
+        let text = generate(&agent).text;
         assert_eq!(text.matches("  edit: deny\n").count(), 1);
         assert_eq!(text.matches("  task: deny\n").count(), 1);
         assert!(text.contains("  webfetch: deny\n"));
         assert!(text.contains("  mcp__custom: deny\n"));
+    }
+
+    #[test]
+    fn an_allowlist_denies_every_uncovered_permission_but_never_skill() {
+        let source = source("reviewer");
+        let scope = Scope::Global;
+        let mut agent = effective(&source, &scope);
+        agent.permissions =
+            PermissionIntent::allow_only(vec!["Read".into(), "Grep".into(), "mcp__gh".into()]);
+        let rendered = generate(&agent);
+        for denied in [
+            "edit", "glob", "bash", "lsp", "webfetch", "task", "question",
+        ] {
+            assert!(
+                rendered.text.contains(&format!("  {denied}: deny\n")),
+                "{denied} should be denied"
+            );
+        }
+        for kept in ["read", "grep", "skill"] {
+            assert!(!rendered.text.contains(&format!("  {kept}: deny\n")));
+        }
+        assert!(rendered.warnings.iter().any(|w| w.contains("mcp__gh")));
+    }
+
+    #[test]
+    fn an_mcp_only_allowlist_still_restricts_the_builtins() {
+        let source = source("reviewer");
+        let scope = Scope::Global;
+        let mut agent = effective(&source, &scope);
+        agent.permissions = PermissionIntent::allow_only(vec!["mcp__github__search".into()]);
+        let rendered = generate(&agent);
+        for denied in ["read", "edit", "glob", "grep", "bash", "lsp", "webfetch"] {
+            assert!(
+                rendered.text.contains(&format!("  {denied}: deny\n")),
+                "{denied} is not in the allowlist and must be denied"
+            );
+        }
+        assert!(!rendered.text.contains("  skill: deny\n"));
+        assert!(
+            rendered
+                .warnings
+                .iter()
+                .any(|w| w.contains("mcp__github__search"))
+        );
+    }
+
+    #[test]
+    fn a_denied_mcp_tool_stays_denied_under_an_allowlist() {
+        let source = source("rust");
+        let scope = Scope::Global;
+        let mut agent = effective(&source, &scope);
+        agent.permissions = PermissionIntent::effective(
+            &PermissionIntent::allow_only(vec!["Read".into(), "mcp__github".into()]),
+            None,
+            Some(&["mcp__github".to_owned()]),
+        );
+        assert!(generate(&agent).text.contains("  mcp__github: deny\n"));
     }
 
     #[test]
@@ -243,7 +332,7 @@ mod tests {
         let mut agent = effective(&source, &scope);
         agent.skills = vec!["dev".into()];
         agent.additional_instructions = Some("end here".into());
-        let text = generate(&agent);
+        let text = generate(&agent).text;
         assert!(text.contains("- dev: .opencode/skills/dev/SKILL.md"));
         assert!(text.trim_end().ends_with("end here"));
     }

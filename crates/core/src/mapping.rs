@@ -3,13 +3,15 @@ use crate::render::agent::Role;
 use crate::source::SourceConfig;
 
 /// v1's built-in role fallbacks, used when a source declares no
-/// `[role-skills]` table.
-fn default_role_skills(role: Role) -> &'static [&'static str] {
+/// `[role-skills]` table. A role-less agent gets none — fleet defaults are
+/// for fleet roles, not for foreign agents that never declared one.
+fn default_role_skills(role: Option<Role>) -> &'static [&'static str] {
     match role {
-        Role::Reviewer => &["dev"],
-        Role::Analyst => &["linear", "github"],
-        Role::Engineer => &["dev", "github", "worktree"],
-        Role::Manager => &["project-management", "linear", "dev", "github", "worktree"],
+        Some(Role::Reviewer) => &["dev"],
+        Some(Role::Analyst) => &["linear", "github"],
+        Some(Role::Engineer) => &["dev", "github", "worktree"],
+        Some(Role::Manager) => &["project-management", "linear", "dev", "github", "worktree"],
+        None => &[],
     }
 }
 
@@ -35,7 +37,7 @@ fn prefixed_matches(agent_name: &str, available: &[String]) -> Vec<String> {
 /// Filtered to available, sorted, deduplicated.
 pub fn upstream_skills(
     agent_name: &str,
-    role: Role,
+    role: Option<Role>,
     source: &SourceConfig,
     available: &[String],
 ) -> Vec<String> {
@@ -59,7 +61,7 @@ pub fn upstream_skills(
             push(skill);
         }
     }
-    match source.role_skills.get(role.name()) {
+    match role.and_then(|role| source.role_skills.get(role.name())) {
         Some(list) => {
             for skill in list {
                 push(skill);
@@ -92,7 +94,7 @@ pub struct EffectiveSkills {
 /// conservative reading that can never resurrect a removal.
 pub fn effective_skills(
     agent_name: &str,
-    role: Role,
+    role: Option<Role>,
     manifest: &Manifest,
     source: &SourceConfig,
     available: &[String],
@@ -146,10 +148,11 @@ mod tests {
     #[test]
     fn upstream_combines_prefix_and_role_skills() {
         let source = SourceConfig::default();
-        let skills = upstream_skills("rust", Role::Engineer, &source, &available());
+        let skills = upstream_skills("rust", Some(Role::Engineer), &source, &available());
         assert_eq!(skills, ["dev", "github", "rust", "rust-perf", "worktree"]);
 
-        let reviewer = upstream_skills("reviewer-rust", Role::Reviewer, &source, &available());
+        let reviewer =
+            upstream_skills("reviewer-rust", Some(Role::Reviewer), &source, &available());
         assert_eq!(reviewer, ["dev", "rust", "rust-perf"]);
     }
 
@@ -160,7 +163,7 @@ mod tests {
             .agent_skills
             .insert("rust".into(), vec!["github".into()]);
         source.role_skills.insert("engineer".into(), vec![]);
-        let skills = upstream_skills("rust", Role::Engineer, &source, &available());
+        let skills = upstream_skills("rust", Some(Role::Engineer), &source, &available());
         assert_eq!(skills, ["github"]);
     }
 
@@ -180,7 +183,7 @@ mod tests {
         let recorded = ["dev", "github", "rust", "worktree"].map(str::to_owned);
         let result = effective_skills(
             "rust",
-            Role::Engineer,
+            Some(Role::Engineer),
             &manifest,
             &source,
             &available(),
@@ -202,7 +205,7 @@ mod tests {
             .insert("rust".into(), vec!["dev".into()]);
         let result = effective_skills(
             "rust",
-            Role::Engineer,
+            Some(Role::Engineer),
             &manifest,
             &SourceConfig::default(),
             &available(),

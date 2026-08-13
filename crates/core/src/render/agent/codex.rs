@@ -1,13 +1,15 @@
-use super::{EffectiveAgent, GENERATED_BANNER, Role, hooks_prose, skills_prose};
+use super::{EffectiveAgent, GENERATED_BANNER, RenderedAgent, Role, hooks_prose, skills_prose};
 use crate::model::Scope;
+use crate::render::permission::PermissionIntent;
 
 const NICKNAME_SUFFIXES: [&str; 6] = ["Atlas", "Delta", "Echo", "Nova", "Orion", "Vector"];
 
 /// Codex agent: TOML whose `developer_instructions` carries the whole prompt.
 /// No native skills field and no hook wiring, so both render as prose.
-pub fn generate(agent: &EffectiveAgent) -> String {
+pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
     let source = agent.source;
     let o = &agent.overrides;
+    let mut warnings = Vec::new();
     let mut out = String::new();
     out.push_str(&format!("name = \"{}\"\n", escape(&source.name)));
     out.push_str(&format!(
@@ -33,22 +35,57 @@ pub fn generate(agent: &EffectiveAgent) -> String {
     if let Some(effort) = effort {
         out.push_str(&format!("model_reasoning_effort = \"{effort}\"\n"));
     }
-    out.push_str(&format!("sandbox_mode = \"{}\"\n", sandbox_mode(agent)));
+    out.push_str(&format!(
+        "sandbox_mode = \"{}\"\n",
+        sandbox_mode(agent, &mut warnings)
+    ));
+    if matches!(agent.permissions, PermissionIntent::AllowOnly { .. }) {
+        warnings.push(
+            "Codex has no tool allowlist; the sandbox is the closest enforceable restriction — the tool list itself is not enforced"
+                .to_owned(),
+        );
+    }
     out.push_str("developer_instructions = '''\n");
     out.push_str(&fence_safe(&instructions(agent)));
     out.push_str("'''\n");
-    out
+    RenderedAgent {
+        text: out,
+        warnings,
+    }
 }
 
-/// Engineers need to reach outside the workspace; everyone else writes only
-/// report artifacts, which workspace-write already allows.
-fn sandbox_mode(agent: &EffectiveAgent) -> String {
+/// The sandbox never exceeds the permission intent. A tool allowlist caps
+/// it — read-only for read-only lists, workspace-write otherwise — even
+/// when the role says Engineer: the narrower declaration wins, loudly. An
+/// explicit `sandbox-mode` override is the user's own dial and is honored,
+/// with a warning when it widens past a read-only intent. Without an
+/// allowlist, only an explicit Engineer role earns full access — a missing
+/// role never escalates.
+fn sandbox_mode(agent: &EffectiveAgent, warnings: &mut Vec<String>) -> String {
+    let allowlisted = matches!(agent.permissions, PermissionIntent::AllowOnly { .. });
     if let Some(mode) = &agent.overrides.sandbox_mode {
+        if agent.permissions.is_read_only() && mode != "read-only" {
+            warnings.push(format!(
+                "sandbox-mode override '{mode}' widens beyond the read-only tool allowlist"
+            ));
+        }
         return mode.clone();
     }
+    if allowlisted {
+        let capped = match agent.permissions.is_read_only() {
+            true => "read-only",
+            false => "workspace-write",
+        };
+        if agent.source.role == Some(Role::Engineer) {
+            warnings.push(format!(
+                "role engineer's full access narrowed to {capped} by the tool allowlist"
+            ));
+        }
+        return capped.to_owned();
+    }
     match agent.source.role {
-        Role::Engineer => "danger-full-access".to_owned(),
-        Role::Analyst | Role::Reviewer | Role::Manager => "workspace-write".to_owned(),
+        Some(Role::Engineer) => "danger-full-access".to_owned(),
+        _ => "workspace-write".to_owned(),
     }
 }
 
@@ -137,8 +174,23 @@ fn fence_safe(text: &str) -> String {
     text.to_owned()
 }
 
+/// TOML basic-string escaping. Newlines and control characters must become
+/// escapes — a literal newline in a basic string is invalid TOML, and raw
+/// foreign text must never mint TOML lines of its own.
 fn escape(text: &str) -> String {
-    text.replace('\\', "\\\\").replace('"', "\\\"")
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            ch if ch.is_control() => out.push_str(&format!("\\u{:04X}", ch as u32)),
+            ch => out.push(ch),
+        }
+    }
+    out
 }
 
 fn is_none_value(value: &str) -> bool {
@@ -169,6 +221,7 @@ mod tests {
             scope,
             skills: vec!["dev".into()],
             overrides: FrontmatterOverrides::default(),
+            permissions: PermissionIntent::Unspecified,
             launch_instructions: None,
             additional_instructions: None,
             custom_hooks: vec![],
@@ -182,8 +235,8 @@ mod tests {
         let scope = Scope::Project {
             root: "/tmp/proj".into(),
         };
-        let engineer = generate(&effective(&engineer, &scope));
-        let manager = generate(&effective(&manager, &scope));
+        let engineer = generate(&effective(&engineer, &scope)).text;
+        let manager = generate(&effective(&manager, &scope)).text;
         assert!(engineer.contains("sandbox_mode = \"danger-full-access\""));
         assert!(manager.contains("sandbox_mode = \"workspace-write\""));
         assert!(engineer.contains("model = \"gpt-5.6-sol\""));
@@ -192,12 +245,64 @@ mod tests {
     }
 
     #[test]
+    fn a_missing_role_never_escalates_the_sandbox() {
+        let reviewer = parse_source_agent(
+            "---\nname: sec-reviewer\ndescription: reads only\ntools: Read, Grep\n---\nBody.\n",
+        )
+        .unwrap();
+        let scope = Scope::Global;
+        let mut agent = effective(&reviewer, &scope);
+        agent.permissions = reviewer.permissions.clone();
+        let rendered = generate(&agent);
+        assert!(rendered.text.contains("sandbox_mode = \"read-only\""));
+        assert!(!rendered.text.contains("danger-full-access"));
+        assert!(rendered.warnings.iter().any(|w| w.contains("allowlist")));
+
+        let plain = parse_source_agent("---\nname: helper\ndescription: d\n---\nBody.\n").unwrap();
+        let agent = effective(&plain, &scope);
+        assert!(
+            generate(&agent)
+                .text
+                .contains("sandbox_mode = \"workspace-write\"")
+        );
+    }
+
+    #[test]
+    fn a_read_only_allowlist_narrows_the_sandbox_even_for_an_engineer() {
+        let src = parse_source_agent(
+            "---\nname: rust\ndescription: reads only\nrole: engineer\ntools: Read, Grep\n---\nBody.\n",
+        )
+        .unwrap();
+        let scope = Scope::Global;
+        let mut agent = effective(&src, &scope);
+        agent.permissions = src.permissions.clone();
+        let rendered = generate(&agent);
+        assert!(rendered.text.contains("sandbox_mode = \"read-only\""));
+        assert!(!rendered.text.contains("danger-full-access"));
+        assert!(rendered.warnings.iter().any(|w| w.contains("narrowed")));
+
+        agent.permissions = PermissionIntent::allow_only(vec!["Read".into(), "Bash".into()]);
+        let rendered = generate(&agent);
+        assert!(rendered.text.contains("sandbox_mode = \"workspace-write\""));
+
+        agent.overrides.sandbox_mode = Some("danger-full-access".into());
+        agent.permissions = src.permissions.clone();
+        let rendered = generate(&agent);
+        assert!(
+            rendered
+                .text
+                .contains("sandbox_mode = \"danger-full-access\"")
+        );
+        assert!(rendered.warnings.iter().any(|w| w.contains("widens")));
+    }
+
+    #[test]
     fn nicknames_capitalize_each_part_and_keep_known_acronyms() {
         let reviewer = source("reviewer-arch", "reviewer");
         let tpm = source("tpm", "manager");
         let scope = Scope::Global;
-        let reviewer = generate(&effective(&reviewer, &scope));
-        let tpm = generate(&effective(&tpm, &scope));
+        let reviewer = generate(&effective(&reviewer, &scope)).text;
+        let tpm = generate(&effective(&tpm, &scope)).text;
         assert!(reviewer.contains(
             "nickname_candidates = [\"Reviewer-Arch-Atlas\", \"Reviewer-Arch-Delta\", \"Reviewer-Arch-Echo\", \"Reviewer-Arch-Nova\", \"Reviewer-Arch-Orion\", \"Reviewer-Arch-Vector\"]"
         ));
@@ -217,7 +322,7 @@ mod tests {
             nickname_candidates: Some(vec!["Rust-One".into(), " ".into()]),
             ..FrontmatterOverrides::default()
         };
-        let text = generate(&agent);
+        let text = generate(&agent).text;
         assert!(text.contains("sandbox_mode = \"read-only\""));
         assert!(text.contains("model = \"o9-preview\""));
         assert!(text.contains("model_reasoning_effort = \"xhigh\""));
@@ -229,7 +334,7 @@ mod tests {
         let mut source = source("rust", "engineer");
         source.body = "Use ''' fences sparingly.".into();
         let scope = Scope::Global;
-        let text = generate(&effective(&source, &scope));
+        let text = generate(&effective(&source, &scope)).text;
         assert_eq!(text.matches("'''").count(), 2);
         assert!(text.ends_with("'''\n"));
     }

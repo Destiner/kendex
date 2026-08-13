@@ -167,6 +167,11 @@ export type FrontmatterOverrides_Deserialize = {
 	color: string | null,
 	model: string | null,
 	"deny-tools": string[] | null,
+	/**
+	 *  Allow-only tool intent: replaces a source-side `tools:` allowlist for
+	 *  this harness. Distinct from `deny_tools`, which only narrows.
+	 */
+	"allow-tools": string[] | null,
 	"allowed-subagents": string[] | null,
 	pane: boolean | null,
 	background: boolean | null,
@@ -184,6 +189,11 @@ export type FrontmatterOverrides_Serialize = {
 	color?: string | null,
 	model?: string | null,
 	"deny-tools"?: string[] | null,
+	/**
+	 *  Allow-only tool intent: replaces a source-side `tools:` allowlist for
+	 *  this harness. Distinct from `deny_tools`, which only narrows.
+	 */
+	"allow-tools"?: string[] | null,
 	"allowed-subagents"?: string[] | null,
 	pane?: boolean | null,
 	background?: boolean | null,

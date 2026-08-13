@@ -19,10 +19,12 @@ mod item_plan;
 pub mod ops;
 mod removal;
 mod targets;
+mod unmanaged;
 
 use item_plan::plan_item;
+use unmanaged::unmanaged_rows;
 
-use desired::{Artifact, Desired, desired_state};
+use desired::{Artifact, desired_state};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "kebab-case")]
@@ -110,6 +112,36 @@ pub fn plan_scope(
 
     plan_settings_seed(scope, &state, &mut ops, &mut drift)?;
 
+    // A refusal is a conflict the user must resolve, and any previous, wider
+    // rendering comes off disk on the default path — leaving it live would
+    // keep exactly the access the refusal exists to prevent.
+    let refused_keys: BTreeSet<String> = state
+        .refused
+        .iter()
+        .map(|r| crate::lock::entry_key(r.kind, &r.name, r.harness))
+        .collect();
+    for refusal in &state.refused {
+        let key = crate::lock::entry_key(refusal.kind, &refusal.name, refusal.harness);
+        let existing = lock.entries.get(&key);
+        drift.push(DriftRow {
+            kind: refusal.kind,
+            name: refusal.name.clone(),
+            harness: refusal.harness,
+            scope: scope.clone(),
+            state: DriftState::Conflict,
+            detail: match existing {
+                Some(_) => format!(
+                    "{} — the previous installation will be moved to the trash",
+                    refusal.reason
+                ),
+                None => refusal.reason.clone(),
+            },
+        });
+        if let Some(entry) = existing {
+            ops.extend(removal::removal_ops(env, scope, entry)?);
+        }
+    }
+
     orphans(
         env,
         scope,
@@ -117,6 +149,7 @@ pub fn plan_scope(
         lock,
         &state,
         options,
+        &refused_keys,
         &mut drift,
         &mut ops,
         &mut new_lock,
@@ -201,6 +234,7 @@ fn orphans(
     lock: &Lock,
     state: &desired::DesiredState,
     options: &PlanOptions,
+    refused_keys: &BTreeSet<String>,
     drift: &mut Vec<DriftRow>,
     ops: &mut Vec<PlannedOp>,
     new_lock: &mut Lock,
@@ -217,7 +251,7 @@ fn orphans(
     let mut trashed: BTreeSet<PathBuf> = BTreeSet::new();
 
     for (key, entry) in &lock.entries {
-        if desired_keys.contains(key) {
+        if desired_keys.contains(key) || refused_keys.contains(key) {
             continue;
         }
         // Declared but skipped this pass (pending/disabled source, missing
@@ -264,83 +298,6 @@ fn orphans(
         }
     }
     Ok(())
-}
-
-fn unmanaged_rows(
-    env: &Env,
-    scope: &Scope,
-    manifest: &Manifest,
-    lock: &Lock,
-    desired: &[Desired],
-    drift: &mut Vec<DriftRow>,
-) {
-    let scan = crate::scan::scan_scopes(env, &BTreeMap::new(), std::slice::from_ref(scope));
-    let known: BTreeSet<String> = desired
-        .iter()
-        .map(|d| d.key.clone())
-        .chain(lock.entries.keys().cloned())
-        .collect();
-    let declared_keys = declared_installation_keys(manifest, scope);
-    let mut owned: BTreeSet<PathBuf> = desired
-        .iter()
-        .flat_map(|d| desired::artifact_paths(&d.artifact))
-        .collect();
-    owned.extend(declared_artifact_paths(env, scope, manifest));
-    let mut seen: BTreeSet<String> = BTreeSet::new();
-    for item in &scan.items {
-        if !matches!(item.kind, ItemKind::Agent | ItemKind::Skill) || owned.contains(&item.path) {
-            continue;
-        }
-        let key = crate::lock::entry_key(item.kind, &item.name, item.harness);
-        if known.contains(&key) || declared_keys.contains(&key) || !seen.insert(key) {
-            continue;
-        }
-        drift.push(DriftRow {
-            kind: item.kind,
-            name: item.name.clone(),
-            harness: item.harness,
-            scope: scope.clone(),
-            state: DriftState::Unmanaged,
-            detail: item.path.display().to_string(),
-        });
-    }
-}
-
-/// Every installation the manifest asks for, by lock key. A declaration
-/// speaks only for the harnesses it targets: a same-named item in a harness
-/// it does not target is someone else's, and hiding it would leave it
-/// loading forever with no drift row to discover it by.
-fn declared_installation_keys(manifest: &Manifest, scope: &Scope) -> BTreeSet<String> {
-    let mut keys = BTreeSet::new();
-    for (kind, table) in [
-        (ItemKind::Agent, &manifest.agents),
-        (ItemKind::Skill, &manifest.skills),
-    ] {
-        for (name, decl) in table {
-            for harness in desired::target_harnesses(decl, manifest, kind, scope) {
-                keys.insert(crate::lock::entry_key(kind, name, harness));
-            }
-        }
-    }
-    keys
-}
-
-/// Where those installations live, whether or not this pass could build
-/// them. Skills share one canonical tree across harnesses, so the path is
-/// what says "ours", not the harness the scanner attributes it to.
-fn declared_artifact_paths(env: &Env, scope: &Scope, manifest: &Manifest) -> BTreeSet<PathBuf> {
-    let mut paths = BTreeSet::new();
-    for (kind, table) in [
-        (ItemKind::Agent, &manifest.agents),
-        (ItemKind::Skill, &manifest.skills),
-    ] {
-        for (name, decl) in table {
-            paths.extend(desired::declared_paths(
-                env, scope, manifest, kind, name, decl,
-            ));
-        }
-    }
-    paths
 }
 
 /// Read-only audit for a scope. A legacy or absent manifest still reports

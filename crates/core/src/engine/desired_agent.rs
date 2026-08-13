@@ -8,6 +8,7 @@ use crate::render::agent::{
     EffectiveAgent, Role, file_name, generate, hooks_for_agent, merge_overrides,
     merged_instructions, parse_source_agent,
 };
+use crate::render::permission::PermissionIntent;
 use crate::source::list_items;
 
 use super::desired::{Artifact, Desired, DesiredState, ItemCtx, native_dir};
@@ -17,7 +18,7 @@ use super::desired::{Artifact, Desired, DesiredState, ItemCtx, native_dir};
 /// agent actually renders with.
 fn assigned_skills(
     ctx: &ItemCtx,
-    role: Role,
+    role: Option<Role>,
     updated_manifest: &mut Manifest,
     manifest_changed: &mut bool,
 ) -> EffectiveSkills {
@@ -66,6 +67,31 @@ fn merge_key(manifest: &Manifest, name: &str) -> String {
     }
 }
 
+/// Source-catalog defaults merged with project overrides for one harness,
+/// and the permission intent that merge produces.
+fn harness_overrides(
+    ctx: &ItemCtx,
+    source_agent: &crate::render::agent::SourceAgent,
+    harness: crate::model::HarnessId,
+) -> (crate::manifest::FrontmatterOverrides, PermissionIntent) {
+    let overrides = merge_overrides(
+        ctx.config
+            .frontmatter
+            .get(harness.name())
+            .and_then(|by_agent| by_agent.get(ctx.name)),
+        ctx.manifest
+            .agent_frontmatter
+            .get(harness.name())
+            .and_then(|by_agent| by_agent.get(ctx.name)),
+    );
+    let permissions = PermissionIntent::effective(
+        &source_agent.permissions,
+        overrides.allow_tools.as_deref(),
+        overrides.deny_tools.as_deref(),
+    );
+    (overrides, permissions)
+}
+
 /// Agents are generated, never linked: every harness gets its own rendering
 /// of the same source agent, overwritten on each apply.
 pub(super) fn desired_agent(
@@ -88,27 +114,22 @@ pub(super) fn desired_agent(
             return Ok(());
         }
     };
+    for warning in &source_agent.warnings {
+        state.notes.push(format!("{}: {warning}", ctx.name));
+    }
     let skills = assigned_skills(ctx, source_agent.role, updated_manifest, manifest_changed);
     for harness in ctx.harnesses.clone() {
         let Some(native) = native_dir(ctx.env, ctx.scope, harness, ItemKind::Agent) else {
             continue;
         };
-        let overrides = merge_overrides(
-            ctx.config
-                .frontmatter
-                .get(harness.name())
-                .and_then(|by_agent| by_agent.get(ctx.name)),
-            ctx.manifest
-                .agent_frontmatter
-                .get(harness.name())
-                .and_then(|by_agent| by_agent.get(ctx.name)),
-        );
+        let (overrides, permissions) = harness_overrides(ctx, &source_agent, harness);
         let effective = EffectiveAgent {
             source: &source_agent,
             harness,
             scope: ctx.scope,
             skills: skills.effective.clone(),
             overrides,
+            permissions,
             launch_instructions: merged_instructions(
                 &ctx.manifest.agent_launch_instructions,
                 ctx.name,
@@ -119,7 +140,28 @@ pub(super) fn desired_agent(
             ),
             custom_hooks: hooks_for_agent(ctx.manifest, &source_agent),
         };
-        let rendered = generate(&effective);
+        let rendered = match generate(&effective) {
+            Ok(rendered) => rendered,
+            // A refusal produces no artifact for this harness; the plan
+            // turns it into a conflict row plus removal of any previous,
+            // wider rendering — never a silent widen, never a leftover.
+            Err(refusal) => {
+                state.refused.push(super::desired::Refused {
+                    kind: ItemKind::Agent,
+                    name: ctx.name.to_owned(),
+                    harness,
+                    reason: refusal,
+                });
+                continue;
+            }
+        };
+        for warning in &rendered.warnings {
+            state.notes.push(format!(
+                "{} ({}): {warning}",
+                ctx.name,
+                harness.display_name()
+            ));
+        }
         let base = file_name(harness, ctx.name);
         let file = if enabled {
             native.join(&base)
@@ -145,7 +187,7 @@ pub(super) fn desired_agent(
             upstream_skills: Some(skills.upstream_now.clone()),
             artifact: Artifact::File {
                 path: file,
-                bytes: rendered.into_bytes(),
+                bytes: rendered.text.into_bytes(),
             },
         });
     }

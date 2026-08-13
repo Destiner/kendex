@@ -1,41 +1,56 @@
-use super::{EffectiveAgent, GENERATED_BANNER, Role, default_pane, hooks_prose, skills_prose};
+use super::{
+    EffectiveAgent, GENERATED_BANNER, RenderedAgent, Role, default_pane, hooks_prose, skills_prose,
+};
 use crate::model::Scope;
+use crate::render::permission::PermissionIntent;
+use crate::render::yaml_scalar;
 
 /// Pi agent: YAML frontmatter + markdown body. Delegation is the whole story
 /// here — `allowed-subagents` and `deny-tools` have to agree, so they are
-/// resolved together.
-pub fn generate(agent: &EffectiveAgent) -> String {
+/// resolved together. Pi's tool surface is deny-only over an open-ended
+/// vocabulary: an allowlist cannot be expressed and cannot be complemented
+/// without widening, so it refuses.
+pub fn generate(agent: &EffectiveAgent) -> Result<RenderedAgent, String> {
+    if matches!(agent.permissions, PermissionIntent::AllowOnly { .. }) {
+        return Err(
+            "Pi cannot express a tool allowlist and denying by complement would widen access — set an explicit deny-tools override for Pi or exclude Pi from this agent's harnesses"
+                .to_owned(),
+        );
+    }
     let source = agent.source;
     let o = &agent.overrides;
     let allowed = allowed_subagents(agent);
     let deny = deny_tools(agent, &allowed);
     let mut out = String::from("---\n");
-    out.push_str(&format!("name: {}\n", source.name));
+    out.push_str(&format!("name: {}\n", yaml_scalar(&source.name)));
     out.push_str(&format!(
-        "description: \"{}\"\n",
-        source
-            .description
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"")
+        "description: {}\n",
+        crate::render::yaml_quoted(&source.description)
     ));
     if !deny.is_empty() {
-        out.push_str(&format!("deny-tools: {}\n", deny.join(", ")));
+        out.push_str(&format!("deny-tools: {}\n", yaml_scalar(&deny.join(", "))));
     }
     if !allowed.is_empty() {
-        out.push_str(&format!("allowed-subagents: {}\n", allowed.join(", ")));
+        out.push_str(&format!(
+            "allowed-subagents: {}\n",
+            yaml_scalar(&allowed.join(", "))
+        ));
     }
     if let Some(model) = model(agent) {
-        out.push_str(&format!("model: {model}\n"));
+        out.push_str(&format!("model: {}\n", yaml_scalar(&model)));
     }
     if let Some(color) = o.color.as_deref().or(source.color.as_deref()) {
-        out.push_str(&format!("color: {color}\n"));
+        out.push_str(&format!("color: {}\n", yaml_scalar(color)));
     }
     if o.pane.unwrap_or_else(|| default_pane(source)) {
         out.push_str("pane: true\n");
     }
     out.push_str("---\n\n");
     out.push_str(&body(agent));
-    out
+    Ok(RenderedAgent {
+        text: out,
+        warnings: Vec::new(),
+    })
 }
 
 /// Heavy agents (`opus`) omit `model` so the child inherits the parent
@@ -82,7 +97,7 @@ fn is_inherit(value: &str) -> bool {
 fn allowed_subagents(agent: &EffectiveAgent) -> Vec<String> {
     let list = match &agent.overrides.allowed_subagents {
         Some(list) => list.clone(),
-        None if agent.source.role == Role::Engineer => vec!["scout".to_owned()],
+        None if agent.source.role == Some(Role::Engineer) => vec!["scout".to_owned()],
         None => Vec::new(),
     };
     let mut out: Vec<String> = Vec::new();
@@ -97,7 +112,7 @@ fn allowed_subagents(agent: &EffectiveAgent) -> Vec<String> {
 }
 
 fn deny_tools(agent: &EffectiveAgent, allowed: &[String]) -> Vec<String> {
-    let user = agent.overrides.deny_tools.as_deref().unwrap_or(&[]);
+    let user = agent.permissions.denies();
     let mut tools: Vec<String> = [
         "subagent",
         "get_subagent_result",
@@ -113,7 +128,7 @@ fn deny_tools(agent: &EffectiveAgent, allowed: &[String]) -> Vec<String> {
     if agent.source.name != "planner" {
         tools.push("question".to_owned());
     }
-    if agent.source.role == Role::Reviewer {
+    if agent.source.role == Some(Role::Reviewer) {
         tools.push("tasks_write".to_owned());
     }
     tools.extend(user.iter().cloned());
@@ -192,6 +207,7 @@ mod tests {
             scope,
             skills: vec![],
             overrides: FrontmatterOverrides::default(),
+            permissions: PermissionIntent::Unspecified,
             launch_instructions: None,
             additional_instructions: None,
             custom_hooks: vec![],
@@ -209,7 +225,7 @@ mod tests {
     fn engineer_keeps_scout_delegation_and_inherits_the_opus_model() {
         let source = source("rust", "engineer", "opus");
         let scope = Scope::Global;
-        let text = generate(&effective(&source, &scope));
+        let text = generate(&effective(&source, &scope)).unwrap().text;
         assert!(text.contains("allowed-subagents: scout\n"));
         assert!(text.contains("pane: true\n"));
         assert!(text.contains("color: green\n"));
@@ -225,7 +241,7 @@ mod tests {
         let mut source = source("reviewer-arch", "reviewer", "sonnet");
         source.effort = Some("high".into());
         let scope = Scope::Global;
-        let text = generate(&effective(&source, &scope));
+        let text = generate(&effective(&source, &scope)).unwrap().text;
         assert!(text.contains("model: openai-codex/gpt-5.6-sol:high\n"));
         assert!(!text.contains("allowed-subagents:"));
         assert!(!text.contains("pane: true"));
@@ -240,21 +256,29 @@ mod tests {
         let source = source("rust", "engineer", "opus");
         let scope = Scope::Global;
         let mut agent = effective(&source, &scope);
-        agent.overrides = FrontmatterOverrides {
-            deny_tools: Some(vec!["delegate-subagent".into()]),
-            ..FrontmatterOverrides::default()
-        };
-        let text = generate(&agent);
+        agent.permissions = PermissionIntent::DenyExtra(vec!["delegate-subagent".into()]);
+        let text = generate(&agent).unwrap().text;
         assert!(deny_line(&text).contains("delegate-subagent"));
         assert!(text.contains("allowed-subagents: scout\n"));
 
+        agent.permissions = PermissionIntent::Unspecified;
         agent.overrides = FrontmatterOverrides {
             allowed_subagents: Some(vec![]),
             ..FrontmatterOverrides::default()
         };
-        let text = generate(&agent);
+        let text = generate(&agent).unwrap().text;
         assert!(!text.contains("allowed-subagents:"));
         assert!(deny_line(&text).contains("delegate_subagent"));
+    }
+
+    #[test]
+    fn a_tool_allowlist_refuses_rather_than_widens() {
+        let source = source("reviewer-arch", "reviewer", "sonnet");
+        let scope = Scope::Global;
+        let mut agent = effective(&source, &scope);
+        agent.permissions = PermissionIntent::allow_only(vec!["read".into()]);
+        let refusal = generate(&agent).unwrap_err();
+        assert!(refusal.contains("widen"));
     }
 
     #[test]
@@ -272,7 +296,7 @@ mod tests {
             pane: Some(false),
             ..FrontmatterOverrides::default()
         };
-        let text = generate(&agent);
+        let text = generate(&agent).unwrap().text;
         assert!(!deny_line(&text).contains("question"));
         assert!(text.contains("allowed-subagents: scout, researcher\n"));
         assert!(text.contains("color: magenta\n"));

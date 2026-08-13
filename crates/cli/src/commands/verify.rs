@@ -37,8 +37,14 @@ pub fn run(
                         DriftState::Missing | DriftState::Stale | DriftState::Conflict
                     )
             });
+            // Only genuine can't-build-it notes fail the row; advisory
+            // render/parse warnings share the "{name}:" prefix and must not
+            // read as an unavailable source.
             let unreachable_source = report.notes.iter().any(|n| {
-                n.starts_with(&format!("{}:", entry.name)) && !n.contains("disabled — inactive")
+                n.starts_with(&format!("{}:", entry.name))
+                    && (n.contains("— skipped")
+                        || n.contains("not found in source")
+                        || n.contains("unreadable"))
             });
             match problem {
                 Some(row) => {

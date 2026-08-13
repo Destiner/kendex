@@ -52,12 +52,24 @@ pub enum Artifact {
     },
 }
 
+/// A declared installation a renderer refused to produce — expressing it on
+/// this harness would widen access. The plan turns each into a conflict row
+/// and a removal of whatever the old, wider rendering left installed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Refused {
+    pub kind: ItemKind,
+    pub name: String,
+    pub harness: HarnessId,
+    pub reason: String,
+}
+
 #[derive(Debug, Default)]
 pub struct DesiredState {
     pub items: Vec<Desired>,
     /// Sources that could not be read (pending remotes, missing paths) and
     /// declared items the source no longer carries.
     pub notes: Vec<String>,
+    pub refused: Vec<Refused>,
     /// Declarations whose source resolved and whose item was found. What
     /// these produced is the complete truth about them, so a lock entry
     /// they did not produce is stranded, not merely skipped this pass.

@@ -54,6 +54,7 @@ const FRONTMATTER_KEYS: &[&str] = &[
     "color",
     "model",
     "deny-tools",
+    "allow-tools",
     "allowed-subagents",
     "pane",
     "background",

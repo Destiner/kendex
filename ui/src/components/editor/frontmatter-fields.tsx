@@ -23,6 +23,7 @@ const TEXT_FIELDS = [
 
 const LIST_FIELDS = [
   "deny-tools",
+  "allow-tools",
   "allowed-subagents",
   "nickname-candidates",
 ] as const;

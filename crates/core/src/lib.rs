@@ -4,6 +4,7 @@ pub mod discover;
 pub mod engine;
 pub mod env;
 pub mod error;
+pub mod frontmatter;
 pub mod fs;
 pub mod harness;
 pub mod hash;

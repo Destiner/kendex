@@ -1,5 +1,23 @@
 # vstack2 v0.2 — the best-of-breed cycle
 
+> **Cycle progress** (updated every commit; deleted sections = landed):
+>
+> - Phase 0 ✅ (commit 221f950) — changelog, app-deploy skill, commit-msg
+>   changelog rule.
+> - Phase 1 ⏳ in flight. Landed: bug 1 (typed `PermissionIntent` through
+>   all five renderers, optional role, Codex sandbox inference, Claude
+>   native allowlist, OpenCode permission synthesis incl. MCP-only lists,
+>   Pi refusal → conflict + removal), bounded tolerant YAML frontmatter
+>   parser, YAML/TOML output quoting (injection-proof), `allow-tools`
+>   override, v1 import keeps legacy `tools` incl. harness-agnostic
+>   tables; adversarially reviewed (14 findings fixed). `harness/models.rs`
+>   exists but is not yet wired. Next in sequence: model-alias table wiring
+>   (bug 2), sealed source reads (bug 3), coalesced config edits (bug 4),
+>   scope canonicalization, schema v2 + migration, format caps + warnings
+>   channel, body-split + tool swap + commands→skills + name legality,
+>   validators, hardened process constructor, byte-faithful writes,
+>   content verification.
+
 This file is consumed: delete items as they land, delete the file when the
 cycle ends (with the `docs/research/` reports and the ARCHITECTURE.md
 pointer to this file). Every phase ends with a working app and a fully

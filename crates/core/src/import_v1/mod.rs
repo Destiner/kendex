@@ -102,37 +102,55 @@ fn convert_tables(table: &toml::Table, manifest: &mut Manifest, notes: &mut Vec<
     convert_frontmatter(table, manifest, notes);
 }
 
-const HARNESS_IDS: [&str; 5] = ["claude-code", "codex", "opencode", "cursor", "pi"];
-
 fn convert_frontmatter(table: &toml::Table, manifest: &mut Manifest, notes: &mut Vec<String>) {
     let Some(frontmatter) = table.get("agent-frontmatter").and_then(Value::as_table) else {
         return;
     };
+    // A v1 harness-agnostic [agent-frontmatter.<agent>] table applied
+    // everywhere; expanding it to every harness is the only reading that
+    // keeps its restrictions (`tools` included) alive. Harness-keyed tables
+    // convert second so the specific entry wins over the expansion.
+    for (key, agents) in frontmatter {
+        if HarnessId::parse(key).is_some() {
+            continue;
+        }
+        let Some(overrides) = agents.as_table() else {
+            continue;
+        };
+        let converted = convert_overrides(overrides, notes);
+        for harness in HarnessId::ALL {
+            manifest
+                .agent_frontmatter
+                .entry(harness.name().to_owned())
+                .or_default()
+                .insert(key.clone(), converted.clone());
+        }
+        notes.push(format!(
+            "expanded harness-agnostic [agent-frontmatter.{key}] to every harness"
+        ));
+    }
     for (key, agents) in frontmatter {
         let Some(harness) = HarnessId::parse(key) else {
-            notes.push(format!(
-                "dropped legacy harness-agnostic [agent-frontmatter.{key}] — v2 overrides are per-harness"
-            ));
             continue;
         };
         let Some(agents) = agents.as_table() else {
             continue;
         };
-        let mut per_agent = BTreeMap::new();
         for (agent, overrides) in agents {
             if let Some(overrides) = overrides.as_table() {
-                per_agent.insert(agent.clone(), convert_overrides(overrides, notes));
+                manifest
+                    .agent_frontmatter
+                    .entry(harness.name().to_owned())
+                    .or_default()
+                    .insert(agent.clone(), convert_overrides(overrides, notes));
             }
         }
-        manifest
-            .agent_frontmatter
-            .insert(harness.name().to_owned(), per_agent);
     }
-    let _ = HARNESS_IDS;
 }
 
-/// v1 accepted several aliases per field and a legacy `tools` allowlist;
-/// v2 keeps one spelling and the deny-only model.
+/// v1 accepted several aliases per field; v2 keeps one spelling. A legacy
+/// `tools` allowlist becomes allow-only intent — dropping it would migrate a
+/// restricted agent unrestricted.
 fn convert_overrides(table: &toml::Table, notes: &mut Vec<String>) -> FrontmatterOverrides {
     let text = |key: &str| table.get(key).and_then(Value::as_str).map(str::to_owned);
     let flag = |key: &str| table.get(key).and_then(Value::as_bool);
@@ -154,12 +172,13 @@ fn convert_overrides(table: &toml::Table, notes: &mut Vec<String>) -> Frontmatte
         })
     };
     if table.contains_key("tools") {
-        notes.push("dropped legacy `tools` allowlist — v2 is deny-only".to_owned());
+        notes.push("imported legacy `tools` allowlist as allow-tools intent".to_owned());
     }
     FrontmatterOverrides {
         color: text("color"),
         model: text("model"),
         deny_tools: list(&["deny-tools", "deny_tools"]),
+        allow_tools: list(&["tools"]),
         allowed_subagents: list(&[
             "allowed-subagents",
             "allowedSubagents",

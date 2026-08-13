@@ -97,7 +97,6 @@ fn declare_apply_drift_clean_round_trips() {
     assert_eq!(fs::read_link(&link).unwrap(), canonical_skill(&f));
     assert_eq!(drift_states(&f), vec![]);
 }
-
 #[test]
 fn invariant_1_generated_artifacts_always_regenerate() {
     let f = fixture();

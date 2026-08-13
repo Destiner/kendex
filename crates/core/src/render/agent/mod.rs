@@ -1,13 +1,16 @@
-use serde::{Deserialize, Serialize};
-
 use crate::manifest::{CustomHook, FrontmatterOverrides, HookAgents, Manifest};
 use crate::model::{HarnessId, ItemKind, Scope};
+
+use super::permission::PermissionIntent;
 
 pub mod claude;
 pub mod codex;
 pub mod cursor;
 pub mod opencode;
 pub mod pi;
+mod source;
+
+pub use source::{Role, SourceAgent, default_pane, parse_source_agent};
 
 /// v1 canonical model tiers translate per harness; exact ids pass through.
 pub fn model_id_for(provider: &str, model: &str) -> String {
@@ -27,97 +30,16 @@ pub fn model_id_for(provider: &str, model: &str) -> String {
         _ => base,
     }
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Role {
-    Reviewer,
-    #[default]
-    Engineer,
-    Analyst,
-    Manager,
-}
-
-impl Role {
-    pub fn parse(value: &str) -> Option<Role> {
-        match value {
-            "reviewer" => Some(Role::Reviewer),
-            "engineer" => Some(Role::Engineer),
-            "analyst" => Some(Role::Analyst),
-            "manager" => Some(Role::Manager),
-            _ => None,
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Role::Reviewer => "reviewer",
-            Role::Engineer => "engineer",
-            Role::Analyst => "analyst",
-            Role::Manager => "manager",
-        }
-    }
-}
-
-/// A source agent file: flat YAML frontmatter + markdown body.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct SourceAgent {
-    pub name: String,
-    pub description: String,
-    pub model: String,
-    pub role: Role,
-    pub color: Option<String>,
-    pub effort: Option<String>,
-    pub body: String,
-}
-
-pub fn parse_source_agent(text: &str) -> Result<SourceAgent, String> {
-    let rest = text
-        .strip_prefix("---")
-        .ok_or("agent file has no frontmatter")?;
-    let end = rest.find("\n---").ok_or("unterminated frontmatter")?;
-    let mut agent = SourceAgent {
-        model: "sonnet".to_owned(),
-        ..SourceAgent::default()
-    };
-    for line in rest[..end].lines() {
-        let Some((key, value)) = line.split_once(':') else {
-            continue;
-        };
-        let value = value.trim().trim_matches('"').trim_matches('\'').to_owned();
-        match key.trim() {
-            "name" => agent.name = value,
-            "description" => agent.description = value,
-            "model" => agent.model = value,
-            "role" => {
-                agent.role = Role::parse(&value).ok_or_else(|| {
-                    format!("unknown role '{value}' (reviewer|engineer|analyst|manager)")
-                })?;
-            }
-            "color" => agent.color = Some(value),
-            "effort" => agent.effort = Some(value),
-            _ => {}
-        }
-    }
-    agent.body = rest[end + 4..].trim_start_matches('\n').to_owned();
-    if agent.name.is_empty() {
-        return Err("agent frontmatter has no name".to_owned());
-    }
-    Ok(agent)
-}
-
-/// v1's pane default: Engineer agents and the planner run in a visible pane.
-pub fn default_pane(agent: &SourceAgent) -> bool {
-    agent.role == Role::Engineer || agent.name == "planner"
-}
-
-/// Everything a per-harness generator needs, already merged.
+/// Everything a per-harness generator needs, already merged. `permissions`
+/// is the effective intent — source `tools:` narrowed by manifest overrides;
+/// renderers read it, never `overrides.deny_tools` directly.
 pub struct EffectiveAgent<'a> {
     pub source: &'a SourceAgent,
     pub harness: HarnessId,
     pub scope: &'a Scope,
     pub skills: Vec<String>,
     pub overrides: FrontmatterOverrides,
+    pub permissions: PermissionIntent,
     pub launch_instructions: Option<String>,
     pub additional_instructions: Option<String>,
     pub custom_hooks: Vec<&'a CustomHook>,
@@ -167,6 +89,7 @@ pub fn merge_overrides(
     }
     take!(color);
     take!(model);
+    take!(allow_tools);
     take!(allowed_subagents);
     take!(pane);
     take!(background);
@@ -192,14 +115,17 @@ pub fn merge_overrides(
 }
 
 pub fn hooks_for_agent<'a>(manifest: &'a Manifest, agent: &SourceAgent) -> Vec<&'a CustomHook> {
+    let role = agent.role.map(Role::name);
     manifest
         .custom_hooks
         .iter()
         .filter(|hook| match &hook.agents {
-            HookAgents::One(sel) => sel == "all" || sel == agent.role.name() || sel == &agent.name,
+            HookAgents::One(sel) => {
+                sel == "all" || Some(sel.as_str()) == role || sel == &agent.name
+            }
             HookAgents::Many(list) => list
                 .iter()
-                .any(|sel| sel == &agent.name || sel == agent.role.name()),
+                .any(|sel| sel == &agent.name || Some(sel.as_str()) == role),
         })
         .collect()
 }
@@ -207,12 +133,31 @@ pub fn hooks_for_agent<'a>(manifest: &'a Manifest, agent: &SourceAgent) -> Vec<&
 /// The generated-file banner every harness variant includes.
 pub const GENERATED_BANNER: &str = "> Generated by vstack — do not edit; regenerated on every refresh. Intent lives in vstack.toml.";
 
-pub fn generate(agent: &EffectiveAgent) -> String {
+/// One harness's rendering plus everything the user should hear about it.
+#[derive(Debug)]
+pub struct RenderedAgent {
+    pub text: String,
+    pub warnings: Vec<String>,
+}
+
+impl RenderedAgent {
+    fn clean(text: String) -> RenderedAgent {
+        RenderedAgent {
+            text,
+            warnings: Vec::new(),
+        }
+    }
+}
+
+/// `Err` is a refusal: the harness cannot express the agent's permission
+/// intent and rendering anyway would widen access. The caller surfaces the
+/// reason and produces no artifact for that harness.
+pub fn generate(agent: &EffectiveAgent) -> Result<RenderedAgent, String> {
     match agent.harness {
-        HarnessId::Claude => claude::generate(agent),
-        HarnessId::Codex => codex::generate(agent),
-        HarnessId::Opencode => opencode::generate(agent),
-        HarnessId::Cursor => cursor::generate(agent),
+        HarnessId::Claude => Ok(claude::generate(agent)),
+        HarnessId::Codex => Ok(codex::generate(agent)),
+        HarnessId::Opencode => Ok(opencode::generate(agent)),
+        HarnessId::Cursor => Ok(cursor::generate(agent)),
         HarnessId::Pi => pi::generate(agent),
     }
 }
@@ -267,19 +212,6 @@ pub fn kind() -> ItemKind {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
-
-    #[test]
-    fn parses_v1_shaped_agent_frontmatter() {
-        let agent = parse_source_agent(
-            "---\nname: rust\ndescription: Rust engineer\nmodel: opus\nrole: engineer\neffort: xhigh\ncolor: orange\n---\n\n# Body\n",
-        )
-        .unwrap();
-        assert_eq!(agent.name, "rust");
-        assert_eq!(agent.role, Role::Engineer);
-        assert_eq!(agent.effort.as_deref(), Some("xhigh"));
-        assert!(agent.body.starts_with("# Body"));
-        assert!(default_pane(&agent));
-    }
 
     #[test]
     fn shared_instructions_render_first_inside_markers() {

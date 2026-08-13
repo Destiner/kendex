@@ -1,8 +1,13 @@
-use super::{EffectiveAgent, GENERATED_BANNER, default_pane, model_id_for};
+use super::{EffectiveAgent, GENERATED_BANNER, RenderedAgent, default_pane, model_id_for};
+use crate::render::permission::PermissionIntent;
+use crate::render::{yaml_quoted as forced_quote, yaml_scalar};
 
-/// Claude Code agent: YAML frontmatter + markdown body. Deny-only tool
-/// model — never writes an allowlist (v1 rule).
-pub fn generate(agent: &EffectiveAgent) -> String {
+/// Claude Code agent: YAML frontmatter + markdown body. An `AllowOnly`
+/// intent renders as a native `tools:` allowlist; fleet policy denies
+/// (`Agent`, `AskUserQuestion`) still apply on top. Every interpolated
+/// value goes through `yaml_scalar` — source text must never mint
+/// frontmatter lines of its own.
+pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
     let source = agent.source;
     let o = &agent.overrides;
     let mut fm = String::new();
@@ -11,40 +16,56 @@ pub fn generate(agent: &EffectiveAgent) -> String {
         fm.push('\n');
     };
 
-    push(format!("name: {}", source.name));
-    push(format!("description: \"{}\"", escape(&source.description)));
+    push(format!("name: {}", yaml_scalar(&source.name)));
+    push(format!(
+        "description: {}",
+        forced_quote(&source.description)
+    ));
     let model = o.model.as_deref().unwrap_or(&source.model);
-    push(format!("model: {}", model_id_for("claude-code", model)));
+    push(format!(
+        "model: {}",
+        yaml_scalar(&model_id_for("claude-code", model))
+    ));
     let effort = o.effort.as_deref().or(source.effort.as_deref());
     if let Some(effort) = effort.filter(|e| effort_is_real(e)) {
-        push(format!("effort: {effort}"));
+        push(format!("effort: {}", yaml_scalar(effort)));
     }
     let pane = o.pane.unwrap_or_else(|| default_pane(source));
     let background = o.background.unwrap_or(!pane);
     push(format!("background: {background}"));
     if let Some(isolation) = &o.isolation {
-        push(format!("isolation: {isolation}"));
+        push(format!("isolation: {}", yaml_scalar(isolation)));
     }
     if let Some(memory) = &o.memory {
-        push(format!("memory: {memory}"));
+        push(format!("memory: {}", yaml_scalar(memory)));
     }
-    push(format!("disallowedTools: {}", deny_list(agent).join(", ")));
+    if let PermissionIntent::AllowOnly { allow, .. } = &agent.permissions {
+        let mapped: Vec<String> = allow.iter().map(|tool| claude_tool_name(tool)).collect();
+        match mapped.is_empty() {
+            true => push("tools: []".to_owned()),
+            false => push(format!("tools: {}", yaml_scalar(&mapped.join(", ")))),
+        }
+    }
+    push(format!(
+        "disallowedTools: {}",
+        yaml_scalar(&deny_list(agent).join(", "))
+    ));
     if let Some(color) = o.color.as_deref().or(source.color.as_deref()) {
-        push(format!("color: {color}"));
+        push(format!("color: {}", yaml_scalar(color)));
     }
     if !agent.skills.is_empty() {
-        push(format!("skills: {}", agent.skills.join(", ")));
+        push(format!("skills: {}", yaml_scalar(&agent.skills.join(", "))));
     }
     if !agent.custom_hooks.is_empty() {
         push("hooks:".to_owned());
         for hook in &agent.custom_hooks {
-            push(format!("  {}:", hook.event));
+            push(format!("  {}:", yaml_scalar(&hook.event)));
             push(format!(
-                "    \"{}\":",
-                escape(hook.matcher.as_deref().unwrap_or("*"))
+                "    {}:",
+                forced_quote(hook.matcher.as_deref().unwrap_or("*"))
             ));
             push("      - type: command".to_owned());
-            push(format!("        command: \"{}\"", escape(&hook.command)));
+            push(format!("        command: {}", forced_quote(&hook.command)));
         }
     }
 
@@ -57,22 +78,20 @@ pub fn generate(agent: &EffectiveAgent) -> String {
     if let Some(additional) = &agent.additional_instructions {
         body.push_str(&format!("\n## Additional Instructions\n\n{additional}\n"));
     }
-    body
+    RenderedAgent::clean(body)
 }
 
 /// `Agent` is always denied to subagents; `AskUserQuestion` unless this is
-/// the planner; user deny-tools append after.
+/// the planner; the intent's extra denies append after.
 fn deny_list(agent: &EffectiveAgent) -> Vec<String> {
     let mut deny = vec!["Agent".to_owned()];
     if agent.source.name != "planner" {
         deny.push("AskUserQuestion".to_owned());
     }
-    if let Some(extra) = &agent.overrides.deny_tools {
-        for tool in extra {
-            let tool = claude_tool_name(tool);
-            if !deny.contains(&tool) {
-                deny.push(tool);
-            }
+    for tool in agent.permissions.denies() {
+        let tool = claude_tool_name(tool);
+        if !deny.contains(&tool) {
+            deny.push(tool);
         }
     }
     deny
@@ -111,10 +130,6 @@ fn effort_is_real(effort: &str) -> bool {
     !matches!(effort, "" | "none" | "false" | "off" | "no")
 }
 
-fn escape(text: &str) -> String {
-    text.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::{Role, SourceAgent, parse_source_agent};
@@ -140,6 +155,7 @@ mod tests {
             scope,
             skills: vec!["dev".into(), "rust-perf".into()],
             overrides: FrontmatterOverrides::default(),
+            permissions: PermissionIntent::Unspecified,
             launch_instructions: Some("start here".into()),
             additional_instructions: Some("end here".into()),
             custom_hooks: hooks,
@@ -150,7 +166,7 @@ mod tests {
     fn engineer_defaults_pane_true_background_false_and_opus_inherits() {
         let source = engineer();
         let scope = Scope::Global;
-        let text = generate(&effective(&source, &scope, vec![]));
+        let text = generate(&effective(&source, &scope, vec![])).text;
         assert!(text.contains("model: inherit"));
         assert!(text.contains("background: false"));
         assert!(text.contains("disallowedTools: Agent, AskUserQuestion"));
@@ -165,7 +181,7 @@ mod tests {
     fn planner_keeps_questions_and_custom_hooks_render_native() {
         let mut source = engineer();
         source.name = "planner".into();
-        source.role = Role::Analyst;
+        source.role = Some(Role::Analyst);
         let scope = Scope::Global;
         let hook = CustomHook {
             event: "PreToolUse".into(),
@@ -174,7 +190,7 @@ mod tests {
             description: None,
             agents: HookAgents::One("all".into()),
         };
-        let text = generate(&effective(&source, &scope, vec![&hook]));
+        let text = generate(&effective(&source, &scope, vec![&hook])).text;
         assert!(text.contains("disallowedTools: Agent\n"));
         assert!(!text.contains("AskUserQuestion"));
         assert!(text.contains("hooks:\n  PreToolUse:\n    \"Bash\":"));
@@ -190,15 +206,54 @@ mod tests {
         let mut agent = effective(&source, &scope, vec![]);
         agent.overrides = FrontmatterOverrides {
             model: Some("sonnet".into()),
-            deny_tools: Some(vec!["WebSearch".into()]),
             pane: Some(false),
             color: Some("blue".into()),
             ..FrontmatterOverrides::default()
         };
-        let text = generate(&agent);
+        agent.permissions = PermissionIntent::DenyExtra(vec!["WebSearch".into()]);
+        let text = generate(&agent).text;
         assert!(text.contains("model: sonnet"));
         assert!(text.contains("background: true"));
         assert!(text.contains("disallowedTools: Agent, AskUserQuestion, WebSearch"));
         assert!(text.contains("color: blue"));
+    }
+
+    #[test]
+    fn an_allowlist_renders_as_a_native_tools_line() {
+        let source = engineer();
+        let scope = Scope::Global;
+        let mut agent = effective(&source, &scope, vec![]);
+        agent.permissions = PermissionIntent::allow_only(vec!["read".into(), "grep".into()]);
+        let text = generate(&agent).text;
+        assert!(text.contains("tools: Read, Grep\n"));
+        assert!(text.contains("disallowedTools: Agent, AskUserQuestion"));
+
+        agent.permissions = PermissionIntent::allow_only(vec![]);
+        let text = generate(&agent).text;
+        assert!(text.contains("tools: []\n"));
+    }
+
+    #[test]
+    fn a_tool_name_cannot_inject_frontmatter_lines() {
+        let source = engineer();
+        let scope = Scope::Global;
+        let mut agent = effective(&source, &scope, vec![]);
+        agent.permissions =
+            PermissionIntent::allow_only(vec!["Read".into(), "Bash\nmodel: opus".into()]);
+        let text = generate(&agent).text;
+        let model_lines = text.lines().filter(|l| l.starts_with("model:")).count();
+        assert_eq!(model_lines, 1);
+        assert!(text.contains("tools: \"Read, Bash\\nmodel: opus\"\n"));
+
+        let mut description = engineer();
+        description.description = "line one\ndisallowedTools: nothing".into();
+        let agent = effective(&description, &scope, vec![]);
+        let text = generate(&agent).text;
+        let deny_lines = text
+            .lines()
+            .filter(|l| l.starts_with("disallowedTools:"))
+            .count();
+        assert_eq!(deny_lines, 1);
+        assert!(!text.contains("\nline one\n"));
     }
 }

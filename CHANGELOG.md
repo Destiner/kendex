@@ -6,6 +6,26 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** agent tool permissions are typed intent, preserved from
+  source to every renderer and never widened. A missing `role:` no longer
+  renders Codex `sandbox_mode = "danger-full-access"` (role-less agents get
+  the sandbox their `tools:` list justifies); a source `tools:` allowlist
+  renders natively on Claude, synthesizes an OpenCode permission block,
+  infers the Codex sandbox, and is refused on Pi where honoring it is
+  impossible; the v1 importer carries legacy `tools:` allowlists over as
+  `allow-tools` overrides instead of dropping them. Migration: refresh
+  regenerates installed agents; an agent that wants full access declares
+  `role: engineer` explicitly.
+
+### Added
+
+- Source frontmatter is parsed as real YAML (block scalars, arrays, nested
+  maps) with adversarial-input bounds: aliases, duplicate keys, oversized or
+  deeply nested frontmatter are refused, and unknown keys warn instead of
+  silently vanishing.
+
 ## [0.1.0] - 2026-08-10
 
 First v2 release: desktop app (Tauri) + `vstack` CLI over one engine,

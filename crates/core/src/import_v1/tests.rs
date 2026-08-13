@@ -24,6 +24,7 @@ tools = ["Read"]
 
 [agent-frontmatter.legacykey]
 color = "red"
+tools = ["Read", "Grep"]
 
 [[custom-hooks]]
 event = "PreToolUse"
@@ -74,11 +75,41 @@ fn converts_tables_with_aliases_and_drops_the_dead_ones() {
         Some(vec!["WebSearch".to_owned(), "WebFetch".to_owned()])
     );
     assert_eq!(overrides.allowed_subagents, Some(vec!["scout".to_owned()]));
+    // The v1 `tools` allowlist survives as allow-only intent — dropping it
+    // would migrate a restricted agent unrestricted.
+    assert_eq!(overrides.allow_tools, Some(vec!["Read".to_owned()]));
     assert_eq!(m.custom_hooks.len(), 1);
     let joined = outcome.notes.join("\n");
     assert!(joined.contains("agent-colors"));
     assert!(joined.contains("legacykey"));
     assert!(joined.contains("tools"));
+}
+
+#[test]
+fn harness_agnostic_overrides_expand_to_every_harness() {
+    let outcome = convert(Some(V1_MANIFEST), None).unwrap();
+    let m = &outcome.manifest;
+    for harness in crate::model::HarnessId::ALL {
+        let overrides = &m.agent_frontmatter[harness.name()]["legacykey"];
+        assert_eq!(
+            overrides.color.as_deref(),
+            Some("red"),
+            "{}",
+            harness.name()
+        );
+        assert_eq!(
+            overrides.allow_tools,
+            Some(vec!["Read".to_owned(), "Grep".to_owned()]),
+            "{}",
+            harness.name()
+        );
+    }
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.contains("expanded harness-agnostic"))
+    );
 }
 
 #[test]
