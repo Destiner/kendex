@@ -76,6 +76,28 @@ const fn observe_only(scopes: OpSupport) -> KindCaps {
     }
 }
 
+/// Format facts per harness — owned here beside the op table so renderers
+/// and the surface model read one source of truth instead of scattering
+/// literals. Extended axis by axis as consumers land.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FormatCaps {
+    /// Bytes the harness reliably loads from one SKILL.md before it
+    /// truncates; `None` means no known cap. Oversized bodies split into
+    /// `references/` rather than truncating.
+    pub skill_body_max_bytes: Option<usize>,
+}
+
+pub const fn format_caps(harness: HarnessId) -> FormatCaps {
+    match harness {
+        HarnessId::Codex => FormatCaps {
+            skill_body_max_bytes: Some(8192),
+        },
+        _ => FormatCaps {
+            skill_body_max_bytes: None,
+        },
+    }
+}
+
 pub fn capabilities(harness: HarnessId, kind: ItemKind) -> KindCaps {
     use HarnessId::*;
     use ItemKind::*;

@@ -11,7 +11,7 @@ pub mod pi;
 
 mod caps;
 pub mod models;
-pub use caps::{KindCaps, OpSupport, capabilities};
+pub use caps::{FormatCaps, KindCaps, OpSupport, capabilities, format_caps};
 
 /// What marks a directory as a project for this harness during discovery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

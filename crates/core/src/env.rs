@@ -120,6 +120,15 @@ impl Env {
         self.data_dir.join("vstack2/rendered/skills")
     }
 
+    /// Home of a per-tool skill variant that diverged from the shared
+    /// rendering. A sibling of `rendered/skills`, keyed by harness, so a
+    /// skill name can never collide with a variant directory.
+    pub fn rendered_skill_variants_dir(&self, harness: &str) -> PathBuf {
+        self.data_dir
+            .join("vstack2/rendered/variants")
+            .join(harness)
+    }
+
     pub fn project_manifest_file(project_root: &Path) -> PathBuf {
         project_root.join("vstack.toml")
     }

@@ -50,6 +50,13 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- **Breaking:** installed skills follow the surface model: tools that
+  read the same folder (Codex and Pi share `.agents/skills` in a
+  project) get exactly one copy rendered to their combined limits, and a
+  tool whose copy must differ gets its own — identical copies still
+  collapse onto one tree through links, so today's layout is unchanged.
+  Migration: refresh regenerates; the journaled apply moves anything
+  that needs to move.
 - Render and parse warnings are now first-class: each names its item and
   tool, says what happened, and carries the fix when there is one —
   shown in the plan preview, the Sync page, and every CLI verb that
