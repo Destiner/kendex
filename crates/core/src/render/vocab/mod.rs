@@ -93,6 +93,9 @@ fn word(tool: &str, harness: HarnessId) -> Option<Word> {
     match harness {
         // Bodies are already written in Claude's words.
         HarnessId::Claude => None,
+        // Nothing renders for these yet. Gemini's real tool identifiers are
+        // in matrix §1 and belong here with the renderer that uses them.
+        HarnessId::Gemini | HarnessId::Copilot => None,
         HarnessId::Codex => Some(Word::Phrase(match tool.as_str() {
             "read" => "open the file",
             "grep" => "search",

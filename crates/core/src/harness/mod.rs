@@ -5,13 +5,18 @@ use crate::model::{DetectedHarness, HarnessId, ItemKind};
 
 pub mod claude;
 pub mod codex;
+pub mod copilot;
 pub mod cursor;
+pub mod gemini;
 pub mod opencode;
 pub mod pi;
 
 mod caps;
 pub mod models;
-pub use caps::{FormatCaps, KindCaps, NameRule, OpSupport, capabilities, format_caps};
+pub use caps::{
+    Enforcement, FormatCaps, KindCaps, McpTransport, NameRule, OpSupport, ToggleDirection,
+    capabilities, format_caps, installable,
+};
 
 /// What marks a directory as a project for this harness during discovery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,13 +113,15 @@ pub trait HarnessAdapter: Send + Sync {
     fn project_surfaces(&self, kind: ItemKind, project: &Path, env: &Env) -> Vec<Surface>;
 }
 
-pub fn all_adapters() -> [&'static dyn HarnessAdapter; 5] {
+pub fn all_adapters() -> [&'static dyn HarnessAdapter; 7] {
     [
         &claude::Claude,
         &codex::Codex,
         &opencode::Opencode,
         &cursor::Cursor,
         &pi::Pi,
+        &gemini::Gemini,
+        &copilot::Copilot,
     ]
 }
 
@@ -125,6 +132,8 @@ pub fn adapter(id: HarnessId) -> &'static dyn HarnessAdapter {
         HarnessId::Opencode => &opencode::Opencode,
         HarnessId::Cursor => &cursor::Cursor,
         HarnessId::Pi => &pi::Pi,
+        HarnessId::Gemini => &gemini::Gemini,
+        HarnessId::Copilot => &copilot::Copilot,
     }
 }
 
@@ -181,6 +190,105 @@ mod tests {
                     assert_eq!(
                         (harness, kind, emitted),
                         (HarnessId::Codex, ItemKind::Command, ItemKind::Skill)
+                    );
+                }
+            }
+        }
+    }
+
+    /// A hook the tool merely reads must never be presented as one it runs.
+    /// Every harness with a hook surface says which it is, and the harnesses
+    /// without one are exactly the rows that say nothing.
+    #[test]
+    fn every_hook_row_says_whether_the_tool_runs_it() {
+        for harness in HarnessId::ALL {
+            let hook = capabilities(harness, ItemKind::Hook);
+            let observed = hook.observe.project || hook.observe.global;
+            assert_eq!(
+                hook.enforcement == Enforcement::NotApplicable,
+                !observed,
+                "{} hook enforcement",
+                harness.name(),
+            );
+            for kind in ItemKind::ALL.into_iter().filter(|k| *k != ItemKind::Hook) {
+                assert_eq!(
+                    capabilities(harness, kind).enforcement,
+                    Enforcement::NotApplicable,
+                    "{}/{} claims enforcement",
+                    harness.name(),
+                    kind.name(),
+                );
+            }
+        }
+    }
+
+    /// The transport list and the MCP row describe one fact from two sides:
+    /// a harness that reads no servers has no way to reach one.
+    #[test]
+    fn mcp_transports_agree_with_the_mcp_row() {
+        for harness in HarnessId::ALL {
+            let mcp = capabilities(harness, ItemKind::McpServer);
+            assert_eq!(
+                format_caps(harness).mcp_transports.is_empty(),
+                mcp.observe == caps::NONE,
+                "{} mcp transports",
+                harness.name(),
+            );
+        }
+    }
+
+    /// Copilot's repository settings merge as a union: a repo file adds to
+    /// `disabledSkills` and `disabledMcpServers` but cannot take a name off
+    /// them, so the switch there only turns things off (matrix §R7).
+    #[test]
+    fn copilot_skills_and_servers_switch_off_only() {
+        for kind in [ItemKind::Skill, ItemKind::McpServer] {
+            assert_eq!(
+                capabilities(HarnessId::Copilot, kind).toggle_direction,
+                ToggleDirection::DisableOnly,
+            );
+        }
+        assert_eq!(
+            capabilities(HarnessId::Claude, ItemKind::Skill).toggle_direction,
+            ToggleDirection::Both,
+        );
+    }
+
+    /// Gemini and Copilot are observed, never written: the management verbs
+    /// arrive with the adapters that implement them, and until then neither
+    /// is offered anywhere an install target is chosen.
+    #[test]
+    fn the_new_harnesses_only_read() {
+        let install_targets: Vec<_> = HarnessId::ALL
+            .into_iter()
+            .filter(|h| installable(*h))
+            .collect();
+        assert_eq!(
+            install_targets,
+            [
+                HarnessId::Claude,
+                HarnessId::Codex,
+                HarnessId::Opencode,
+                HarnessId::Cursor,
+                HarnessId::Pi,
+            ]
+        );
+        for harness in [HarnessId::Gemini, HarnessId::Copilot] {
+            for kind in ItemKind::ALL {
+                let c = capabilities(harness, kind);
+                for (op, support) in [
+                    ("adopt", c.adopt),
+                    ("install", c.install),
+                    ("toggle", c.toggle),
+                    ("remove", c.remove),
+                    ("refresh", c.refresh),
+                ] {
+                    assert_eq!(
+                        support,
+                        caps::NONE,
+                        "{}/{} {op}",
+                        harness.name(),
+                        kind.name(),
                     );
                 }
             }

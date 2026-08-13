@@ -35,7 +35,15 @@ const KINDS: ItemKind[] = [
   "plugin",
   "pi-extension",
 ];
-const HARNESSES: HarnessId[] = ["claude", "codex", "opencode", "cursor", "pi"];
+const HARNESSES: HarnessId[] = [
+  "claude",
+  "codex",
+  "opencode",
+  "cursor",
+  "pi",
+  "gemini",
+  "copilot",
+];
 
 export function ItemsPage() {
   const result = useScanStore((s) => s.result);

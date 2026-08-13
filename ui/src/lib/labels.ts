@@ -8,6 +8,8 @@ export const TOOL_NAMES: Record<HarnessId, string> = {
   opencode: "OpenCode",
   cursor: "Cursor",
   pi: "Pi",
+  gemini: "Gemini CLI",
+  copilot: "GitHub Copilot",
 };
 
 export const toolName = (id: HarnessId): string => TOOL_NAMES[id];

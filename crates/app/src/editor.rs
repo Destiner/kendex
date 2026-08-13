@@ -111,7 +111,11 @@ pub fn editor_inventory(scope: Scope) -> Result<EditorInventory, String> {
         declared_agents: Vec::new(),
         declared_skills: Vec::new(),
         available_skills: Vec::new(),
-        harnesses: HarnessId::ALL.to_vec(),
+        // Per-tool settings are only offered for tools vstack writes to.
+        harnesses: HarnessId::ALL
+            .into_iter()
+            .filter(|h| vstack_core::harness::installable(*h))
+            .collect(),
     };
     let Some(manifest) = loaded else {
         return Ok(inventory);

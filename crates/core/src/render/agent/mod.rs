@@ -132,6 +132,13 @@ pub fn generate(agent: &EffectiveAgent) -> Result<RenderedAgent, String> {
         HarnessId::Opencode => Ok(opencode::generate(agent)),
         HarnessId::Cursor => Ok(cursor::generate(agent)),
         HarnessId::Pi => pi::generate(agent),
+        // The capability table installs nothing on these two, so nothing
+        // asks for a rendering; a caller that does gets told why rather
+        // than a file in a format nobody verified.
+        HarnessId::Gemini | HarnessId::Copilot => Err(format!(
+            "{} agents are not supported yet — vstack reads them, and writing them lands with that tool's adapter",
+            agent.harness.display_name()
+        )),
     }
 }
 

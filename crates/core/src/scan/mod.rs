@@ -303,4 +303,75 @@ mod tests {
         let harnesses: Vec<_> = deploy.iter().map(|i| i.harness).collect();
         assert!(harnesses.contains(&HarnessId::Codex) && harnesses.contains(&HarnessId::Pi));
     }
+
+    /// Gemini and Copilot installations are read the same way as everyone
+    /// else's — and Copilot's reach into `.claude/` never becomes a second
+    /// installation of a file that already belongs to Claude Code.
+    #[test]
+    fn sees_gemini_and_copilot_without_double_counting_claude_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let env = Env::fake(home, FakeOs::Linux);
+
+        fs::create_dir_all(home.join(".gemini/agents")).unwrap();
+        fs::write(
+            home.join(".gemini/agents/plan.md"),
+            "---\ndescription: planner\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            home.join(".gemini/settings.json"),
+            r#"{"mcpServers":{"docs":{"httpUrl":"https://docs.example"}},
+                "hooks":{"BeforeTool":[{"matcher":"run_shell_command",
+                "hooks":[{"type":"command","command":"bash audit.sh"}]}]}}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(home.join(".gemini/extensions/security")).unwrap();
+        fs::write(
+            home.join(".gemini/extensions/security/gemini-extension.json"),
+            r#"{"name":"security"}"#,
+        )
+        .unwrap();
+
+        fs::create_dir_all(home.join(".copilot/agents")).unwrap();
+        fs::write(home.join(".copilot/agents/review.agent.md"), "---\n---\n").unwrap();
+
+        let project = home.join("dev/app");
+        fs::create_dir_all(project.join(".github/skills/deploy")).unwrap();
+        fs::write(project.join(".github/skills/deploy/SKILL.md"), "# d").unwrap();
+        fs::create_dir_all(project.join(".claude/skills/private")).unwrap();
+        fs::write(project.join(".claude/skills/private/SKILL.md"), "# p").unwrap();
+
+        let mut settings = AppSettings::default();
+        settings.projects.push(project.clone());
+        let result = scan(&env, &settings);
+
+        assert_eq!(result.warnings, Vec::<String>::new());
+        let detected: Vec<_> = result.harnesses.iter().map(|h| h.harness).collect();
+        assert!(detected.contains(&HarnessId::Gemini) && detected.contains(&HarnessId::Copilot));
+
+        let of = |harness: HarnessId| {
+            result
+                .items
+                .iter()
+                .filter(|i| i.harness == harness)
+                .map(|i| (i.kind, i.name.as_str()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            of(HarnessId::Gemini),
+            [
+                (ItemKind::Agent, "plan"),
+                (ItemKind::Hook, "BeforeTool:run_shell_command:audit"),
+                (ItemKind::McpServer, "docs"),
+                (ItemKind::Plugin, "security"),
+            ]
+        );
+        // The `.agent.md` pair is one extension, not part of the name; the
+        // skill under `.claude/` stays Claude Code's alone.
+        assert_eq!(
+            of(HarnessId::Copilot),
+            [(ItemKind::Agent, "review"), (ItemKind::Skill, "deploy")]
+        );
+    }
 }

@@ -48,6 +48,14 @@ pub fn resolve_model(harness: HarnessId, model: &str) -> ResolvedModel {
             (HarnessId::Pi, _) => resolved(Some("openai-codex/gpt-5.6-sol")),
             // Cursor rules carry no model field; the renderer drops it.
             (HarnessId::Cursor, _) => resolved(None),
+            // Gemini's current tiers are the 3.x preview ids; the 2.5 GA
+            // names are a generation behind (matrix §4, §D2).
+            (HarnessId::Gemini, "fable" | "opus") => resolved(Some("gemini-3-pro-preview")),
+            (HarnessId::Gemini, _) => resolved(Some("gemini-3-flash-preview")),
+            // Copilot's model list moves monthly and is gated by plan, org
+            // policy, and a per-repo allowlist, so vstack pins nothing and
+            // lets Copilot choose (matrix §4, §D12).
+            (HarnessId::Copilot, _) => resolved(Some("auto")),
         };
     }
     // Explicit ids pass through. OpenCode's loader requires the
@@ -105,6 +113,28 @@ mod tests {
         assert_eq!(
             resolve_model(HarnessId::Pi, "haiku").id.as_deref(),
             Some("openai-codex/gpt-5.6-sol")
+        );
+
+        assert_eq!(
+            resolve_model(HarnessId::Gemini, "opus").id.as_deref(),
+            Some("gemini-3-pro-preview")
+        );
+        assert_eq!(
+            resolve_model(HarnessId::Gemini, "haiku").id.as_deref(),
+            Some("gemini-3-flash-preview")
+        );
+        // Every Copilot tier lands on the same non-answer, on purpose.
+        for tier in ["fable", "opus", "sonnet", "haiku"] {
+            assert_eq!(
+                resolve_model(HarnessId::Copilot, tier).id.as_deref(),
+                Some("auto")
+            );
+        }
+        assert_eq!(
+            resolve_model(HarnessId::Copilot, "claude-sonnet-4.6")
+                .id
+                .as_deref(),
+            Some("claude-sonnet-4.6")
         );
 
         let explicit = resolve_model(HarnessId::Opencode, "anthropic/claude-sonnet-5");

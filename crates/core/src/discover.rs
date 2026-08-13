@@ -4,20 +4,24 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{CoreError, Result};
 
-const MARKER_DIRS: [&str; 6] = [
+const MARKER_DIRS: [&str; 7] = [
     ".claude",
     ".codex",
     ".opencode",
     ".cursor",
     ".pi",
     ".agents",
+    ".gemini",
 ];
-const MARKER_FILES: [&str; 5] = [
+const MARKER_FILES: [&str; 6] = [
     "vstack.toml",
     ".vstack-lock.json",
     ".mcp.json",
     "opencode.json",
     "opencode.jsonc",
+    // Copilot's own file. `.github/` alone marks nearly every repository
+    // and would make the whole machine look like one project.
+    ".github/copilot-instructions.md",
 ];
 const SKIP_DIRS: [&str; 7] = [
     "node_modules",
@@ -120,6 +124,23 @@ mod tests {
             })
             .collect();
         assert_eq!(names, [PathBuf::from("a"), PathBuf::from("b/sub")]);
+    }
+
+    #[test]
+    fn gemini_and_copilot_repos_are_projects_but_a_bare_github_dir_is_not() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        fs::create_dir_all(root.join("g/.gemini")).unwrap();
+        fs::create_dir_all(root.join("c/.github")).unwrap();
+        fs::write(root.join("c/.github/copilot-instructions.md"), "").unwrap();
+        fs::create_dir_all(root.join("plain/.github/workflows")).unwrap();
+
+        let found = discover_projects(root).unwrap();
+        let names: Vec<_> = found
+            .iter()
+            .map(|p| p.strip_prefix(root.canonicalize().unwrap()).unwrap())
+            .collect();
+        assert_eq!(names, [Path::new("c"), Path::new("g")]);
     }
 
     #[test]

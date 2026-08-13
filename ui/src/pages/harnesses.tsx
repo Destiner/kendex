@@ -17,6 +17,8 @@ const ALL_HARNESSES: HarnessId[] = [
   "opencode",
   "cursor",
   "pi",
+  "gemini",
+  "copilot",
 ];
 
 export function HarnessesPage() {
@@ -38,7 +40,8 @@ export function HarnessesPage() {
         <div className="flex flex-col items-center gap-2 py-16 text-center">
           <p className="font-medium">No AI coding tools found.</p>
           <p className="text-sm text-muted-foreground">
-            Install Claude Code, Codex, OpenCode, Cursor, or Pi and scan again.
+            Install Claude Code, Codex, OpenCode, Cursor, Pi, Gemini CLI, or
+            GitHub Copilot and scan again.
           </p>
           <Button
             variant="outline"

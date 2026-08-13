@@ -3,7 +3,8 @@
 Cross-platform desktop app (Rust + Tauri) managing AI coding-harness
 customizations — agents, skills, hooks, commands, MCP servers, plugins, Pi
 extensions — across global and per-project scopes. Claude Code first-class;
-codex, opencode, cursor, and pi behind the same adapter seam. No server; a
+codex, opencode, cursor, pi, gemini, and copilot behind the same adapter
+seam, the last two observed while their management lands. No server; a
 thin CLI mirrors every core operation so consuming-repo automation
 (refresh, report, …) keeps working.
 
@@ -122,6 +123,17 @@ lives in one capability table read by core and UI.
   its prompt directory in favor of skills), the table names the kind the
   artifact is stored as and the lock records what was written: that is a
   native surface, not a shim.
+- **The table says what a verb means, not only whether it exists.**
+  Beside op × scope it carries the direction a toggle can move (a config
+  layer that merges as a union can disable a name but never enable one),
+  whether a hook the tool loads is executed or only read as prose, and the
+  MCP transports the tool speaks. `managed` never implied enforcement — a
+  safety hook rendered as advisory text must not read as protection.
+- **An adapter claims only its own namespace.** Tools reading each other's
+  directories is now common (Copilot reads Claude Code's skills and
+  settings). A file belongs to the tool whose namespace it sits in, and
+  the cross-read is reported as an input to effective state — never as a
+  second installation, which would count one file on disk twice.
 - Fresh manifest schema + one-time v1 importer; no compat shims. v1
   extras/theme packs are not carried over.
 - **Schemas are versioned and migrations are applies.** The manifest and

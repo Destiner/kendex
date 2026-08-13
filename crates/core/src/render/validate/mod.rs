@@ -79,6 +79,8 @@ pub fn validate_agent(harness: HarnessId, name: &str, text: &str) -> Vec<Finding
         // Pi reads plain markdown and enforces no frontmatter schema, so
         // the name rule above is the whole of what can be checked.
         HarnessId::Pi => Vec::new(),
+        // No renderer produces these yet; the format rules arrive with it.
+        HarnessId::Gemini | HarnessId::Copilot => Vec::new(),
     });
     findings
 }

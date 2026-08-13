@@ -8,6 +8,15 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- vstack now sees Gemini CLI and GitHub Copilot setups, personally and per
+  project, listed beside every other tool: Gemini's agents, skills,
+  commands, hooks, MCP servers, and extensions, and Copilot's agents,
+  skills, and MCP servers. Reading only for now — installing and toggling
+  on those two lands next — and Copilot's folder is found where Copilot
+  actually keeps it, including a relocated one. Files the two tools borrow
+  from each other, like Copilot reading Claude Code's skills, stay listed
+  once under the tool they belong to instead of being counted twice.
+
 - Every generated file is checked against its tool's real format before
   anything is written. A file that tool would not load — an unparseable
   Codex agent, an OpenCode agent whose mode or permissions it cannot read,

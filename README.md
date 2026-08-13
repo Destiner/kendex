@@ -2,13 +2,15 @@
 
 One place to manage AI coding-tool customizations — agents, skills, hooks,
 commands, MCP servers, plugins, and Pi extensions — across Claude Code,
-Codex, OpenCode, Cursor, and Pi, personally and per-project.
+Codex, OpenCode, Cursor, and Pi, personally and per-project. Gemini CLI and
+GitHub Copilot setups are read too, with management next.
 
 Desktop app + CLI over one engine.
 
 ## Features
 
-- **Install once, use everywhere** — one library serves all five tools.
+- **Install once, use everywhere** — one library serves all five managed
+  tools.
 - **Author once** — one markdown file per agent or skill; vstack renders
   each tool's native format (Claude markdown, Codex TOML, Cursor rules…).
 - **Preview-first** — every change shows its plan and asks before touching
@@ -31,18 +33,21 @@ Desktop app + CLI over one engine.
 
 ## What's supported
 
-| | Claude Code | Codex | OpenCode | Cursor* | Pi |
-|---|:-:|:-:|:-:|:-:|:-:|
-| Agents | ● | ● | ● | ● | ● |
-| Skills | ● | ● | ● | ● | ● |
-| Hooks | ● | ● | ● | ● | — |
-| Commands | ● | ○ | ○ | ○ | ○ |
-| MCP servers | ● | ○ | ○ | ○ | — |
-| Plugins | ◐ | ○ | ○ | ○ | — |
-| Pi extensions | — | — | — | — | ● |
+| | Claude Code | Codex | OpenCode | Cursor* | Pi | Gemini CLI† | GitHub Copilot† |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Agents | ● | ● | ● | ● | ● | ○ | ○ |
+| Skills | ● | ● | ● | ● | ● | ○ | ○ |
+| Hooks | ● | ● | ● | ● | — | ○ | — |
+| Commands | ● | ○ | ○ | ○ | ○ | ○ | — |
+| MCP servers | ● | ○ | ○ | ○ | — | ○ | ○ |
+| Plugins | ◐ | ○ | ○ | ○ | — | ○ | — |
+| Pi extensions | — | — | — | — | ● | — | — |
 
 ● managed · ◐ enable/disable · ○ shown read-only · — no such surface.
 *Cursor is project-only.
+†Gemini CLI and GitHub Copilot are read-only for now; management lands
+next. Copilot's hooks and plugins are real — vstack just does not read them
+yet — while Copilot commands genuinely do not exist.
 
 ## How vstack works
 

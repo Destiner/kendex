@@ -106,6 +106,8 @@ pub(super) fn hook_target(
         },
         // pi hooks belong to the pi-hooks extension, not to files we manage.
         HarnessId::Pi => None,
+        // Both run hooks of their own, and vstack writes neither yet.
+        HarnessId::Gemini | HarnessId::Copilot => None,
     }
 }
 

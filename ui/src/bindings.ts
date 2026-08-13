@@ -173,6 +173,23 @@ export type EditorInventory = {
 };
 
 /**
+ *  Whether the harness runs what vstack writes, or only reads it as prose.
+ *  `managed` says vstack can write and track an artifact; it never said the
+ *  tool would act on it, and a safety hook must not read as protection on a
+ *  tool that can merely suggest it.
+ */
+export type Enforcement = 
+/**  The harness executes the command and honors its result. */
+"enforced" | 
+/**  Rendered as instructions the model is free to ignore. */
+"advisory" | 
+/**
+ *  Nothing here executes: every kind but Hook, and the harnesses vstack
+ *  declares no hook surface for.
+ */
+"not-applicable";
+
+/**
  *  How an observed item exists on disk. Kinds that live as entries inside a
  *  shared config file (MCP servers, some hooks) are `ConfigEntry`.
  */
@@ -225,7 +242,7 @@ export type FrontmatterOverrides_Serialize = {
 	"nickname-candidates"?: string[] | null,
 };
 
-export type HarnessId = "claude" | "codex" | "opencode" | "cursor" | "pi";
+export type HarnessId = "claude" | "codex" | "opencode" | "cursor" | "pi" | "gemini" | "copilot";
 
 export type HookAgents = 
 /**  `"all"`, a role name, or a single agent name. */
@@ -306,6 +323,17 @@ export type KindCaps = {
 	 *  emitted kind's, which is where the honesty check looks.
 	 */
 	installsAs: ItemKind | null,
+	/**
+	 *  Holds for every scope in `toggle`. Where one scope switches both ways
+	 *  and another only off, the row takes the narrower reading: offering an
+	 *  enable that silently does nothing is the failure this axis prevents.
+	 */
+	toggleDirection: ToggleDirection,
+	/**
+	 *  Only Hook rows carry anything but `NotApplicable` — the axis exists
+	 *  to separate a hook the tool runs from one it merely reads.
+	 */
+	enforcement: Enforcement,
 };
 
 export type Manifest = Manifest_Serialize | Manifest_Deserialize;
@@ -437,6 +465,13 @@ export type SourceRow = {
 	head: string | null,
 	declaredItems: string[],
 };
+
+/**
+ *  Which way a toggle can move an item. A harness whose lower-scope config
+ *  merges as a union can add a name to a disabled-list but cannot take one
+ *  off it, so the enable half of the switch does not exist there.
+ */
+export type ToggleDirection = "both" | "disable-only";
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

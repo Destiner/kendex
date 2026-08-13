@@ -21,6 +21,9 @@ const DECLARED_KINDS: [ItemKind; 6] = [
     ItemKind::PiExtension,
 ];
 
+/// The tools on this machine a fresh manifest should install to — a tool
+/// vstack can only read is detected and listed, never seeded as a target
+/// whose every install would silently do nothing.
 fn detected_harnesses(env: &Env) -> Vec<HarnessId> {
     crate::harness::all_adapters()
         .iter()
@@ -28,6 +31,7 @@ fn detected_harnesses(env: &Env) -> Vec<HarnessId> {
             a.detect(env, &a.default_global_root(env))
                 .map(|found| found.harness)
         })
+        .filter(|harness| crate::harness::installable(*harness))
         .collect()
 }
 

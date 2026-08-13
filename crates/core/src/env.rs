@@ -4,11 +4,13 @@ use std::path::{Path, PathBuf};
 use crate::error::{CoreError, Result};
 
 /// Process env vars that relocate harness roots.
-const HARNESS_VARS: [&str; 5] = [
+const HARNESS_VARS: [&str; 6] = [
     "CODEX_HOME",
     "OPENCODE_CONFIG",
     "OPENCODE_CONFIG_DIR",
     "PI_CODING_AGENT_DIR",
+    // Relocates Copilot's whole config root (matrix §3, §R4).
+    "COPILOT_HOME",
     // Rebases `owner/repo` source shorthands onto another git host —
     // release smokes and tests point it at a file:// fixture tree.
     "VSTACK_GIT_BASE",

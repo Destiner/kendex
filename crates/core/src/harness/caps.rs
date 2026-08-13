@@ -27,6 +27,32 @@ pub const NONE: OpSupport = OpSupport {
     global: false,
 };
 
+/// Which way a toggle can move an item. A harness whose lower-scope config
+/// merges as a union can add a name to a disabled-list but cannot take one
+/// off it, so the enable half of the switch does not exist there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum ToggleDirection {
+    Both,
+    DisableOnly,
+}
+
+/// Whether the harness runs what vstack writes, or only reads it as prose.
+/// `managed` says vstack can write and track an artifact; it never said the
+/// tool would act on it, and a safety hook must not read as protection on a
+/// tool that can merely suggest it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum Enforcement {
+    /// The harness executes the command and honors its result.
+    Enforced,
+    /// Rendered as instructions the model is free to ignore.
+    Advisory,
+    /// Nothing here executes: every kind but Hook, and the harnesses vstack
+    /// declares no hook surface for.
+    NotApplicable,
+}
+
 /// What each operation supports for one harness × kind. `observe` is derived
 /// from adapter surface declarations (tested); mutation columns land with
 /// their phases and stay honest through those phases' tests.
@@ -44,6 +70,13 @@ pub struct KindCaps {
     /// item's own surfaces; what a mutation writes is observable at the
     /// emitted kind's, which is where the honesty check looks.
     pub installs_as: Option<ItemKind>,
+    /// Holds for every scope in `toggle`. Where one scope switches both ways
+    /// and another only off, the row takes the narrower reading: offering an
+    /// enable that silently does nothing is the failure this axis prevents.
+    pub toggle_direction: ToggleDirection,
+    /// Only Hook rows carry anything but `NotApplicable` — the axis exists
+    /// to separate a hook the tool runs from one it merely reads.
+    pub enforcement: Enforcement,
 }
 
 const fn unsupported() -> KindCaps {
@@ -55,6 +88,8 @@ const fn unsupported() -> KindCaps {
         remove: NONE,
         refresh: NONE,
         installs_as: None,
+        toggle_direction: ToggleDirection::Both,
+        enforcement: Enforcement::NotApplicable,
     }
 }
 
@@ -67,7 +102,7 @@ const fn managed(scopes: OpSupport) -> KindCaps {
         toggle: scopes,
         remove: scopes,
         refresh: scopes,
-        installs_as: None,
+        ..unsupported()
     }
 }
 
@@ -75,12 +110,23 @@ const fn managed(scopes: OpSupport) -> KindCaps {
 const fn observe_only(scopes: OpSupport) -> KindCaps {
     KindCaps {
         observe: scopes,
-        adopt: NONE,
-        install: NONE,
-        toggle: NONE,
-        remove: NONE,
-        refresh: NONE,
-        installs_as: None,
+        ..unsupported()
+    }
+}
+
+/// A hook surface the harness itself runs.
+const fn enforced(caps: KindCaps) -> KindCaps {
+    KindCaps {
+        enforcement: Enforcement::Enforced,
+        ..caps
+    }
+}
+
+/// A hook surface that renders to text the model may ignore.
+const fn advisory(caps: KindCaps) -> KindCaps {
+    KindCaps {
+        enforcement: Enforcement::Advisory,
+        ..caps
     }
 }
 
@@ -96,6 +142,19 @@ pub enum NameRule {
     },
 }
 
+/// How a harness reaches an MCP server. A server declared with a transport
+/// its harness cannot speak does not load, so the renderers read this rather
+/// than assuming every tool takes every form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpTransport {
+    Stdio,
+    /// Streamable HTTP.
+    Http,
+    Sse,
+}
+
+use McpTransport::{Http, Sse, Stdio};
+
 /// Format facts per harness — owned here beside the op table so renderers
 /// and the surface model read one source of truth instead of scattering
 /// literals. Extended axis by axis as consumers land.
@@ -106,32 +165,69 @@ pub struct FormatCaps {
     /// `references/` rather than truncating.
     pub skill_body_max_bytes: Option<usize>,
     pub name_rule: NameRule,
+    /// Empty where the harness reads no MCP servers at all.
+    pub mcp_transports: &'static [McpTransport],
+}
+
+const fn format_defaults() -> FormatCaps {
+    FormatCaps {
+        skill_body_max_bytes: None,
+        name_rule: NameRule::Any,
+        mcp_transports: &[Stdio, Http, Sse],
+    }
 }
 
 pub const fn format_caps(harness: HarnessId) -> FormatCaps {
     match harness {
+        // Claude's three transports are the ones the MCP writer emits.
+        HarnessId::Claude => format_defaults(),
         HarnessId::Codex => FormatCaps {
             skill_body_max_bytes: Some(8192),
-            name_rule: NameRule::Any,
+            // Codex speaks Streamable HTTP, never SSE.
+            mcp_transports: &[Stdio, Http],
+            ..format_defaults()
         },
         // OpenCode keys agents and skills by a slug it will not coerce:
         // capitals and underscores make the item unloadable, not renamed.
+        // Its servers are `local` (command) or `remote` (url) — no SSE
+        // (opencode.ai/docs/mcp-servers).
         HarnessId::Opencode => FormatCaps {
-            skill_body_max_bytes: None,
             name_rule: NameRule::LowerKebab { max_len: 64 },
+            mcp_transports: &[Stdio, Http],
+            ..format_defaults()
         },
-        _ => FormatCaps {
-            skill_body_max_bytes: None,
-            name_rule: NameRule::Any,
+        // Cursor takes a command, an SSE url, or a streamable-HTTP url
+        // (cursor.com/docs/context/mcp).
+        HarnessId::Cursor => format_defaults(),
+        // pi reads no MCP servers.
+        HarnessId::Pi => FormatCaps {
+            mcp_transports: &[],
+            ..format_defaults()
         },
+        // Gemini server entries carry `command`, `httpUrl`, or `url`
+        // (matrix §1); Copilot's `type` is local|stdio|http|sse (matrix §2).
+        HarnessId::Gemini | HarnessId::Copilot => format_defaults(),
     }
+}
+
+/// Whether any kind installs on this harness at any scope. A tool vstack
+/// only reads is not an install target: naming it in a manifest or an
+/// editor picker promises writes that never happen.
+pub fn installable(harness: HarnessId) -> bool {
+    ItemKind::ALL.into_iter().any(|kind| {
+        let install = capabilities(harness, kind).install;
+        install.project || install.global
+    })
 }
 
 pub fn capabilities(harness: HarnessId, kind: ItemKind) -> KindCaps {
     use HarnessId::*;
     use ItemKind::*;
     match (harness, kind) {
-        (Claude, Agent | Skill | Hook | Command) => managed(BOTH),
+        (Claude, Agent | Skill | Command) => managed(BOTH),
+        // Claude runs the registered command and gates the tool call on its
+        // exit status.
+        (Claude, Hook) => enforced(managed(BOTH)),
         (Claude, McpServer) => managed(BOTH),
         // Plugin install/remove is parked with the marketplace work.
         (Claude, Plugin) => KindCaps {
@@ -141,19 +237,22 @@ pub fn capabilities(harness: HarnessId, kind: ItemKind) -> KindCaps {
         },
         (Claude, PiExtension) => unsupported(),
 
-        (Codex, Agent | Skill | Hook) => managed(BOTH),
+        (Codex, Agent | Skill) => managed(BOTH),
+        // Native for the events `hook.rs` maps onto codex's own; anything
+        // outside that map renders as prose the model may ignore.
+        (Codex, Hook) => enforced(managed(BOTH)),
         // Codex deprecated `~/.codex/prompts` in favor of skills, so a
         // command installs as a skill and is read back from the skill
         // surface. The prompts dir still loads, so it is still scanned —
         // and never written, which is why adopt stays off.
         (Codex, Command) => KindCaps {
             observe: GLOBAL,
-            adopt: NONE,
             install: BOTH,
             toggle: BOTH,
             remove: BOTH,
             refresh: BOTH,
             installs_as: Some(Skill),
+            ..unsupported()
         },
         (Codex, McpServer) => observe_only(BOTH),
         (Codex, Plugin) => observe_only(GLOBAL),
@@ -161,8 +260,9 @@ pub fn capabilities(harness: HarnessId, kind: ItemKind) -> KindCaps {
 
         (Opencode, Agent | Skill) => managed(BOTH),
         // Hooks render as instruction files + config refs; only those managed
-        // artifacts are observable — opencode has no native hook surface.
-        (Opencode, Hook) => managed(BOTH),
+        // artifacts are observable — opencode has no native hook surface, so
+        // nothing here runs.
+        (Opencode, Hook) => advisory(managed(BOTH)),
         (Opencode, Command) => observe_only(BOTH),
         (Opencode, McpServer) => observe_only(BOTH),
         (Opencode, Plugin) => observe_only(BOTH),
@@ -173,10 +273,11 @@ pub fn capabilities(harness: HarnessId, kind: ItemKind) -> KindCaps {
         (Cursor, Agent) => managed(PROJECT),
         // Skills share the rules dir and cannot be told apart from agents.
         (Cursor, Skill) => unsupported(),
-        (Cursor, Hook) => KindCaps {
+        // A cursor hook is a `.mdc` rule with no registration behind it.
+        (Cursor, Hook) => advisory(KindCaps {
             observe: BOTH,
             ..managed(PROJECT)
-        },
+        }),
         (Cursor, Command) => observe_only(BOTH),
         (Cursor, McpServer) => observe_only(BOTH),
         (Cursor, Plugin) => observe_only(GLOBAL),
@@ -189,5 +290,38 @@ pub fn capabilities(harness: HarnessId, kind: ItemKind) -> KindCaps {
         (Pi, McpServer) => unsupported(),
         (Pi, Plugin) => unsupported(),
         (Pi, PiExtension) => managed(BOTH),
+
+        // Gemini and Copilot are read-only: every management verb waits for
+        // the adapters that write those surfaces. The rows below say what
+        // vstack can see today, not what the tools can do (matrix §7).
+        (Gemini, Agent | Skill | Command | McpServer) => observe_only(BOTH),
+        // Gemini runs hooks from the `hooks` key of settings.json at either
+        // scope — 11 events, regex matchers, exit codes honored (matrix §D1).
+        (Gemini, Hook) => enforced(observe_only(BOTH)),
+        // Extensions install globally only, and their enablement is an
+        // undocumented path-rule file, so nothing here is written (§R1).
+        (Gemini, Plugin) => observe_only(GLOBAL),
+        (Gemini, PiExtension) => unsupported(),
+
+        (Copilot, Agent) => observe_only(BOTH),
+        // A repository settings file may add a name to `disabledSkills` or
+        // `disabledMcpServers` but can never remove one a user file set, so
+        // the switch only turns things off (matrix §R7).
+        (Copilot, Skill | McpServer) => KindCaps {
+            toggle_direction: ToggleDirection::DisableOnly,
+            ..observe_only(BOTH)
+        },
+        // No file-backed slash-command surface exists in any Copilot product
+        // — prompt files are IDE-only (matrix §D8).
+        (Copilot, Command) => unsupported(),
+        // Copilot does run hooks (matrix §D9), but its hook files are
+        // `{version, disableAllHooks, hooks}` — a shape no reader here
+        // parses, and reading it as claude's would misname every entry.
+        (Copilot, Hook) => unsupported(),
+        // Plugins live two directories deep under a marketplace name and
+        // toggle through an `enabledPlugins` map; both want readers of their
+        // own (matrix §7).
+        (Copilot, Plugin) => unsupported(),
+        (Copilot, PiExtension) => unsupported(),
     }
 }

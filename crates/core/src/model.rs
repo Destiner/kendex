@@ -13,15 +13,19 @@ pub enum HarnessId {
     Opencode,
     Cursor,
     Pi,
+    Gemini,
+    Copilot,
 }
 
 impl HarnessId {
-    pub const ALL: [HarnessId; 5] = [
+    pub const ALL: [HarnessId; 7] = [
         HarnessId::Claude,
         HarnessId::Codex,
         HarnessId::Opencode,
         HarnessId::Cursor,
         HarnessId::Pi,
+        HarnessId::Gemini,
+        HarnessId::Copilot,
     ];
 
     pub fn name(self) -> &'static str {
@@ -31,6 +35,8 @@ impl HarnessId {
             HarnessId::Opencode => "opencode",
             HarnessId::Cursor => "cursor",
             HarnessId::Pi => "pi",
+            HarnessId::Gemini => "gemini",
+            HarnessId::Copilot => "copilot",
         }
     }
 
@@ -43,6 +49,8 @@ impl HarnessId {
             HarnessId::Opencode => "OpenCode",
             HarnessId::Cursor => "Cursor",
             HarnessId::Pi => "Pi",
+            HarnessId::Gemini => "Gemini CLI",
+            HarnessId::Copilot => "GitHub Copilot",
         }
     }
 
@@ -54,6 +62,8 @@ impl HarnessId {
             "opencode" => Some(HarnessId::Opencode),
             "cursor" => Some(HarnessId::Cursor),
             "pi" => Some(HarnessId::Pi),
+            "gemini" | "gemini-cli" => Some(HarnessId::Gemini),
+            "copilot" | "github-copilot" => Some(HarnessId::Copilot),
             _ => None,
         }
     }
