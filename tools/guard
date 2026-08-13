@@ -68,6 +68,12 @@ hits=$(scan 'allow\((dead_code|unused)')
   say "allow(dead_code/unused) — delete the code instead of keeping it warm"
 }
 
+hits=$(scan 'std::fs::read|crate::fs::read' '^crates/core/src/(source\.rs|render/skill\.rs|engine/desired)')
+[ -n "$hits" ] && {
+  echo "$hits" | head -5
+  say "raw filesystem read over catalog paths — go through source_read::SealedSource"
+}
+
 hits=$(scan '@tauri-apps/' '^ui/src/')
 [ -n "$hits" ] && {
   echo "$hits"

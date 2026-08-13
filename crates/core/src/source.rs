@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 
 use crate::env::Env;
 use crate::error::{CoreError, Result};
-use crate::fs::read_if_exists;
 use crate::manifest::{LOCAL_SOURCE_NAME, Manifest};
 use crate::model::{ItemKind, Scope};
+use crate::source_read::SealedSource;
 
 /// A source the engine can read right now.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,13 +128,13 @@ pub struct SourceConfig {
     pub frontmatter: BTreeMap<String, BTreeMap<String, crate::manifest::FrontmatterOverrides>>,
 }
 
-pub fn source_config(root: &Path) -> Result<SourceConfig> {
+pub fn source_config(sealed: &SealedSource) -> Result<SourceConfig> {
     let mut config = SourceConfig {
         agent_dirs: vec!["agents".to_owned()],
         skill_dirs: vec!["skills".to_owned()],
         ..SourceConfig::default()
     };
-    let Some(text) = read_if_exists(&root.join("vstack.toml"))? else {
+    let Some(text) = sealed.read_if_exists(&sealed.root().join("vstack.toml"))? else {
         return Ok(config);
     };
     let Ok(table) = text.parse::<toml::Table>() else {
@@ -189,45 +189,45 @@ fn string_list(value: Option<&toml::Value>) -> Option<Vec<String>> {
 }
 
 pub fn find_item(
-    root: &Path,
+    sealed: &SealedSource,
     config: &SourceConfig,
     kind: ItemKind,
     name: &str,
 ) -> Option<PathBuf> {
+    let root = sealed.root();
     match kind {
         ItemKind::Skill => config
             .skill_dirs
             .iter()
             .map(|d| root.join(d).join(name))
-            .find(|p| p.join("SKILL.md").is_file()),
+            .find(|p| sealed.is_file(&p.join("SKILL.md"))),
         ItemKind::Agent => config
             .agent_dirs
             .iter()
             .map(|d| root.join(d).join(format!("{name}.md")))
-            .find(|p| p.is_file()),
-        ItemKind::Hook => catalog_file(root, "hooks", &format!("{name}.sh")),
-        ItemKind::Command => catalog_file(root, "commands", &format!("{name}.md")),
-        ItemKind::McpServer => catalog_file(root, "mcp", &format!("{name}.toml")),
+            .find(|p| sealed.is_file(p)),
+        ItemKind::Hook => catalog_file(sealed, "hooks", &format!("{name}.sh")),
+        ItemKind::Command => catalog_file(sealed, "commands", &format!("{name}.md")),
+        ItemKind::McpServer => catalog_file(sealed, "mcp", &format!("{name}.toml")),
         ItemKind::Plugin | ItemKind::PiExtension => None,
     }
 }
 
-fn catalog_file(root: &Path, dir: &str, file: &str) -> Option<PathBuf> {
-    let path = root.join(dir).join(file);
-    path.is_file().then_some(path)
+fn catalog_file(sealed: &SealedSource, dir: &str, file: &str) -> Option<PathBuf> {
+    let path = sealed.root().join(dir).join(file);
+    sealed.is_file(&path).then_some(path)
 }
 
-pub fn list_items(root: &Path, config: &SourceConfig, kind: ItemKind) -> Vec<String> {
+pub fn list_items(sealed: &SealedSource, config: &SourceConfig, kind: ItemKind) -> Vec<String> {
     let mut names = Vec::new();
     match kind {
         ItemKind::Skill => {
             for dir in &config.skill_dirs {
-                let Ok(entries) = std::fs::read_dir(root.join(dir)) else {
+                let Ok(entries) = sealed.list_dir(&sealed.root().join(dir)) else {
                     continue;
                 };
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.join("SKILL.md").is_file()
+                for path in entries {
+                    if sealed.is_file(&path.join("SKILL.md"))
                         && let Some(name) = path.file_name().and_then(|n| n.to_str())
                     {
                         names.push(name.to_owned());
@@ -237,12 +237,12 @@ pub fn list_items(root: &Path, config: &SourceConfig, kind: ItemKind) -> Vec<Str
         }
         ItemKind::Agent => {
             for dir in &config.agent_dirs {
-                let Ok(entries) = std::fs::read_dir(root.join(dir)) else {
+                let Ok(entries) = sealed.list_dir(&sealed.root().join(dir)) else {
                     continue;
                 };
-                for entry in entries.flatten() {
-                    let path = entry.path();
+                for path in entries {
                     if path.extension().is_some_and(|e| e == "md")
+                        && sealed.is_file(&path)
                         && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
                     {
                         names.push(stem.to_owned());
@@ -313,12 +313,13 @@ mod tests {
         let source = require_ready(&env, &scope, "cat", &manifest).unwrap();
         assert_eq!(source.root, project.join("catalog").canonicalize().unwrap());
 
-        let config = source_config(&source.root).unwrap();
+        let sealed = SealedSource::open(&source.root).unwrap();
+        let config = source_config(&sealed).unwrap();
         assert_eq!(
-            find_item(&source.root, &config, ItemKind::Skill, "gh"),
+            find_item(&sealed, &config, ItemKind::Skill, "gh"),
             Some(source.root.join("skills/gh"))
         );
-        assert_eq!(list_items(&source.root, &config, ItemKind::Skill), ["gh"]);
+        assert_eq!(list_items(&sealed, &config, ItemKind::Skill), ["gh"]);
     }
 
     #[test]
@@ -358,18 +359,19 @@ mod tests {
     #[test]
     fn phase_three_kinds_live_at_fixed_catalog_paths() {
         let tmp = tempfile::tempdir().unwrap();
-        let (root, config) = (tmp.path(), SourceConfig::default());
+        let sealed = SealedSource::open(tmp.path()).unwrap();
+        let (root, config) = (sealed.root().to_path_buf(), SourceConfig::default());
         for (kind, rel) in [
             (ItemKind::Hook, "hooks/guard.sh"),
             (ItemKind::Command, "commands/ship.md"),
             (ItemKind::McpServer, "mcp/gh.toml"),
         ] {
-            assert_eq!(find_item(root, &config, kind, "guard"), None);
+            assert_eq!(find_item(&sealed, &config, kind, "guard"), None);
             let path = root.join(rel);
             std::fs::create_dir_all(root.join(rel).parent().unwrap()).unwrap();
             std::fs::write(&path, "x").unwrap();
             let name = path.file_stem().unwrap().to_string_lossy();
-            assert_eq!(find_item(root, &config, kind, &name), Some(path));
+            assert_eq!(find_item(&sealed, &config, kind, &name), Some(path));
         }
     }
 
@@ -389,7 +391,7 @@ engineer = ["dev"]
 "#,
         )
         .unwrap();
-        let config = source_config(tmp.path()).unwrap();
+        let config = source_config(&SealedSource::open(tmp.path()).unwrap()).unwrap();
         assert_eq!(config.skill_dirs, ["skills", "extra-skills"]);
         assert_eq!(config.agent_skills["rust"], ["clippy"]);
         assert_eq!(config.role_skills["engineer"], ["dev"]);

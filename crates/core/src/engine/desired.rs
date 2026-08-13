@@ -4,14 +4,14 @@ use std::path::PathBuf;
 use crate::env::Env;
 use crate::error::Result;
 use crate::harness::{Surface, adapter};
-use crate::hash::{hash_bytes, hash_files, installation_hash};
-use crate::lock::{Lock, entry_key};
+use crate::hash::{hash_bytes, hash_files};
+use crate::lock::Lock;
 use crate::manifest::{ItemDecl, Manifest, Method};
 use crate::model::{HarnessId, ItemKind, Scope};
-use crate::render::skill::render_skill;
 use crate::source::{self, SourceState, find_item, source_config};
+use crate::source_read::SealedSource;
 
-use super::{desired_agent, desired_kinds};
+use super::{desired_agent, desired_kinds, desired_skill::desired_skill};
 
 /// One installation as declaration says it should exist on disk.
 #[derive(Debug, Clone, PartialEq)]
@@ -106,7 +106,7 @@ pub fn native_dir(env: &Env, scope: &Scope, harness: HarnessId, kind: ItemKind) 
     })
 }
 
-fn skill_canonical(env: &Env, scope: &Scope, name: &str) -> PathBuf {
+pub(super) fn skill_canonical(env: &Env, scope: &Scope, name: &str) -> PathBuf {
     match scope {
         Scope::Global => env.rendered_skills_dir().join(name),
         Scope::Project { root } => root.join(".agents/skills").join(name),
@@ -173,8 +173,20 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
             else {
                 continue;
             };
-            let config = source_config(&root)?;
-            let Some(item_path) = find_item(&root, &config, kind, name) else {
+            // Every read below goes through the sealed root; a source whose
+            // root cannot even be opened is skipped like a missing one.
+            let sealed = match SealedSource::open(&root) {
+                Ok(sealed) => sealed,
+                Err(problem) => {
+                    state.notes.push(format!(
+                        "{name}: source '{}' unreadable ({problem}) — skipped",
+                        decl.source
+                    ));
+                    continue;
+                }
+            };
+            let config = source_config(&sealed)?;
+            let Some(item_path) = find_item(&sealed, &config, kind, name) else {
                 state
                     .notes
                     .push(format!("{name}: not found in source '{}'", decl.source));
@@ -187,25 +199,42 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
                 manifest,
                 lock,
                 config: &config,
-                root: &root,
+                sealed: &sealed,
                 name,
                 decl,
                 item_path: &item_path,
                 provenance: &provenance,
                 harnesses: target_harnesses(decl, manifest, kind, scope),
             };
-            match kind {
-                ItemKind::Skill => desired_skill(&ctx, &mut state)?,
+            let outcome = match kind {
+                ItemKind::Skill => desired_skill(&ctx, &mut state),
                 ItemKind::Agent => desired_agent::desired_agent(
                     &ctx,
                     &mut state,
                     &mut updated_manifest,
                     &mut manifest_changed,
-                )?,
-                ItemKind::Hook => desired_kinds::desired_hook(&ctx, &mut state)?,
-                ItemKind::Command => desired_kinds::desired_command(&ctx, &mut state)?,
-                ItemKind::McpServer => desired_kinds::desired_mcp(&ctx, &mut state)?,
-                _ => {}
+                ),
+                ItemKind::Hook => desired_kinds::desired_hook(&ctx, &mut state),
+                ItemKind::Command => desired_kinds::desired_command(&ctx, &mut state),
+                ItemKind::McpServer => desired_kinds::desired_mcp(&ctx, &mut state),
+                _ => Ok(()),
+            };
+            match outcome {
+                Ok(()) => {}
+                // One hostile item must not take the whole scope down: the
+                // refused read becomes an unreadable note, and what it
+                // already installed stays out of the orphan sweep.
+                Err(crate::error::CoreError::SourceEscape { path, reason }) => {
+                    state.unreadable(
+                        kind,
+                        name,
+                        format!(
+                            "{name}: refused catalog read — {reason} ({})",
+                            path.display()
+                        ),
+                    );
+                }
+                Err(other) => return Err(other),
             }
         }
     }
@@ -262,73 +291,12 @@ pub(super) struct ItemCtx<'a> {
     pub(super) manifest: &'a Manifest,
     pub(super) lock: &'a Lock,
     pub(super) config: &'a crate::source::SourceConfig,
-    pub(super) root: &'a std::path::Path,
+    pub(super) sealed: &'a SealedSource,
     pub(super) name: &'a str,
     pub(super) decl: &'a ItemDecl,
     pub(super) item_path: &'a std::path::Path,
     pub(super) provenance: &'a str,
     pub(super) harnesses: Vec<HarnessId>,
-}
-
-fn desired_skill(ctx: &ItemCtx, state: &mut DesiredState) -> Result<()> {
-    let enabled = ctx.decl.enabled;
-    let method = ctx.decl.method.unwrap_or(ctx.manifest.install.method);
-    if enabled && matches!(ctx.scope, Scope::Project { .. }) {
-        let template = ctx.item_path.join(crate::settings_seed::SETTINGS_TEMPLATE);
-        if let Some(text) = crate::fs::read_if_exists(&template)? {
-            for entry in crate::settings_seed::extract_env_entries(&text) {
-                if !state.settings_env.iter().any(|e| e.key == entry.key) {
-                    state.settings_env.push(entry);
-                }
-            }
-        }
-    }
-    let mut files = render_skill(ctx.item_path, ctx.manifest, ctx.name)?;
-    if !enabled {
-        for (rel, _) in &mut files {
-            if rel == std::path::Path::new("SKILL.md") {
-                *rel = PathBuf::from("SKILL.md.disabled");
-            }
-        }
-    }
-    for harness in ctx.harnesses.clone() {
-        let Some(native) = native_dir(ctx.env, ctx.scope, harness, ItemKind::Skill) else {
-            continue;
-        };
-        let native_item = native.join(ctx.name);
-        let canonical = skill_canonical(ctx.env, ctx.scope, ctx.name);
-        let (canonical, link) = if method == Method::Copy {
-            (native_item, None)
-        } else if native_item == canonical {
-            (canonical, None)
-        } else {
-            (canonical, Some(native_item))
-        };
-        state.items.push(Desired {
-            key: entry_key(ItemKind::Skill, ctx.name, harness),
-            kind: ItemKind::Skill,
-            name: ctx.name.to_owned(),
-            harness,
-            enabled,
-            method,
-            source_name: ctx.decl.source.clone(),
-            provenance: ctx.provenance.to_owned(),
-            hash: installation_hash(
-                ctx.item_path,
-                ctx.manifest,
-                ItemKind::Skill,
-                ctx.name,
-                harness,
-            )?,
-            upstream_skills: None,
-            artifact: Artifact::Tree {
-                canonical,
-                files: files.clone(),
-                link,
-            },
-        });
-    }
-    Ok(())
 }
 
 /// Every path a declaration's artifacts occupy, derived from the

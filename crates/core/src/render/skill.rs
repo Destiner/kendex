@@ -1,23 +1,24 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::agent::merged_instructions;
-use crate::error::{CoreError, Result};
+use crate::error::Result;
 use crate::manifest::Manifest;
+use crate::source_read::SealedSource;
 
 pub const INSTRUCTIONS_START: &str = "<!-- vstack:project-instructions:start -->";
 pub const INSTRUCTIONS_END: &str = "<!-- vstack:project-instructions:end -->";
 
-/// The rendered skill: every file of the source tree, with
+/// The rendered skill: every file of the source tree — read through the
+/// sealed source, so a hostile catalog cannot smuggle host files in — with
 /// `[skill-instructions]` injected into SKILL.md. Returned as
 /// (relative path, bytes) so apply can materialize it transactionally.
 pub fn render_skill(
+    sealed: &SealedSource,
     source_dir: &Path,
     manifest: &Manifest,
     name: &str,
 ) -> Result<Vec<(PathBuf, Vec<u8>)>> {
-    let mut files = Vec::new();
-    collect(source_dir, Path::new(""), &mut files)?;
+    let mut files = sealed.collect_tree(source_dir, &[])?;
     let instructions = merged_instructions(&manifest.skill_instructions, name);
     for (rel, bytes) in &mut files {
         if rel == Path::new("SKILL.md") {
@@ -25,28 +26,7 @@ pub fn render_skill(
             *bytes = inject_instructions(&text, instructions.as_deref()).into_bytes();
         }
     }
-    files.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(files)
-}
-
-fn collect(dir: &Path, rel: &Path, files: &mut Vec<(PathBuf, Vec<u8>)>) -> Result<()> {
-    for entry in fs::read_dir(dir)
-        .map_err(|e| CoreError::io(dir, e))?
-        .flatten()
-    {
-        let path = entry.path();
-        let Some(name) = path.file_name() else {
-            continue;
-        };
-        let rel = rel.join(name);
-        if path.is_dir() {
-            collect(&path, &rel, files)?;
-        } else {
-            let bytes = fs::read(&path).map_err(|e| CoreError::io(&path, e))?;
-            files.push((rel, bytes));
-        }
-    }
-    Ok(())
 }
 
 /// Inject (or refresh) the project-instructions block right after the
@@ -142,9 +122,9 @@ mod tests {
     fn rendered_tree_carries_instructions_only_in_skill_md() {
         let tmp = tempfile::tempdir().unwrap();
         let src = tmp.path().join("github");
-        fs::create_dir_all(src.join("scripts")).unwrap();
-        fs::write(src.join("SKILL.md"), SKILL).unwrap();
-        fs::write(src.join("scripts/run.sh"), "#!/bin/sh\n").unwrap();
+        std::fs::create_dir_all(src.join("scripts")).unwrap();
+        std::fs::write(src.join("SKILL.md"), SKILL).unwrap();
+        std::fs::write(src.join("scripts/run.sh"), "#!/bin/sh\n").unwrap();
 
         let mut manifest = Manifest {
             schema: MANIFEST_SCHEMA,
@@ -154,7 +134,9 @@ mod tests {
             .skill_instructions
             .insert("github".into(), "use gh".into());
 
-        let files = render_skill(&src, &manifest, "github").unwrap();
+        let sealed = crate::source_read::SealedSource::open(tmp.path()).unwrap();
+        let src = sealed.root().join("github");
+        let files = render_skill(&sealed, &src, &manifest, "github").unwrap();
         assert_eq!(files.len(), 2);
         let skill_md = files
             .iter()

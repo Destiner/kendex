@@ -68,8 +68,11 @@ pub fn hash_files(files: &[(std::path::PathBuf, Vec<u8>)]) -> String {
 
 /// The full installation hash: source bytes plus the manifest sections that
 /// shape this artifact (invariant 3) — editing a shared key invalidates
-/// dependents because the serialized sections change.
+/// dependents because the serialized sections change. Source bytes come
+/// through the sealed reader: a symlinked catalog must not feed host bytes
+/// into an installation hash.
 pub fn installation_hash(
+    sealed: &crate::source_read::SealedSource,
     source_tree: &Path,
     manifest: &Manifest,
     kind: ItemKind,
@@ -77,7 +80,7 @@ pub fn installation_hash(
     harness: HarnessId,
 ) -> Result<String> {
     let mut hasher = Sha256::new();
-    hasher.update(hash_tree(source_tree)?.as_bytes());
+    hasher.update(sealed.hash_tree(source_tree)?.as_bytes());
     hasher.update(relevant_sections(manifest, kind, name, harness).as_bytes());
     Ok(hex(&hasher.finalize()))
 }
@@ -182,7 +185,10 @@ mod tests {
             schema: MANIFEST_SCHEMA,
             ..Manifest::default()
         };
+        let sealed = crate::source_read::SealedSource::open(tmp.path()).unwrap();
+        let skill = sealed.root().join("skill");
         let before = installation_hash(
+            &sealed,
             &skill,
             &manifest,
             ItemKind::Skill,
@@ -195,6 +201,7 @@ mod tests {
             .skill_instructions
             .insert("all".into(), "shared instruction".into());
         let after = installation_hash(
+            &sealed,
             &skill,
             &manifest,
             ItemKind::Skill,
@@ -205,6 +212,7 @@ mod tests {
         assert_ne!(before, after);
 
         let unrelated = installation_hash(
+            &sealed,
             &skill,
             &manifest,
             ItemKind::Command,
@@ -218,6 +226,7 @@ mod tests {
                 ..Manifest::default()
             };
             installation_hash(
+                &sealed,
                 &skill,
                 &clean,
                 ItemKind::Command,

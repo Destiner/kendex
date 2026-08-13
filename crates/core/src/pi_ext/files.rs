@@ -30,52 +30,31 @@ pub(super) fn read_dir(path: &Path) -> Result<Vec<std::fs::DirEntry>> {
     }
 }
 
-fn skipped(name: &std::ffi::OsStr) -> bool {
-    SKIPPED.contains(&name.to_string_lossy().as_ref())
-}
-
 /// Hash a package directory as it would be copied, so an installed copy with
-/// a built `node_modules` still matches the source it came from.
+/// a built `node_modules` still matches the source it came from. Reads go
+/// through the sealed walk — package sources are catalog content.
 pub fn package_hash(package_dir: &Path) -> Result<Option<String>> {
     if !package_dir.is_dir() {
         return Ok(None);
     }
-    let mut files = Vec::new();
-    collect(package_dir, Path::new(""), &mut files)?;
+    let sealed = crate::source_read::SealedSource::open(package_dir)?;
+    let files = sealed.collect_tree(sealed.root(), SKIPPED)?;
     Ok(Some(hash_files(&files)))
-}
-
-fn collect(dir: &Path, rel: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) -> Result<()> {
-    for entry in read_dir(dir)? {
-        let name = entry.file_name();
-        if skipped(&name) {
-            continue;
-        }
-        let path = entry.path();
-        let rel = rel.join(&name);
-        if path.is_dir() {
-            collect(&path, &rel, out)?;
-        } else {
-            let bytes = std::fs::read(&path).map_err(|e| CoreError::io(&path, e))?;
-            out.push((rel, bytes));
-        }
-    }
-    Ok(())
 }
 
 pub(super) fn copy_package(from: &Path, to: &Path) -> Result<()> {
     std::fs::create_dir_all(to).map_err(|e| CoreError::io(to, e))?;
-    for entry in read_dir(from)? {
-        let name = entry.file_name();
-        if skipped(&name) {
-            continue;
+    let sealed = crate::source_read::SealedSource::open(from)?;
+    for (rel, bytes) in sealed.collect_tree(sealed.root(), SKIPPED)? {
+        let dest = to.join(&rel);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
         }
-        let source = entry.path();
-        let dest = to.join(&name);
-        if source.is_dir() {
-            copy_package(&source, &dest)?;
-        } else {
-            std::fs::copy(&source, &dest).map_err(|e| CoreError::io(&source, e))?;
+        std::fs::write(&dest, bytes).map_err(|e| CoreError::io(&dest, e))?;
+        // Executable bits must survive the copy — package bin scripts run.
+        let source = sealed.root().join(&rel);
+        if let Ok(meta) = std::fs::metadata(&source) {
+            let _ = std::fs::set_permissions(&dest, meta.permissions());
         }
     }
     Ok(())

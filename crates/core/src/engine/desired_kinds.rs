@@ -6,7 +6,7 @@ use super::desired::{Artifact, Desired, DesiredState, ItemCtx, native_dir};
 use super::targets::{HookTarget, disabled_name, hook_target, mcp_registry, plugin_settings};
 use crate::configedit::ConfigEdit;
 use crate::env::Env;
-use crate::error::{CoreError, Result};
+use crate::error::Result;
 use crate::hash::{hash_bytes, installation_hash};
 use crate::hook::{HookSource, codex_event, parse_hook};
 use crate::lock::entry_key;
@@ -30,15 +30,21 @@ fn declared(
         method: Method::Copy,
         source_name: ctx.decl.source.clone(),
         provenance: ctx.provenance.to_owned(),
-        hash: installation_hash(ctx.item_path, ctx.manifest, kind, ctx.name, harness)?,
+        hash: installation_hash(
+            ctx.sealed,
+            ctx.item_path,
+            ctx.manifest,
+            kind,
+            ctx.name,
+            harness,
+        )?,
         upstream_skills: None,
         artifact,
     })
 }
 
 pub(super) fn desired_hook(ctx: &ItemCtx, state: &mut DesiredState) -> Result<()> {
-    let text =
-        std::fs::read_to_string(ctx.item_path).map_err(|e| CoreError::io(ctx.item_path, e))?;
+    let text = ctx.sealed.read_to_string(ctx.item_path)?;
     let hook = match parse_hook(&text) {
         Ok(hook) => hook,
         Err(problem) => {
@@ -170,7 +176,7 @@ fn registration_edits(
 }
 
 pub(super) fn desired_command(ctx: &ItemCtx, state: &mut DesiredState) -> Result<()> {
-    let bytes = std::fs::read(ctx.item_path).map_err(|e| CoreError::io(ctx.item_path, e))?;
+    let bytes = ctx.sealed.read(ctx.item_path)?;
     for harness in ctx.harnesses.clone() {
         let Some(dir) = native_dir(ctx.env, ctx.scope, harness, ItemKind::Command) else {
             continue;
@@ -193,8 +199,7 @@ pub(super) fn desired_command(ctx: &ItemCtx, state: &mut DesiredState) -> Result
 }
 
 pub(super) fn desired_mcp(ctx: &ItemCtx, state: &mut DesiredState) -> Result<()> {
-    let text =
-        std::fs::read_to_string(ctx.item_path).map_err(|e| CoreError::io(ctx.item_path, e))?;
+    let text = ctx.sealed.read_to_string(ctx.item_path)?;
     let value = match mcp_value(&text) {
         Ok(value) => value,
         Err(problem) => {

@@ -28,6 +28,12 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- Every catalog read goes through one sealed API: reads resolve against
+  the canonical source root, symlinks in a catalog are refused loudly (a
+  hostile catalog can no longer pull host files into generated artifacts
+  or recurse forever), and traversal carries depth, count, and byte
+  budgets. One refused item degrades to a note; the rest of the scope
+  still plans.
 - Source frontmatter is parsed as real YAML (block scalars, arrays, nested
   maps) with adversarial-input bounds: aliases, duplicate keys, oversized or
   deeply nested frontmatter are refused, and unknown keys warn instead of

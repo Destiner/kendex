@@ -12,8 +12,10 @@
 >   override, v1 import keeps legacy `tools` incl. harness-agnostic
 >   tables; adversarially reviewed (14 findings fixed). Bug 2 fixed: one
 >   model-alias table (`harness/models.rs`) wired through all renderers;
->   `model_id_for`/`codex_model` deleted. Next in sequence: sealed source
->   reads (bug 3), coalesced config edits (bug 4),
+>   `model_id_for`/`codex_model` deleted. Bug 3 fixed: sealed source reads
+>   (`source_read::SealedSource`) through source/find/list/render/hash/
+>   pi_ext paths, guard-banned raw reads, hostile-catalog e2e test. Next
+>   in sequence: coalesced config edits (bug 4),
 >   scope canonicalization, schema v2 + migration, format caps + warnings
 >   channel, body-split + tool swap + commands→skills + name legality,
 >   validators, hardened process constructor, byte-faithful writes,

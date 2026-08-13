@@ -96,11 +96,15 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let other = tmp.path().to_path_buf();
 
-        assert_eq!(duplicate_elsewhere("pi-widgets", &[other.clone()]), None);
+        assert_eq!(
+            duplicate_elsewhere("pi-widgets", std::slice::from_ref(&other)),
+            None
+        );
 
         // A package directory alone counts.
         std::fs::create_dir_all(other.join("packages/pi-hooks")).unwrap();
-        let hit = duplicate_elsewhere("@vanillagreen/pi-hooks", &[other.clone()]).unwrap();
+        let hit =
+            duplicate_elsewhere("@vanillagreen/pi-hooks", std::slice::from_ref(&other)).unwrap();
         assert_eq!(hit.0, "pi-hooks");
 
         // A settings registration alone counts too.

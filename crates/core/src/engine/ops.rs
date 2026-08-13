@@ -3,7 +3,6 @@ use std::collections::BTreeSet;
 use super::{EngineReport, PlanOptions, plan_scope};
 use crate::env::Env;
 use crate::error::{CoreError, Result};
-use crate::fs::read_if_exists;
 use crate::lock::{Lock, lock_path};
 use crate::manifest::{
     self, DEFAULT_SOURCE_NAME, ItemDecl, LOCAL_SOURCE_NAME, Manifest, Method, SourceDecl,
@@ -61,18 +60,19 @@ pub fn add(env: &Env, scope: &Scope, request: &AddRequest) -> Result<EngineRepor
     let mut manifest = manifest_for_mutation(env, scope)?;
     let source_name = ensure_source(&mut manifest, request.source.as_deref())?;
     let ready = source::require_ready(env, scope, &source_name, &manifest)?;
-    let config = source_config(&ready.root)?;
+    let sealed = crate::source_read::SealedSource::open(&ready.root)?;
+    let config = source_config(&sealed)?;
     let lock = crate::lock::load(&lock_path(env, scope))?;
 
     let mut agents = request.agents.clone();
     let mut skills = request.skills.clone();
     if request.all {
-        agents = list_items(&ready.root, &config, ItemKind::Agent);
-        skills = list_items(&ready.root, &config, ItemKind::Skill);
+        agents = list_items(&sealed, &config, ItemKind::Agent);
+        skills = list_items(&sealed, &config, ItemKind::Skill);
     }
     for (kind, names) in [(ItemKind::Agent, &agents), (ItemKind::Skill, &skills)] {
         for name in names {
-            if find_item(&ready.root, &config, kind, name).is_none() {
+            if find_item(&sealed, &config, kind, name).is_none() {
                 return Err(CoreError::ItemNotInSource {
                     name: name.clone(),
                     source_name: source_name.clone(),
@@ -82,17 +82,16 @@ pub fn add(env: &Env, scope: &Scope, request: &AddRequest) -> Result<EngineRepor
     }
 
     if !request.no_auto_skills {
-        let available = list_items(&ready.root, &config, ItemKind::Skill);
+        let available = list_items(&sealed, &config, ItemKind::Skill);
         let mut wanted: BTreeSet<String> = skills.iter().cloned().collect();
         for agent in &agents {
-            let path =
-                find_item(&ready.root, &config, ItemKind::Agent, agent).ok_or_else(|| {
-                    CoreError::ItemNotInSource {
-                        name: agent.clone(),
-                        source_name: source_name.clone(),
-                    }
-                })?;
-            let text = read_if_exists(&path)?.unwrap_or_default();
+            let path = find_item(&sealed, &config, ItemKind::Agent, agent).ok_or_else(|| {
+                CoreError::ItemNotInSource {
+                    name: agent.clone(),
+                    source_name: source_name.clone(),
+                }
+            })?;
+            let text = sealed.read_if_exists(&path)?.unwrap_or_default();
             if let Ok(parsed) = crate::render::agent::parse_source_agent(&text) {
                 for skill in
                     crate::mapping::upstream_skills(agent, parsed.role, &config, &available)
@@ -101,7 +100,7 @@ pub fn add(env: &Env, scope: &Scope, request: &AddRequest) -> Result<EngineRepor
                 }
             }
         }
-        expand_dependencies(&ready.root, &config, &mut wanted);
+        expand_dependencies(&sealed, &config, &mut wanted);
         skills = wanted.into_iter().collect();
     }
 
@@ -167,16 +166,16 @@ fn declare(
 
 /// Transitive closure over `dependencies.required` in skill frontmatter.
 fn expand_dependencies(
-    root: &std::path::Path,
+    sealed: &crate::source_read::SealedSource,
     config: &crate::source::SourceConfig,
     wanted: &mut BTreeSet<String>,
 ) {
     let mut queue: Vec<String> = wanted.iter().cloned().collect();
     while let Some(name) = queue.pop() {
-        let Some(dir) = find_item(root, config, ItemKind::Skill, &name) else {
+        let Some(dir) = find_item(sealed, config, ItemKind::Skill, &name) else {
             continue;
         };
-        let Ok(Some(text)) = read_if_exists(&dir.join("SKILL.md")) else {
+        let Ok(Some(text)) = sealed.read_if_exists(&dir.join("SKILL.md")) else {
             continue;
         };
         for dep in required_dependencies(&text) {

@@ -22,7 +22,7 @@ fn assigned_skills(
     updated_manifest: &mut Manifest,
     manifest_changed: &mut bool,
 ) -> EffectiveSkills {
-    let available = list_items(ctx.root, ctx.config, ItemKind::Skill);
+    let available = list_items(ctx.sealed, ctx.config, ItemKind::Skill);
     let recorded = ctx.harnesses.iter().find_map(|h| {
         ctx.lock
             .entries
@@ -101,8 +101,7 @@ pub(super) fn desired_agent(
     manifest_changed: &mut bool,
 ) -> Result<()> {
     let enabled = ctx.decl.enabled;
-    let text = std::fs::read_to_string(ctx.item_path)
-        .map_err(|e| crate::error::CoreError::io(ctx.item_path, e))?;
+    let text = ctx.sealed.read_to_string(ctx.item_path)?;
     let source_agent = match parse_source_agent(&text) {
         Ok(agent) => agent,
         Err(problem) => {
@@ -178,6 +177,7 @@ pub(super) fn desired_agent(
             source_name: ctx.decl.source.clone(),
             provenance: ctx.provenance.to_owned(),
             hash: installation_hash(
+                ctx.sealed,
                 ctx.item_path,
                 ctx.manifest,
                 ItemKind::Agent,
