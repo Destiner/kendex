@@ -120,6 +120,37 @@ lives in one capability table read by core and UI.
   native surface, not a shim.
 - Fresh manifest schema + one-time v1 importer; no compat shims. v1
   extras/theme packs are not carried over.
+- **Schemas are versioned and migrations are applies.** The manifest and
+  lock carry a format version; older files load, and the upgrade rides
+  the normal journaled, previewed plan as a surgical edit (the version
+  line changes, nothing else). Files from a newer vstack refuse to load
+  — an older build never corrupts a newer file.
+- **Permission intent is typed and never widens.** A source's tool
+  allowlist survives parse, merge, and every renderer as
+  `Unspecified | AllowOnly | DenyExtra`; explicit denies survive
+  allowlist subtraction. A surface that cannot express the intent
+  renders the most restrictive expressible form or refuses with a
+  conflict row — and a refusal also removes the older, wider rendering.
+  Converting an allowlist to a deny-list by complement is forbidden: it
+  widens the moment the tool grows a new built-in.
+- **Catalogs are adversarial input.** Every catalog read goes through
+  one sealed API (`source_read`) that resolves against the canonical
+  root, refuses symlinks, and carries depth/count/byte budgets; raw
+  filesystem reads over catalog paths are guard-banned. Frontmatter
+  parses as real YAML under the same posture (aliases and duplicate
+  keys refused, bounds enforced), and every interpolated value in a
+  generated file is quoted so foreign text cannot mint config lines.
+- **The surface model.** Rendered skills are per-harness variants,
+  deduplicated by content hash. Harnesses that read the same physical
+  directory form a surface group carrying exactly one variant rendered
+  to the group's combined constraints (tightest byte cap wins); a
+  variant whose bytes match the shared tree collapses onto it through a
+  link, and a divergent one gets its own tree. Format facts — byte
+  caps, name rules — live in one table beside the op table
+  (`harness/caps.rs`), never as renderer literals.
+- One model-alias table for every harness: bare tiers resolve per
+  harness, `inherit` is expressed in each tool's own dialect, explicit
+  vendor ids pass through.
 - **Propagation into consuming repos is local, never a pull request.**
   vstack detects drift and informs the agent at session start; the repo
   is brought current by a local refresh. Opening PRs in consumer repos
