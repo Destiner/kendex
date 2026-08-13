@@ -12,6 +12,7 @@ use crate::manifest::{self, Manifest, ManifestFile};
 use crate::model::{HarnessId, ItemKind, Scope};
 
 pub mod adopt;
+mod config_edits;
 pub mod desired;
 mod desired_agent;
 mod desired_kinds;
@@ -86,6 +87,7 @@ pub fn plan_scope(
         entries: BTreeMap::new(),
     };
     let mut written_canonicals: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut config_edits = config_edits::ConfigEditPlan::default();
 
     if let Some(updated) = &state.manifest_update {
         let path = manifest::manifest_path(env, scope);
@@ -106,6 +108,7 @@ pub fn plan_scope(
             lock,
             &mut drift,
             &mut ops,
+            &mut config_edits,
             &mut new_lock,
             &mut written_canonicals,
         )?;
@@ -113,35 +116,15 @@ pub fn plan_scope(
 
     plan_settings_seed(scope, &state, &mut ops, &mut drift)?;
 
-    // A refusal is a conflict the user must resolve, and any previous, wider
-    // rendering comes off disk on the default path — leaving it live would
-    // keep exactly the access the refusal exists to prevent.
-    let refused_keys: BTreeSet<String> = state
-        .refused
-        .iter()
-        .map(|r| crate::lock::entry_key(r.kind, &r.name, r.harness))
-        .collect();
-    for refusal in &state.refused {
-        let key = crate::lock::entry_key(refusal.kind, &refusal.name, refusal.harness);
-        let existing = lock.entries.get(&key);
-        drift.push(DriftRow {
-            kind: refusal.kind,
-            name: refusal.name.clone(),
-            harness: refusal.harness,
-            scope: scope.clone(),
-            state: DriftState::Conflict,
-            detail: match existing {
-                Some(_) => format!(
-                    "{} — the previous installation will be moved to the trash",
-                    refusal.reason
-                ),
-                None => refusal.reason.clone(),
-            },
-        });
-        if let Some(entry) = existing {
-            ops.extend(removal::removal_ops(env, scope, entry)?);
-        }
-    }
+    let refused_keys = plan_refusals(
+        env,
+        scope,
+        lock,
+        &state,
+        &mut drift,
+        &mut ops,
+        &mut config_edits,
+    )?;
 
     orphans(
         env,
@@ -153,8 +136,27 @@ pub fn plan_scope(
         &refused_keys,
         &mut drift,
         &mut ops,
+        &mut config_edits,
         &mut new_lock,
     )?;
+
+    // One mutation per config file, whatever asked for it — a single
+    // precondition can hold; per-edit preconditions against the same
+    // original bytes cannot.
+    for (path, (labels, edits)) in config_edits.by_file {
+        let file = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        ops.push(PlannedOp {
+            description: format!("Update {file} ({})", labels.join(", ")),
+            op: Op::EditFile {
+                pre: crate::apply::Pre::observed(&path)?,
+                path,
+                edits,
+            },
+        });
+    }
 
     if new_lock.entries != lock.entries {
         let path = lock_path(env, scope);
@@ -178,6 +180,48 @@ pub fn plan_scope(
     };
     unmanaged_rows(env, scope, manifest, lock, &state.items, &mut report.drift);
     Ok(report)
+}
+
+/// A refusal is a conflict the user must resolve, and any previous, wider
+/// rendering comes off disk on the default path — leaving it live would
+/// keep exactly the access the refusal exists to prevent.
+#[allow(clippy::too_many_arguments)]
+fn plan_refusals(
+    env: &Env,
+    scope: &Scope,
+    lock: &Lock,
+    state: &desired::DesiredState,
+    drift: &mut Vec<DriftRow>,
+    ops: &mut Vec<PlannedOp>,
+    config_edits: &mut config_edits::ConfigEditPlan,
+) -> Result<BTreeSet<String>> {
+    let refused_keys: BTreeSet<String> = state
+        .refused
+        .iter()
+        .map(|r| crate::lock::entry_key(r.kind, &r.name, r.harness))
+        .collect();
+    for refusal in &state.refused {
+        let key = crate::lock::entry_key(refusal.kind, &refusal.name, refusal.harness);
+        let existing = lock.entries.get(&key);
+        drift.push(DriftRow {
+            kind: refusal.kind,
+            name: refusal.name.clone(),
+            harness: refusal.harness,
+            scope: scope.clone(),
+            state: DriftState::Conflict,
+            detail: match existing {
+                Some(_) => format!(
+                    "{} — the previous installation will be moved to the trash",
+                    refusal.reason
+                ),
+                None => refusal.reason.clone(),
+            },
+        });
+        if let Some(entry) = existing {
+            ops.extend(removal::removal_ops(env, scope, entry, config_edits)?);
+        }
+    }
+    Ok(refused_keys)
 }
 
 /// Skills may ship `[env]` defaults; missing keys merge into the project's
@@ -238,6 +282,7 @@ fn orphans(
     refused_keys: &BTreeSet<String>,
     drift: &mut Vec<DriftRow>,
     ops: &mut Vec<PlannedOp>,
+    config_edits: &mut config_edits::ConfigEditPlan,
     new_lock: &mut Lock,
 ) -> Result<()> {
     let desired = &state.items;
@@ -287,7 +332,7 @@ fn orphans(
             new_lock.entries.insert(key.clone(), entry.clone());
             continue;
         }
-        for planned in removal::removal_ops(env, scope, entry)? {
+        for planned in removal::removal_ops(env, scope, entry, config_edits)? {
             // A skill tree another installation still wants stays put:
             // shared physical targets are reference-counted, not deleted.
             if let Op::Trash { path, .. } = &planned.op

@@ -14,8 +14,9 @@
 >   model-alias table (`harness/models.rs`) wired through all renderers;
 >   `model_id_for`/`codex_model` deleted. Bug 3 fixed: sealed source reads
 >   (`source_read::SealedSource`) through source/find/list/render/hash/
->   pi_ext paths, guard-banned raw reads, hostile-catalog e2e test. Next
->   in sequence: coalesced config edits (bug 4),
+>   pi_ext paths, guard-banned raw reads, hostile-catalog e2e test. Bug 4
+>   fixed: config edits coalesce per file (`ConfigEditPlan`), installs and
+>   removals in one mutation with one precondition. Next in sequence:
 >   scope canonicalization, schema v2 + migration, format caps + warnings
 >   channel, body-split + tool swap + commands→skills + name legality,
 >   validators, hardened process constructor, byte-faithful writes,

@@ -85,11 +85,13 @@ pub enum Op {
     },
     /// Removal never deletes: the artifact moves to the trash.
     Trash { path: PathBuf, pre: Pre },
-    /// Apply an idempotent structured edit to a (possibly absent) config
-    /// file — unrelated keys always survive.
+    /// Apply every structured edit destined for one config file in a single
+    /// mutation with a single precondition — two registrations into one
+    /// settings file must both land in one apply. Unrelated keys always
+    /// survive.
     EditFile {
         path: PathBuf,
-        edit: crate::configedit::ConfigEdit,
+        edits: Vec<crate::configedit::ConfigEdit>,
         pre: Pre,
     },
     /// Both records are written as whole plan-time snapshots, so `pre`
@@ -176,15 +178,18 @@ impl Op {
                 }
                 Ok(())
             }
-            Op::EditFile { path, edit, pre } => {
+            Op::EditFile { path, edits, pre } => {
                 pre.check(path)?;
                 let current = crate::fs::read_if_exists(path)?.unwrap_or_default();
-                let updated = edit
-                    .apply(&current)
-                    .map_err(|message| CoreError::ConfigEdit {
-                        path: path.clone(),
-                        message,
-                    })?;
+                let mut updated = current.clone();
+                for edit in edits {
+                    updated = edit
+                        .apply(&updated)
+                        .map_err(|message| CoreError::ConfigEdit {
+                            path: path.clone(),
+                            message,
+                        })?;
+                }
                 if updated != current {
                     if let Some(parent) = path.parent() {
                         fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;

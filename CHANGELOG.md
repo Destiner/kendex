@@ -26,6 +26,14 @@ changes carry a **Breaking** call-out with their migration note inline.
   untouched, and a bare unknown model warns where the harness's loader
   requires a `provider/model` form. Migration: refresh regenerates.
 
+### Fixed
+
+- Two or more settings changes to the same configuration file now apply
+  together in one write: installing two MCP servers (or a hook plus a
+  server, or any mix of registrations and removals) into one settings
+  file in one apply used to fail and roll back; each file now gets a
+  single composed mutation with a single precondition.
+
 ### Added
 
 - Every catalog read goes through one sealed API: reads resolve against

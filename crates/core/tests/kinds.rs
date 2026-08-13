@@ -236,6 +236,36 @@ fn mcp_declare_apply_remove_keeps_the_servers_we_never_declared() {
     assert!(is_clean(&f));
 }
 
+/// Two structured edits to one config file compose into a single mutation
+/// with a single precondition — before this, the second edit's precondition
+/// bound to the original bytes and the whole apply rolled back.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn two_mcp_servers_install_into_one_settings_file_in_one_apply() {
+    let f = fixture("[mcp-servers.gh]\nsource = \"cat\"\n\n[mcp-servers.lin]\nsource = \"cat\"\n");
+    let source_mcp = f._tmp.path().join("catalog/mcp");
+    fs::write(
+        source_mcp.join("lin.toml"),
+        "command = \"lin-mcp\"\nargs = [\"--stdio\"]\n",
+    )
+    .unwrap();
+    apply_now(&f);
+
+    let file = f.project.join(".mcp.json");
+    let installed = json(&file);
+    assert_eq!(installed["mcpServers"]["gh"]["command"], "gh-mcp");
+    assert_eq!(installed["mcpServers"]["lin"]["command"], "lin-mcp");
+    assert!(is_clean(&f));
+
+    // A hook and an MCP removal against the same settings file coalesce
+    // with fresh registrations too: flip both in one reconcile.
+    let report = ops::remove(&f.env, &f.scope, &["gh".to_owned(), "lin".to_owned()]).unwrap();
+    apply::execute(&f.env, &report.plan, None).unwrap();
+    let after = json(&file);
+    assert!(after["mcpServers"].is_null() || after["mcpServers"].get("gh").is_none());
+    assert!(is_clean(&f));
+}
+
 #[test]
 fn a_secret_in_an_mcp_env_value_is_refused_not_installed() {
     let f = fixture("[mcp-servers.gh]\nsource = \"cat\"\n");

@@ -8,14 +8,17 @@ use crate::hash::hash_tree;
 use crate::lock::{Lock, LockEntry, timestamp};
 use crate::model::Scope;
 
+use super::config_edits::ConfigEditPlan;
 use super::desired::{Artifact, Desired, artifact_disk_hash};
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn plan_item(
     item: &Desired,
     scope: &Scope,
     lock: &Lock,
     drift: &mut Vec<DriftRow>,
     ops: &mut Vec<PlannedOp>,
+    config_edits: &mut ConfigEditPlan,
     new_lock: &mut Lock,
     written_canonicals: &mut BTreeSet<PathBuf>,
 ) -> Result<()> {
@@ -48,7 +51,9 @@ pub(super) fn plan_item(
     let planned = match &item.artifact {
         Artifact::File { .. } => plan_file(item, existing.is_some(), ops),
         Artifact::Tree { .. } => plan_tree(item, existing.is_some(), written_canonicals, ops),
-        Artifact::Registration { .. } => plan_registration(item, existing.is_some(), ops),
+        Artifact::Registration { .. } => {
+            plan_registration(item, existing.is_some(), ops, config_edits)
+        }
     }?;
     let dirty = !matches!(planned, Planned::Clean);
     match planned {
@@ -321,7 +326,14 @@ fn plan_tree(
 /// A registration is in sync when its backing file matches and re-applying
 /// every config edit changes nothing. That idempotency is the whole drift
 /// check — unrelated keys in those shared files are never read as ours.
-fn plan_registration(item: &Desired, locked: bool, ops: &mut Vec<PlannedOp>) -> Result<Planned> {
+/// Edits that would change the file go to the per-file collector, not
+/// straight to ops.
+fn plan_registration(
+    item: &Desired,
+    locked: bool,
+    ops: &mut Vec<PlannedOp>,
+    config_edits: &mut ConfigEditPlan,
+) -> Result<Planned> {
     let Artifact::Registration { script, edits } = &item.artifact else {
         return Ok(Planned::Clean);
     };
@@ -343,23 +355,11 @@ fn plan_registration(item: &Desired, locked: bool, ops: &mut Vec<PlannedOp>) -> 
         if updated == current {
             continue;
         }
-        ops.push(PlannedOp {
-            description: format!(
-                "Register {} in {}'s settings",
-                item.name,
-                item.harness.display_name()
-            ),
-            op: Op::EditFile {
-                path: path.clone(),
-                edit: edit.clone(),
-                pre: match path.is_file() {
-                    true => Pre::HashIs {
-                        hash: hash_tree(path)?,
-                    },
-                    false => Pre::Absent,
-                },
-            },
-        });
+        config_edits.push(
+            path.clone(),
+            format!("register {}", item.name),
+            edit.clone(),
+        );
         if matches!(planned, Planned::Clean) {
             planned = match locked {
                 true => Planned::Drift(

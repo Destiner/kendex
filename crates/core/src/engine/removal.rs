@@ -6,7 +6,6 @@ use crate::apply::{Op, PlannedOp, Pre};
 use crate::configedit::ConfigEdit;
 use crate::env::Env;
 use crate::error::Result;
-use crate::hash::hash_tree;
 use crate::lock::LockEntry;
 use crate::model::{ItemKind, Scope};
 use crate::render::agent::file_name;
@@ -100,10 +99,17 @@ struct Owned {
 }
 
 /// Everything undoing one installation takes: the artifacts we wrote go to
-/// the trash, registrations are reversed by a structured edit. Nothing is
-/// planned that would not change the disk, and nothing outside what this
-/// entry installed is touched (invariant 6).
-pub(super) fn removal_ops(env: &Env, scope: &Scope, entry: &LockEntry) -> Result<Vec<PlannedOp>> {
+/// the trash, registrations are reversed by a structured edit routed
+/// through the per-file collector — a removal and an install editing the
+/// same settings file must land in one mutation. Nothing is planned that
+/// would not change the disk, and nothing outside what this entry
+/// installed is touched (invariant 6).
+pub(super) fn removal_ops(
+    env: &Env,
+    scope: &Scope,
+    entry: &LockEntry,
+    config_edits: &mut super::config_edits::ConfigEditPlan,
+) -> Result<Vec<PlannedOp>> {
     let Owned { files, edits } = installed(env, scope, entry);
     let mut ops = Vec::new();
     for path in files {
@@ -138,20 +144,7 @@ pub(super) fn removal_ops(env: &Env, scope: &Scope, entry: &LockEntry) -> Result
         if updated == current {
             continue;
         }
-        ops.push(PlannedOp {
-            description: format!(
-                "Remove {} from {}'s settings",
-                entry.name,
-                entry.harness.display_name()
-            ),
-            op: Op::EditFile {
-                pre: Pre::HashIs {
-                    hash: hash_tree(&path)?,
-                },
-                path,
-                edit,
-            },
-        });
+        config_edits.push(path, format!("remove {}", entry.name), edit);
     }
     Ok(ops)
 }
