@@ -8,6 +8,33 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- **Breaking:** vstack can now be pointed at a marketplace-style
+  catalog — a repository that ships its content one plugin at a time,
+  with a `marketplace.json` listing what it offers — and install straight
+  from it, alongside the plain catalogs it has always read. Nothing is
+  guessed: a repository is read that way only when it carries that
+  listing, and only the plugins the listing describes, kept inside the
+  repository itself, are offered. An entry that points at some other
+  repository or a web address is skipped and named, rather than quietly
+  fetching something nobody asked for. Anything the catalog gets wrong is
+  reported with what to do about it: a listing that does not parse, a
+  plugin whose own details disagree with the listing about its name or
+  version, a plugin describing files outside itself, and two names your
+  filesystem cannot tell apart. Items from these catalogs are listed under
+  the plugin they came from, so two plugins can each ship an `analyzer`
+  without one hiding the other. *Migration:* nothing changes for catalogs
+  already in use — a catalog with no listing installs exactly where it
+  always did, under the names it always used. Items from a marketplace
+  catalog are declared and shown as `<plugin>/<item>` (in `vstack.toml`,
+  write the name in quotes), and each tool spells that its own way in the
+  files it reads: `data-science__eda` for most, `data-science-eda` where
+  the tool only accepts lowercase words joined by hyphens. If two
+  declarations would end up as the same file — a namespaced name against a
+  flat one already spelled that way, or two names that differ only by
+  capitals — neither is installed, and the conflict names both so you can
+  rename one. Names that cannot be a file at all are refused when
+  `vstack.toml` is read.
+
 - **Breaking:** a source can now say which revision it reads, and
   downloaded catalogs are kept one folder per version instead of one
   working copy per repository that every refresh reset in place. Add

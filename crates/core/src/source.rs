@@ -7,6 +7,12 @@ use crate::manifest::{LOCAL_SOURCE_NAME, Manifest, SourceDecl};
 use crate::model::{ItemKind, Scope};
 use crate::source_read::SealedSource;
 
+mod catalog;
+mod marketplace;
+
+pub use catalog::{CatalogGroup, CatalogItem, CatalogMetadata, metadata as catalog_metadata};
+pub use marketplace::{CatalogFinding, PluginEntry, REGISTRY as MARKETPLACE_REGISTRY, Registry};
+
 /// A source the engine can read right now.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedSource {
@@ -165,12 +171,28 @@ pub struct SourceConfig {
     pub agent_skills: BTreeMap<String, Vec<String>>,
     pub role_skills: BTreeMap<String, Vec<String>>,
     pub frontmatter: BTreeMap<String, BTreeMap<String, crate::manifest::FrontmatterOverrides>>,
+    /// Set when the source carries a marketplace registry: its items live
+    /// one plugin deep and are named `<plugin>/<item>`. The kind directories
+    /// at the root are not read in that case — the registry says what the
+    /// catalog offers, and reading both would offer the same file twice.
+    pub marketplace: Option<Registry>,
+}
+
+impl SourceConfig {
+    /// Everything wrong with the catalog's own registry, if it has one.
+    pub fn findings(&self) -> &[CatalogFinding] {
+        match &self.marketplace {
+            Some(registry) => &registry.findings,
+            None => &[],
+        }
+    }
 }
 
 pub fn source_config(sealed: &SealedSource) -> Result<SourceConfig> {
     let mut config = SourceConfig {
         agent_dirs: vec!["agents".to_owned()],
         skill_dirs: vec!["skills".to_owned()],
+        marketplace: marketplace::read(sealed)?,
         ..SourceConfig::default()
     };
     let Some(text) = sealed.read_if_exists(&sealed.root().join("vstack.toml"))? else {
@@ -233,6 +255,9 @@ pub fn find_item(
     kind: ItemKind,
     name: &str,
 ) -> Option<PathBuf> {
+    if let Some(registry) = &config.marketplace {
+        return catalog::find(sealed, registry, kind, name);
+    }
     let root = sealed.root();
     match kind {
         ItemKind::Skill => config
@@ -258,6 +283,9 @@ fn catalog_file(sealed: &SealedSource, dir: &str, file: &str) -> Option<PathBuf>
 }
 
 pub fn list_items(sealed: &SealedSource, config: &SourceConfig, kind: ItemKind) -> Vec<String> {
+    if let Some(registry) = &config.marketplace {
+        return catalog::items(sealed, registry, kind);
+    }
     let mut names = Vec::new();
     match kind {
         ItemKind::Skill => {

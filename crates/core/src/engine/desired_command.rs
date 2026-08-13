@@ -37,6 +37,7 @@ pub(super) fn desired_command(ctx: &ItemCtx, state: &mut DesiredState) -> Result
 /// loads nothing but `.toml` from its, which is also what makes the rename
 /// toggle safe there (matrix §1).
 pub(super) fn command_file(harness: HarnessId, name: &str) -> String {
+    let name = &crate::harness::rendered_name(harness, name);
     match harness {
         HarnessId::Gemini => format!("{name}.toml"),
         _ => format!("{name}.md"),
@@ -231,8 +232,9 @@ fn split_to_cap(
 /// type; when both renames are taken too, nothing is written rather than
 /// something being overwritten.
 fn emitted_name(ctx: &ItemCtx, state: &mut DesiredState, harness: HarnessId) -> Option<String> {
+    let installed = crate::harness::rendered_name(harness, ctx.name);
     match emitted_names(ctx, harness).remove(ctx.name).flatten() {
-        Some(name) if name == ctx.name => Some(name),
+        Some(name) if name == installed => Some(name),
         Some(name) => {
             state.warnings.push(ItemWarning {
                 kind: ItemKind::Command,
@@ -278,7 +280,7 @@ fn emitted_names(ctx: &ItemCtx, harness: HarnessId) -> BTreeMap<String, Option<S
         if !target_harnesses(decl, ctx.manifest, ItemKind::Command, ctx.scope).contains(&harness) {
             continue;
         }
-        let free = free_name(name, &taken);
+        let free = free_name(&crate::harness::rendered_name(harness, name), &taken);
         if let Some(free) = &free {
             taken.insert(free.clone());
         }
@@ -306,7 +308,7 @@ fn claimed_skill_names(ctx: &ItemCtx, harness: HarnessId) -> BTreeSet<String> {
         .filter(|(_, decl)| {
             target_harnesses(decl, ctx.manifest, ItemKind::Skill, ctx.scope).contains(&harness)
         })
-        .map(|(name, _)| name.clone())
+        .map(|(name, _)| crate::harness::rendered_name(harness, name))
         .collect();
     names.extend(crate::source::list_items(
         ctx.sealed,

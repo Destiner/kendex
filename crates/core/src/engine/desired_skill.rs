@@ -16,6 +16,9 @@ use super::desired::{Artifact, Desired, DesiredState, ItemCtx, native_dir, skill
 /// variant whose bytes match the base tree deduplicates onto it.
 struct SurfaceGroup {
     native: PathBuf,
+    /// The name every member of this group lists the skill under — the
+    /// directory's own name, which SKILL.md has to agree with.
+    installed: String,
     members: Vec<HarnessId>,
 }
 
@@ -70,11 +73,13 @@ fn surface_groups(ctx: &ItemCtx) -> Vec<SurfaceGroup> {
         let Some(dir) = native_dir(ctx.env, ctx.scope, *harness, ItemKind::Skill) else {
             continue;
         };
-        let native = dir.join(ctx.name);
+        let installed = crate::harness::rendered_name(*harness, ctx.name);
+        let native = dir.join(&installed);
         match groups.iter_mut().find(|group| group.native == native) {
             Some(group) => group.members.push(*harness),
             None => groups.push(SurfaceGroup {
                 native,
+                installed,
                 members: vec![*harness],
             }),
         }
@@ -140,7 +145,7 @@ pub(super) fn desired_skill(ctx: &ItemCtx, state: &mut DesiredState) -> Result<(
                 Scope::Global => (
                     ctx.env
                         .rendered_skill_variants_dir(group.members[0].name())
-                        .join(ctx.name),
+                        .join(&group.installed),
                     Some(group.native.clone()),
                 ),
             }
@@ -185,6 +190,12 @@ fn render_variant(
     enabled: bool,
 ) -> Result<Variant> {
     let mut files = render_skill(ctx.sealed, ctx.item_path, ctx.manifest, ctx.name)?;
+    // A skill from a marketplace catalog installs under its plugin, and the
+    // catalog's own SKILL.md knows nothing of that: the copy carries the
+    // name the tool will list it under, the catalog keeps the name it wrote.
+    if group.installed != ctx.name {
+        crate::render::skill::set_skill_name(&mut files, &group.installed);
+    }
     // The tightest cap in the group and the member that enforces it, taken
     // together: they are one fact, and reading them from separate passes
     // invites a fallback for a state that cannot happen.
@@ -231,7 +242,8 @@ fn render_variant(
     // reads. Advisory findings are said once, whichever member raised them.
     let mut advisories: Vec<(HarnessId, crate::render::validate::Finding)> = Vec::new();
     for harness in &group.members {
-        let findings = crate::render::validate::validate_skill_tree(*harness, ctx.name, &files);
+        let findings =
+            crate::render::validate::validate_skill_tree(*harness, &group.installed, &files);
         if let Some(reason) = super::desired::refusal_reason(&findings) {
             for member in &group.members {
                 state.refused.push(super::desired::Refused {

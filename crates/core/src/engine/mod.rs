@@ -12,6 +12,7 @@ use crate::manifest::{self, Manifest, ManifestFile};
 use crate::model::{HarnessId, ItemKind, Scope};
 
 pub mod adopt;
+mod catalog;
 mod config_edits;
 mod copilot;
 pub mod desired;

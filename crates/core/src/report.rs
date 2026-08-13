@@ -77,10 +77,7 @@ fn is_vstack_owned(
 /// `source:`/`repository:` from the installed skill's frontmatter — the one
 /// place a skill can claim vstack ownership.
 fn installed_frontmatter(env: &Env, scope: &Scope, name: &str) -> (Option<String>, Option<String>) {
-    let path = match scope {
-        Scope::Project { root } => root.join(".agents/skills").join(name).join("SKILL.md"),
-        Scope::Global => env.rendered_skills_dir().join(name).join("SKILL.md"),
-    };
+    let path = crate::engine::desired::skill_canonical(env, scope, name).join("SKILL.md");
     let Ok(text) = std::fs::read_to_string(&path) else {
         return (None, None);
     };

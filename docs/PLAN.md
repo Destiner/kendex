@@ -20,12 +20,12 @@
 >   duplicate-definition notes, hook-matcher vocabulary translation.
 >   Adversarial review #4 folded (10 findings).
 > - Phase 3 ⏳: immutable pinned per-commit source store landed
->   (59008e6, B12). Remaining: marketplace-shaped catalog consumption
->   (recognition via .claude-plugin/marketplace.json, cross-file
->   validation, <plugin>/<leaf> namespacing + per-harness separators +
->   collision findings, local-path entries only, catalog-item metadata
->   read-side struct, bundle group identity preserved at parse), hostile
->   fixture tests, then adversarial review #5 over the phase. Then
+>   (59008e6, B12); marketplace-shaped catalog consumption landed
+>   (explicit recognition, cross-file validation with fixes,
+>   `<plugin>/<item>` namespacing with per-harness separators derived from
+>   the name rule, collision refusals, local entries only, read-side
+>   catalog metadata carrying each plugin as a group, hostile fixtures).
+>   Remaining: adversarial review #5 over the phase. Then
 >   Phase 4 bundles+deps, Phase 5 quality gates, Phase 6 UI (owner IA
 >   gate), Phase 7 release.
 > - Standing: subagent reports may arrive only as idle notifications —

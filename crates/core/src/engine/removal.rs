@@ -28,12 +28,9 @@ fn installed(env: &Env, scope: &Scope, entry: &LockEntry) -> Owned {
         }
         ItemKind::Skill => {
             if let Some(dir) = native_dir(env, scope, entry.harness, ItemKind::Skill) {
-                files.push(dir.join(&entry.name));
+                files.push(dir.join(crate::harness::rendered_name(entry.harness, &entry.name)));
             }
-            let canonical = match scope {
-                Scope::Global => env.rendered_skills_dir().join(&entry.name),
-                Scope::Project { root } => root.join(".agents/skills").join(&entry.name),
-            };
+            let canonical = super::desired::skill_canonical(env, scope, &entry.name);
             if !files.contains(&canonical) {
                 files.push(canonical);
             }

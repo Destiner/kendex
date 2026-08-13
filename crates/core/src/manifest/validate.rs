@@ -205,16 +205,21 @@ fn validate_items(table: &Table, findings: &mut Vec<Finding>) {
         for (name, decl) in items {
             let location = format!("{kind_table}.{name}");
             // Pi extensions are npm packages, where `@scope/name` is a
-            // legitimate shape; everything else keeps flat names.
+            // legitimate shape. Every other name becomes a file or a
+            // directory, and the only `/` one may hold is the plugin a
+            // marketplace-shaped catalog keeps the item in.
             let scoped_ok = kind_table == "pi-extensions"
                 && name.starts_with('@')
                 && name.matches('/').count() == 1
                 && !name.ends_with('/');
-            if (name.contains('/') && !scoped_ok) || name.starts_with('-') {
+            if let Some(problem) = (!scoped_ok)
+                .then(|| crate::names::item_problem(name))
+                .flatten()
+            {
                 findings.push(Finding {
                     location: location.clone(),
-                    problem: "item names must not contain '/' or start with '-'".into(),
-                    fix: "rename the item".into(),
+                    problem,
+                    fix: "rename the item — a plain name, or `<plugin>/<item>` for an item from a marketplace catalog".into(),
                 });
             }
             let Some(decl) = decl.as_table() else {

@@ -132,7 +132,11 @@ pub fn native_dir(env: &Env, scope: &Scope, harness: HarnessId, kind: ItemKind) 
     })
 }
 
-pub(super) fn skill_canonical(env: &Env, scope: &Scope, name: &str) -> PathBuf {
+/// The shared tree several tools read one skill from. Its name holds the
+/// plugin a marketplace catalog put the skill in, joined the way the
+/// directory itself spells it.
+pub fn skill_canonical(env: &Env, scope: &Scope, name: &str) -> PathBuf {
+    let name = crate::harness::canonical_name(name);
     match scope {
         Scope::Global => env.rendered_skills_dir().join(name),
         Scope::Project { root } => root.join(".agents/skills").join(name),
@@ -183,6 +187,7 @@ pub fn desired_state(
 
 fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result<DesiredState> {
     let mut state = DesiredState::default();
+    let collisions = super::catalog::Collisions::find(manifest, scope, &mut state);
     let mut updated_manifest = manifest.clone();
     let mut manifest_changed = false;
 
@@ -212,6 +217,7 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
                 }
             };
             let config = source_config(&sealed)?;
+            super::catalog::notes(&config, &decl.source, &mut state);
             let Some(item_path) = find_item(&sealed, &config, kind, name) else {
                 state
                     .notes
@@ -219,7 +225,7 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
                 continue;
             };
             state.processed.insert((kind, name.clone()));
-            let harnesses = target_harnesses(decl, manifest, kind, scope);
+            let mut harnesses = target_harnesses(decl, manifest, kind, scope);
             // Every tool this is declared for is one that holds no such kind
             // here. Nothing installs, and silence would read as success.
             if harnesses.is_empty() {
@@ -236,6 +242,7 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
                     asked.join(", ")
                 ));
             }
+            harnesses.retain(|harness| collisions.allows(kind, name, *harness));
             let ctx = ItemCtx {
                 env,
                 scope,

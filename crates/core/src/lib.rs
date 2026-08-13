@@ -14,6 +14,7 @@ pub mod lock;
 pub mod manifest;
 pub mod mapping;
 pub mod model;
+pub mod names;
 pub mod pi_ext;
 pub mod process;
 pub mod remote;

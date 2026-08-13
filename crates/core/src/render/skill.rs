@@ -29,6 +29,37 @@ pub fn render_skill(
     Ok(files)
 }
 
+/// Rename the tree's SKILL.md to the name the skill installs under. Every
+/// tool keys a skill on its directory and answers to the name the file
+/// gives, so the two have to agree — and a marketplace catalog's file knows
+/// only its leaf name, never the plugin the item is installed under. The
+/// catalog keeps the name it wrote; the copy carries the installed one.
+pub fn set_skill_name(files: &mut [(PathBuf, Vec<u8>)], installed: &str) {
+    for (rel, bytes) in files.iter_mut() {
+        let is_skill_md = matches!(rel.to_str(), Some("SKILL.md" | "SKILL.md.disabled"));
+        if !is_skill_md {
+            continue;
+        }
+        let text = String::from_utf8_lossy(bytes).into_owned();
+        if let Some(renamed) = with_name(&text, installed) {
+            *bytes = renamed.into_bytes();
+        }
+    }
+}
+
+/// `None` when the file carries no frontmatter to name the skill in — the
+/// validators say so plainly, and writing one in here would hide it.
+fn with_name(text: &str, installed: &str) -> Option<String> {
+    let rest = text.strip_prefix("---\n")?;
+    let end = rest.find("\n---")?;
+    let mut lines: Vec<String> = rest[..end].lines().map(str::to_owned).collect();
+    match lines.iter_mut().find(|line| line.starts_with("name:")) {
+        Some(line) => *line = format!("name: {installed}"),
+        None => lines.insert(0, format!("name: {installed}")),
+    }
+    Some(format!("---\n{}{}", lines.join("\n"), &rest[end..]))
+}
+
 /// Inject (or refresh) the project-instructions block right after the
 /// frontmatter. The skill author's text is never touched: the block lives
 /// between markers, and strip + inject are exact inverses so re-rendering

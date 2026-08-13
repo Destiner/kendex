@@ -202,6 +202,38 @@ pub const fn format_caps(harness: HarnessId) -> FormatCaps {
     }
 }
 
+/// The spelling a harness lists a namespaced `<plugin>/<item>` name under.
+///
+/// The `/` never survives into an installed artifact: every loader in the
+/// fleet keys an item on the single directory or file name it finds, and
+/// holds the item's own frontmatter to that name — a nested path would make
+/// the item answer to something nobody typed. So the plugin and the item
+/// are joined instead, with the longest separator the harness will load:
+/// two underscores by default, a hyphen where names must be lower-kebab,
+/// since an underscore there makes the item unloadable rather than renamed.
+pub const fn namespace_separator(harness: HarnessId) -> &'static str {
+    match format_caps(harness).name_rule {
+        NameRule::Any => "__",
+        NameRule::LowerKebab { .. } => "-",
+    }
+}
+
+/// One separator for the shared skill tree several tools read at once. It
+/// belongs to the directory, not to any one of them.
+pub const CANONICAL_SEPARATOR: &str = "__";
+
+/// A declared name as this harness will list it. Plain names come back
+/// untouched — a catalog that never namespaced anything installs exactly
+/// what it did before.
+pub fn rendered_name(harness: HarnessId, name: &str) -> String {
+    name.replace('/', namespace_separator(harness))
+}
+
+/// A declared name as the shared tree holds it.
+pub fn canonical_name(name: &str) -> String {
+    name.replace('/', CANONICAL_SEPARATOR)
+}
+
 /// Whether any kind installs on this harness at any scope. A tool vstack
 /// only reads is not an install target: naming it in a manifest or an
 /// editor picker promises writes that never happen.

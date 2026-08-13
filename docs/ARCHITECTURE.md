@@ -184,6 +184,39 @@ lives in one capability table read by core and UI.
   catalog per plan and is the only check a same-size edit cannot fool.
   The pre-2.0 clones are read where the new layout has nothing yet, and
   deleted never.
+- **A marketplace-shaped catalog is recognized, never guessed.** A source
+  is read one plugin deep (`plugins/<name>/{agents,commands,skills}`)
+  exactly when it carries `.claude-plugin/marketplace.json`; a `plugins/`
+  directory on its own is not evidence, and guessing renames every item in
+  a catalog that never asked for it. The registry, not the directory
+  listing, decides what such a catalog offers: an item resolves only under
+  a plugin the registry validated, and only entries pointing at a
+  directory inside the repository are consumed — an entry naming another
+  repository or a URL is skipped with a finding, since fetching it would
+  be a second, unpinned download behind the one the user asked for.
+  Everything the catalog gets wrong is a finding with a fix, cross-file
+  included: a registry that disagrees with a plugin's own manifest about
+  its name or version, a plugin describing parts that live outside itself,
+  and two names one filesystem would fold together. Registry metadata
+  (category, version, author, license, homepage, and the plugin's items as
+  a named group) is read-side only — it feeds browsing and, later,
+  installing a plugin as a unit; the manifest records what the user chose,
+  never what a catalog says about itself.
+- **A namespaced name is the identity; the separator is per tool.** Items
+  from marketplace-shaped catalogs are named `<plugin>/<item>` in the
+  manifest, the lock, and the UI, so two plugins can each ship an
+  `analyzer`. The `/` never reaches disk: every loader in the fleet keys an
+  item on the single directory or file name it finds and holds the item's
+  own frontmatter to that name, so the two halves are joined instead —
+  `__` by default, `-` where names must be lower-kebab and an underscore
+  makes the item unloadable. The rule lives beside the name rule it is
+  derived from (`harness/caps.rs`) and is checked against it. Rendered
+  copies carry the installed name (SKILL.md and agent frontmatter are
+  rewritten; the catalog keeps what it wrote), and two declarations that
+  would land on one file — `a/b` against a literal `a__b`, or two names a
+  filesystem folds together — install neither, naming both. Names that
+  cannot be a path at all (`..`, device names, trailing dots, overlong
+  components) are refused where they are written down, in `vstack.toml`.
 - **The surface model.** Rendered skills are per-harness variants,
   deduplicated by content hash. Harnesses that read the same physical
   directory form a surface group carrying exactly one variant rendered

@@ -94,7 +94,7 @@ fn declared_paths(
                 paths.push(native.join(format!("{base}.disabled")));
                 paths.push(native.join(base));
             }
-            _ => paths.push(native.join(name)),
+            _ => paths.push(native.join(crate::harness::rendered_name(harness, name))),
         }
     }
     paths

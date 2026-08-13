@@ -93,6 +93,45 @@ fn harness_overrides(
     (overrides, permissions)
 }
 
+/// The agent as this tool will know it, or `None` where that is the agent
+/// the catalog already wrote. Each tool answers to the name the rendered
+/// file gives, and a marketplace catalog names its agent inside its plugin
+/// — a fact the catalog's own file knows nothing about. The rendering takes
+/// the installed name; the catalog keeps the one it wrote.
+fn installed_under(
+    parsed: &crate::render::agent::SourceAgent,
+    declared: &str,
+    installed: &str,
+) -> Option<crate::render::agent::SourceAgent> {
+    (installed != declared).then(|| crate::render::agent::SourceAgent {
+        name: installed.to_owned(),
+        ..parsed.clone()
+    })
+}
+
+/// What a tool will do with the agent beyond loading it: Gemini keeps
+/// subagents behind a feature flag and lets a system settings layer outrank
+/// the project, so a file about to be written may sit there inert, and a
+/// repository can narrow the models Copilot will run, leaving an agent
+/// pinned outside that list answering differently than the catalog asked.
+fn harness_notices(
+    ctx: &ItemCtx,
+    state: &mut DesiredState,
+    harness: crate::model::HarnessId,
+    source_agent: &crate::render::agent::SourceAgent,
+    overrides: &crate::manifest::FrontmatterOverrides,
+) {
+    match harness {
+        crate::model::HarnessId::Gemini => super::gemini::agent_notices(ctx, state),
+        crate::model::HarnessId::Copilot => {
+            let model = overrides.model.as_deref().unwrap_or(&source_agent.model);
+            let resolved = crate::harness::models::resolve_model(harness, model);
+            super::copilot::agent_notices(ctx, state, resolved.id.as_deref());
+        }
+        _ => {}
+    }
+}
+
 /// Whether the rendering may be installed, having said everything there is
 /// to say about it — what the renderer noticed, and what the harness's own
 /// loader makes of the result. Breakage is refused for the same reason a
@@ -102,9 +141,10 @@ fn loadable(
     ctx: &ItemCtx,
     state: &mut DesiredState,
     harness: crate::model::HarnessId,
+    installed: &str,
     rendered: &RenderedAgent,
 ) -> bool {
-    let findings = validate_agent(harness, ctx.name, &rendered.text);
+    let findings = validate_agent(harness, installed, &rendered.text);
     // A refusal says everything: the rest is advice about a file that is
     // not being written.
     if let Some(reason) = super::desired::refusal_reason(&findings) {
@@ -147,7 +187,7 @@ pub(super) fn desired_agent(
 ) -> Result<()> {
     let enabled = ctx.decl.enabled;
     let text = ctx.sealed.read_to_string(ctx.item_path)?;
-    let source_agent = match parse_source_agent(&text) {
+    let parsed = match parse_source_agent(&text) {
         Ok(agent) => agent,
         Err(problem) => {
             state.unreadable(
@@ -158,7 +198,7 @@ pub(super) fn desired_agent(
             return Ok(());
         }
     };
-    for warning in &source_agent.warnings {
+    for warning in &parsed.warnings {
         state.warnings.push(super::ItemWarning {
             kind: ItemKind::Agent,
             name: ctx.name.to_owned(),
@@ -167,28 +207,18 @@ pub(super) fn desired_agent(
             remediation: None,
         });
     }
-    let skills = assigned_skills(ctx, source_agent.role, updated_manifest, manifest_changed);
+    let skills = assigned_skills(ctx, parsed.role, updated_manifest, manifest_changed);
     for harness in ctx.harnesses.clone() {
         let Some(native) = native_dir(ctx.env, ctx.scope, harness, ItemKind::Agent) else {
             continue;
         };
-        // Gemini keeps subagents behind a feature flag and lets a system
-        // settings layer outrank the project, so a file about to be written
-        // may sit there inert.
-        if harness == crate::model::HarnessId::Gemini {
-            super::gemini::agent_notices(ctx, state);
-        }
-        let (overrides, permissions) = harness_overrides(ctx, &source_agent, harness);
-        // A repository can narrow the models Copilot will run, and an agent
-        // pinned outside that list is one Copilot answers differently than
-        // the catalog asked for.
-        if harness == crate::model::HarnessId::Copilot {
-            let model = overrides.model.as_deref().unwrap_or(&source_agent.model);
-            let resolved = crate::harness::models::resolve_model(harness, model);
-            super::copilot::agent_notices(ctx, state, resolved.id.as_deref());
-        }
+        let installed = crate::harness::rendered_name(harness, ctx.name);
+        let namespaced = installed_under(&parsed, ctx.name, &installed);
+        let source_agent = namespaced.as_ref().unwrap_or(&parsed);
+        let (overrides, permissions) = harness_overrides(ctx, source_agent, harness);
+        harness_notices(ctx, state, harness, source_agent, &overrides);
         let effective = EffectiveAgent {
-            source: &source_agent,
+            source: source_agent,
             harness,
             scope: ctx.scope,
             skills: skills.effective.clone(),
@@ -202,7 +232,7 @@ pub(super) fn desired_agent(
                 &ctx.manifest.agent_additional_instructions,
                 ctx.name,
             ),
-            custom_hooks: hooks_for_agent(ctx.manifest, &source_agent),
+            custom_hooks: hooks_for_agent(ctx.manifest, &parsed),
         };
         let rendered = match generate(&effective) {
             Ok(rendered) => rendered,
@@ -219,7 +249,7 @@ pub(super) fn desired_agent(
                 continue;
             }
         };
-        if !loadable(ctx, state, harness, &rendered) {
+        if !loadable(ctx, state, harness, &installed, &rendered) {
             continue;
         }
         let base = file_name(harness, ctx.name);
