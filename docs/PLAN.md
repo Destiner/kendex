@@ -19,9 +19,15 @@
 >   targeting, effective-state/inert reporting, cross-read
 >   duplicate-definition notes, hook-matcher vocabulary translation.
 >   Adversarial review #4 folded (10 findings).
-> - Phase 3 ⏳ next: catalog layout v2 + marketplace consumption + the
->   immutable pinned source store (B12). Then Phase 4 bundles+deps,
->   Phase 5 quality gates, Phase 6 UI (owner IA gate), Phase 7 release.
+> - Phase 3 ⏳: immutable pinned per-commit source store landed
+>   (59008e6, B12). Remaining: marketplace-shaped catalog consumption
+>   (recognition via .claude-plugin/marketplace.json, cross-file
+>   validation, <plugin>/<leaf> namespacing + per-harness separators +
+>   collision findings, local-path entries only, catalog-item metadata
+>   read-side struct, bundle group identity preserved at parse), hostile
+>   fixture tests, then adversarial review #5 over the phase. Then
+>   Phase 4 bundles+deps, Phase 5 quality gates, Phase 6 UI (owner IA
+>   gate), Phase 7 release.
 > - Standing: subagent reports may arrive only as idle notifications —
 >   recover them from the session's `subagents/*.jsonl` (user CLAUDE.md).
 >   Engine/render changes get adversarial review before merge. Commits
