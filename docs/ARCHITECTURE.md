@@ -160,6 +160,30 @@ lives in one capability table read by core and UI.
   parses as real YAML under the same posture (aliases and duplicate
   keys refused, bounds enforced), and every interpolated value in a
   generated file is quoted so foreign text cannot mint config lines.
+- **The source store is immutable, and revisions are declared.** A
+  downloaded catalog is never a mutable checkout: each commit is
+  materialized once into a directory named after its object id, published
+  by rename, and read unchanged from then on, while fetching touches only
+  a bare mirror beside it. v0.1 hard-reset one checkout per repository on
+  every refresh — two scopes reading different revisions fought over it,
+  and a refresh in one window could shift bytes under a render in
+  another. A source declares which revision it reads: a full commit id is
+  a pin (that commit and no other, and once cached it resolves without
+  any network), a tag or branch is a tracking selector that re-resolves
+  on each refresh and is previewed like any other upstream change. Losing
+  the lock loses no intent either way — the manifest holds what is
+  wanted, the lock only records which commit that came out as. Offline
+  with an uncached pin is a hard error naming the pin; anything already
+  installed keeps working from what is on disk. Materialization runs
+  under a per-repository cache lock; a second resolver waits half a
+  second — enough to ride out a neighbour that is only starting up — and
+  is then told the cache is busy rather than left waiting on someone
+  else's download.
+  Reuse is verified against a publish receipt written outside the
+  checkout: a full content hash of the tree, which costs a read of the
+  catalog per plan and is the only check a same-size edit cannot fool.
+  The pre-2.0 clones are read where the new layout has nothing yet, and
+  deleted never.
 - **The surface model.** Rendered skills are per-harness variants,
   deduplicated by content hash. Harnesses that read the same physical
   directory form a surface group carrying exactly one variant rendered

@@ -39,6 +39,7 @@ describe("toDraft", () => {
     expect(widened.sources?.vstack).toEqual({
       repo: "owner/repo",
       path: null,
+      rev: null,
       enabled: true,
     });
     expect(widened.agents?.orch.harnesses).toBeNull();

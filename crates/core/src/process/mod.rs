@@ -76,6 +76,34 @@ impl Hardened {
         hardened
     }
 
+    /// git against a bare mirror in the cache. No working tree is attached,
+    /// so no operation on it can write a file anywhere: a mirror only ever
+    /// gains objects and refs.
+    pub fn git_bare(git_dir: &Path, args: &[&str]) -> Hardened {
+        let mut pinned = vec![OsString::from("--git-dir"), git_dir.as_os_str().to_owned()];
+        pinned.extend(owned(args));
+        let mut hardened = Hardened::git_command(pinned, Some(git_dir));
+        hardened.label = format!("git {}", args.join(" "));
+        hardened
+    }
+
+    /// git materializing a commit out of a bare mirror into `work_tree`.
+    /// Both ends are pinned on the command line, where they outrank any
+    /// `core.worktree` in the mirror, so the write lands in the directory
+    /// named here and nowhere else.
+    pub fn git_into(git_dir: &Path, work_tree: &Path, args: &[&str]) -> Hardened {
+        let mut pinned = vec![
+            OsString::from("--git-dir"),
+            git_dir.as_os_str().to_owned(),
+            OsString::from("--work-tree"),
+            work_tree.as_os_str().to_owned(),
+        ];
+        pinned.extend(owned(args));
+        let mut hardened = Hardened::git_command(pinned, Some(work_tree));
+        hardened.label = format!("git {}", args.join(" "));
+        hardened
+    }
+
     pub fn npm(args: &[&str], cwd: Option<&Path>) -> Hardened {
         let mut hardened = Hardened::new("npm", owned(args));
         if let Some(cwd) = cwd {

@@ -37,6 +37,10 @@ const TOP_LEVEL: &[&str] = &[
     "project-skills-dir",
 ];
 
+/// What one `[sources.<name>]` table may hold. `rev` names the revision of
+/// a remote to read — a commit id pins, a tag or branch tracks.
+const SOURCE_KEYS: &[&str] = &["repo", "path", "rev", "enabled"];
+
 /// Kind tables whose entries name an item from a source. Plugins are not
 /// among them: they come from a marketplace and carry only an enabled flag.
 const ITEM_TABLES: &[&str] = &[
@@ -133,15 +137,39 @@ fn validate_sources(table: &Table, findings: &mut Vec<Finding>) {
             });
             continue;
         };
+        for key in decl.keys() {
+            if !SOURCE_KEYS.contains(&key.as_str()) {
+                findings.push(Finding {
+                    location: location.clone(),
+                    problem: format!("unknown key '{key}'"),
+                    fix: format!("remove it, or use one of: {}", SOURCE_KEYS.join(", ")),
+                });
+            }
+        }
         let has_repo = decl.get("repo").is_some_and(|v| v.is_str());
         let has_path = decl.get("path").is_some_and(|v| v.is_str());
         if has_repo == has_path {
             findings.push(Finding {
-                location,
+                location: location.clone(),
                 problem: "a source needs exactly one of repo or path".into(),
                 fix: "keep either repo = \"owner/repo\" or path = \"…\", not both or neither"
                     .into(),
             });
+        }
+        if let Some(rev) = decl.get("rev") {
+            if !rev.is_str() {
+                findings.push(Finding {
+                    location: location.clone(),
+                    problem: "rev must be a string".into(),
+                    fix: "write rev = \"<commit, tag or branch>\"".into(),
+                });
+            } else if !has_repo {
+                findings.push(Finding {
+                    location,
+                    problem: "only a repo has revisions".into(),
+                    fix: "remove rev, or point this source at repo = \"owner/repo\"".into(),
+                });
+            }
         }
     }
 }
@@ -314,86 +342,4 @@ fn validate_hooks(table: &Table, findings: &mut Vec<Finding>) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn parse(text: &str) -> Table {
-        text.parse().unwrap()
-    }
-
-    #[test]
-    fn every_finding_carries_a_fix() {
-        let table = parse(
-            r#"
-schema = 99
-typo-table = 1
-
-[sources.bad]
-enabled = true
-
-[install]
-harnesses = ["claude", "emacs"]
-
-[skills.x]
-source = "nowhere"
-
-[agents."-bad/name"]
-source = "local"
-
-[mcp-servers.gh]
-source = "nowhere"
-
-[plugins."fmt@main"]
-version = "1"
-harness = "cursor"
-
-[agent-frontmatter.claude.orch]
-tools = ["a"]
-
-[[custom-hooks]]
-matcher = "Bash"
-"#,
-        );
-        let findings = validate(&table);
-        let locations: Vec<_> = findings.iter().map(|f| f.location.as_str()).collect();
-        assert!(locations.contains(&"mcp-servers.gh"));
-        assert!(locations.contains(&"plugins.fmt@main"));
-        // Cursor reads no plugin map vstack can write, so aiming a plugin at
-        // it asks for a write with nowhere to land.
-        assert!(locations.contains(&"plugins.fmt@main.harness"));
-        assert!(locations.contains(&"schema"));
-        assert!(locations.contains(&"typo-table"));
-        assert!(locations.contains(&"sources.bad"));
-        assert!(locations.contains(&"install.harnesses"));
-        assert!(locations.contains(&"skills.x"));
-        assert!(locations.contains(&"agents.-bad/name"));
-        assert!(locations.contains(&"agent-frontmatter.claude.orch.tools"));
-        assert!(locations.iter().any(|l| l.starts_with("custom-hooks[0]")));
-        for finding in &findings {
-            assert!(!finding.fix.is_empty(), "{finding}");
-        }
-    }
-
-    #[test]
-    fn a_clean_manifest_validates_empty() {
-        let table = parse(
-            r#"
-schema = 1
-[sources.vstack]
-repo = "vanillagreencom/vstack"
-[skills.github]
-source = "vstack"
-[agents.local-one]
-source = "local"
-[hooks.guard]
-source = "vstack"
-[mcp-servers.gh]
-source = "vstack"
-[plugins."fmt@main"]
-enabled = false
-harness = "copilot"
-"#,
-        );
-        assert_eq!(validate(&table), Vec::new());
-    }
-}
+mod tests;

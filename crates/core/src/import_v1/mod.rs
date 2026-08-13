@@ -27,7 +27,7 @@ pub fn convert(v1_manifest: Option<&str>, v1_lock: Option<&str>) -> Result<Impor
     };
     let mut lock = Lock {
         version: LOCK_VERSION,
-        entries: BTreeMap::new(),
+        ..Lock::default()
     };
 
     if let Some(text) = v1_manifest {
@@ -209,6 +209,7 @@ fn source_name_for(source: &str, source_repo: Option<&str>) -> (String, SourceDe
             SourceDecl {
                 repo: Some(DEFAULT_SOURCE_REPO.to_owned()),
                 path: None,
+                rev: None,
                 enabled: true,
             },
         );
@@ -228,12 +229,14 @@ fn source_name_for(source: &str, source_repo: Option<&str>) -> (String, SourceDe
         SourceDecl {
             repo: Some(reference.to_owned()),
             path: None,
+            rev: None,
             enabled: true,
         }
     } else {
         SourceDecl {
             repo: None,
             path: Some(reference.to_owned()),
+            rev: None,
             enabled: true,
         }
     };

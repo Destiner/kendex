@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::env::Env;
 use crate::error::{CoreError, Result};
-use crate::manifest::{LOCAL_SOURCE_NAME, Manifest};
+use crate::manifest::{LOCAL_SOURCE_NAME, Manifest, SourceDecl};
 use crate::model::{ItemKind, Scope};
 use crate::source_read::SealedSource;
 
@@ -14,13 +14,16 @@ pub struct ResolvedSource {
     pub root: PathBuf,
     /// Durable provenance: `owner/repo`, a canonical path, or `local`.
     pub provenance: String,
+    /// Remotes only: the commit this root holds. The root is that commit's
+    /// own directory, so it cannot change while it is being read.
+    pub commit: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceState {
     Ready(ResolvedSource),
-    /// Declared remote whose cache does not exist yet — not an error until
-    /// something needs its content (remote resolution arrives in Phase 5).
+    /// Declared remote the cache cannot serve yet — not an error until
+    /// something needs its content. A refresh fetches it.
     Pending {
         name: String,
         repo: String,
@@ -57,6 +60,7 @@ pub fn resolve(env: &Env, scope: &Scope, name: &str, manifest: &Manifest) -> Res
             name: name.to_owned(),
             root,
             provenance: LOCAL_SOURCE_NAME.to_owned(),
+            commit: None,
         }));
     }
     let Some(decl) = manifest.sources.get(name) else {
@@ -84,6 +88,7 @@ pub fn resolve(env: &Env, scope: &Scope, name: &str, manifest: &Manifest) -> Res
                 name: name.to_owned(),
                 provenance: root.display().to_string(),
                 root,
+                commit: None,
             })),
             _ => Ok(SourceState::Missing {
                 name: name.to_owned(),
@@ -92,12 +97,23 @@ pub fn resolve(env: &Env, scope: &Scope, name: &str, manifest: &Manifest) -> Res
         };
     }
     if let Some(repo) = &decl.repo {
-        let cache = env.source_cache_dir().join(repo.replace('/', "_"));
-        if cache.is_dir() {
+        if let Some(resolution) = crate::remote::cached(env, repo, decl.rev.as_deref())? {
             return Ok(SourceState::Ready(ResolvedSource {
                 name: name.to_owned(),
-                root: cache,
+                root: resolution.root,
                 provenance: repo.clone(),
+                commit: Some(resolution.commit),
+            }));
+        }
+        // Last resort: the commit this scope last resolved to. A tag that
+        // has since been deleted upstream, or a mirror that was cleaned
+        // away, still leaves the installed commit readable here.
+        if let Some(root) = last_resolved(env, scope, name, decl) {
+            return Ok(SourceState::Ready(ResolvedSource {
+                name: name.to_owned(),
+                root,
+                provenance: repo.clone(),
+                commit: None,
             }));
         }
         return Ok(SourceState::Pending {
@@ -108,6 +124,20 @@ pub fn resolve(env: &Env, scope: &Scope, name: &str, manifest: &Manifest) -> Res
     Err(CoreError::UnknownSource {
         name: name.to_owned(),
     })
+}
+
+/// The checkout for the commit this scope's lock recorded, if the cache
+/// still holds it unmodified. Only for the selector that produced it: a
+/// manifest that now asks for another revision must not be served the
+/// previous one.
+fn last_resolved(env: &Env, scope: &Scope, name: &str, decl: &SourceDecl) -> Option<PathBuf> {
+    let lock = crate::lock::load(&crate::lock::lock_path(env, scope)).ok()?;
+    let recorded = lock.sources.get(name)?;
+    if recorded.rev != decl.rev {
+        return None;
+    }
+    let key = crate::remote::store::repo_key(&crate::remote::clone_url(env, &recorded.repo));
+    crate::remote::store::published(env, &key, &recorded.commit)
 }
 
 /// A source's ready root, or the error that explains why content is

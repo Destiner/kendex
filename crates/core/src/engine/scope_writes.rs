@@ -2,12 +2,15 @@
 //! shared config files edits land in, the install record, the manifest's
 //! format line, and the settings a project's skills seed.
 
+use std::collections::BTreeMap;
+
 use crate::apply::{Op, PlannedOp};
 use crate::env::Env;
 use crate::error::Result;
-use crate::lock::{Lock, lock_path};
+use crate::lock::{Lock, SourceRev, lock_path};
 use crate::manifest::{self, Manifest};
 use crate::model::{HarnessId, ItemKind, Scope};
+use crate::source::SourceState;
 
 use super::desired::DesiredState;
 use super::{DriftRow, DriftState, config_edits};
@@ -36,8 +39,45 @@ pub(super) fn plan_config_edits(
     Ok(())
 }
 
+/// Which commit each source resolved to, for the lock to record. What
+/// earlier passes resolved is carried forward — a source that is offline
+/// today should not lose the commit it was reading yesterday — and a source
+/// the manifest no longer declares drops out.
+pub(super) fn source_revisions(
+    manifest: &Manifest,
+    lock: &Lock,
+    state: &DesiredState,
+) -> BTreeMap<String, SourceRev> {
+    let mut revisions: BTreeMap<String, SourceRev> = lock
+        .sources
+        .iter()
+        .filter(|(name, _)| manifest.sources.contains_key(*name))
+        .map(|(name, revision)| (name.clone(), revision.clone()))
+        .collect();
+    for (name, resolution) in &state.sources {
+        let SourceState::Ready(ready) = resolution else {
+            continue;
+        };
+        let Some(commit) = ready.commit.clone() else {
+            continue;
+        };
+        revisions.insert(
+            name.clone(),
+            SourceRev {
+                repo: ready.provenance.clone(),
+                rev: manifest.sources.get(name).and_then(|decl| decl.rev.clone()),
+                commit,
+            },
+        );
+    }
+    revisions
+}
+
 /// An old-version lock rewrites even when its entries are unchanged — the
-/// version bump is itself the change.
+/// version bump is itself the change. So does a source that now resolves to
+/// another commit, once there are installations to reproduce: with nothing
+/// installed there is no record to keep, and no lock file is created for
+/// one.
 pub(super) fn plan_lock_write(
     env: &Env,
     scope: &Scope,
@@ -46,6 +86,7 @@ pub(super) fn plan_lock_write(
     ops: &mut Vec<PlannedOp>,
 ) -> Result<()> {
     if new_lock.entries == lock.entries
+        && (new_lock.sources == lock.sources || new_lock.entries.is_empty())
         && (lock.version == crate::lock::LOCK_VERSION || lock.entries.is_empty())
     {
         return Ok(());

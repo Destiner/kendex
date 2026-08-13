@@ -162,6 +162,7 @@ mod tests {
                 SourceDecl {
                     repo: Some("vanillagreencom/vstack".to_owned()),
                     path: None,
+                    rev: None,
                     enabled: true,
                 },
             )]),

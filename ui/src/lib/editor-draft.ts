@@ -77,7 +77,7 @@ function itemDecl(decl: ItemDecl_Serialize): ItemDecl_Deserialize {
 }
 
 function sourceDecl(decl: SourceDecl_Serialize): SourceDecl_Deserialize {
-  return { repo: null, path: null, ...decl };
+  return { repo: null, path: null, rev: null, ...decl };
 }
 
 function hook(entry: CustomHook_Serialize): DraftHook {

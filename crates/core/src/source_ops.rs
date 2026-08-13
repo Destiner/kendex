@@ -68,7 +68,7 @@ pub fn list_sources(env: &Env, scope: &Scope) -> Result<Vec<SourceRow>> {
             head: decl
                 .repo
                 .as_deref()
-                .and_then(|repo| crate::remote::cache_head(env, repo)),
+                .and_then(|repo| crate::remote::cache_head(env, repo, decl.rev.as_deref())),
             declared_items: referents(&manifest, name),
         })
         .collect())
@@ -100,24 +100,31 @@ fn persist_and_plan(env: &Env, scope: &Scope, manifest: Manifest) -> Result<Engi
 }
 
 /// Declare a source. `owner/repo`-shaped references become remotes,
-/// anything else a path.
+/// anything else a path. `owner/repo@<rev>` pins or tracks a revision: a
+/// commit id is a pin, a tag or branch is followed.
 pub fn add_source(env: &Env, scope: &Scope, name: &str, reference: &str) -> Result<EngineReport> {
     let mut manifest = crate::engine::ops::manifest_for_mutation(env, scope)?;
-    let is_repo = reference.contains('/')
-        && !reference.starts_with('.')
-        && !reference.starts_with('/')
-        && !reference.starts_with('~')
-        && reference.matches('/').count() == 1;
+    let (repo, rev) = match reference.split_once('@') {
+        Some((repo, rev)) if !repo.is_empty() && !rev.is_empty() => (repo, Some(rev)),
+        _ => (reference, None),
+    };
+    let is_repo = repo.contains('/')
+        && !repo.starts_with('.')
+        && !repo.starts_with('/')
+        && !repo.starts_with('~')
+        && repo.matches('/').count() == 1;
     let decl = if is_repo {
         SourceDecl {
-            repo: Some(reference.to_owned()),
+            repo: Some(repo.to_owned()),
             path: None,
+            rev: rev.map(str::to_owned),
             enabled: true,
         }
     } else {
         SourceDecl {
             repo: None,
             path: Some(reference.to_owned()),
+            rev: None,
             enabled: true,
         }
     };
@@ -185,6 +192,31 @@ mod tests {
         .unwrap();
         let scope = Scope::Project { root: project };
         (tmp, env, scope)
+    }
+
+    /// A reference can name the revision to read. A path that happens to
+    /// contain an `@` is still a path — the split only counts where what
+    /// precedes it is repository-shaped.
+    #[test]
+    fn a_reference_can_carry_the_revision_it_reads() {
+        let (_tmp, env, scope) = fixture();
+        for (name, reference) in [
+            ("pinned", "owner/repo@v1.2.0"),
+            ("tracked", "owner/repo"),
+            ("here", "../my@catalog"),
+        ] {
+            let report = add_source(&env, &scope, name, reference).unwrap();
+            crate::apply::execute(&env, &report.plan, None).unwrap();
+        }
+        let manifest = load_current(&env, &scope).unwrap().unwrap();
+
+        let pinned = &manifest.sources["pinned"];
+        assert_eq!(pinned.repo.as_deref(), Some("owner/repo"));
+        assert_eq!(pinned.rev.as_deref(), Some("v1.2.0"));
+        assert_eq!(manifest.sources["tracked"].rev, None);
+        let here = &manifest.sources["here"];
+        assert_eq!(here.path.as_deref(), Some("../my@catalog"));
+        assert_eq!(here.rev, None);
     }
 
     #[test]

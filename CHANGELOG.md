@@ -8,6 +8,25 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- **Breaking:** a source can now say which revision it reads, and
+  downloaded catalogs are kept one folder per version instead of one
+  working copy per repository that every refresh reset in place. Add
+  `rev = "<commit, tag or branch>"` to a source in `vstack.toml`, or name
+  it when adding one as `owner/repo@<rev>`. A full commit id is a pin —
+  that exact content, forever, and it keeps working with no network once
+  it has been downloaded. A tag or branch is followed instead: each
+  refresh re-resolves it, and a tag that moved upstream shows up as a
+  pending change to preview like any other, never as a silent rewrite.
+  Two projects can now sit on different versions of the same catalog at
+  once, and a refresh started in one window can no longer change files
+  another window is reading. Being offline with a pin that was never
+  downloaded is an error naming the pin; everything already installed
+  keeps working. *Migration:* the download cache rebuilds itself on the
+  next refresh — no user content is involved — and the old cache folders
+  are left in place, still readable, rather than deleted. Nothing in
+  `vstack.toml` has to change: a source with no `rev` follows its
+  repository's default branch exactly as before.
+
 - GitHub Copilot is now fully managed — agents, skills, hooks, and MCP
   servers install, switch on and off, and come off disk like every other
   tool, personally and per project. Each lands where Copilot actually

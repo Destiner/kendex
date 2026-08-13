@@ -20,6 +20,24 @@ pub struct Lock {
     pub version: u32,
     #[serde(default)]
     pub entries: BTreeMap<String, LockEntry>,
+    /// The commit each declared source resolved to, by source name.
+    /// Reproducibility cache, never intent: the manifest says which
+    /// revision is wanted, this says which commit that came out as. A lost
+    /// lock costs the record, not the pin.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sources: BTreeMap<String, SourceRev>,
+}
+
+/// One source's resolution at the last write.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceRev {
+    /// `owner/repo`, a canonical path, or `local`.
+    pub repo: String,
+    /// The selector that produced it, when the manifest names one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rev: Option<String>,
+    pub commit: String,
 }
 
 /// One installation the engine wrote: item × harness within this scope's
@@ -77,7 +95,7 @@ pub fn load(path: &Path) -> Result<Lock> {
     match read_if_exists(path)? {
         None => Ok(Lock {
             version: LOCK_VERSION,
-            entries: BTreeMap::new(),
+            ..Lock::default()
         }),
         Some(text) => {
             let lock: Lock = serde_json::from_str(&text).map_err(|e| CoreError::JsonParse {
@@ -147,7 +165,7 @@ mod tests {
 
         let mut lock = Lock {
             version: LOCK_VERSION,
-            entries: BTreeMap::new(),
+            ..Lock::default()
         };
         lock.entries.insert(
             entry_key(ItemKind::Skill, "github", HarnessId::Claude),

@@ -30,7 +30,9 @@ mod tree_plan;
 mod unmanaged;
 
 use item_plan::plan_item;
-use scope_writes::{plan_config_edits, plan_lock_write, plan_schema_upgrade, plan_settings_seed};
+use scope_writes::{
+    plan_config_edits, plan_lock_write, plan_schema_upgrade, plan_settings_seed, source_revisions,
+};
 use unmanaged::unmanaged_rows;
 
 use desired::desired_state;
@@ -110,6 +112,7 @@ pub fn plan_scope(
     let mut new_lock = Lock {
         version: crate::lock::LOCK_VERSION,
         entries: BTreeMap::new(),
+        sources: source_revisions(manifest, lock, &state),
     };
     let mut written = tree_plan::Written::default();
     let mut config_edits = config_edits::ConfigEditPlan::default();

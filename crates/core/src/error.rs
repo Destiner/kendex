@@ -61,10 +61,22 @@ pub enum CoreError {
     #[error("scope is busy: another apply holds {lock}")]
     ScopeBusy { lock: PathBuf },
 
+    #[error("source cache is busy: another download holds {lock}")]
+    CacheBusy { lock: PathBuf },
+
+    #[error(
+        "{repo} is pinned to {pin}, which is not in the cache and could not be fetched: {reason}"
+    )]
+    PinUnavailable {
+        repo: String,
+        pin: String,
+        reason: String,
+    },
+
     #[error("plan is stale: {path} changed since the plan was computed — re-plan and retry")]
     PlanStale { path: PathBuf },
 
-    #[error("source '{name}' is not available locally yet (remote resolution arrives in Phase 5)")]
+    #[error("source '{name}' has not been downloaded yet — refresh it first")]
     SourcePending { name: String },
 
     #[error("source '{name}' is disabled")]

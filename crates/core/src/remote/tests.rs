@@ -1,0 +1,356 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
+
+use super::*;
+use crate::env::FakeOs;
+use crate::process::Hardened;
+
+fn git(dir: &Path, args: &[&str]) {
+    let output = Hardened::git(args, Some(dir)).run().unwrap();
+    assert!(output.status.success(), "git {args:?}");
+}
+
+/// An upstream repository reachable as `owner/repo`, plus the environment
+/// whose cache the store writes into.
+struct Fixture {
+    _tmp: tempfile::TempDir,
+    env: Env,
+    upstream: PathBuf,
+}
+
+const REPO: &str = "owner/repo";
+
+fn fixture() -> Fixture {
+    let tmp = tempfile::tempdir().unwrap();
+    let upstream = tmp.path().join("base/owner/repo");
+    fs::create_dir_all(upstream.join("skills/gh")).unwrap();
+    write_skill(&upstream, "v1");
+    git(&upstream, &["init", "--quiet", "-b", "main"]);
+    commit(&upstream, "one");
+    git(&upstream, &["tag", "release"]);
+    let base = format!("file://{}", tmp.path().join("base").display());
+    let env = Env::fake(tmp.path(), FakeOs::Linux).with_var("VSTACK_GIT_BASE", &base);
+    Fixture {
+        _tmp: tmp,
+        env,
+        upstream,
+    }
+}
+
+fn write_skill(dir: &Path, body: &str) {
+    fs::write(
+        dir.join("skills/gh/SKILL.md"),
+        format!("---\nname: gh\n---\n{body}\n"),
+    )
+    .unwrap();
+}
+
+fn head(dir: &Path) -> String {
+    let output = Hardened::git(&["rev-parse", "HEAD"], Some(dir))
+        .run()
+        .unwrap();
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
+}
+
+fn commit(dir: &Path, message: &str) -> String {
+    git(dir, &["add", "-A"]);
+    git(
+        dir,
+        &[
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "--quiet",
+            "-m",
+            message,
+        ],
+    );
+    head(dir)
+}
+
+fn body(root: &Path) -> String {
+    fs::read_to_string(root.join("skills/gh/SKILL.md")).unwrap()
+}
+
+fn modified(root: &Path) -> SystemTime {
+    fs::metadata(root.join("skills/gh/SKILL.md"))
+        .unwrap()
+        .modified()
+        .unwrap()
+}
+
+fn key_for(env: &Env) -> String {
+    store::repo_key(&clone_url(env, REPO))
+}
+
+#[test]
+fn shorthand_becomes_a_github_url_and_urls_pass_through() {
+    let tmp = tempfile::tempdir().unwrap();
+    let env = Env::fake(tmp.path(), FakeOs::Linux);
+    assert_eq!(clone_url(&env, "a/b"), "https://github.com/a/b.git");
+    assert_eq!(clone_url(&env, "https://x/y.git"), "https://x/y.git");
+    assert_eq!(
+        clone_url(&env, "git@github.com:a/b.git"),
+        "git@github.com:a/b.git"
+    );
+    let rebased = env.with_var("VSTACK_GIT_BASE", "file:///fixtures/");
+    assert_eq!(clone_url(&rebased, "a/b"), "file:///fixtures/a/b");
+    assert_eq!(clone_url(&rebased, "https://x/y.git"), "https://x/y.git");
+}
+
+/// Only a full object id promises one commit forever. An abbreviation names
+/// a commit but tracks like a tag, and two hosts serving one `owner/repo`
+/// never share a cache entry.
+#[test]
+fn a_pin_is_the_full_commit_id_and_keys_are_per_url() {
+    assert!(store::is_pin(&"a".repeat(40)));
+    assert!(!store::is_pin("abc1234"));
+    assert!(!store::is_pin("release"));
+    assert!(!store::is_pin(&"z".repeat(40)));
+    assert_ne!(
+        store::repo_key("file:///one/owner/repo"),
+        store::repo_key("file:///two/owner/repo")
+    );
+}
+
+/// The plan's test: two scopes pinning different revisions of one
+/// repository each read their own bytes, and neither disturbs the other.
+#[test]
+fn two_pins_of_one_repo_coexist() {
+    let f = fixture();
+    let first = head(&f.upstream);
+    write_skill(&f.upstream, "v2");
+    let second = commit(&f.upstream, "two");
+
+    let old = sync(&f.env, REPO, Some(&first)).unwrap();
+    let new = sync(&f.env, REPO, Some(&second)).unwrap();
+    assert_ne!(old.root, new.root);
+    assert!(body(&old.root).contains("v1"));
+    assert!(body(&new.root).contains("v2"));
+
+    // Resolving the older pin again still finds the older bytes.
+    assert!(body(&sync(&f.env, REPO, Some(&first)).unwrap().root).contains("v1"));
+}
+
+/// A pin the cache holds is answered without touching the network — which
+/// is what makes a pinned install work on a plane.
+#[test]
+fn a_cached_pin_resolves_offline_and_an_uncached_one_is_a_hard_error() {
+    let f = fixture();
+    let pinned = head(&f.upstream);
+    sync(&f.env, REPO, Some(&pinned)).unwrap();
+
+    // A commit made after the mirror was cloned, then put out of reach.
+    write_skill(&f.upstream, "v2");
+    let never_fetched = commit(&f.upstream, "two");
+    fs::remove_dir_all(&f.upstream).unwrap();
+    let offline = sync(&f.env, REPO, Some(&pinned)).unwrap();
+    assert!(body(&offline.root).contains("v1"));
+    assert!(offline.warning.is_none());
+
+    let error = sync(&f.env, REPO, Some(&never_fetched)).unwrap_err();
+    let CoreError::PinUnavailable { pin, .. } = &error else {
+        panic!("expected a pin error, got {error}");
+    };
+    assert_eq!(pin, &never_fetched);
+    assert!(error.to_string().contains(&never_fetched));
+}
+
+/// A tag that moved upstream is followed on the next refresh, and the
+/// commit it used to point at keeps its own directory, unchanged.
+#[test]
+fn a_moved_tag_re_resolves_without_disturbing_the_old_commit() {
+    let f = fixture();
+    let before = sync(&f.env, REPO, Some("release")).unwrap();
+    assert!(body(&before.root).contains("v1"));
+
+    write_skill(&f.upstream, "v2");
+    commit(&f.upstream, "two");
+    git(&f.upstream, &["tag", "-f", "release"]);
+
+    let after = sync(&f.env, REPO, Some("release")).unwrap();
+    assert_ne!(after.commit, before.commit);
+    assert!(body(&after.root).contains("v2"));
+    assert!(
+        body(&before.root).contains("v1"),
+        "the old commit's checkout must not be rewritten"
+    );
+}
+
+/// No selector tracks the default branch — v0.1 behavior, now through a
+/// per-commit directory instead of a checkout that is reset in place.
+#[test]
+fn the_default_branch_is_tracked_and_a_failed_refresh_keeps_serving() {
+    let f = fixture();
+    let first = sync(&f.env, REPO, None).unwrap();
+    write_skill(&f.upstream, "v2");
+    let second_commit = commit(&f.upstream, "two");
+
+    let second = sync(&f.env, REPO, None).unwrap();
+    assert_eq!(second.commit, second_commit);
+    assert!(body(&second.root).contains("v2"));
+    assert_ne!(second.root, first.root);
+
+    // The remote vanishes: the fetch fails, the cache still answers.
+    fs::remove_dir_all(&f.upstream).unwrap();
+    let offline = sync(&f.env, REPO, None).unwrap();
+    assert_eq!(offline.commit, second_commit);
+    assert!(offline.warning.unwrap().contains("using cached version"));
+    assert!(body(&offline.root).contains("v2"));
+}
+
+/// Resolving a commit that is already published rewrites nothing: same
+/// directory, same bytes, same timestamps.
+#[test]
+fn republishing_a_commit_leaves_its_bytes_alone() {
+    let f = fixture();
+    let first = sync(&f.env, REPO, None).unwrap();
+    let stamp = modified(&first.root);
+
+    let again = sync(&f.env, REPO, None).unwrap();
+    assert_eq!(again.root, first.root);
+    assert_eq!(modified(&again.root), stamp);
+    assert_eq!(
+        cached(&f.env, REPO, None).unwrap().unwrap().root,
+        first.root
+    );
+    assert_eq!(modified(&first.root), stamp);
+}
+
+/// A checkout someone edited is no longer that commit, so it is rebuilt
+/// from the mirror rather than read as if it were.
+#[test]
+fn a_tampered_checkout_is_detected_and_rebuilt() {
+    let f = fixture();
+    let published = sync(&f.env, REPO, None).unwrap();
+    write_skill(&published.root, "tampered");
+    assert!(store::published(&f.env, &key_for(&f.env), &published.commit).is_none());
+
+    let repaired = cached(&f.env, REPO, None).unwrap().unwrap();
+    assert_eq!(repaired.root, published.root);
+    assert!(body(&repaired.root).contains("v1"));
+}
+
+/// A checkout that fails half way leaves nothing readable behind: the
+/// directory only ever appears complete, by rename.
+#[test]
+fn a_failed_checkout_publishes_nothing() {
+    let f = fixture();
+    sync(&f.env, REPO, None).unwrap();
+    let key = key_for(&f.env);
+    let missing = "0".repeat(40);
+
+    let mirror = store::mirror_dir(&f.env, &key);
+    assert!(store::publish(&f.env, &key, &mirror, &missing).is_err());
+    assert!(!store::checkout_dir(&f.env, &key, &missing).exists());
+    let leftovers: Vec<PathBuf> = fs::read_dir(f.env.source_cache_dir().join("commits").join(&key))
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with('.'))
+        })
+        .collect();
+    assert!(leftovers.is_empty(), "staging left behind: {leftovers:?}");
+}
+
+/// Two resolvers must not materialize one repository at once. The second
+/// waits briefly and is then told the cache is busy, rather than sitting
+/// on someone else's download.
+#[test]
+fn a_busy_repository_cache_is_reported_not_waited_on() {
+    let f = fixture();
+    let guard = store::lock_repo(&f.env, &key_for(&f.env)).unwrap();
+    assert!(matches!(
+        sync(&f.env, REPO, None),
+        Err(CoreError::CacheBusy { .. })
+    ));
+    drop(guard);
+    sync(&f.env, REPO, None).unwrap();
+}
+
+/// The v0.1 mutable clone still answers while the new layout has nothing,
+/// so an offline first run after an update is not a dead end. Nothing
+/// deletes it; the first successful refresh simply stops needing it.
+#[test]
+fn the_pre_2_0_clone_is_read_until_a_refresh_replaces_it() {
+    let f = fixture();
+    let legacy = store::legacy_clone(&f.env, REPO);
+    fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+    git(
+        f.env.source_cache_dir().as_path(),
+        &[
+            "clone",
+            "--quiet",
+            &clone_url(&f.env, REPO),
+            &legacy.display().to_string(),
+        ],
+    );
+
+    let migrated = cached(&f.env, REPO, None).unwrap().unwrap();
+    assert_eq!(migrated.root, legacy);
+    assert!(migrated.warning.unwrap().contains("pre-2.0"));
+
+    // A pin is answered by its own commit or not at all: the old clone
+    // sits on whatever it last reset to, which is not what was pinned.
+    assert!(
+        cached(&f.env, REPO, Some(&"b".repeat(40)))
+            .unwrap()
+            .is_none()
+    );
+
+    let refreshed = sync(&f.env, REPO, None).unwrap();
+    assert!(
+        refreshed
+            .root
+            .starts_with(f.env.source_cache_dir().join("commits"))
+    );
+    assert!(legacy.is_dir(), "a user's cache is never deleted for them");
+    assert_eq!(
+        cached(&f.env, REPO, None).unwrap().unwrap().root,
+        refreshed.root
+    );
+}
+
+/// Every enabled remote in a manifest resolves; a never-cached one that
+/// cannot be reached fails the whole call rather than half-resolving.
+#[test]
+fn sync_sources_reports_warnings_and_fails_on_the_unreachable() {
+    let f = fixture();
+    let mut manifest = crate::manifest::seed(&[]);
+    manifest.sources.insert(
+        "cat".to_owned(),
+        crate::manifest::SourceDecl {
+            repo: Some(REPO.to_owned()),
+            path: None,
+            rev: None,
+            enabled: true,
+        },
+    );
+    manifest
+        .sources
+        .remove(crate::manifest::DEFAULT_SOURCE_NAME);
+    assert!(sync_sources(&f.env, &manifest).unwrap().is_empty());
+    assert_eq!(cache_head(&f.env, REPO, None).unwrap().len(), 7);
+
+    fs::remove_dir_all(&f.upstream).unwrap();
+    assert_eq!(sync_sources(&f.env, &manifest).unwrap().len(), 1);
+
+    manifest.sources.get_mut("cat").unwrap().repo = Some("owner/gone".to_owned());
+    assert!(sync_sources(&f.env, &manifest).is_err());
+}
+/// The lock lives as long as its guard and not a moment longer — an
+/// abandoned lock file would wedge a repository until someone deleted it.
+#[test]
+fn the_cache_lock_is_released_with_its_guard() {
+    let tmp = tempfile::tempdir().unwrap();
+    let env = Env::fake(tmp.path(), FakeOs::Linux);
+    let guard = store::lock_repo(&env, "catalog").unwrap();
+    assert!(store::lock_repo(&env, "catalog").is_err());
+    drop(guard);
+    store::lock_repo(&env, "catalog").expect("the lock releases with its guard");
+}

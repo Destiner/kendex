@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use crate::env::Env;
@@ -84,6 +84,11 @@ pub struct DesiredState {
     /// `[env]` defaults shipped by enabled skills
     /// (vstack.settings.toml.example), first declaration wins per key.
     pub settings_env: Vec<crate::settings_seed::EnvEntry>,
+    /// What each source an item names resolved to. One resolution per
+    /// source per pass: resolving a remote reads its checkout to confirm
+    /// nothing has altered it, which is worth doing once and wasteful to
+    /// repeat for every item the source carries.
+    pub sources: BTreeMap<String, SourceState>,
 }
 
 impl DesiredState {
@@ -190,7 +195,7 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
     ] {
         for (name, decl) in table {
             let Some((root, provenance)) =
-                resolve_source(env, scope, name, decl, manifest, &mut state.notes)?
+                resolve_source(env, scope, name, decl, manifest, &mut state)?
             else {
                 continue;
             };
@@ -294,9 +299,20 @@ fn resolve_source(
     name: &str,
     decl: &ItemDecl,
     manifest: &Manifest,
-    notes: &mut Vec<String>,
+    state: &mut DesiredState,
 ) -> Result<Option<(PathBuf, String)>> {
-    match source::resolve(env, scope, &decl.source, manifest)? {
+    let resolution = match state.sources.get(&decl.source) {
+        Some(resolution) => resolution.clone(),
+        None => {
+            let resolution = source::resolve(env, scope, &decl.source, manifest)?;
+            state
+                .sources
+                .insert(decl.source.clone(), resolution.clone());
+            resolution
+        }
+    };
+    let notes = &mut state.notes;
+    match resolution {
         SourceState::Ready(ready) => Ok(Some((ready.root, ready.provenance))),
         // A disabled source deactivates its installations in place; they stay
         // declared and are not drift.

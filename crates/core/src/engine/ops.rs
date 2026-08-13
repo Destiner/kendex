@@ -284,12 +284,14 @@ fn ensure_source(manifest: &mut Manifest, requested: Option<&str>) -> Result<Str
         SourceDecl {
             repo: Some(requested.to_owned()),
             path: None,
+            rev: None,
             enabled: true,
         }
     } else {
         SourceDecl {
             repo: None,
             path: Some(requested.to_owned()),
+            rev: None,
             enabled: true,
         }
     };

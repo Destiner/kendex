@@ -37,6 +37,13 @@ pub struct SourceDecl {
     pub repo: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// Which revision of a remote to read. A full commit id is a pin: that
+    /// commit and no other, forever, and it works offline once cached. A
+    /// tag or branch tracks — every refresh re-resolves it and the new
+    /// content is previewed before anything is written. Absent tracks the
+    /// repository's default branch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rev: Option<String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
 }
@@ -330,6 +337,7 @@ pub fn seed(detected_harnesses: &[HarnessId]) -> Manifest {
         SourceDecl {
             repo: Some(DEFAULT_SOURCE_REPO.to_owned()),
             path: None,
+            rev: None,
             enabled: true,
         },
     );

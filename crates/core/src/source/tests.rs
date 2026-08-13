@@ -20,6 +20,7 @@ fn remote_without_cache_is_pending_not_an_error() {
         SourceDecl {
             repo: Some("vanillagreencom/vstack".into()),
             path: None,
+            rev: None,
             enabled: true,
         },
     );
@@ -43,6 +44,7 @@ fn path_sources_resolve_relative_to_scope_root() {
         SourceDecl {
             repo: None,
             path: Some("catalog".into()),
+            rev: None,
             enabled: true,
         },
     );
@@ -70,6 +72,7 @@ fn disabled_and_missing_and_unknown_sources_are_distinct() {
         SourceDecl {
             repo: Some("a/b".into()),
             path: None,
+            rev: None,
             enabled: false,
         },
     );
@@ -78,6 +81,7 @@ fn disabled_and_missing_and_unknown_sources_are_distinct() {
         SourceDecl {
             repo: None,
             path: Some("nowhere".into()),
+            rev: None,
             enabled: true,
         },
     );

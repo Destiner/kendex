@@ -31,6 +31,30 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(output.status.success(), "git {args:?} failed");
 }
 
+#[allow(clippy::unwrap_used)]
+fn children(dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut entries: Vec<std::path::PathBuf> = fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect();
+    entries.sort();
+    entries
+}
+
+/// The one directory `dir` holds, asserting that it holds exactly one.
+#[allow(clippy::unwrap_used)]
+fn only_child(dir: &Path) -> std::path::PathBuf {
+    let mut entries = children(dir);
+    assert_eq!(
+        entries.len(),
+        1,
+        "{dir:?} should hold exactly one directory"
+    );
+    entries.pop().unwrap()
+}
+
 /// The default catalog, served as a real git repo under the rebased host
 /// path `git/vanillagreencom/vstack`.
 #[allow(clippy::unwrap_used)]
@@ -79,10 +103,10 @@ fn consuming_repo_installs_customizes_and_refreshes_from_the_default_catalog() {
             .contains("Upstream v1"),
     );
     assert!(proj.join(".claude/skills/gh").is_symlink());
-    assert!(
-        home.join(".cache/vstack2/sources/vanillagreencom_vstack/.git")
-            .is_dir()
-    );
+    let sources = home.join(".cache/vstack2/sources");
+    let installed = only_child(&only_child(&sources.join("commits")));
+    assert!(installed.join("skills/gh/SKILL.md").is_file());
+    assert!(only_child(&sources.join("mirrors")).join("HEAD").is_file());
     assert!(vstack(home, &proj, &["verify"]).status.success());
 
     // Customize: a project skill instruction re-renders into the skill.
@@ -111,4 +135,13 @@ fn consuming_repo_installs_customizes_and_refreshes_from_the_default_catalog() {
     assert!(text.contains("Upstream v2"), "{text}");
     assert!(text.contains("Team note."), "{text}");
     assert!(vstack(home, &proj, &["verify"]).status.success());
+
+    // The refresh published the new commit beside the old one instead of
+    // resetting a shared checkout: the first commit's bytes are still there.
+    assert_eq!(children(&only_child(&sources.join("commits"))).len(), 2);
+    assert!(
+        fs::read_to_string(installed.join("skills/gh/SKILL.md"))
+            .unwrap()
+            .contains("Upstream v1")
+    );
 }

@@ -450,12 +450,28 @@ export type SourceDecl = SourceDecl_Serialize | SourceDecl_Deserialize;
 export type SourceDecl_Deserialize = {
 	repo: string | null,
 	path: string | null,
+	/**
+	 *  Which revision of a remote to read. A full commit id is a pin: that
+	 *  commit and no other, forever, and it works offline once cached. A
+	 *  tag or branch tracks — every refresh re-resolves it and the new
+	 *  content is previewed before anything is written. Absent tracks the
+	 *  repository's default branch.
+	 */
+	rev: string | null,
 	enabled?: boolean,
 };
 
 export type SourceDecl_Serialize = {
 	repo?: string | null,
 	path?: string | null,
+	/**
+	 *  Which revision of a remote to read. A full commit id is a pin: that
+	 *  commit and no other, forever, and it works offline once cached. A
+	 *  tag or branch tracks — every refresh re-resolves it and the new
+	 *  content is previewed before anything is written. Absent tracks the
+	 *  repository's default branch.
+	 */
+	rev?: string | null,
 	enabled: boolean,
 };
 

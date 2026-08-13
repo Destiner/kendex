@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use crate::env::Env;
 use crate::error::{CoreError, Result};
 use crate::manifest::Manifest;
-use crate::process::Hardened;
+
+pub mod store;
 
 /// `owner/repo` → clone URL. Full URLs pass through untouched;
 /// `VSTACK_GIT_BASE` rebases shorthands onto another host (test fixtures).
@@ -17,55 +18,137 @@ pub fn clone_url(env: &Env, repo: &str) -> String {
     }
 }
 
-pub fn cache_dir(env: &Env, repo: &str) -> PathBuf {
-    env.source_cache_dir().join(repo.replace('/', "_"))
+/// One repository declaration, answered: the commit it names right now and
+/// the directory holding that commit's content.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resolution {
+    pub commit: String,
+    pub root: PathBuf,
+    /// Set when the cache answered something the network could not confirm.
+    pub warning: Option<String>,
 }
 
-fn run(git: Hardened) -> Result<()> {
-    let command = git.label().to_owned();
-    let output = git.run()?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(CoreError::GitFailed {
-            command,
-            stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
-        })
+impl Resolution {
+    fn at(commit: &str, root: PathBuf) -> Resolution {
+        Resolution {
+            commit: commit.to_owned(),
+            root,
+            warning: None,
+        }
     }
 }
 
-/// Make sure the cache holds a clone; fetch + hard-reset when it already
-/// does (v1 flow). Returns the cache path and a warning instead of an
-/// error when a refresh of an existing clone fails — the cached version
-/// keeps working offline.
-pub fn sync(env: &Env, repo: &str, url: &str) -> Result<(PathBuf, Option<String>)> {
-    let cache = cache_dir(env, repo);
-    if cache.join(".git").is_dir() {
-        // Pinned: the cached repository's own config must not decide where
-        // these two write.
-        let refreshed =
-            run(Hardened::git_in(&cache, &["fetch", "origin", "--quiet"])).and_then(|()| {
-                run(Hardened::git_in(
-                    &cache,
-                    &["reset", "--hard", "origin/HEAD", "--quiet"],
-                ))
+/// Bring a declaration up to date: fetch the mirror, re-resolve a tracking
+/// selector, and publish the commit's checkout if the cache lacks it.
+///
+/// A pin the cache already holds skips the network entirely — that is what
+/// makes a pinned install work offline. A pin the cache lacks and the
+/// network cannot supply is a hard error naming the pin. A tracking
+/// selector whose fetch fails degrades to a warning and the cached commit,
+/// so an offline session keeps working.
+pub fn sync(env: &Env, repo: &str, rev: Option<&str>) -> Result<Resolution> {
+    let url = clone_url(env, repo);
+    let key = store::repo_key(&url);
+    let mirror = store::mirror_dir(env, &key);
+
+    if let Some(pin) = rev.filter(|rev| store::is_pin(rev)) {
+        if let Some(root) = store::published(env, &key, pin) {
+            return Ok(Resolution::at(pin, root));
+        }
+        let _guard = store::lock_repo(env, &key)?;
+        let fetched = store::ensure_mirror(&mirror, &url).and_then(|()| store::fetch(&mirror));
+        if !store::has_commit(&mirror, pin) {
+            return Err(CoreError::PinUnavailable {
+                repo: repo.to_owned(),
+                pin: pin.to_owned(),
+                reason: match fetched {
+                    Err(error) => error.to_string(),
+                    Ok(()) => "no such commit in the repository".to_owned(),
+                },
             });
-        return Ok(match refreshed {
-            Ok(()) => (cache, None),
-            Err(error) => (
-                cache,
-                Some(format!("{repo}: using cached version ({error})")),
-            ),
-        });
+        }
+        return Ok(Resolution::at(
+            pin,
+            store::publish(env, &key, &mirror, pin)?,
+        ));
     }
-    if let Some(parent) = cache.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
+
+    let selector = rev.unwrap_or("HEAD");
+    let _guard = store::lock_repo(env, &key)?;
+    let warning = match store::ensure_mirror(&mirror, &url).and_then(|()| store::fetch(&mirror)) {
+        Ok(()) => None,
+        Err(error) => Some(format!("{repo}: using cached version ({error})")),
+    };
+    let Some(commit) = store::resolve_ref(&mirror, selector) else {
+        // The mirror cannot name this selector: nothing was fetched, or the
+        // branch or tag is gone upstream. The pre-2.0 clone is the last
+        // thing left that might hold content.
+        return match legacy_resolution(env, repo) {
+            Some(resolution) => Ok(resolution),
+            None => Err(CoreError::PinUnavailable {
+                repo: repo.to_owned(),
+                pin: selector.to_owned(),
+                reason: warning.unwrap_or_else(|| "no such branch or tag".to_owned()),
+            }),
+        };
+    };
+    let root = match store::published(env, &key, &commit) {
+        Some(root) => root,
+        None => store::publish(env, &key, &mirror, &commit)?,
+    };
+    Ok(Resolution {
+        commit,
+        root,
+        warning,
+    })
+}
+
+/// What the cache can answer for a declaration without any network. The
+/// read path: planning, rendering, and every listing go through this, so a
+/// refresh in another window is never a precondition for reading what is
+/// already installed.
+pub fn cached(env: &Env, repo: &str, rev: Option<&str>) -> Result<Option<Resolution>> {
+    let key = store::repo_key(&clone_url(env, repo));
+    let mirror = store::mirror_dir(env, &key);
+    let selector = rev.unwrap_or("HEAD");
+    let commit = match store::is_pin(selector) {
+        true => Some(selector.to_owned()),
+        false => store::resolve_ref(&mirror, selector),
+    };
+    if let Some(commit) = commit {
+        if let Some(root) = store::published(env, &key, &commit) {
+            return Ok(Some(Resolution::at(&commit, root)));
+        }
+        // The mirror holds the objects even when the checkout is missing or
+        // no longer matches what was published: rebuilding it is local.
+        if store::has_commit(&mirror, &commit) {
+            let _guard = store::lock_repo(env, &key)?;
+            let root = store::publish(env, &key, &mirror, &commit)?;
+            return Ok(Some(Resolution::at(&commit, root)));
+        }
     }
-    run(Hardened::git(
-        &["clone", "--quiet", url, &cache.display().to_string()],
-        None,
-    ))?;
-    Ok((cache, None))
+    // A pin is answered by that commit or not at all. The pre-2.0 clone
+    // sits on whatever it last reset to, which is a different commit's
+    // content under a name that promised one.
+    match store::is_pin(selector) {
+        true => Ok(None),
+        false => Ok(legacy_resolution(env, repo)),
+    }
+}
+
+/// The v0.1 mutable clone, read where the new layout has nothing yet: an
+/// offline first run after an update still resolves. Nothing writes to it
+/// and nothing deletes it — the first successful refresh publishes a
+/// per-commit checkout and this stops being consulted.
+fn legacy_resolution(env: &Env, repo: &str) -> Option<Resolution> {
+    let legacy = store::legacy_clone(env, repo);
+    store::legacy_head(&legacy).map(|commit| Resolution {
+        commit,
+        root: legacy,
+        warning: Some(format!(
+            "{repo}: reading the pre-2.0 cache; the next refresh replaces it"
+        )),
+    })
 }
 
 /// Resolve every enabled remote source a manifest declares. Failures on
@@ -80,9 +163,10 @@ pub fn sync_sources(env: &Env, manifest: &Manifest) -> Result<Vec<String>> {
         let Some(repo) = &decl.repo else {
             continue;
         };
-        match sync(env, repo, &clone_url(env, repo)) {
-            Ok((_, Some(warning))) => warnings.push(warning),
-            Ok((_, None)) => {}
+        match sync(env, repo, decl.rev.as_deref()) {
+            Ok(resolution) => warnings.extend(resolution.warning),
+            // Already names the repository and the pin the user must fix.
+            Err(error @ CoreError::PinUnavailable { .. }) => return Err(error),
             Err(error) => {
                 return Err(CoreError::GitFailed {
                     command: format!("resolving source '{name}' ({repo})"),
@@ -94,137 +178,17 @@ pub fn sync_sources(env: &Env, manifest: &Manifest) -> Result<Vec<String>> {
     Ok(warnings)
 }
 
-/// The cache's current HEAD, for freshness display.
-pub fn cache_head(env: &Env, repo: &str) -> Option<String> {
-    let cache = cache_dir(env, repo);
-    let output = Hardened::git_in(&cache, &["rev-parse", "--short", "HEAD"])
-        .run()
-        .ok()?;
-    output
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+/// The commit a source reads as right now, abbreviated for display. Cheap
+/// on purpose: no checkout is verified and nothing is materialized.
+pub fn cache_head(env: &Env, repo: &str, rev: Option<&str>) -> Option<String> {
+    let key = store::repo_key(&clone_url(env, repo));
+    let commit = match rev.filter(|rev| store::is_pin(rev)) {
+        Some(pin) => pin.to_owned(),
+        None => store::resolve_ref(&store::mirror_dir(env, &key), rev.unwrap_or("HEAD"))
+            .or_else(|| store::legacy_head(&store::legacy_clone(env, repo)))?,
+    };
+    Some(commit.chars().take(7).collect())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::env::FakeOs;
-    use std::fs;
-    use std::path::Path;
-
-    fn init_fixture_repo(dir: &Path) -> String {
-        fs::create_dir_all(dir.join("skills/gh")).unwrap();
-        fs::write(dir.join("skills/gh/SKILL.md"), "---\nname: gh\n---\nv1\n").unwrap();
-        for args in [
-            vec!["init", "--quiet", "-b", "main"],
-            vec!["add", "."],
-            vec![
-                "-c",
-                "user.email=t@t",
-                "-c",
-                "user.name=t",
-                "commit",
-                "--quiet",
-                "-m",
-                "one",
-            ],
-        ] {
-            assert!(
-                Hardened::git(&args, Some(dir))
-                    .run()
-                    .unwrap()
-                    .status
-                    .success()
-            );
-        }
-        format!("file://{}", dir.display())
-    }
-
-    #[test]
-    fn clone_then_fetch_reset_tracks_the_remote() {
-        let tmp = tempfile::tempdir().unwrap();
-        let env = Env::fake(tmp.path(), FakeOs::Linux);
-        let upstream = tmp.path().join("upstream");
-        let url = init_fixture_repo(&upstream);
-
-        let (cache, warning) = sync(&env, "owner/repo", &url).unwrap();
-        assert!(warning.is_none());
-        assert!(cache.join("skills/gh/SKILL.md").is_file());
-        let first_head = cache_head(&env, "owner/repo").unwrap();
-
-        // Upstream moves; sync fetches and hard-resets.
-        fs::write(
-            upstream.join("skills/gh/SKILL.md"),
-            "---\nname: gh\n---\nv2\n",
-        )
-        .unwrap();
-        assert!(
-            Hardened::git(
-                &[
-                    "-c",
-                    "user.email=t@t",
-                    "-c",
-                    "user.name=t",
-                    "commit",
-                    "-aqm",
-                    "two"
-                ],
-                Some(&upstream)
-            )
-            .run()
-            .unwrap()
-            .status
-            .success()
-        );
-        let (_, warning) = sync(&env, "owner/repo", &url).unwrap();
-        assert!(warning.is_none());
-        assert_ne!(cache_head(&env, "owner/repo").unwrap(), first_head);
-        assert!(
-            fs::read_to_string(cache.join("skills/gh/SKILL.md"))
-                .unwrap()
-                .contains("v2")
-        );
-    }
-
-    #[test]
-    fn refresh_failure_on_cached_clone_degrades_to_warning() {
-        let tmp = tempfile::tempdir().unwrap();
-        let env = Env::fake(tmp.path(), FakeOs::Linux);
-        let upstream = tmp.path().join("upstream");
-        let url = init_fixture_repo(&upstream);
-        sync(&env, "owner/repo", &url).unwrap();
-
-        // The remote vanishes; the cached clone still serves.
-        fs::remove_dir_all(&upstream).unwrap();
-        let (cache, warning) = sync(&env, "owner/repo", &url).unwrap();
-        assert!(warning.is_some());
-        assert!(cache.join("skills/gh/SKILL.md").is_file());
-    }
-
-    #[test]
-    fn never_cached_and_unreachable_is_a_hard_error() {
-        let tmp = tempfile::tempdir().unwrap();
-        let env = Env::fake(tmp.path(), FakeOs::Linux);
-        let missing = format!("file://{}/nope", tmp.path().display());
-        assert!(matches!(
-            sync(&env, "owner/gone", &missing),
-            Err(CoreError::GitFailed { .. })
-        ));
-    }
-
-    #[test]
-    fn shorthand_becomes_a_github_url_and_urls_pass_through() {
-        let tmp = tempfile::tempdir().unwrap();
-        let env = Env::fake(tmp.path(), FakeOs::Linux);
-        assert_eq!(clone_url(&env, "a/b"), "https://github.com/a/b.git");
-        assert_eq!(clone_url(&env, "https://x/y.git"), "https://x/y.git");
-        assert_eq!(
-            clone_url(&env, "git@github.com:a/b.git"),
-            "git@github.com:a/b.git"
-        );
-        let rebased = env.with_var("VSTACK_GIT_BASE", "file:///fixtures/");
-        assert_eq!(clone_url(&rebased, "a/b"), "file:///fixtures/a/b");
-        assert_eq!(clone_url(&rebased, "https://x/y.git"), "https://x/y.git");
-    }
-}
+mod tests;

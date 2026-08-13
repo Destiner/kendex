@@ -1,0 +1,337 @@
+//! The per-commit source store: cache layout, the repository cache lock,
+//! mirrors, and the checkouts published out of them.
+//!
+//! A downloaded catalog is never a mutable checkout. Each commit is
+//! materialized once into a directory named after its object id, published
+//! by rename, and read unchanged forever after. Fetching touches only the
+//! bare mirror, so a refresh in one window cannot move bytes under a render
+//! running in another — and two scopes pinning different revisions of one
+//! repository each read their own directory instead of fighting over one.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use sha2::{Digest, Sha256};
+
+use crate::env::Env;
+use crate::error::{CoreError, Result};
+use crate::fs::atomic_write;
+use crate::process::Hardened;
+
+/// Where the fetched objects live: one bare mirror per repository.
+const MIRRORS: &str = "mirrors";
+/// Where the readable trees live: one directory per commit.
+const COMMITS: &str = "commits";
+/// Where the per-repository cache locks live.
+const LOCKS: &str = "locks";
+
+/// A commit pin is the full object id and nothing shorter. Anything else —
+/// a tag, a branch, an abbreviated id — is a tracking selector that
+/// re-resolves on every refresh, which is exactly what an abbreviation
+/// should do: it is a name for a commit, not a promise about one.
+pub fn is_pin(rev: &str) -> bool {
+    rev.len() == 40 && rev.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Filesystem-safe key naming one repository's mirror, checkouts, and lock.
+/// Keyed off the clone URL rather than the declared shorthand, so the same
+/// repository reached by two spellings shares one mirror, and two hosts
+/// serving the same `owner/repo` never share anything.
+pub fn repo_key(url: &str) -> String {
+    let base: String = url
+        .trim_end_matches('/')
+        .trim_end_matches(".git")
+        .rsplit(['/', ':'])
+        .next()
+        .unwrap_or("repo")
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .take(32)
+        .collect();
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in url.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!(
+        "{}-{hash:016x}",
+        if base.is_empty() { "repo" } else { &base }
+    )
+}
+
+pub fn mirror_dir(env: &Env, key: &str) -> PathBuf {
+    env.source_cache_dir()
+        .join(MIRRORS)
+        .join(format!("{key}.git"))
+}
+
+pub fn checkout_dir(env: &Env, key: &str, commit: &str) -> PathBuf {
+    env.source_cache_dir().join(COMMITS).join(key).join(commit)
+}
+
+fn receipt_path(env: &Env, key: &str, commit: &str) -> PathBuf {
+    env.source_cache_dir()
+        .join(COMMITS)
+        .join(key)
+        .join(format!("{commit}.published"))
+}
+
+/// The v0.1 mutable clone for a repository, kept readable for as long as it
+/// exists: an offline first run after an update still has content to serve.
+pub fn legacy_clone(env: &Env, repo: &str) -> PathBuf {
+    env.source_cache_dir().join(repo.replace('/', "_"))
+}
+
+/// Exclusive lock over one repository's cache entry. Only materialization
+/// takes it — reading a published checkout needs no lock, because a
+/// published checkout never changes.
+pub struct CacheGuard {
+    _file: fs::File,
+}
+
+/// How long a resolver waits for the lock before calling the cache busy.
+/// Long enough to ride out a neighbour that is only starting up — a
+/// process being launched holds a copy of every open descriptor for the
+/// instant before it takes over, this lock among them — and far too short
+/// to leave anyone waiting on someone else's download.
+const LOCK_WAIT: Duration = Duration::from_millis(500);
+const LOCK_POLL: Duration = Duration::from_millis(10);
+
+pub fn lock_repo(env: &Env, key: &str) -> Result<CacheGuard> {
+    let dir = env.source_cache_dir().join(LOCKS);
+    fs::create_dir_all(&dir).map_err(|e| CoreError::io(&dir, e))?;
+    let path = dir.join(format!("{key}.lock"));
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(|e| CoreError::io(&path, e))?;
+    let mut lock = fd_lock::RwLock::new(file);
+    let deadline = Instant::now() + LOCK_WAIT;
+    let acquired = loop {
+        // As in apply's scope lock: the OS lock belongs to the open fd, so
+        // the guard is forgotten and the file kept — dropping CacheGuard
+        // closes the fd and releases the lock.
+        match lock.try_write() {
+            Ok(guard) => {
+                std::mem::forget(guard);
+                break true;
+            }
+            Err(_) if Instant::now() >= deadline => break false,
+            Err(_) => std::thread::sleep(LOCK_POLL),
+        }
+    };
+    match acquired {
+        true => Ok(CacheGuard {
+            _file: lock.into_inner(),
+        }),
+        false => Err(CoreError::CacheBusy { lock: path }),
+    }
+}
+
+fn run(git: Hardened) -> Result<()> {
+    let command = git.label().to_owned();
+    let output = git.run()?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(CoreError::GitFailed {
+            command,
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        })
+    }
+}
+
+fn stdout(git: Hardened) -> Option<String> {
+    let output = git.run().ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        .filter(|text| !text.is_empty())
+}
+
+/// Clone the mirror if it is missing. A mirror holds objects and refs only,
+/// so nothing here can write outside the cache.
+pub fn ensure_mirror(mirror: &Path, url: &str) -> Result<()> {
+    if mirror.join("HEAD").is_file() {
+        return Ok(());
+    }
+    if let Some(parent) = mirror.parent() {
+        fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
+    }
+    // A half-written mirror from an interrupted clone would fail every
+    // later fetch; git refuses to clone onto an existing directory, so the
+    // remains go first.
+    if mirror.exists() {
+        fs::remove_dir_all(mirror).map_err(|e| CoreError::io(mirror, e))?;
+    }
+    run(Hardened::git(
+        &[
+            "clone",
+            "--quiet",
+            "--mirror",
+            url,
+            &mirror.display().to_string(),
+        ],
+        None,
+    ))
+}
+
+/// Update every ref, following tags that moved upstream — a mirror's
+/// refspec is forced, so a moved tag lands here and is previewed like any
+/// other upstream change.
+pub fn fetch(mirror: &Path) -> Result<()> {
+    run(Hardened::git_bare(mirror, &["fetch", "--prune", "--quiet"]))
+}
+
+/// The commit a selector names right now, read from the mirror alone.
+/// `None` means the mirror cannot answer — an unknown ref, or no mirror.
+pub fn resolve_ref(mirror: &Path, selector: &str) -> Option<String> {
+    stdout(Hardened::git_bare(
+        mirror,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{selector}^{{commit}}"),
+        ],
+    ))
+}
+
+pub fn has_commit(mirror: &Path, commit: &str) -> bool {
+    Hardened::git_bare(mirror, &["cat-file", "-e", &format!("{commit}^{{commit}}")])
+        .run()
+        .is_ok_and(|output| output.status.success())
+}
+
+/// The commit a v0.1 mutable clone is sitting on.
+pub fn legacy_head(clone: &Path) -> Option<String> {
+    clone
+        .join(".git")
+        .is_dir()
+        .then(|| stdout(Hardened::git_in(clone, &["rev-parse", "HEAD"])))
+        .flatten()
+}
+
+/// A published checkout, if the cache holds this commit unmodified. A
+/// mismatch is not an error: the caller re-materializes from the mirror.
+pub fn published(env: &Env, key: &str, commit: &str) -> Option<PathBuf> {
+    let dir = checkout_dir(env, key, commit);
+    if !dir.is_dir() {
+        return None;
+    }
+    let recorded = fs::read_to_string(receipt_path(env, key, commit)).ok()?;
+    (recorded.trim() == tree_signature(&dir).ok()?).then_some(dir)
+}
+
+/// Materialize a commit and publish it atomically. The checkout is built in
+/// a staging sibling and renamed into place, so an interrupted or failed
+/// checkout leaves no partial directory anyone could read.
+pub fn publish(env: &Env, key: &str, mirror: &Path, commit: &str) -> Result<PathBuf> {
+    let dir = checkout_dir(env, key, commit);
+    let parent = dir.parent().unwrap_or(&dir).to_path_buf();
+    fs::create_dir_all(&parent).map_err(|e| CoreError::io(&parent, e))?;
+    let staging = parent.join(format!(".staging-{}", std::process::id()));
+    if staging.exists() {
+        fs::remove_dir_all(&staging).map_err(|e| CoreError::io(&staging, e))?;
+    }
+    let result = check_out(&staging, mirror, commit).and_then(|()| {
+        // The receipt lands first: a reader that sees the directory always
+        // finds the receipt that vouches for it. A receipt with no
+        // directory is inert — nothing reads one without the other.
+        atomic_write(&receipt_path(env, key, commit), &tree_signature(&staging)?)
+    });
+    if let Err(error) = result {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(error);
+    }
+    let replaced = parent.join(format!(".replaced-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&replaced);
+    if dir.exists() {
+        fs::rename(&dir, &replaced).map_err(|e| CoreError::io(&dir, e))?;
+    }
+    fs::rename(&staging, &dir).map_err(|e| CoreError::io(&dir, e))?;
+    let _ = fs::remove_dir_all(&replaced);
+    Ok(dir)
+}
+
+/// Write one commit's tree into `into`, using the mirror's index as scratch
+/// — the only file in the mirror this touches. `git worktree` is
+/// deliberately unused: it would leave admin state in the mirror and a
+/// `.git` pointer inside a directory that is meant to be plain content.
+fn check_out(into: &Path, mirror: &Path, commit: &str) -> Result<()> {
+    fs::create_dir_all(into).map_err(|e| CoreError::io(into, e))?;
+    run(Hardened::git_bare(mirror, &["read-tree", commit]))?;
+    run(Hardened::git_into(
+        mirror,
+        into,
+        &["checkout-index", "--all", "--force"],
+    ))
+}
+
+/// SHA-256 over a tree as sorted path + kind + content. Symlinks hash their
+/// target text, never what it points at: a catalog may ship a link that
+/// dangles here, and reading through it would either fail or pull in bytes
+/// from the host.
+pub fn tree_signature(root: &Path) -> Result<String> {
+    let mut hasher = Sha256::new();
+    hash_entry(&mut hasher, root, Path::new(""))?;
+    let mut out = String::new();
+    for byte in hasher.finalize() {
+        use std::fmt::Write as _;
+        let _ = write!(out, "{byte:02x}");
+    }
+    Ok(out)
+}
+
+fn hash_entry(hasher: &mut Sha256, path: &Path, rel: &Path) -> Result<()> {
+    let meta = fs::symlink_metadata(path).map_err(|e| CoreError::io(path, e))?;
+    let name = rel.to_string_lossy();
+    if meta.is_symlink() {
+        let target = fs::read_link(path).map_err(|e| CoreError::io(path, e))?;
+        hasher.update(b"l\0");
+        hasher.update(name.as_bytes());
+        hasher.update([0]);
+        hasher.update(target.to_string_lossy().as_bytes());
+        hasher.update([0]);
+    } else if meta.is_dir() {
+        hasher.update(b"d\0");
+        hasher.update(name.as_bytes());
+        hasher.update([0]);
+        let mut entries: Vec<PathBuf> = fs::read_dir(path)
+            .map_err(|e| CoreError::io(path, e))?
+            .flatten()
+            .map(|entry| entry.path())
+            .collect();
+        entries.sort();
+        for entry in entries {
+            let Some(file_name) = entry.file_name() else {
+                continue;
+            };
+            hash_entry(hasher, &entry, &rel.join(file_name))?;
+        }
+    } else {
+        hasher.update(b"f\0");
+        hasher.update(name.as_bytes());
+        hasher.update([0]);
+        hasher.update([executable(&meta)]);
+        hasher.update(&fs::read(path).map_err(|e| CoreError::io(path, e))?);
+        hasher.update([0]);
+    }
+    Ok(())
+}
+
+/// The one permission bit git records, and the one a hook script needs.
+#[cfg(unix)]
+fn executable(meta: &fs::Metadata) -> u8 {
+    use std::os::unix::fs::PermissionsExt;
+    u8::from(meta.permissions().mode() & 0o100 != 0)
+}
+
+#[cfg(not(unix))]
+fn executable(_meta: &fs::Metadata) -> u8 {
+    0
+}
