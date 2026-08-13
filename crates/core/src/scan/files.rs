@@ -122,6 +122,22 @@ pub fn scan_subdirs(dir: &Path, marker: &str) -> Vec<FoundFile> {
     found
 }
 
+/// Every `<dir>/*.<ext>` document, sorted by name. A `.disabled` suffix
+/// takes a file out of the list the same way it does everywhere else: the
+/// harness globs one extension, so the renamed file is no longer loaded.
+pub fn scan_documents(dir: &Path, ext: &str) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut found: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file() && path.extension().and_then(|e| e.to_str()) == Some(ext))
+        .collect();
+    found.sort();
+    found
+}
+
 const DESCRIPTION_PROBE_BYTES: usize = 4096;
 
 /// Best-effort `description` from YAML frontmatter (md/mdc) or a top-level

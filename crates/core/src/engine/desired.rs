@@ -121,7 +121,9 @@ pub fn native_dir(env: &Env, scope: &Scope, harness: HarnessId, kind: ItemKind) 
     };
     surfaces.into_iter().find_map(|surface| match surface {
         Surface::FileDir { dir, .. } | Surface::SubdirPerItem { dir, .. } => Some(dir),
-        Surface::Structured { .. } => None,
+        // A structured surface holds entries, not one file per item, so
+        // there is no directory an item of this kind is written into.
+        Surface::Structured { .. } | Surface::StructuredDir { .. } => None,
     })
 }
 

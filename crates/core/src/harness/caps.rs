@@ -311,25 +311,30 @@ pub fn capabilities(harness: HarnessId, kind: ItemKind) -> KindCaps {
         (Gemini, Plugin) => observe_only(GLOBAL),
         (Gemini, PiExtension) => unsupported(),
 
-        (Copilot, Agent) => observe_only(BOTH),
+        (Copilot, Agent) => managed(BOTH),
         // A repository settings file may add a name to `disabledSkills` or
         // `disabledMcpServers` but can never remove one a user file set, so
         // the switch only turns things off (matrix §R7).
         (Copilot, Skill | McpServer) => KindCaps {
             toggle_direction: ToggleDirection::DisableOnly,
-            ..observe_only(BOTH)
+            ..managed(BOTH)
         },
         // No file-backed slash-command surface exists in any Copilot product
         // — prompt files are IDE-only (matrix §D8).
         (Copilot, Command) => unsupported(),
-        // Copilot does run hooks (matrix §D9), but its hook files are
-        // `{version, disableAllHooks, hooks}` — a shape no reader here
-        // parses, and reading it as claude's would misname every entry.
-        (Copilot, Hook) => unsupported(),
-        // Plugins live two directories deep under a marketplace name and
-        // toggle through an `enabledPlugins` map; both want readers of their
-        // own (matrix §7).
-        (Copilot, Plugin) => unsupported(),
+        // Copilot runs hooks from `.github/hooks/*.json` and
+        // `~/.copilot/hooks/*.json` at 14 events, honoring the exit code
+        // (matrix §D9). Entries inline in a settings file are read and never
+        // written: they have no switch of their own to flip (§R5).
+        (Copilot, Hook) => enforced(managed(BOTH)),
+        // The `enabledPlugins` map is a clean boolean flip at either scope.
+        // Installing one needs marketplace resolution, which is parked with
+        // the Claude marketplace work (matrix §7).
+        (Copilot, Plugin) => KindCaps {
+            observe: BOTH,
+            toggle: BOTH,
+            ..observe_only(BOTH)
+        },
         (Copilot, PiExtension) => unsupported(),
     }
 }

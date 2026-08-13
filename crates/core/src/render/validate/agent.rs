@@ -172,6 +172,40 @@ pub(super) fn gemini(name: &str, text: &str) -> Vec<Finding> {
     findings
 }
 
+/// Copilot requires a description and nothing else — but an agent that
+/// calls itself something other than the file it lives in is offered under a
+/// name nobody declared, and its model is free text a repository allowlist
+/// may still refuse (matrix §2, §4).
+pub(super) fn copilot(name: &str, text: &str) -> Vec<Finding> {
+    let map = match frontmatter_map(text, "Copilot") {
+        Ok(map) => map,
+        Err(finding) => return vec![finding],
+    };
+    let text_at = |key: &str| {
+        map.get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim()
+    };
+    let mut findings = Vec::new();
+    if text_at("description").is_empty() {
+        findings.push(Finding::breakage(
+            format!("the Copilot agent for `{name}` has no description, and Copilot needs one to load it"),
+            "add `description:` to the agent's frontmatter in the catalog",
+        ));
+    }
+    let declared = text_at("name");
+    if !declared.is_empty() && declared != name {
+        findings.push(Finding::breakage(
+            format!(
+                "the agent installs as `{name}` but calls itself `{declared}`, so Copilot lists it under the wrong one"
+            ),
+            format!("rename it to `{name}` in the catalog, or declare the agent as `{declared}`"),
+        ));
+    }
+    findings
+}
+
 pub(super) fn cursor(text: &str) -> Vec<Finding> {
     let map = match frontmatter_map(text, "Cursor") {
         Ok(map) => map,

@@ -59,6 +59,19 @@ fn harnesses() -> Vec<&'static str> {
         .collect()
 }
 
+/// The tools whose plugin switch vstack can write. Naming any other one
+/// asks for a write that has nowhere to land.
+fn plugin_harnesses() -> Vec<&'static str> {
+    crate::model::HarnessId::ALL
+        .into_iter()
+        .filter(|h| {
+            let toggle = crate::harness::capabilities(*h, crate::model::ItemKind::Plugin).toggle;
+            toggle.project || toggle.global
+        })
+        .map(crate::model::HarnessId::name)
+        .collect()
+}
+
 const FRONTMATTER_KEYS: &[&str] = &[
     "color",
     "model",
@@ -218,14 +231,30 @@ fn validate_plugins(table: &Table, findings: &mut Vec<Finding>) {
         return;
     };
     for (key, decl) in plugins {
-        let declares_only_enabled = decl.as_table().is_some_and(|decl| {
-            decl.keys().all(|k| k == "enabled") && decl.get("enabled").is_none_or(Value::is_bool)
+        let decl = decl.as_table();
+        let well_formed = decl.is_some_and(|decl| {
+            decl.keys().all(|k| k == "enabled" || k == "harness")
+                && decl.get("enabled").is_none_or(Value::is_bool)
         });
-        if !declares_only_enabled {
+        if !well_formed {
             findings.push(Finding {
                 location: format!("plugins.{key}"),
-                problem: "a plugin declares nothing but enabled".into(),
+                problem: "a plugin declares whether it is enabled and which tool it belongs to"
+                    .into(),
                 fix: format!("write [plugins.\"{key}\"] with enabled = true or false"),
+            });
+        }
+        // A plugin belongs to one tool, and only some tools have a plugin
+        // switch to write at all.
+        if let Some(harness) = decl
+            .and_then(|decl| decl.get("harness"))
+            .and_then(Value::as_str)
+            && !plugin_harnesses().contains(&harness)
+        {
+            findings.push(Finding {
+                location: format!("plugins.{key}.harness"),
+                problem: format!("{harness} has no plugin switch vstack can write"),
+                fix: format!("set harness to one of: {}", plugin_harnesses().join(", ")),
             });
         }
     }
@@ -316,6 +345,7 @@ source = "nowhere"
 
 [plugins."fmt@main"]
 version = "1"
+harness = "cursor"
 
 [agent-frontmatter.claude.orch]
 tools = ["a"]
@@ -328,6 +358,9 @@ matcher = "Bash"
         let locations: Vec<_> = findings.iter().map(|f| f.location.as_str()).collect();
         assert!(locations.contains(&"mcp-servers.gh"));
         assert!(locations.contains(&"plugins.fmt@main"));
+        // Cursor reads no plugin map vstack can write, so aiming a plugin at
+        // it asks for a write with nowhere to land.
+        assert!(locations.contains(&"plugins.fmt@main.harness"));
         assert!(locations.contains(&"schema"));
         assert!(locations.contains(&"typo-table"));
         assert!(locations.contains(&"sources.bad"));
@@ -358,6 +391,7 @@ source = "vstack"
 source = "vstack"
 [plugins."fmt@main"]
 enabled = false
+harness = "copilot"
 "#,
         );
         assert_eq!(validate(&table), Vec::new());

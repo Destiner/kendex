@@ -13,6 +13,7 @@ use crate::model::{HarnessId, ItemKind, Scope};
 
 pub mod adopt;
 mod config_edits;
+mod copilot;
 pub mod desired;
 mod desired_agent;
 mod desired_command;

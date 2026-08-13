@@ -179,6 +179,14 @@ pub(super) fn desired_agent(
             super::gemini::agent_notices(ctx, state);
         }
         let (overrides, permissions) = harness_overrides(ctx, &source_agent, harness);
+        // A repository can narrow the models Copilot will run, and an agent
+        // pinned outside that list is one Copilot answers differently than
+        // the catalog asked for.
+        if harness == crate::model::HarnessId::Copilot {
+            let model = overrides.model.as_deref().unwrap_or(&source_agent.model);
+            let resolved = crate::harness::models::resolve_model(harness, model);
+            super::copilot::agent_notices(ctx, state, resolved.id.as_deref());
+        }
         let effective = EffectiveAgent {
             source: &source_agent,
             harness,

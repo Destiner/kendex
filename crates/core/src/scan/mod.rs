@@ -8,6 +8,7 @@ use crate::harness::{HarnessAdapter, Surface, all_adapters};
 use crate::model::{DetectedHarness, FileState, ItemKind, ObservedItem, Scope};
 use crate::settings::AppSettings;
 
+mod copilot;
 mod files;
 mod hooks;
 mod jsonc;
@@ -157,30 +158,47 @@ fn scan_surface(
             }
         }
         Surface::Structured { path, reader } => {
-            if !path.exists() {
-                return;
-            }
-            match readers::read_structured(path, reader, env) {
-                Ok(entries) => {
-                    for entry in entries {
-                        result.items.push(ObservedItem {
-                            kind,
-                            name: entry.name,
-                            harness: adapter.id(),
-                            scope: scope.clone(),
-                            path: path.clone(),
-                            file_state: FileState::ConfigEntry,
-                            enabled: entry.enabled,
-                            origin: None,
-                            description: entry.description,
-                        });
-                    }
-                }
-                Err(message) => result
-                    .warnings
-                    .push(format!("{}: {message}", path.display())),
+            if path.exists() {
+                scan_structured_file(adapter, kind, &scope, path, reader, env, result);
             }
         }
+        Surface::StructuredDir { dir, ext, reader } => {
+            for path in files::scan_documents(dir, ext) {
+                scan_structured_file(adapter, kind, &scope, &path, reader, env, result);
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn scan_structured_file(
+    adapter: &dyn HarnessAdapter,
+    kind: ItemKind,
+    scope: &Scope,
+    path: &std::path::Path,
+    reader: &crate::harness::Reader,
+    env: &Env,
+    result: &mut ScanResult,
+) {
+    match readers::read_structured(path, reader, env) {
+        Ok(entries) => {
+            for entry in entries {
+                result.items.push(ObservedItem {
+                    kind,
+                    name: entry.name,
+                    harness: adapter.id(),
+                    scope: scope.clone(),
+                    path: path.to_path_buf(),
+                    file_state: FileState::ConfigEntry,
+                    enabled: entry.enabled,
+                    origin: None,
+                    description: entry.description,
+                });
+            }
+        }
+        Err(message) => result
+            .warnings
+            .push(format!("{}: {message}", path.display())),
     }
 }
 

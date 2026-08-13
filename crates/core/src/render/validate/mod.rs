@@ -17,6 +17,8 @@
 //! | Claude agent has frontmatter naming the installed agent | breakage |
 //! | Gemini agent has frontmatter naming the installed agent | breakage |
 //! | Gemini agent carries a description | breakage |
+//! | Copilot agent carries a description | breakage |
+//! | Copilot agent names the installed agent | breakage |
 //! | Gemini agent `model` is a Gemini id or `inherit` | advisory |
 //! | Gemini command parses as TOML | breakage |
 //! | Gemini command carries a prompt | breakage |
@@ -87,9 +89,7 @@ pub fn validate_agent(harness: HarnessId, name: &str, text: &str) -> Vec<Finding
         // the name rule above is the whole of what can be checked.
         HarnessId::Pi => Vec::new(),
         HarnessId::Gemini => agent::gemini(name, text),
-        // No renderer produces a Copilot agent yet; its format rules arrive
-        // with the renderer that has to obey them.
-        HarnessId::Copilot => Vec::new(),
+        HarnessId::Copilot => agent::copilot(name, text),
     });
     findings
 }

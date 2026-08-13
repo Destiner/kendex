@@ -8,6 +8,37 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- GitHub Copilot is now fully managed — agents, skills, hooks, and MCP
+  servers install, switch on and off, and come off disk like every other
+  tool, personally and per project. Each lands where Copilot actually
+  reads it: agents as `.agent.md` files with a tools allowlist in
+  Copilot's own tool names, skills in its skills folder, hooks as a hook
+  file of their own that Copilot runs and honors the result of, servers
+  keyed the way Copilot expects with the transport named on the entry.
+  Copilot has no slash commands of its own, so vstack does not invent
+  any. Because Copilot reads other tools' files too, three things are now
+  said out loud rather than left to surprise you: a skill installed for
+  Claude Code is reported as something Copilot already sees — one
+  definition, never counted twice; a hook installs but is reported as
+  doing nothing when hooks have been switched off anywhere Copilot looks,
+  including Claude Code's own settings; and a skill or server your
+  personal Copilot settings hold down is reported as something this
+  project cannot switch back on, because Copilot only ever lets a
+  repository add to that list. An agent pinned to a model the repository's
+  allowed-models list refuses is flagged the same way. Which model Copilot
+  uses is left to Copilot: its list changes monthly and depends on your
+  plan and your organization, so vstack pins nothing it cannot promise.
+
+- **Breaking:** a plugin now belongs to one tool. Copilot and Claude Code
+  both keep a list of enabled plugins, and a declaration that named
+  neither used to be written into every tool's settings — switching on
+  software in one tool because it was installed in another. Every plugin
+  declaration now carries the tool it belongs to. *Migration:* existing
+  declarations are read as Claude Code's, which is the only tool vstack
+  ever wrote a plugin switch for, and the next save records that in
+  `vstack.toml`; nothing to change by hand. Add `harness = "copilot"` to
+  a plugin declaration to aim it at Copilot instead.
+
 - Gemini CLI is now fully managed — agents, skills, commands, hooks, and
   MCP servers install, switch on and off, and come off disk like every
   other tool, personally and per project. Each lands in the shape Gemini

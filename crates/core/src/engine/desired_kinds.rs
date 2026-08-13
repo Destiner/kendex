@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use serde_json::{Map, Value, json};
 
 use super::desired::{Artifact, Desired, DesiredState, ItemCtx};
-use super::targets::{HookTarget, disabled_name, hook_target, mcp_registry, plugin_settings};
+use super::targets::{
+    HookFormat, HookTarget, disabled_name, hook_target, mcp_registry, plugin_settings,
+};
 use crate::configedit::ConfigEdit;
 use crate::env::Env;
 use crate::error::Result;
@@ -73,11 +75,16 @@ pub(super) fn desired_hook(ctx: &ItemCtx, state: &mut DesiredState) -> Result<()
             ));
             continue;
         }
-        // Gemini names the lifecycle events its own way and reads timeouts
-        // in milliseconds, so the hook is restated in its words before
+        // Gemini and Copilot each name the lifecycle events their own way,
+        // so the hook is restated in the reader's words — and whatever their
+        // configuration already says about hooks is said now, before
         // anything is registered.
         let hook = match harness {
             HarnessId::Gemini => match super::gemini::hook(ctx, &hook, state) {
+                Some(hook) => hook,
+                None => continue,
+            },
+            HarnessId::Copilot => match super::copilot::hook(ctx, &hook, state) {
                 Some(hook) => hook,
                 None => continue,
             },
@@ -109,20 +116,30 @@ fn hook_artifact(target: &HookTarget, hook: &HookSource, name: &str, enabled: bo
             path,
             command,
             registry,
+            format,
             feature,
         } => {
-            let registration = if enabled {
-                ConfigEdit::UpsertHook {
+            let registration = match (enabled, format) {
+                (true, HookFormat::Nested) => ConfigEdit::UpsertHook {
                     event: hook.event.clone(),
                     matcher: hook.matcher.clone(),
                     command: command.clone(),
                     timeout: hook.timeout,
-                }
-            } else {
-                ConfigEdit::RemoveHook {
+                },
+                (true, HookFormat::Copilot) => ConfigEdit::UpsertCopilotHook {
+                    event: hook.event.clone(),
+                    matcher: hook.matcher.clone(),
+                    command: command.clone(),
+                    timeout: hook.timeout,
+                },
+                (false, HookFormat::Nested) => ConfigEdit::RemoveHook {
                     event: Some(hook.event.clone()),
                     command: command.clone(),
-                }
+                },
+                (false, HookFormat::Copilot) => ConfigEdit::RemoveCopilotHook {
+                    event: Some(hook.event.clone()),
+                    command: command.clone(),
+                },
             };
             let mut edits = registration_edits(registry, registration, enabled);
             if let Some(feature) = feature
@@ -211,10 +228,18 @@ pub(super) fn desired_mcp(ctx: &ItemCtx, state: &mut DesiredState) -> Result<()>
             let Some(registry) = mcp_registry(ctx.env, ctx.scope, harness) else {
                 continue;
             };
+            if harness == HarnessId::Copilot {
+                super::copilot::switched_off_elsewhere(ctx, ItemKind::McpServer, state);
+            }
             let edit = if ctx.decl.enabled {
                 ConfigEdit::UpsertMcpServer {
                     name: ctx.name.to_owned(),
-                    value: value.clone(),
+                    // Copilot names the transport on the entry itself, so a
+                    // server written in another tool's shape would not load.
+                    value: match harness {
+                        HarnessId::Copilot => super::copilot::server(&value),
+                        _ => value.clone(),
+                    },
                 }
             } else {
                 ConfigEdit::RemoveMcpServer {
@@ -286,7 +311,10 @@ fn mcp_value(text: &str) -> std::result::Result<Value, String> {
 }
 
 /// Plugins carry no source content — the declaration is the whole item, and
-/// applying it is one toggle in the harness settings file.
+/// applying it is one toggle in the settings file of the tool it names. Each
+/// declaration names that tool: more than one harness reads an
+/// `enabledPlugins` map, and a plugin installed for one of them is not a
+/// plugin the others have.
 pub(super) fn desired_plugins(
     env: &Env,
     scope: &Scope,
@@ -294,39 +322,50 @@ pub(super) fn desired_plugins(
     state: &mut DesiredState,
 ) {
     for (key, decl) in &manifest.plugins {
-        for harness in HarnessId::ALL {
-            let toggle = crate::harness::capabilities(harness, ItemKind::Plugin).toggle;
-            let supported = match scope {
-                Scope::Global => toggle.global,
-                Scope::Project { .. } => toggle.project,
-            };
-            let Some(settings) = plugin_settings(env, scope, harness).filter(|_| supported) else {
-                continue;
-            };
-            state.items.push(Desired {
-                key: entry_key(ItemKind::Plugin, key, harness),
-                kind: ItemKind::Plugin,
-                name: key.clone(),
-                harness,
-                enabled: decl.enabled,
-                method: Method::Copy,
-                source_name: "plugin".to_owned(),
-                provenance: "marketplace".to_owned(),
-                hash: hash_bytes(format!("plugin:{key}:{}", decl.enabled).as_bytes()),
-                upstream_skills: None,
-                emitted: None,
-                artifact: Artifact::Registration {
-                    script: None,
-                    edits: vec![(
-                        settings,
-                        ConfigEdit::SetPluginEnabled {
-                            key: key.clone(),
-                            enabled: Some(decl.enabled),
-                        },
-                    )],
-                },
-            });
+        let harness = decl.harness;
+        let toggle = crate::harness::capabilities(harness, ItemKind::Plugin).toggle;
+        let supported = match scope {
+            Scope::Global => toggle.global,
+            Scope::Project { .. } => toggle.project,
+        };
+        let Some(settings) = plugin_settings(env, scope, harness).filter(|_| supported) else {
+            state.notes.push(format!(
+                "plugin {key}: {} has no plugin switch at this scope",
+                harness.display_name()
+            ));
+            continue;
+        };
+        if harness == HarnessId::Copilot
+            && let Some(reason) = super::copilot::plugin_refusal(env, scope)
+        {
+            state
+                .notes
+                .push(format!("plugin {key}: {reason} — nothing was switched"));
+            continue;
         }
+        state.items.push(Desired {
+            key: entry_key(ItemKind::Plugin, key, harness),
+            kind: ItemKind::Plugin,
+            name: key.clone(),
+            harness,
+            enabled: decl.enabled,
+            method: Method::Copy,
+            source_name: "plugin".to_owned(),
+            provenance: "marketplace".to_owned(),
+            hash: hash_bytes(format!("plugin:{key}:{}", decl.enabled).as_bytes()),
+            upstream_skills: None,
+            emitted: None,
+            artifact: Artifact::Registration {
+                script: None,
+                edits: vec![(
+                    settings,
+                    ConfigEdit::SetPluginEnabled {
+                        key: key.clone(),
+                        enabled: Some(decl.enabled),
+                    },
+                )],
+            },
+        });
     }
 }
 

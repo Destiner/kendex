@@ -63,6 +63,12 @@ pub(super) fn desired_skill(ctx: &ItemCtx, state: &mut DesiredState) -> Result<(
     if groups.is_empty() {
         return Ok(());
     }
+    // Copilot reads the skill directories other tools own, so one tree can
+    // be a definition it sees too — said out loud, never counted twice.
+    super::copilot::skill_cross_read(ctx, state);
+    if ctx.harnesses.contains(&HarnessId::Copilot) {
+        super::copilot::switched_off_elsewhere(ctx, ItemKind::Skill, state);
+    }
     let mut variants: Vec<Variant> = Vec::new();
     for group in &groups {
         variants.push(render_variant(ctx, state, group, enabled)?);

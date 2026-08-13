@@ -60,6 +60,37 @@ pub fn gemini_tool_name(tool: &str) -> String {
         .unwrap_or_else(|| tool.trim().to_owned())
 }
 
+/// Copilot's own tool names, as its custom-agent reference lists them
+/// ([custom agents configuration](https://docs.github.com/en/copilot/reference/custom-agents-configuration),
+/// accessed 2026-08-13). Names it does not document are left alone rather
+/// than guessed at: an allowlist entry Copilot does not recognize grants
+/// nothing, which is narrower than the author asked for, never wider.
+fn copilot_tool(tool: &str) -> Option<&'static str> {
+    Some(match normalize(tool).as_str() {
+        "read" => "read",
+        "grep" => "grep",
+        "glob" | "find" => "glob",
+        "bash" | "shell" => "bash",
+        "edit" => "edit",
+        "multiedit" => "multiedit",
+        "write" => "write",
+        "webfetch" => "webfetch",
+        "websearch" => "websearch",
+        "todowrite" => "todowrite",
+        "task" | "agent" | "subagent" | "spawnagent" => "agent",
+        "notebookread" => "notebookread",
+        "notebookedit" => "notebookedit",
+        _ => return None,
+    })
+}
+
+/// What an agent's `tools:` allowlist has to name on Copilot.
+pub fn copilot_tool_name(tool: &str) -> String {
+    copilot_tool(tool)
+        .map(str::to_owned)
+        .unwrap_or_else(|| tool.trim().to_owned())
+}
+
 /// OpenCode gates tools by permission key, not tool name. `None` is the
 /// empty name — nothing to gate; an unknown name passes through so an MCP
 /// tool can still be denied by its own id.
@@ -122,9 +153,8 @@ fn word(tool: &str, harness: HarnessId) -> Option<Word> {
     match harness {
         // Bodies are already written in Claude's words.
         HarnessId::Claude => None,
-        // Nothing renders for Copilot yet.
-        HarnessId::Copilot => None,
-        // Gemini names a tool the same way in prose as in an allowlist.
+        // Both name a tool the same way in prose as in an allowlist.
+        HarnessId::Copilot => Some(Word::Name(copilot_tool(&tool)?)),
         HarnessId::Gemini => Some(Word::Name(gemini_tool(&tool)?)),
         HarnessId::Codex => Some(Word::Phrase(match tool.as_str() {
             "read" => "open the file",

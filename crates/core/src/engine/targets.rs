@@ -4,6 +4,15 @@ use crate::env::Env;
 use crate::harness::adapter;
 use crate::model::{HarnessId, Scope};
 
+/// Which shape a registry file speaks. Claude, codex, cursor and Gemini all
+/// take the same matcher-with-handlers object; Copilot's hook files are a
+/// `{version, hooks}` document whose entries carry the command themselves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum HookFormat {
+    Nested,
+    Copilot,
+}
+
 /// Where one hook's artifacts live for a harness at a scope. Install and
 /// removal both read this, so the command string they register and strip can
 /// never disagree.
@@ -14,6 +23,7 @@ pub(super) enum HookTarget {
         path: PathBuf,
         command: String,
         registry: PathBuf,
+        format: HookFormat,
         /// codex gates hooks behind `[features] hooks = true`.
         feature: Option<PathBuf>,
     },
@@ -56,6 +66,7 @@ pub(super) fn hook_target(
                 path,
                 command,
                 registry,
+                format: HookFormat::Nested,
                 feature: None,
             })
         }
@@ -75,6 +86,7 @@ pub(super) fn hook_target(
                 path,
                 command,
                 registry: root.join("hooks.json"),
+                format: HookFormat::Nested,
                 feature: Some(root.join("config.toml")),
             })
         }
@@ -126,13 +138,40 @@ pub(super) fn hook_target(
                 path,
                 command,
                 registry: root.join("settings.json"),
+                format: HookFormat::Nested,
                 feature: None,
             })
         }
         // pi hooks belong to the pi-hooks extension, not to files we manage.
         HarnessId::Pi => None,
-        // Copilot runs hooks of its own, and vstack writes none of them yet.
-        HarnessId::Copilot => None,
+        HarnessId::Copilot => Some(copilot_hook(env, scope, name)),
+    }
+}
+
+/// Copilot loads every `*.json` under its hooks directory as a hook document
+/// of its own, so each hook gets a file rather than a shared one — and the
+/// script beside it is invisible to that glob (matrix §2, §R5). Only a file
+/// is a switch: an entry inline in a settings file has no flag to flip.
+fn copilot_hook(env: &Env, scope: &Scope, name: &str) -> HookTarget {
+    let (dir, command) = match scope {
+        Scope::Global => {
+            let dir = adapter(HarnessId::Copilot)
+                .default_global_root(env)
+                .join("hooks");
+            let command = format!("bash {}", dir.join(format!("{name}.sh")).display());
+            (dir, command)
+        }
+        Scope::Project { root } => (
+            root.join(".github/hooks"),
+            format!("bash \"$(git rev-parse --show-toplevel)/.github/hooks/{name}.sh\""),
+        ),
+    };
+    HookTarget::Script {
+        path: dir.join(format!("{name}.sh")),
+        command,
+        registry: dir.join(format!("{name}.json")),
+        format: HookFormat::Copilot,
+        feature: None,
     }
 }
 
@@ -156,12 +195,29 @@ pub(super) fn mcp_registry(env: &Env, scope: &Scope, harness: HarnessId) -> Opti
             Scope::Project { root } => root.join(".mcp.json"),
         }),
         HarnessId::Gemini => Some(crate::harness::gemini::settings::settings_file(env, scope)),
+        // Copilot reads a repository's servers from `.github/mcp.json` and a
+        // machine's from its own config root (matrix §2). A `.mcp.json` at
+        // the repo root is Claude Code's file, which Copilot also reads —
+        // writing there would count one declaration as two installations.
+        HarnessId::Copilot => Some(match scope {
+            Scope::Global => adapter(harness)
+                .default_global_root(env)
+                .join("mcp-config.json"),
+            Scope::Project { root } => root.join(".github/mcp.json"),
+        }),
         _ => None,
     }
 }
 
+/// The settings file whose `enabledPlugins` map a plugin toggle writes.
+/// Every harness that reads such a map has one of its own — a declaration
+/// aimed at one tool must never land in another tool's settings.
 pub(super) fn plugin_settings(env: &Env, scope: &Scope, harness: HarnessId) -> Option<PathBuf> {
-    (harness == HarnessId::Claude).then(|| claude_settings(env, scope))
+    match harness {
+        HarnessId::Claude => Some(claude_settings(env, scope)),
+        HarnessId::Copilot => Some(crate::harness::copilot::settings::settings_file(env, scope)),
+        _ => None,
+    }
 }
 
 /// A declared-disabled artifact keeps its content under the `.disabled`
@@ -186,6 +242,7 @@ mod tests {
             command,
             registry,
             feature,
+            ..
         }) = hook_target(&env, &scope, HarnessId::Claude, "guard")
         else {
             panic!("claude hooks are script targets");
@@ -265,5 +322,42 @@ mod tests {
             None
         );
         assert_eq!(hook_target(&env, &scope, HarnessId::Pi, "guard"), None);
+    }
+
+    /// Copilot's hook file and the script it runs sit side by side, and the
+    /// file is the one its loader globs for.
+    #[test]
+    fn a_copilot_hook_gets_a_document_of_its_own_beside_its_script() {
+        let env = Env::fake("/h", FakeOs::Linux);
+        let scope = Scope::Project {
+            root: PathBuf::from("/p"),
+        };
+        let Some(HookTarget::Script {
+            path,
+            command,
+            registry,
+            format,
+            feature,
+        }) = hook_target(&env, &scope, HarnessId::Copilot, "audit")
+        else {
+            panic!("copilot hooks are script targets");
+        };
+        assert_eq!(path, PathBuf::from("/p/.github/hooks/audit.sh"));
+        assert_eq!(
+            command,
+            "bash \"$(git rev-parse --show-toplevel)/.github/hooks/audit.sh\""
+        );
+        assert_eq!(registry, PathBuf::from("/p/.github/hooks/audit.json"));
+        assert_eq!(format, HookFormat::Copilot);
+        assert_eq!(feature, None);
+
+        let Some(HookTarget::Script {
+            command, registry, ..
+        }) = hook_target(&env, &Scope::Global, HarnessId::Copilot, "audit")
+        else {
+            panic!("copilot hooks are script targets");
+        };
+        assert_eq!(command, "bash /h/.copilot/hooks/audit.sh");
+        assert_eq!(registry, PathBuf::from("/h/.copilot/hooks/audit.json"));
     }
 }

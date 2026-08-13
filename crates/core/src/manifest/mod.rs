@@ -114,11 +114,25 @@ pub struct FrontmatterOverrides {
     pub nickname_candidates: Option<Vec<String>>,
 }
 
+/// One declared plugin. The harness is part of the declaration because more
+/// than one tool reads an `enabledPlugins` map of its own: without it, a
+/// plugin meant for one tool would be switched on in every tool's settings,
+/// which is a claim about software the user never installed there.
+///
+/// A declaration written before the harness was part of it belongs to Claude
+/// Code — the only tool whose plugin switch vstack ever wrote — so that is
+/// what an older manifest reads back as, and the next write records it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "kebab-case")]
 pub struct PluginDecl {
     #[serde(default = "default_true")]
     pub enabled: bool,
+    #[serde(default = "default_plugin_harness")]
+    pub harness: HarnessId,
+}
+
+fn default_plugin_harness() -> HarnessId {
+    HarnessId::Claude
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]

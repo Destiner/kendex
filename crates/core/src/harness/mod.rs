@@ -43,6 +43,15 @@ pub enum Surface {
     /// Items are entries inside a structured file or tree; the reader names
     /// the harness-specific format the scanner must parse.
     Structured { path: PathBuf, reader: Reader },
+    /// `<dir>/*.<ext>` — every file in the directory is a document of its
+    /// own holding entries, all read by the same reader. Copilot's hook
+    /// files work this way: what the file is called says nothing, and the
+    /// entries inside it are the items.
+    StructuredDir {
+        dir: PathBuf,
+        ext: &'static str,
+        reader: Reader,
+    },
 }
 
 impl Surface {
@@ -78,6 +87,14 @@ pub enum Reader {
     /// `{"hooks": {"<Event>": [{matcher?, hooks: [{command}]} | {command}]}}`
     /// — claude settings.json, codex/cursor hooks.json
     HooksObject,
+    /// `{version, disableAllHooks, hooks: {<event>: [{type, bash|powershell|
+    /// command|url|prompt, matcher, timeoutSec}]}}` — copilot's hook files
+    /// and the `hooks` key of its settings. Its entries carry the command
+    /// themselves, so reading them as `HooksObject` would name every one of
+    /// them after nothing (matrix §2, §7).
+    CopilotHooks,
+    /// copilot settings `enabledPlugins` — `{"<plugin>@<marketplace>": bool}`
+    CopilotPlugins,
     /// `~/.claude/plugins/installed_plugins.json` joined with settings
     /// `enabledPlugins`
     ClaudePluginRegistry,
@@ -258,38 +275,29 @@ mod tests {
         );
     }
 
-    /// Copilot is observed, never written: its management verbs arrive with
-    /// the adapter that implements them, and until then it is not offered
-    /// anywhere an install target is chosen.
+    /// Copilot is managed where its own documentation gives vstack a surface
+    /// to write, and nowhere else: it has no file-backed command kind at all,
+    /// and installing a plugin needs a marketplace vstack cannot resolve yet.
     #[test]
-    fn copilot_only_reads() {
-        let install_targets: Vec<_> = HarnessId::ALL
-            .into_iter()
-            .filter(|h| installable(*h))
-            .collect();
-        assert_eq!(
-            install_targets,
-            [
-                HarnessId::Claude,
-                HarnessId::Codex,
-                HarnessId::Opencode,
-                HarnessId::Cursor,
-                HarnessId::Pi,
-                HarnessId::Gemini,
-            ]
-        );
-        for kind in ItemKind::ALL {
+    fn copilot_manages_only_the_surfaces_it_documents() {
+        for kind in [
+            ItemKind::Agent,
+            ItemKind::Skill,
+            ItemKind::Hook,
+            ItemKind::McpServer,
+        ] {
             let c = capabilities(HarnessId::Copilot, kind);
-            for (op, support) in [
-                ("adopt", c.adopt),
-                ("install", c.install),
-                ("toggle", c.toggle),
-                ("remove", c.remove),
-                ("refresh", c.refresh),
-            ] {
-                assert_eq!(support, caps::NONE, "copilot/{} {op}", kind.name());
-            }
+            assert_eq!(c.install, caps::BOTH, "{} install", kind.name());
+            assert_eq!(c.remove, caps::BOTH, "{} remove", kind.name());
         }
+        assert_eq!(
+            capabilities(HarnessId::Copilot, ItemKind::Hook).enforcement,
+            Enforcement::Enforced,
+        );
+        let command = capabilities(HarnessId::Copilot, ItemKind::Command);
+        assert_eq!((command.observe, command.install), (caps::NONE, caps::NONE));
+        let plugin = capabilities(HarnessId::Copilot, ItemKind::Plugin);
+        assert_eq!((plugin.toggle, plugin.install), (caps::BOTH, caps::NONE));
     }
 
     /// Gemini declares an MCP server per scope but records whether it is on

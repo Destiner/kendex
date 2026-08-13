@@ -2,7 +2,9 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use super::desired::{self, native_dir};
-use super::targets::{HookTarget, disabled_name, hook_target, mcp_registry, plugin_settings};
+use super::targets::{
+    HookFormat, HookTarget, disabled_name, hook_target, mcp_registry, plugin_settings,
+};
 use super::{DriftRow, DriftState, PlanOptions};
 use crate::apply::{Op, PlannedOp, Pre};
 use crate::configedit::ConfigEdit;
@@ -55,6 +57,7 @@ fn installed(env: &Env, scope: &Scope, entry: &LockEntry) -> Owned {
                 path,
                 command,
                 registry,
+                format,
                 ..
             }) => {
                 files.push(path);
@@ -62,9 +65,15 @@ fn installed(env: &Env, scope: &Scope, entry: &LockEntry) -> Owned {
                 // still rely on it, and it enables nothing by itself.
                 edits.push((
                     registry,
-                    ConfigEdit::RemoveHook {
-                        event: None,
-                        command,
+                    match format {
+                        HookFormat::Nested => ConfigEdit::RemoveHook {
+                            event: None,
+                            command,
+                        },
+                        HookFormat::Copilot => ConfigEdit::RemoveCopilotHook {
+                            event: None,
+                            command,
+                        },
                     },
                 ));
             }

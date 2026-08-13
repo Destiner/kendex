@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use super::{RawEntry, hooks, jsonc, plugins};
+use super::{RawEntry, copilot, hooks, jsonc, plugins};
 use crate::env::Env;
 use crate::fs::read_if_exists;
 use crate::harness::Reader;
@@ -23,6 +23,8 @@ pub fn read_structured(path: &Path, reader: &Reader, env: &Env) -> Result<Vec<Ra
         Reader::OpencodeMcp => opencode_mcp(path),
         Reader::OpencodePluginRefs => opencode_plugin_refs(path),
         Reader::HooksObject => hooks::read(path),
+        Reader::CopilotHooks => copilot::read(path),
+        Reader::CopilotPlugins => copilot::plugins(path),
         Reader::ClaudePluginRegistry => plugins::claude_registry(path, env),
         Reader::ClaudeSettingsPlugins => plugins::claude_settings(path),
         Reader::CodexPluginCache => plugins::codex_cache(path),

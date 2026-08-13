@@ -1,19 +1,20 @@
-//! A tool vstack can only read is found and reported, and never seeded as a
-//! place to install into — a target whose every write is a no-op would show
-//! up in the manifest as intent nothing acts on.
+//! A fresh manifest points at the tools on this machine vstack can actually
+//! write to. A tool it can only read is still found and reported — it just
+//! never becomes a target whose every install would silently do nothing.
 #![cfg(unix)]
 
 use std::fs;
 
 use vstack_core::engine::ops;
 use vstack_core::env::{Env, FakeOs};
+use vstack_core::harness::installable;
 use vstack_core::model::{HarnessId, Scope};
 use vstack_core::scan;
 use vstack_core::settings::AppSettings;
 
 #[test]
 #[allow(clippy::unwrap_used)]
-fn a_fresh_manifest_targets_only_the_tools_vstack_writes_to() {
+fn a_fresh_manifest_targets_the_tools_it_can_write_to() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path();
     let env = Env::fake(home, FakeOs::Linux);
@@ -31,11 +32,11 @@ fn a_fresh_manifest_targets_only_the_tools_vstack_writes_to() {
         [HarnessId::Claude, HarnessId::Gemini, HarnessId::Copilot]
     );
 
-    // Copilot is the read-only one: it is found and reported, and left out
-    // of the manifest because every write to it would be a no-op.
+    // Copilot is a full install target now that vstack writes its agents,
+    // skills, hooks and servers — the seed follows the capability table
+    // rather than a list of its own.
     let manifest = ops::manifest_for_mutation(&env, &Scope::Global).unwrap();
-    assert_eq!(
-        manifest.install.harnesses,
-        [HarnessId::Claude, HarnessId::Gemini]
-    );
+    let writable: Vec<_> = detected.into_iter().filter(|h| installable(*h)).collect();
+    assert_eq!(manifest.install.harnesses, writable);
+    assert!(writable.contains(&HarnessId::Copilot));
 }

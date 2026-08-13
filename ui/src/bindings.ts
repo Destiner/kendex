@@ -417,8 +417,19 @@ export type OpSupport = {
 	global: boolean,
 };
 
+/**
+ *  One declared plugin. The harness is part of the declaration because more
+ *  than one tool reads an `enabledPlugins` map of its own: without it, a
+ *  plugin meant for one tool would be switched on in every tool's settings,
+ *  which is a claim about software the user never installed there.
+ * 
+ *  A declaration written before the harness was part of it belongs to Claude
+ *  Code — the only tool whose plugin switch vstack ever wrote — so that is
+ *  what an older manifest reads back as, and the next write records it.
+ */
 export type PluginDecl = {
 	enabled?: boolean,
+	harness?: HarnessId,
 };
 
 export type ReportRouteView = {

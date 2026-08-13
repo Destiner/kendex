@@ -2,14 +2,14 @@
 
 One place to manage AI coding-tool customizations — agents, skills, hooks,
 commands, MCP servers, plugins, and Pi extensions — across Claude Code,
-Codex, OpenCode, Cursor, Pi, and Gemini CLI, personally and per-project.
-GitHub Copilot setups are read too, with management next.
+Codex, OpenCode, Cursor, Pi, Gemini CLI, and GitHub Copilot, personally and
+per-project.
 
 Desktop app + CLI over one engine.
 
 ## Features
 
-- **Install once, use everywhere** — one library serves all six managed
+- **Install once, use everywhere** — one library serves all seven managed
   tools.
 - **Author once** — one markdown file per agent or skill; vstack renders
   each tool's native format (Claude markdown, Codex TOML, Cursor rules…).
@@ -35,19 +35,22 @@ Desktop app + CLI over one engine.
 
 | | Claude Code | Codex | OpenCode | Cursor* | Pi | Gemini CLI | GitHub Copilot† |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| Agents | ● | ● | ● | ● | ● | ● | ○ |
-| Skills | ● | ● | ● | ● | ● | ● | ○ |
-| Hooks | ● | ● | ● | ● | — | ● | — |
+| Agents | ● | ● | ● | ● | ● | ● | ● |
+| Skills | ● | ● | ● | ● | ● | ● | ● |
+| Hooks | ● | ● | ● | ● | — | ● | ● |
 | Commands | ● | ○ | ○ | ○ | ○ | ● | — |
-| MCP servers | ● | ○ | ○ | ○ | — | ●‡ | ○ |
-| Plugins | ◐ | ○ | ○ | ○ | — | ○ | — |
+| MCP servers | ● | ○ | ○ | ○ | — | ●‡ | ● |
+| Plugins | ◐ | ○ | ○ | ○ | — | ○ | ◐ |
 | Pi extensions | — | — | — | — | ● | — | — |
 
 ● managed · ◐ enable/disable · ○ shown read-only · — no such surface.
 *Cursor is project-only.
-†GitHub Copilot is read-only for now; management lands next. Its hooks and
-plugins are real — vstack just does not read them yet — while Copilot
-commands genuinely do not exist.
+†Copilot commands genuinely do not exist — no Copilot product reads a
+file-backed slash command. A repository can only add to Copilot's
+disabled lists, so a project can switch a skill or server off but cannot
+switch one back on that your personal Copilot settings hold down; vstack
+says so rather than pretending. Copilot also reads Claude Code's skills:
+one file stays one installation, listed under the tool it belongs to.
 ‡Gemini records whether an MCP server is on in one file for the whole
 machine, so a project can declare a server but not switch it off there.
 Gemini's extensions install globally and switch on through an undocumented

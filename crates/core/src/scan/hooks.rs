@@ -43,7 +43,7 @@ pub fn read(path: &Path) -> Result<Vec<RawEntry>, String> {
 
 /// A short recognizable handle for a shell command: the file stem of its
 /// script-looking token, else the first token.
-fn command_stem(command: &str) -> String {
+pub fn command_stem(command: &str) -> String {
     let tokens: Vec<&str> = command.split_whitespace().collect();
     let script = tokens
         .iter()

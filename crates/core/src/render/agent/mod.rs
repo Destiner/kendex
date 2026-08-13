@@ -5,6 +5,7 @@ use super::permission::PermissionIntent;
 
 pub mod claude;
 pub mod codex;
+pub mod copilot;
 pub mod cursor;
 pub mod gemini;
 pub mod opencode;
@@ -134,13 +135,7 @@ pub fn generate(agent: &EffectiveAgent) -> Result<RenderedAgent, String> {
         HarnessId::Cursor => Ok(cursor::generate(agent)),
         HarnessId::Pi => pi::generate(agent),
         HarnessId::Gemini => Ok(gemini::generate(agent)),
-        // The capability table installs nothing on Copilot, so nothing asks
-        // for a rendering; a caller that does gets told why rather than a
-        // file in a format nobody verified.
-        HarnessId::Copilot => Err(format!(
-            "{} agents are not supported yet — vstack reads them, and writing them lands with that tool's adapter",
-            agent.harness.display_name()
-        )),
+        HarnessId::Copilot => Ok(copilot::generate(agent)),
     }
 }
 
@@ -149,6 +144,9 @@ pub fn file_name(harness: HarnessId, agent_name: &str) -> String {
     match harness {
         HarnessId::Codex => format!("{agent_name}.toml"),
         HarnessId::Cursor => format!("{agent_name}.mdc"),
+        // Copilot loads `<name>.agent.md`; the double extension is part of
+        // what its loader looks for, not decoration (matrix §2).
+        HarnessId::Copilot => format!("{agent_name}.agent.md"),
         _ => format!("{agent_name}.md"),
     }
 }

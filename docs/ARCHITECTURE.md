@@ -169,7 +169,12 @@ lives in one capability table read by core and UI.
   members of a group all read one file — and it takes down only what the
   refusing installation alone holds. Format facts — byte caps, name
   rules — live in one table beside the op table (`harness/caps.rs`),
-  never as renderer literals.
+  never as renderer literals. A surface is one file per item, one
+  directory per item, one structured file, or a directory of structured
+  documents (Copilot loads every `*.json` in its hooks directory as a
+  document of its own): where the entries inside are the items, a
+  document holding none reports none, so an emptied registration cannot
+  read as a live installation.
 - One model-alias table for every harness: bare tiers resolve per
   harness, `inherit` is expressed in each tool's own dialect, explicit
   vendor ids pass through.

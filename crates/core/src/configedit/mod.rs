@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+mod copilot;
+
+use copilot::{remove_copilot_hook, upsert_copilot_hook};
+
 /// A deterministic, idempotent structured edit. Applied to the file's
 /// current text at execute time; a file is in sync exactly when
 /// `apply(current) == current` — that equality is the drift check for
@@ -18,6 +22,21 @@ pub enum ConfigEdit {
     /// Remove our handler (from every event when `event` is None); empty
     /// groups and events are pruned.
     RemoveHook {
+        event: Option<String>,
+        command: String,
+    },
+    /// copilot hook file: upsert our entry under `hooks.<event>`, replacing
+    /// any entry that already runs `command`. Copilot's entries carry the
+    /// command and the matcher themselves and the document declares the
+    /// schema version it was written for, so none of the shape above fits
+    /// (docs.github.com/en/copilot/reference/hooks-reference).
+    UpsertCopilotHook {
+        event: String,
+        matcher: Option<String>,
+        command: String,
+        timeout: Option<u32>,
+    },
+    RemoveCopilotHook {
         event: Option<String>,
         command: String,
     },
@@ -110,18 +129,23 @@ impl ConfigEdit {
                 }
                 Ok(())
             }
+            ConfigEdit::UpsertCopilotHook {
+                event,
+                matcher,
+                command,
+                timeout,
+            } => upsert_copilot_hook(object, event, matcher.as_deref(), command, *timeout),
+            ConfigEdit::RemoveCopilotHook { event, command } => {
+                remove_copilot_hook(object, event.as_deref(), command);
+                Ok(())
+            }
             ConfigEdit::UpsertMcpServer { name, value } => {
                 let servers = ensure_object(object, "mcpServers")?;
                 servers.insert(name.clone(), value.clone());
                 Ok(())
             }
             ConfigEdit::RemoveMcpServer { name } => {
-                if let Some(servers) = object.get_mut("mcpServers").and_then(Value::as_object_mut) {
-                    servers.remove(name);
-                    if servers.is_empty() {
-                        object.remove("mcpServers");
-                    }
-                }
+                remove_from_map(object, "mcpServers", name);
                 Ok(())
             }
             ConfigEdit::SetPluginEnabled { key, enabled } => {
@@ -130,17 +154,7 @@ impl ConfigEdit {
                         ensure_object(object, "enabledPlugins")?
                             .insert(key.clone(), Value::Bool(*enabled));
                     }
-                    None => {
-                        if let Some(plugins) = object
-                            .get_mut("enabledPlugins")
-                            .and_then(Value::as_object_mut)
-                        {
-                            plugins.remove(key);
-                            if plugins.is_empty() {
-                                object.remove("enabledPlugins");
-                            }
-                        }
-                    }
+                    None => remove_from_map(object, "enabledPlugins", key),
                 }
                 Ok(())
             }
@@ -150,29 +164,7 @@ impl ConfigEdit {
             ConfigEdit::OpencodeAddInstruction {
                 reference,
                 bash_permission,
-            } => {
-                if object.is_empty() {
-                    object.insert(
-                        "$schema".into(),
-                        Value::String("https://opencode.ai/config.json".into()),
-                    );
-                }
-                let list = object
-                    .entry("instructions")
-                    .or_insert_with(|| json!([]))
-                    .as_array_mut()
-                    .ok_or("instructions is not an array")?;
-                if !list.iter().any(|v| v.as_str() == Some(reference)) {
-                    list.push(Value::String(reference.clone()));
-                }
-                if *bash_permission {
-                    let permission = ensure_object(object, "permission")?;
-                    permission
-                        .entry("bash")
-                        .or_insert_with(|| json!({"*": "ask"}));
-                }
-                Ok(())
-            }
+            } => opencode_add_instruction(object, reference, *bash_permission),
             ConfigEdit::OpencodeRemoveInstruction { reference } => {
                 if let Some(list) = object.get_mut("instructions").and_then(Value::as_array_mut) {
                     list.retain(|v| v.as_str() != Some(reference));
@@ -185,6 +177,45 @@ impl ConfigEdit {
             _ => Ok(()),
         }
     }
+}
+
+/// Drop one entry from a map, and the map itself once it holds nothing —
+/// an empty object left behind is a key the user never wrote.
+fn remove_from_map(object: &mut Map<String, Value>, key: &str, entry: &str) {
+    if let Some(map) = object.get_mut(key).and_then(Value::as_object_mut) {
+        map.remove(entry);
+        if map.is_empty() {
+            object.remove(key);
+        }
+    }
+}
+
+fn opencode_add_instruction(
+    object: &mut Map<String, Value>,
+    reference: &str,
+    bash_permission: bool,
+) -> Result<(), String> {
+    if object.is_empty() {
+        object.insert(
+            "$schema".into(),
+            Value::String("https://opencode.ai/config.json".into()),
+        );
+    }
+    let list = object
+        .entry("instructions")
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+        .ok_or("instructions is not an array")?;
+    if !list.iter().any(|v| v.as_str() == Some(reference)) {
+        list.push(Value::String(reference.to_owned()));
+    }
+    if bash_permission {
+        let permission = ensure_object(object, "permission")?;
+        permission
+            .entry("bash")
+            .or_insert_with(|| json!({"*": "ask"}));
+    }
+    Ok(())
 }
 
 fn ensure_object<'a>(
