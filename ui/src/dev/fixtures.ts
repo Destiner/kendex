@@ -27,7 +27,12 @@ export interface MockState {
 
 export function initialState(): MockState {
   return {
-    settings: { schema: 1, projects: [ACME, API], appearance: "system" },
+    settings: {
+      schema: 1,
+      projects: [ACME, API],
+      appearance: "system",
+      safety: { "warn-below": 80, "block-below": 60 },
+    },
     harnesses: harnesses(),
     items: items(),
     missingProjects: [],

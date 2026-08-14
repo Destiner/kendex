@@ -13,6 +13,7 @@ interface SettingsState {
   error: string | null;
   load: () => Promise<void>;
   setAppearance: (appearance: Appearance) => Promise<void>;
+  setSafety: (warnBelow: number, blockBelow: number) => Promise<void>;
   setHarnessRoot: (harness: string, root: string) => Promise<void>;
   registerProject: (path: string) => Promise<void>;
   unregisterProject: (path: string) => Promise<void>;
@@ -44,6 +45,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const current = get().settings;
     if (!current) return;
     const response = await commands.updateSettings({ ...current, appearance });
+    if (response.status === "ok") set({ settings: response.data, error: null });
+    else set({ error: response.error });
+  },
+
+  setSafety: async (warnBelow, blockBelow) => {
+    const current = get().settings;
+    if (!current) return;
+    const response = await commands.updateSettings({
+      ...current,
+      safety: { "warn-below": warnBelow, "block-below": blockBelow },
+    });
     if (response.status === "ok") set({ settings: response.data, error: null });
     else set({ error: response.error });
   },

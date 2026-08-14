@@ -14,8 +14,25 @@ import {
 import { toolName } from "@/lib/labels";
 import { useSettingsStore } from "@/stores/settings";
 
+// How cautious the safety check is, said without numbers on the dial.
+const SAFETY_LEVELS = {
+  strict: { "warn-below": 90, "block-below": 75 },
+  balanced: { "warn-below": 80, "block-below": 60 },
+  lenient: { "warn-below": 65, "block-below": 40 },
+} as const;
+
+type SafetyLevel = keyof typeof SAFETY_LEVELS;
+
+function safetyLevelOf(warn: number, block: number): SafetyLevel | "custom" {
+  for (const [name, t] of Object.entries(SAFETY_LEVELS)) {
+    if (t["warn-below"] === warn && t["block-below"] === block)
+      return name as SafetyLevel;
+  }
+  return "custom";
+}
+
 export function SettingsPage() {
-  const { settings, error, setAppearance } = useSettingsStore();
+  const { settings, error, setAppearance, setSafety } = useSettingsStore();
   const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
@@ -23,6 +40,8 @@ export function SettingsPage() {
   }, []);
 
   const overrides = Object.entries(settings?.["harness-roots"] ?? {});
+  const safety = settings?.safety ?? SAFETY_LEVELS.balanced;
+  const level = safetyLevelOf(safety["warn-below"], safety["block-below"]);
 
   return (
     <div>
@@ -50,6 +69,39 @@ export function SettingsPage() {
                   <SelectItem value="system">System</SelectItem>
                   <SelectItem value="light">Light</SelectItem>
                   <SelectItem value="dark">Dark</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Safety check</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div className="pr-4">
+                <Label>How cautious</Label>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  How readily vstack holds back an item it finds risky before
+                  installing it.
+                </p>
+              </div>
+              <Select
+                value={level === "custom" ? "balanced" : level}
+                onValueChange={(value) => {
+                  const t = SAFETY_LEVELS[value as SafetyLevel];
+                  void setSafety(t["warn-below"], t["block-below"]);
+                }}
+              >
+                <SelectTrigger className="w-36 shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="strict">Strict</SelectItem>
+                  <SelectItem value="balanced">Balanced</SelectItem>
+                  <SelectItem value="lenient">Lenient</SelectItem>
                 </SelectContent>
               </Select>
             </div>

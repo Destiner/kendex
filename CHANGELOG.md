@@ -252,6 +252,9 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Changed
 
+- The safety check's caution level is a Settings control now (Strict /
+  Balanced / Lenient) rather than a threshold with no way to set it.
+
 - The app is reorganized around what you're trying to do, not around its
   internals: six sidebar destinations instead of eight. Home now leads
   with what needs your attention — out of date, held back for safety, or
