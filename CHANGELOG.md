@@ -252,6 +252,21 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Changed
 
+- The app now summarizes instead of listing. Review & apply used to repeat
+  an identical warning under every hook it touched — seven hooks sharing
+  one settings file meant seven copies — and gave every clean plugin its
+  own row; now a finding is said once with the items it affects listed
+  under it, clean items collapse to one sentence, and internal
+  identifiers and numeric scores stay out of the headlines. Home tells
+  the truth at a glance: "changes ready to apply" and "items that aren't
+  managed yet" are counted separately (they used to be lumped together as
+  "out of date"), and the summary sentence at the bottom became three
+  tiles — tools, installed, projects — that take you to the page they
+  describe. Every page now shares one content width, tool cards became a
+  compact list whose counts click through to the Library pre-filtered,
+  the rarely-used folder override moved off every tool card into
+  Settings, and inputs are sized to what they hold.
+
 - The app has a considered look now instead of stock defaults: a
   near-black ground with a blue accent, and color that carries meaning —
   green means healthy, amber means worth attention, red means held back,

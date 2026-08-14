@@ -1,17 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { HarnessId, ItemKind } from "@/bindings";
 import { ItemDetail } from "@/components/item-detail";
+import { LibraryFilters } from "@/components/library/library-filters";
 import { StatusDot } from "@/components/status-dot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -27,35 +20,28 @@ import { cn } from "@/lib/utils";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 
-const KINDS: ItemKind[] = [
-  "agent",
-  "skill",
-  "hook",
-  "command",
-  "mcp-server",
-  "plugin",
-  "pi-extension",
-];
-const HARNESSES: HarnessId[] = [
-  "claude",
-  "codex",
-  "opencode",
-  "cursor",
-  "pi",
-  "gemini",
-  "copilot",
-];
-
 /** "Installed": everything on this machine, filterable, with a detail pane. */
 export function InstalledView() {
   const result = useScanStore((s) => s.result);
   const scope = useNavStore((s) => s.scope);
   const goToLibrary = useNavStore((s) => s.goToLibrary);
-  const [kind, setKind] = useState<string>("any");
-  const [harness, setHarness] = useState<string>("any");
+  const clearLibraryFilter = useNavStore((s) => s.clearLibraryFilter);
+  const [kind, setKind] = useState<string>(
+    () => useNavStore.getState().libraryFilter?.kind ?? "any",
+  );
+  const [harness, setHarness] = useState<string>(
+    () => useNavStore.getState().libraryFilter?.tool ?? "any",
+  );
   const [search, setSearch] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  // The filter is a one-time handoff from wherever the link was clicked
+  // (Tools, Projects); once applied, further tab visits start from "any"
+  // again rather than reapplying a stale filter.
+  useEffect(() => {
+    clearLibraryFilter();
+  }, [clearLibraryFilter]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -90,47 +76,16 @@ export function InstalledView() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex gap-2 border-b px-8 py-3">
-        <div className="relative max-w-56 flex-1">
-          <Input
-            ref={searchRef}
-            placeholder="Search by name…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pr-8"
-          />
-          <kbd className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-            /
-          </kbd>
-        </div>
-        <Select value={kind} onValueChange={setKind}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="any">All types</SelectItem>
-            {KINDS.map((k) => (
-              <SelectItem key={k} value={k}>
-                {kindLabel(k, 2)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={harness} onValueChange={setHarness}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="any">All tools</SelectItem>
-            {HARNESSES.map((h) => (
-              <SelectItem key={h} value={h}>
-                {toolName(h)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="flex min-h-0 flex-1">
+      <LibraryFilters
+        searchRef={searchRef}
+        search={search}
+        onSearchChange={setSearch}
+        kind={kind}
+        onKindChange={setKind}
+        harness={harness}
+        onHarnessChange={setHarness}
+      />
+      <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1">
         <div className="min-w-0 flex-1 overflow-y-auto">
           <Table>
             <TableHeader>
@@ -193,9 +148,12 @@ export function InstalledView() {
                   <TableCell colSpan={4} className="py-10">
                     {hasAnyItems ? (
                       <div className="flex flex-col items-center gap-3 text-center">
-                        <p className="text-muted-foreground">
-                          Nothing matches.
-                        </p>
+                        <div>
+                          <p className="font-medium">Nothing matches</p>
+                          <p className="text-sm text-muted-foreground">
+                            Try a different search or filter.
+                          </p>
+                        </div>
                         <Button
                           variant="outline"
                           size="sm"
@@ -207,9 +165,7 @@ export function InstalledView() {
                     ) : (
                       <div className="flex flex-col items-center gap-3 text-center">
                         <div>
-                          <p className="text-muted-foreground">
-                            Nothing installed yet.
-                          </p>
+                          <p className="font-medium">Nothing installed yet</p>
                           <p className="text-sm text-muted-foreground">
                             Add a catalog to start installing skills and agents.
                           </p>
@@ -217,7 +173,7 @@ export function InstalledView() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => goToLibrary("add")}
+                          onClick={() => goToLibrary({ tab: "add" })}
                         >
                           Add from a catalog
                         </Button>

@@ -35,34 +35,38 @@ export function ReviewPage() {
         title="Review & apply"
         subtitle="Review what's changed, then apply it"
       />
-      <div className="space-y-4 p-8">
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
-        {auditing && views.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Checking for changes…</p>
-        ) : null}
-        {allClean ? (
-          <div className="flex flex-col items-center gap-2 py-16 text-center">
-            <CheckCircle2 className="size-8 text-muted-foreground" />
-            <p className="font-medium">Everything is in sync.</p>
+      <div className="p-8">
+        <div className="mx-auto w-full max-w-5xl space-y-4">
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          {auditing && views.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Changes from Customize or your catalogs will show up here.
+              Checking for changes…
             </p>
-          </div>
-        ) : (
-          active.map((view) => (
-            <SyncScopeCard
-              key={scopeLabel(view.scope)}
-              view={view}
-              busy={busy}
-              onApply={(removeOrphans) =>
-                void applyPlan(view.scope, removeOrphans)
-              }
-              onAdopt={(kind, name, harness) =>
-                void adopt(view.scope, kind, name, harness)
-              }
-            />
-          ))
-        )}
+          ) : null}
+          {allClean ? (
+            <div className="flex flex-col items-center gap-2 py-16 text-center">
+              <CheckCircle2 className="size-8 text-muted-foreground" />
+              <p className="font-medium">Everything is in sync.</p>
+              <p className="text-sm text-muted-foreground">
+                Changes from Customize or your catalogs will show up here.
+              </p>
+            </div>
+          ) : (
+            active.map((view) => (
+              <SyncScopeCard
+                key={scopeLabel(view.scope)}
+                view={view}
+                busy={busy}
+                onApply={(removeOrphans) =>
+                  void applyPlan(view.scope, removeOrphans)
+                }
+                onAdopt={(kind, name, harness) =>
+                  void adopt(view.scope, kind, name, harness)
+                }
+              />
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

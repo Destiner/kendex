@@ -1,6 +1,7 @@
 // The product vocabulary, in one place: internal ids stay technical,
 // everything a person reads goes through these maps.
 import type {
+  DriftRow,
   DriftState,
   HarnessId,
   ItemKind,
@@ -100,4 +101,36 @@ export function scopeName(scope: Scope): string {
 
 export function scopePath(scope: Scope): string | null {
   return scope.scope === "global" ? null : scope.root;
+}
+
+// A hook's raw identifier is "<event>:<matcher>:<name>", or just
+// "<event>:<name>" when there's no matcher — a person reads the trailing
+// name; the full identifier stays available in a mono line beneath it.
+export function hookDisplayName(id: string): string {
+  const parts = id.split(":");
+  return parts[parts.length - 1] || id;
+}
+
+// Some engine-written detail text only restates the state pill next to it
+// ("out of date" badge, "newer content is available" detail say the same
+// thing twice) — a known restatement is dropped so the row reads once.
+const REDUNDANT_DRIFT_DETAILS: Partial<Record<DriftState, string>> = {
+  missing: "not installed yet",
+  stale: "newer content is available",
+};
+
+export function driftDetail(row: DriftRow): string | null {
+  if (!row.detail) return null;
+  return REDUNDANT_DRIFT_DETAILS[row.state] === row.detail ? null : row.detail;
+}
+
+// The engine writes a skip reason for one row; repeated across many rows it
+// reads long, so the clean-items summary uses this shortened paraphrase.
+const SKIP_REASON_SHORT: Record<string, string> = {
+  "the plugin's own files are not readable here — a declared plugin is one switch in a settings file until it is installed":
+    "can't be fully checked until they're installed",
+};
+
+export function skipReasonShort(reason: string): string {
+  return SKIP_REASON_SHORT[reason] ?? "can't be fully checked here yet";
 }

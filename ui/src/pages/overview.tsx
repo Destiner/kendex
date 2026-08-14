@@ -1,5 +1,6 @@
 import { CheckCircle2 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
+import { StatTile } from "@/components/stat-tile";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,7 +14,7 @@ import { useSettingsStore } from "@/stores/settings";
 
 interface AttentionRow {
   key: string;
-  tone: "critical" | "warning" | "info";
+  tone: "critical" | "warning" | "info" | "muted";
   title: string;
   detail: string;
   action?: { label: string; onClick: () => void };
@@ -28,7 +29,7 @@ function AttentionCard({
 }) {
   return (
     <Card>
-      <CardContent className="flex items-center justify-between gap-4 py-4">
+      <CardContent className="flex items-center justify-between gap-4">
         <div className="flex items-start gap-3">
           <StatusDot tone={row.tone} className="mt-2" />
           <div>
@@ -58,16 +59,34 @@ export function OverviewPage() {
   );
   const setPage = useNavStore((s) => s.setPage);
   const goToTools = useNavStore((s) => s.goToTools);
+  const goToLibrary = useNavStore((s) => s.goToLibrary);
 
   if (!result) {
     return (
-      <div className="p-8">
-        <Skeleton className="h-24 w-full" />
+      <div>
+        <PageHeader title="Home" subtitle="What needs your attention" />
+        <div className="p-8">
+          <div className="mx-auto w-full max-w-5xl space-y-6">
+            <div className="grid grid-cols-3 gap-3">
+              <Skeleton className="h-20 rounded-lg" />
+              <Skeleton className="h-20 rounded-lg" />
+              <Skeleton className="h-20 rounded-lg" />
+            </div>
+            <div className="space-y-3">
+              <Skeleton className="h-16 w-full rounded-lg" />
+              <Skeleton className="h-16 w-full rounded-lg" />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
-  const driftCount = views.reduce((sum, view) => sum + view.drift.length, 0);
+  const allDrift = views.flatMap((view) => view.drift);
+  const actionableCount = allDrift.filter(
+    (d) => d.state !== "unmanaged",
+  ).length;
+  const unmanagedCount = allDrift.filter((d) => d.state === "unmanaged").length;
   const blocked = heldBackCount(views);
   const missing = result.missingProjects;
 
@@ -84,16 +103,29 @@ export function OverviewPage() {
       action: { label: "Review findings", onClick: () => setPage("review") },
     });
   }
-  if (driftCount > 0) {
+  if (actionableCount > 0) {
     rows.push({
       key: "drift",
       tone: "info",
       title:
-        driftCount === 1
-          ? "1 thing is out of date"
-          : `${driftCount} things are out of date`,
-      detail: "Your tools don't match what you've chosen to install.",
+        actionableCount === 1
+          ? "1 change ready to apply"
+          : `${actionableCount} changes ready to apply`,
+      detail: "Review them before anything touches your files.",
       action: { label: "Review changes", onClick: () => setPage("review") },
+    });
+  }
+  if (unmanagedCount > 0) {
+    rows.push({
+      key: "unmanaged",
+      tone: "muted",
+      title:
+        unmanagedCount === 1
+          ? "1 item isn't managed yet"
+          : `${unmanagedCount} items aren't managed yet`,
+      detail:
+        "Found on this computer — manage them to keep them updated and checked.",
+      action: { label: "Have a look", onClick: () => setPage("review") },
     });
   }
   if (missing.length > 0) {
@@ -131,33 +163,47 @@ export function OverviewPage() {
   return (
     <div>
       <PageHeader title="Home" subtitle="What needs your attention" />
-      <div className="space-y-6 p-8">
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <div className="p-8">
+        <div className="mx-auto w-full max-w-5xl space-y-6">
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-        {rows.length === 0 ? (
-          <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-5 py-4">
-            <CheckCircle2 className="size-5 text-good" />
-            <div>
-              <p className="font-medium">You're all caught up.</p>
-              <p className="text-sm text-muted-foreground">
-                Everything matches what you've chosen to install.
-              </p>
+          <div className="grid grid-cols-3 gap-3">
+            <StatTile
+              label="Tools"
+              value={result.harnesses.length}
+              detail={toolNames || undefined}
+              onClick={() => goToTools("tools")}
+            />
+            <StatTile
+              label="Installed"
+              value={result.items.length}
+              onClick={() => goToLibrary()}
+            />
+            <StatTile
+              label="Projects"
+              value={projectCount}
+              onClick={() => goToTools("projects")}
+            />
+          </div>
+
+          {rows.length === 0 ? (
+            <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-5 py-4">
+              <CheckCircle2 className="size-5 text-good" />
+              <div>
+                <p className="font-medium">You're all caught up.</p>
+                <p className="text-sm text-muted-foreground">
+                  Everything matches what you've chosen to install.
+                </p>
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {rows.map((row, i) => (
-              <AttentionCard key={row.key} row={row} primary={i === 0} />
-            ))}
-          </div>
-        )}
-
-        <p className="text-sm text-muted-foreground">
-          {result.harnesses.length} tool
-          {result.harnesses.length === 1 ? "" : "s"}
-          {toolNames ? ` (${toolNames})` : ""} · {result.items.length} installed
-          · {projectCount} project{projectCount === 1 ? "" : "s"}
-        </p>
+          ) : (
+            <div className="space-y-3">
+              {rows.map((row, i) => (
+                <AttentionCard key={row.key} row={row} primary={i === 0} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

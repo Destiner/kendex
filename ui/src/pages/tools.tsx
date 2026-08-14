@@ -19,10 +19,12 @@ export function ToolsProjectsPage() {
         onValueChange={(value) => goToTools(value as ToolsTab)}
       >
         <div className="border-b px-8 py-3">
-          <TabsList>
-            <TabsTrigger value="tools">Tools</TabsTrigger>
-            <TabsTrigger value="projects">Projects</TabsTrigger>
-          </TabsList>
+          <div className="mx-auto w-full max-w-5xl">
+            <TabsList>
+              <TabsTrigger value="tools">Tools</TabsTrigger>
+              <TabsTrigger value="projects">Projects</TabsTrigger>
+            </TabsList>
+          </div>
         </div>
         <TabsContent value="tools">
           <HarnessList />

@@ -5,6 +5,13 @@ import type {
   ObservedItem,
   Scope,
 } from "@/bindings";
+import {
+  CLAUDE_HOOK_IDS,
+  CLEAN_PLUGINS,
+  CODEX_PLUGINS,
+  HOOK_SETTINGS_PATH,
+  UNMANAGED_SKILLS,
+} from "./fixture-personal";
 import { ACME, API, GLOBAL, proj } from "./fixture-scopes";
 
 const FILE: ObservedItem["fileState"] = { state: "file" };
@@ -184,6 +191,33 @@ export function items(): ObservedItem[] {
         fileState: FILE,
         description: ORCH,
       },
+    ),
+    ...CLAUDE_HOOK_IDS.map((name) =>
+      item("hook", name, "claude", GLOBAL, HOOK_SETTINGS_PATH, {
+        fileState: ENTRY,
+        description: "Runs on a Claude Code event",
+      }),
+    ),
+    ...CLEAN_PLUGINS.map((name) =>
+      item("plugin", name, "claude", GLOBAL, "~/.claude/plugins", {
+        fileState: ENTRY,
+        origin: null,
+        description: "Declared, not yet installed",
+      }),
+    ),
+    ...CODEX_PLUGINS.map((name) =>
+      item("plugin", name, "codex", GLOBAL, "~/.codex/plugins", {
+        fileState: ENTRY,
+        origin: null,
+        description: "Bundled with Codex",
+      }),
+    ),
+    ...UNMANAGED_SKILLS.map((skill) =>
+      item("skill", skill.name, skill.harness, GLOBAL, skill.path, {
+        fileState: FILE,
+        origin: null,
+        description: skill.description,
+      }),
     ),
   ];
 }

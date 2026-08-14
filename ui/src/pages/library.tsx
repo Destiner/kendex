@@ -16,14 +16,16 @@ export function LibraryPage() {
       />
       <Tabs
         value={libraryTab}
-        onValueChange={(value) => goToLibrary(value as LibraryTab)}
+        onValueChange={(value) => goToLibrary({ tab: value as LibraryTab })}
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
         <div className="border-b px-8 py-3">
-          <TabsList>
-            <TabsTrigger value="installed">Installed</TabsTrigger>
-            <TabsTrigger value="add">Add from a catalog</TabsTrigger>
-          </TabsList>
+          <div className="mx-auto w-full max-w-5xl">
+            <TabsList>
+              <TabsTrigger value="installed">Installed</TabsTrigger>
+              <TabsTrigger value="add">Add from a catalog</TabsTrigger>
+            </TabsList>
+          </div>
         </div>
         <TabsContent value="installed" className="flex min-h-0 flex-1 flex-col">
           <InstalledView />

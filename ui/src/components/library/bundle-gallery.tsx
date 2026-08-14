@@ -22,7 +22,9 @@ export function BundleGallery({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">{scopeName(scope)}</CardTitle>
+        <CardTitle className="text-sm font-medium">
+          {scopeName(scope)}
+        </CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3 sm:grid-cols-2">
         {rows.map((row) => (

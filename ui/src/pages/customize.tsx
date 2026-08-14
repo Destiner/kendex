@@ -52,60 +52,62 @@ export function CustomizePage() {
         title="Customize"
         subtitle="Every customization here — edited in one place, not by hand"
       />
-      <div className="flex-1 space-y-6 p-8">
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-muted-foreground">Editing</span>
-          <Select
-            value={scope.scope === "global" ? "global" : scope.root}
-            onValueChange={(value) =>
-              void setScope(
-                value === "global"
-                  ? { scope: "global" }
-                  : { scope: "project", root: value },
-              )
-            }
-          >
-            <SelectTrigger className="w-80" size="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="global">Global</SelectItem>
-              {projects.map((root) => (
-                <SelectItem key={root} value={root}>
-                  {root}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {error ? (
-          <p className="whitespace-pre-wrap text-sm text-destructive">
-            {error}
-          </p>
-        ) : null}
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : null}
-        {absent ? (
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              Nothing here yet. Add something from your catalogs, or start
-              customizing directly.
-            </p>
-            <Button size="sm" disabled={saving} onClick={() => void create()}>
-              Start customizing
-            </Button>
+      <div className="flex-1 p-8">
+        <div className="mx-auto w-full max-w-5xl space-y-6">
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">Editing</span>
+            <Select
+              value={scope.scope === "global" ? "global" : scope.root}
+              onValueChange={(value) =>
+                void setScope(
+                  value === "global"
+                    ? { scope: "global" }
+                    : { scope: "project", root: value },
+                )
+              }
+            >
+              <SelectTrigger className="w-80" size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="global">Global</SelectItem>
+                {projects.map((root) => (
+                  <SelectItem key={root} value={root}>
+                    {root}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        ) : null}
-        {draft ? (
-          <EditorTabs
-            draft={draft}
-            inventory={inventory}
-            scope={scope}
-            onChange={edit}
-          />
-        ) : null}
+
+          {error ? (
+            <p className="whitespace-pre-wrap text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : null}
+          {absent ? (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Nothing here yet. Add something from your catalogs, or start
+                customizing directly.
+              </p>
+              <Button size="sm" disabled={saving} onClick={() => void create()}>
+                Start customizing
+              </Button>
+            </div>
+          ) : null}
+          {draft ? (
+            <EditorTabs
+              draft={draft}
+              inventory={inventory}
+              scope={scope}
+              onChange={edit}
+            />
+          ) : null}
+        </div>
       </div>
       {dirty ? (
         <SaveBar

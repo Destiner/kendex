@@ -5,12 +5,20 @@ import type {
   Manifest_Serialize,
   SourceRow,
 } from "@/bindings";
+import { personalDrift, personalSafety } from "./fixture-safety";
 import { ACME, API, GLOBAL, proj } from "./fixture-scopes";
 
 export function views(): AuditView[] {
   const acme = proj(ACME);
   return [
-    { scope: GLOBAL, drift: [], plan: [], notes: [], warnings: [], safety: [] },
+    {
+      scope: GLOBAL,
+      drift: personalDrift(),
+      plan: [],
+      notes: [],
+      warnings: [],
+      safety: personalSafety(),
+    },
     {
       scope: acme,
       drift: [
