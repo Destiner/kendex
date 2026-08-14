@@ -58,7 +58,7 @@ export function Sidebar() {
           size="icon"
           aria-label="Scan again"
           title="Scan again"
-          onClick={() => void refresh()}
+          onClick={() => void refresh({ announce: true })}
           disabled={scanning}
         >
           <RefreshCw className={cn("size-4", scanning && "animate-spin")} />

@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { create } from "zustand";
 import { commands, type ScanResult } from "@/bindings";
 
@@ -8,7 +9,11 @@ interface ScanState {
   /** When the last successful scan finished, for the status footer's
    * "scanned Nm ago" — null until the first scan completes. */
   lastScanAt: number | null;
-  refresh: () => Promise<void>;
+  /** A background scan (startup, focus) has already toasted its failure —
+   * suppresses repeat toasts on every silent retry until one succeeds. A
+   * user clicking "Scan again" always hears about it regardless. */
+  backgroundFailureAnnounced: boolean;
+  refresh: (opts?: { announce?: boolean }) => Promise<void>;
 }
 
 export const useScanStore = create<ScanState>((set, get) => ({
@@ -16,7 +21,8 @@ export const useScanStore = create<ScanState>((set, get) => ({
   scanning: false,
   error: null,
   lastScanAt: null,
-  refresh: async () => {
+  backgroundFailureAnnounced: false,
+  refresh: async (opts) => {
     if (get().scanning) return;
     set({ scanning: true });
     const response = await commands.scanMachine();
@@ -26,9 +32,14 @@ export const useScanStore = create<ScanState>((set, get) => ({
         scanning: false,
         error: null,
         lastScanAt: Date.now(),
+        backgroundFailureAnnounced: false,
       });
     } else {
       set({ scanning: false, error: response.error });
+      if (opts?.announce || !get().backgroundFailureAnnounced) {
+        toast.error(response.error);
+        set({ backgroundFailureAnnounced: true });
+      }
     }
   },
 }));

@@ -34,7 +34,7 @@ export function HarnessList() {
         <Button
           variant="outline"
           className="mt-2"
-          onClick={() => void refreshScan()}
+          onClick={() => void refreshScan({ announce: true })}
         >
           Scan again
         </Button>

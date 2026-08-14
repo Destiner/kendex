@@ -264,6 +264,15 @@ changes carry a **Breaking** call-out with their migration note inline.
   had kept an older, heavier focus outline than the rest of the app, and
   the checkbox's error outline was too faint in dark mode.
 
+- Anywhere a folder path can be typed — adding a project, scanning
+  for projects, tool-folder overrides — a Browse… button now opens
+  the system folder picker instead of making you type the path.
+
+- Section headings inside cards got a real hierarchy: a small quiet
+  label above the content instead of a heading the same size as
+  everything else, with row titles and descriptions on a consistent
+  scale across Settings and Tools & Projects.
+
 - The app draws its own title bar now — the system frame is gone.
   Window controls sit top-right in the app's own style, the top edge
   is a drag handle (double-click to maximize), and the whole window
@@ -349,6 +358,14 @@ changes carry a **Breaking** call-out with their migration note inline.
   requires a `provider/model` form. Migration: refresh regenerates.
 
 ### Fixed
+
+- When something fails, you now hear about it where you clicked: a
+  small notice appears in the corner with the reason, in plain words.
+  Errors used to be easy to miss entirely — adding a project with a
+  bad path, for instance, quietly printed its message on the Settings
+  page and cleared what you typed. The input keeps what you typed on
+  failure now, and adding a project confirms itself with a brief
+  "Added" notice.
 
 - Typing a folder the way a terminal spells it — `~/dev/my-project` —
   now works everywhere a path can be typed: adding a project, scanning

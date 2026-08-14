@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import type { Appearance, HarnessId } from "@/bindings";
 import { commands } from "@/bindings";
+import { SectionLabel } from "@/components/card-section";
 import { PageHeader } from "@/components/page-header";
 import { ToolOverrideRow } from "@/components/tools/tool-override-row";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -12,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SAFETY_HELP, SETTINGS_SUBTITLE } from "@/lib/labels";
 import { useSettingsStore } from "@/stores/settings";
 
 const ALL_HARNESSES: HarnessId[] = [
@@ -54,7 +56,7 @@ function safetyLevelOf(warn: number, block: number): SafetyLevel | "custom" {
 }
 
 export function SettingsPage() {
-  const { settings, error, setAppearance, setSafety, setHarnessRoot } =
+  const { settings, setAppearance, setSafety, setHarnessRoot } =
     useSettingsStore();
   const [version, setVersion] = useState<string | null>(null);
 
@@ -67,14 +69,12 @@ export function SettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Settings" subtitle="Preferences for the app" />
+      <PageHeader title="Settings" subtitle={SETTINGS_SUBTITLE} />
       <div className="p-8">
         <div className="mx-auto w-full max-w-5xl space-y-4">
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-medium">Appearance</CardTitle>
+          <Card className="gap-3 py-4">
+            <CardHeader className="gap-1">
+              <SectionLabel>Appearance</SectionLabel>
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between">
@@ -100,19 +100,16 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-medium">
-                Safety check
-              </CardTitle>
+          <Card className="gap-3 py-4">
+            <CardHeader className="gap-1">
+              <SectionLabel>Safety check</SectionLabel>
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between">
                 <div className="pr-4">
                   <Label>How cautious</Label>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    How readily vstack holds back an item it finds risky before
-                    installing it.
+                    {SAFETY_HELP}
                   </p>
                 </div>
                 <Select
@@ -137,9 +134,9 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-medium">Projects</CardTitle>
+          <Card className="gap-3 py-4">
+            <CardHeader className="gap-1">
+              <SectionLabel>Projects</SectionLabel>
             </CardHeader>
             <CardContent className="space-y-2">
               {(settings?.projects ?? []).length === 0 ? (
@@ -149,7 +146,9 @@ export function SettingsPage() {
               ) : (
                 settings?.projects?.map((p) => (
                   <div key={p}>
-                    <span className="font-semibold">{p.split("/").pop()}</span>
+                    <span className="text-sm font-medium text-foreground">
+                      {p.split("/").pop()}
+                    </span>
                     <p className="truncate font-mono text-xs text-muted-foreground">
                       {p}
                     </p>
@@ -162,11 +161,9 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-medium">
-                Tool folder overrides
-              </CardTitle>
+          <Card className="gap-3 py-4">
+            <CardHeader className="gap-1">
+              <SectionLabel>Tool folder overrides</SectionLabel>
             </CardHeader>
             <CardContent className="divide-y">
               {ALL_HARNESSES.map((id) => (

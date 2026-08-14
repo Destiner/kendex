@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ScanResult } from "@/bindings";
 import { commands } from "@/bindings";
@@ -7,6 +8,10 @@ vi.mock("@/bindings", () => ({
   commands: {
     scanMachine: vi.fn(),
   },
+}));
+
+vi.mock("sonner", () => ({
+  toast: { error: vi.fn(), success: vi.fn() },
 }));
 
 const emptyResult: ScanResult = {
@@ -23,6 +28,7 @@ describe("scan store", () => {
       scanning: false,
       error: null,
       lastScanAt: null,
+      backgroundFailureAnnounced: false,
     });
     vi.clearAllMocks();
   });
@@ -83,5 +89,52 @@ describe("scan store", () => {
     useScanStore.setState({ scanning: true });
     await useScanStore.getState().refresh();
     expect(commands.scanMachine).not.toHaveBeenCalled();
+  });
+
+  it("toasts a background failure once, then stays quiet on repeat silent retries", async () => {
+    vi.mocked(commands.scanMachine).mockResolvedValue({
+      status: "error",
+      error: "boom",
+    });
+
+    await useScanStore.getState().refresh();
+    await useScanStore.getState().refresh();
+
+    expect(toast.error).toHaveBeenCalledTimes(1);
+  });
+
+  it("toasts every time a user-triggered refresh fails, announce or not", async () => {
+    vi.mocked(commands.scanMachine).mockResolvedValue({
+      status: "error",
+      error: "boom",
+    });
+
+    await useScanStore.getState().refresh({ announce: true });
+    await useScanStore.getState().refresh({ announce: true });
+
+    expect(toast.error).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-arms the background toast after a scan succeeds", async () => {
+    vi.mocked(commands.scanMachine).mockResolvedValueOnce({
+      status: "error",
+      error: "boom",
+    });
+    await useScanStore.getState().refresh();
+    expect(toast.error).toHaveBeenCalledTimes(1);
+
+    vi.mocked(commands.scanMachine).mockResolvedValueOnce({
+      status: "ok",
+      data: emptyResult,
+    });
+    await useScanStore.getState().refresh();
+
+    vi.mocked(commands.scanMachine).mockResolvedValueOnce({
+      status: "error",
+      error: "boom again",
+    });
+    await useScanStore.getState().refresh();
+
+    expect(toast.error).toHaveBeenCalledTimes(2);
   });
 });

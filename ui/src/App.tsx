@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { Toaster } from "sonner";
 import { commands } from "@/bindings";
 import { NavBar } from "@/components/nav-bar";
 import { Sidebar } from "@/components/sidebar";
@@ -39,7 +40,9 @@ function useScanTriggers() {
   const auditRefresh = useAuditStore((s) => s.refresh);
   const load = useSettingsStore((s) => s.load);
   useEffect(() => {
-    void load().then(refresh).then(auditRefresh);
+    void load()
+      .then(() => refresh())
+      .then(auditRefresh);
     let last = Date.now();
     const onFocus = () => {
       if (Date.now() - last < FOCUS_RESCAN_DEBOUNCE_MS) return;
@@ -55,9 +58,27 @@ export default function App() {
   useAppearance();
   useScanTriggers();
   const page = useNavStore((s) => s.page);
+  const appearance = useSettingsStore(
+    (s) => s.settings?.appearance ?? "system",
+  );
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      <Toaster
+        theme={appearance}
+        position="bottom-right"
+        offset={{ bottom: "2rem" }}
+        toastOptions={{
+          classNames: {
+            toast:
+              "!bg-popover !text-popover-foreground !border-border !shadow-lg",
+            title: "!text-sm !font-medium",
+            description: "!text-muted-foreground",
+            actionButton: "!bg-primary !text-primary-foreground",
+            cancelButton: "!bg-muted !text-muted-foreground",
+          },
+        }}
+      />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         <main className="relative flex flex-1 flex-col overflow-hidden">

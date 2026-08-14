@@ -1,12 +1,7 @@
 import type { ItemKind } from "@/bindings";
+import { SectionLabel } from "@/components/card-section";
 import { KindCountBadges } from "@/components/kind-count-badges";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
 /** A compact scope summary: title, one-line description, linked count pills. */
 export function ScopeCard({
@@ -21,10 +16,12 @@ export function ScopeCard({
   onKindClick?: (kind: ItemKind) => void;
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        {subtitle ? <CardDescription>{subtitle}</CardDescription> : null}
+    <Card className="gap-3 py-4">
+      <CardHeader className="gap-1">
+        <SectionLabel>{title}</SectionLabel>
+        {subtitle ? (
+          <p className="text-xs text-muted-foreground">{subtitle}</p>
+        ) : null}
       </CardHeader>
       <CardContent>
         <div className="flex flex-wrap gap-1.5">

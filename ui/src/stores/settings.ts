@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { create } from "zustand";
 import {
   type Appearance,
@@ -10,12 +11,11 @@ import { useScanStore } from "./scan";
 interface SettingsState {
   settings: AppSettings | null;
   capabilities: CapabilityRow[];
-  error: string | null;
   load: () => Promise<void>;
   setAppearance: (appearance: Appearance) => Promise<void>;
   setSafety: (warnBelow: number, blockBelow: number) => Promise<void>;
   setHarnessRoot: (harness: string, root: string) => Promise<void>;
-  registerProject: (path: string) => Promise<void>;
+  registerProject: (path: string) => Promise<boolean>;
   unregisterProject: (path: string) => Promise<void>;
   discoverProjects: (root: string) => Promise<string[]>;
 }
@@ -27,7 +27,6 @@ async function rescan() {
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: null,
   capabilities: [],
-  error: null,
 
   load: async () => {
     const [settings, capabilities] = await Promise.all([
@@ -35,18 +34,21 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       commands.capabilityTable(),
     ]);
     if (settings.status === "ok") {
-      set({ settings: settings.data, capabilities, error: null });
+      set({ settings: settings.data, capabilities });
     } else {
-      set({ error: settings.error });
+      toast.error(settings.error);
     }
   },
 
+  // Theme, safety threshold, and tool folder saves are instant and their
+  // effect is visible immediately on screen — a toast on top would just be
+  // noise, so success here stays silent and only failure speaks up.
   setAppearance: async (appearance) => {
     const current = get().settings;
     if (!current) return;
     const response = await commands.updateSettings({ ...current, appearance });
-    if (response.status === "ok") set({ settings: response.data, error: null });
-    else set({ error: response.error });
+    if (response.status === "ok") set({ settings: response.data });
+    else toast.error(response.error);
   },
 
   setSafety: async (warnBelow, blockBelow) => {
@@ -56,8 +58,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       ...current,
       safety: { "warn-below": warnBelow, "block-below": blockBelow },
     });
-    if (response.status === "ok") set({ settings: response.data, error: null });
-    else set({ error: response.error });
+    if (response.status === "ok") set({ settings: response.data });
+    else toast.error(response.error);
   },
 
   setHarnessRoot: async (harness, root) => {
@@ -71,37 +73,39 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       "harness-roots": roots,
     });
     if (response.status === "ok") {
-      set({ settings: response.data, error: null });
+      set({ settings: response.data });
       await rescan();
     } else {
-      set({ error: response.error });
+      toast.error(response.error);
     }
   },
 
   registerProject: async (path) => {
     const response = await commands.registerProject(path);
     if (response.status === "ok") {
-      set({ settings: response.data, error: null });
+      set({ settings: response.data });
+      toast.success(`Added ${path.split("/").pop()}`);
       await rescan();
-    } else {
-      set({ error: response.error });
+      return true;
     }
+    toast.error(response.error);
+    return false;
   },
 
   unregisterProject: async (path) => {
     const response = await commands.unregisterProject(path);
     if (response.status === "ok") {
-      set({ settings: response.data, error: null });
+      set({ settings: response.data });
       await rescan();
     } else {
-      set({ error: response.error });
+      toast.error(response.error);
     }
   },
 
   discoverProjects: async (root) => {
     const response = await commands.discoverProjects(root);
     if (response.status === "ok") return response.data;
-    set({ error: response.error });
+    toast.error(response.error);
     return [];
   },
 }));

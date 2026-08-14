@@ -177,6 +177,11 @@ export function breadcrumbLabel(nav: {
   return PAGE_LABELS[nav.page];
 }
 
+// Settings page copy, kept here so the wording is reviewed in one place.
+export const SETTINGS_SUBTITLE = "How vstack looks and behaves on this machine";
+export const SAFETY_HELP =
+  "Strict catches more but sometimes flags things that are actually fine. Lenient trusts more, and only stops the riskiest items.";
+
 export const BACK_LABEL = "Back";
 export const WINDOW_CONTROL_LABELS = {
   minimize: "Minimize",

@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { create } from "zustand";
 import {
   type AuditView,
@@ -13,6 +14,9 @@ interface AuditState {
   auditing: boolean;
   error: string | null;
   busy: boolean;
+  /** The startup audit has already toasted its failure — suppresses repeat
+   * toasts on every silent retry until one succeeds. */
+  backgroundFailureAnnounced: boolean;
   refresh: () => Promise<void>;
   applyPlan: (scope: Scope, removeOrphans: boolean) => Promise<void>;
   adopt: (
@@ -61,15 +65,25 @@ export const useAuditStore = create<AuditState>((set, get) => {
     auditing: false,
     error: null,
     busy: false,
+    backgroundFailureAnnounced: false,
 
     refresh: async () => {
       if (get().auditing) return;
       set({ auditing: true });
       const response = await commands.auditAll();
       if (response.status === "ok") {
-        set({ views: response.data, auditing: false, error: null });
+        set({
+          views: response.data,
+          auditing: false,
+          error: null,
+          backgroundFailureAnnounced: false,
+        });
       } else {
         set({ auditing: false, error: response.error });
+        if (!get().backgroundFailureAnnounced) {
+          toast.error(response.error);
+          set({ backgroundFailureAnnounced: true });
+        }
       }
     },
 

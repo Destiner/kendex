@@ -1,14 +1,12 @@
-import { FolderPlus, FolderSearch, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { ItemKind } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { KindCountBadges } from "@/components/kind-count-badges";
+import { AddProjectCard } from "@/components/tools/add-project-card";
 import { ScopeCard } from "@/components/tools/scope-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { countByKind } from "@/lib/derive";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
@@ -33,7 +31,9 @@ function ProjectRow({
     <div className="flex items-start justify-between gap-3 py-2.5">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate font-semibold">{name}</span>
+          <span className="truncate text-sm font-medium text-foreground">
+            {name}
+          </span>
           {missing ? (
             <Badge variant="destructive">Folder not found</Badge>
           ) : null}
@@ -70,9 +70,6 @@ export function ProjectList() {
   const goToLibrary = useNavStore((s) => s.goToLibrary);
   const { settings, registerProject, unregisterProject, discoverProjects } =
     useSettingsStore();
-  const [addPath, setAddPath] = useState("");
-  const [discoverRoot, setDiscoverRoot] = useState("");
-  const [found, setFound] = useState<string[] | null>(null);
   const [removeTarget, setRemoveTarget] = useState<string | null>(null);
 
   const globalItems =
@@ -117,93 +114,11 @@ export function ProjectList() {
           </div>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Add a project</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <form
-              className="flex items-end gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (addPath.trim()) {
-                  void registerProject(addPath.trim()).then(() =>
-                    setAddPath(""),
-                  );
-                }
-              }}
-            >
-              <div className="max-w-md flex-1 space-y-1.5">
-                <Label htmlFor="project-folder">Project folder</Label>
-                <Input
-                  id="project-folder"
-                  placeholder="/path/to/project"
-                  value={addPath}
-                  onChange={(e) => setAddPath(e.target.value)}
-                />
-              </div>
-              <Button type="submit">
-                <FolderPlus className="size-4" /> Add
-              </Button>
-            </form>
-
-            <div className="space-y-2 border-t pt-4">
-              <p className="text-sm text-muted-foreground">
-                Or scan a folder for projects
-              </p>
-              <form
-                className="flex items-end gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (discoverRoot.trim()) {
-                    void discoverProjects(discoverRoot.trim()).then(setFound);
-                  }
-                }}
-              >
-                <div className="max-w-md flex-1 space-y-1.5">
-                  <Label htmlFor="discover-folder">Folder to scan</Label>
-                  <Input
-                    id="discover-folder"
-                    placeholder="/path/to/scan"
-                    value={discoverRoot}
-                    onChange={(e) => setDiscoverRoot(e.target.value)}
-                  />
-                </div>
-                <Button type="submit" variant="outline">
-                  <FolderSearch className="size-4" /> Scan
-                </Button>
-              </form>
-              {found ? (
-                <div className="space-y-1 pt-1">
-                  {found.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      No projects found there.
-                    </p>
-                  ) : (
-                    found.map((path) => (
-                      <div
-                        key={path}
-                        className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
-                      >
-                        <span className="truncate font-mono text-xs">
-                          {path}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={projects.includes(path)}
-                          onClick={() => void registerProject(path)}
-                        >
-                          {projects.includes(path) ? "Added" : "Add"}
-                        </Button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
+        <AddProjectCard
+          projects={projects}
+          registerProject={registerProject}
+          discoverProjects={discoverProjects}
+        />
 
         <ConfirmDialog
           open={removeTarget !== null}
