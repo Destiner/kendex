@@ -35,13 +35,19 @@
 >   overrides, vstack check + CI workflow + opt-in real-CLI smoke).
 >   Adversarial review #7 folded (8 findings, 4 blockers — gate
 >   recalibrated; whole real fleet passes with zero false blocks).
-> - Phase 6 ⏳ next: UI/UX repolish. **Owner IA-proposal approval gate
->   FIRST** — an explicit nav/page-inventory/where-bundles-live proposal
->   goes to the owner before any implementation. This is the phase's one
->   approval gate and must not be skipped in autonomous mode: prepare
->   the proposal, surface it, and hold. Then cheap-model implementation
->   with Chromium iteration, vocabulary audit, one-primary-action check,
->   real-app walkthrough. Phase 7: release v0.2.0.
+> - Phase 6 ⏳ OWNER-GATED. Vocabulary audit passed (labels.ts clean,
+>   no eng-speak in visible text). The IA proposal is delivered as an
+>   artifact for the owner: recommends merging Library+Catalogs (bundles
+>   as the headline add path), renaming Sync -> Review & apply with
+>   safety findings inline, merging Tools+Projects, recasting Home as
+>   triage. **Held for owner approval before the restructure + visual
+>   pass** -- the plan's one gate, not satisfiable autonomously. When
+>   approved: cheap-model implementation with Chromium iteration,
+>   one-primary-action check, real-app walkthrough.
+> - Phase 7 prereqs advancing in parallel (per-adapter docs from the
+>   research). The release itself is owner-gated (signing keys,
+>   publishing, real-repo migration -- see the release-state memory) and
+>   waits on Phase 6.
 > - Standing: subagent reports may arrive only as idle notifications —
 >   recover them from the session's `subagents/*.jsonl` (user CLAUDE.md).
 >   Engine/render changes get adversarial review before merge. Commits
