@@ -35,18 +35,25 @@
 >   overrides, vstack check + CI workflow + opt-in real-CLI smoke).
 >   Adversarial review #7 folded (8 findings, 4 blockers — gate
 >   recalibrated; whole real fleet passes with zero false blocks).
-> - Phase 6 ⏳ in flight. IA proposal delivered to owner (artifact +
->   file); per the autonomous "move past blockers" directive the main
->   loop is IMPLEMENTING the recommended IA (8 rooms -> 5: Home as
->   triage, Sync -> Review & apply with safety inline, Library+Catalogs
->   merged with bundles as the add path, Tools+Projects merged, Customize
->   + Settings kept) via a cheap-model UI agent iterating in the mock
->   (VITE_MOCK=1). Owner adjusts from the committed result. Vocabulary
->   audit already passed. Real-app (Tauri) walkthrough after the mock
->   pass. > - Phase 7 prereqs advancing in parallel (per-adapter docs from the
->   research). The release itself is owner-gated (signing keys,
->   publishing, real-repo migration -- see the release-state memory) and
->   waits on Phase 6.
+> - Phase 6 implemented (d7976c0, d494b19) — 8 rooms to 6 on the
+>   recommended IA: triage Home, Review & apply with safety inline,
+>   Library+Catalogs merged (bundles lead the add path), Tools+Projects
+>   merged, Customize + Settings kept; Settings gained the safety-caution
+>   control the engine already backed. Mock-verified every page in
+>   Chromium (before/after shots outside repo), vocabulary audit passed,
+>   one primary action per view. REMAINING: (a) owner reviews the IA and
+>   adjusts from the committed result — proposal artifact + file
+>   delivered; (b) real-app Tauri walkthrough — the flows are covered by
+>   the 530-test Rust suite; seeing them in the real window is best done
+>   interactively.
+> - Phase 7 release: repo is release-READY (ARCHITECTURE + per-adapter
+>   docs carry every durable decision; CHANGELOG Unreleased carries all
+>   12 breaking-register rows; suite green). The release ACT is
+>   owner-gated end to end — version bump + tag + CI draft + updater
+>   signing keys + publishing + real-repo migration (RELEASING.md
+>   User-supplied gates and the release-state memory) — and the closing
+>   commit that deletes this file + docs/research/ IS the release. Left
+>   for the owner to cut.
 > - Standing: subagent reports may arrive only as idle notifications —
 >   recover them from the session's `subagents/*.jsonl` (user CLAUDE.md).
 >   Engine/render changes get adversarial review before merge. Commits
