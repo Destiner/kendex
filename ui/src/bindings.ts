@@ -62,6 +62,12 @@ export const commands = {
 	 *  and other machines; what those choices pull in does not.
 	 */
 	"optional-dependencies"?: { [key in string]: string[] },
+	/**
+	 *  Reviews of content the safety gate blocked, keyed by installation.
+	 *  Each one binds to the content, the rule set and the findings it was
+	 *  granted against, so it stops applying the moment any of them moves.
+	 */
+	"safety-overrides"?: { [key in string]: SafetyOverride_Serialize },
 	"agent-skills"?: { [key in string]: string[] },
 	"agent-launch-instructions"?: { [key in string]: string },
 	"agent-additional-instructions"?: { [key in string]: string },
@@ -97,6 +103,12 @@ export const commands = {
 };
 
 /* Types */
+export type AntiPattern = {
+	flag: string,
+	detail: string,
+	remediation: string,
+};
+
 /**  App preferences and the project registry — one settings file, nothing else. */
 export type AppSettings = {
 	schema: number,
@@ -104,6 +116,13 @@ export type AppSettings = {
 	/**  Per-harness override of the global root directory, keyed by harness id. */
 	"harness-roots"?: { [key in string]: string },
 	appearance?: Appearance,
+	/**
+	 *  Where the safety score starts warning and stops installing. These
+	 *  live here rather than in a manifest on purpose: a manifest travels
+	 *  with the repository it describes, and a catalog able to lower the bar
+	 *  it is measured against is not being measured.
+	 */
+	safety?: Thresholds,
 };
 
 export type Appearance = "system" | "light" | "dark";
@@ -124,6 +143,12 @@ export type AuditView_Deserialize = {
 	plan: string[],
 	notes: string[],
 	warnings: ItemWarning_Deserialize[],
+	/**
+	 *  What the safety rules found in the content installed here. Each row
+	 *  carries two scores that are never combined: safety, which can hold an
+	 *  install back, and quality, which only ever informs.
+	 */
+	safety: ItemSafety[],
 };
 
 /**
@@ -136,6 +161,12 @@ export type AuditView_Serialize = {
 	plan: string[],
 	notes: string[],
 	warnings: ItemWarning_Serialize[],
+	/**
+	 *  What the safety rules found in the content installed here. Each row
+	 *  carries two scores that are never combined: safety, which can hold an
+	 *  install back, and quality, which only ever informs.
+	 */
+	safety: ItemSafety[],
 };
 
 /**  One curated set a catalog offers, as the Catalogs page lists it. */
@@ -175,12 +206,28 @@ export type CustomHook_Serialize = {
 	agents: HookAgents,
 };
 
+/**  One rule firing once, and what it cost. */
+export type Deduction = {
+	rule: string,
+	location: string,
+	severity: Severity,
+	points: number,
+	/**  A later hit from a rule that has already been counted in full. */
+	repeat: boolean,
+};
+
 /**  A harness found on this machine. */
 export type DetectedHarness = {
 	harness: HarnessId,
 	/**  The directory whose existence marks the harness as installed. */
 	root: string,
 	version: string | null,
+};
+
+export type DimensionScore = {
+	dimension: string,
+	weightPercent: number,
+	scorePercent: number,
 };
 
 export type DriftRow = {
@@ -237,6 +284,20 @@ export type Enforcement =
  *  shared config file (MCP servers, some hooks) are `ConfigEntry`.
  */
 export type FileState = { state: "file" } | { state: "dir" } | { state: "symlink"; target: string; broken: boolean } | { state: "config-entry" };
+
+/**
+ *  One safety problem, where it is, and what to do about it. The message
+ *  never holds a matched secret — only its fingerprint (invariant of
+ *  `secret::fingerprint_secret`).
+ */
+export type Finding = {
+	rule: string,
+	severity: Severity,
+	/**  The file and line, or the config key that holds the entry. */
+	location: string,
+	message: string,
+	remediation: string,
+};
 
 /**  Typed `[agent-frontmatter.<harness>.<agent>]` overrides — v1's field set. */
 export type FrontmatterOverrides = FrontmatterOverrides_Serialize | FrontmatterOverrides_Deserialize;
@@ -316,6 +377,34 @@ export type ItemDecl_Serialize = {
 };
 
 export type ItemKind = "agent" | "skill" | "hook" | "command" | "mcp-server" | "plugin" | "pi-extension";
+
+/**
+ *  One installation's two scores and everything behind them. Safety and
+ *  quality sit side by side and are never combined: one answers whether the
+ *  content is dangerous, the other whether it is any good, and averaging
+ *  them would let a well-written attack outscore a clumsy honest skill.
+ */
+export type ItemSafety = {
+	kind: ItemKind,
+	name: string,
+	harness: HarnessId,
+	scope: Scope,
+	safety: SafetyScore,
+	/**  Advisory only, and absent for kinds with no authored prose. */
+	quality: QualityScore | null,
+	findings: Finding[],
+	/**  Rules that apply to this kind but had no bytes to read here. */
+	skipped: SkippedRule[],
+	verdict: Verdict,
+	/**  Why the verdict is what it is, in sentences. */
+	reasons: string[],
+	/**
+	 *  The identity of the bytes that were read. An override binds to this,
+	 *  so it is what a reviewer is accepting.
+	 */
+	contentHash: string,
+	override: OverrideState,
+};
 
 /**
  *  A per-item render or parse warning, with the fix when there is one —
@@ -410,6 +499,12 @@ export type Manifest_Deserialize = {
 	 *  and other machines; what those choices pull in does not.
 	 */
 	"optional-dependencies"?: { [key in string]: string[] },
+	/**
+	 *  Reviews of content the safety gate blocked, keyed by installation.
+	 *  Each one binds to the content, the rule set and the findings it was
+	 *  granted against, so it stops applying the moment any of them moves.
+	 */
+	"safety-overrides"?: { [key in string]: SafetyOverride_Deserialize },
 	"agent-skills"?: { [key in string]: string[] },
 	"agent-launch-instructions"?: { [key in string]: string },
 	"agent-additional-instructions"?: { [key in string]: string },
@@ -455,6 +550,12 @@ export type Manifest_Serialize = {
 	 *  and other machines; what those choices pull in does not.
 	 */
 	"optional-dependencies"?: { [key in string]: string[] },
+	/**
+	 *  Reviews of content the safety gate blocked, keyed by installation.
+	 *  Each one binds to the content, the rule set and the findings it was
+	 *  granted against, so it stops applying the moment any of them moves.
+	 */
+	"safety-overrides"?: { [key in string]: SafetyOverride_Serialize },
 	"agent-skills"?: { [key in string]: string[] },
 	"agent-launch-instructions"?: { [key in string]: string },
 	"agent-additional-instructions"?: { [key in string]: string },
@@ -494,6 +595,15 @@ export type OpSupport = {
 	global: boolean,
 };
 
+/**  Whether a recorded override still speaks for what is in front of us. */
+export type OverrideState = 
+/**  Nothing recorded for this installation. */
+{ state: "absent" } | 
+/**  Recorded, and still describing exactly this. */
+{ state: "active" } | 
+/**  Recorded, but what it was granted against has changed since. */
+{ state: "stale"; why: string };
+
 /**
  *  One declared plugin. The harness is part of the declaration because more
  *  than one tool reads an `enabledPlugins` map of its own: without it, a
@@ -509,12 +619,65 @@ export type PluginDecl = {
 	harness?: HarnessId,
 };
 
+export type QualityScore = {
+	score: number,
+	dimensions: DimensionScore[],
+	antiPatterns: AntiPattern[],
+	/**
+	 *  What the anti-patterns multiplied the weighted total by, as a
+	 *  percentage. Floors at 50 — the penalty shapes a score, it does not
+	 *  replace it.
+	 */
+	penaltyPercent: number,
+};
+
 export type ReportRouteView = {
 	vstackOwned: boolean,
 	repo: string | null,
 	label: string | null,
 	/**  Prefilled new-issue page — only when the report belongs upstream. */
 	issueUrl: string | null,
+};
+
+/**
+ *  One recorded review. The key it is stored under is the installation:
+ *  kind, name and harness, inside the scope whose manifest holds it.
+ */
+export type SafetyOverride = SafetyOverride_Serialize | SafetyOverride_Deserialize;
+
+/**
+ *  One recorded review. The key it is stored under is the installation:
+ *  kind, name and harness, inside the scope whose manifest holds it.
+ */
+export type SafetyOverride_Deserialize = {
+	/**  Hash of the content that was reviewed. */
+	"content-hash": string,
+	/**  The rule set that produced the findings below. */
+	ruleset: number,
+	/**  Fingerprints of the exact findings that were reviewed, sorted. */
+	findings: string[],
+	"granted-at": string,
+	note?: string | null,
+};
+
+/**
+ *  One recorded review. The key it is stored under is the installation:
+ *  kind, name and harness, inside the scope whose manifest holds it.
+ */
+export type SafetyOverride_Serialize = {
+	/**  Hash of the content that was reviewed. */
+	"content-hash": string,
+	/**  The rule set that produced the findings below. */
+	ruleset: number,
+	/**  Fingerprints of the exact findings that were reviewed, sorted. */
+	findings: string[],
+	"granted-at": string,
+	note?: string | null,
+};
+
+export type SafetyScore = {
+	score: number,
+	deductions: Deduction[],
 };
 
 export type ScanResult = {
@@ -527,6 +690,14 @@ export type ScanResult = {
 };
 
 export type Scope = { scope: "global" } | { scope: "project"; root: string };
+
+export type Severity = "low" | "medium" | "high" | "critical";
+
+/**  A rule that applies here but could not run, and why. */
+export type SkippedRule = {
+	rule: string,
+	reason: string,
+};
 
 export type SourceDecl = SourceDecl_Serialize | SourceDecl_Deserialize;
 
@@ -569,6 +740,25 @@ export type SourceRow = {
 	head: string | null,
 	declaredItems: string[],
 };
+
+/**
+ *  Where warning starts and where installing stops. Configured in app
+ *  settings rather than in a manifest: a manifest travels with the
+ *  repository it describes, and a catalog that could lower the bar it is
+ *  measured against is not being measured.
+ */
+export type Thresholds = {
+	"warn-below": number,
+	"block-below": number,
+};
+
+export type Verdict = 
+/**  Nothing found worth saying. */
+"clean" | 
+/**  Findings worth reading before installing; the install proceeds. */
+"warn" | 
+/**  Nothing installs until a person reviews it. */
+"block";
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

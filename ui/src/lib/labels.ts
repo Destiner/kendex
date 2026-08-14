@@ -1,6 +1,13 @@
 // The product vocabulary, in one place: internal ids stay technical,
 // everything a person reads goes through these maps.
-import type { DriftState, HarnessId, ItemKind, Scope } from "@/bindings";
+import type {
+  DriftState,
+  HarnessId,
+  ItemKind,
+  Scope,
+  Severity,
+  Verdict,
+} from "@/bindings";
 
 export const TOOL_NAMES: Record<HarnessId, string> = {
   claude: "Claude Code",
@@ -33,6 +40,21 @@ export const STATE_LABELS: Record<DriftState, string> = {
   orphaned: "left behind",
   unmanaged: "not managed yet",
   conflict: "needs attention",
+};
+
+// How serious a safety finding is, said without security jargon.
+export const SEVERITY_LABELS: Record<Severity, string> = {
+  critical: "Serious",
+  high: "Important",
+  medium: "Worth a look",
+  low: "Minor",
+};
+
+// What the safety check decided to do about an item.
+export const VERDICT_LABELS: Record<Verdict, string> = {
+  block: "Held back",
+  warn: "Installs, with a warning",
+  clean: "Nothing found",
 };
 
 export type BadgeVariant = "default" | "secondary" | "destructive" | "outline";

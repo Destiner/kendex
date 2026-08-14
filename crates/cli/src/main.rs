@@ -1,14 +1,15 @@
 mod commands;
+mod flags;
 mod scope;
 
 use std::io::Write;
 use std::process::ExitCode;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use vstack_core::env::Env;
 
-use commands::add::AddArgs;
 use commands::project::ProjectCommand;
+use flags::{AddFlags, ReportFlags};
 use scope::ScopeFilter;
 
 #[derive(Parser)]
@@ -24,129 +25,6 @@ struct Cli {
     add_flags: AddFlags,
     #[command(subcommand)]
     command: Option<Command>,
-}
-
-/// The v1 add surface — shared by `add` and the bare form, flag for flag.
-#[derive(Args)]
-struct AddFlags {
-    /// Install to the user-level scope
-    #[arg(short = 'g', long)]
-    global: bool,
-    /// Target harnesses (comma-separated)
-    #[arg(long)]
-    harness: Vec<String>,
-    /// Install specific agents (comma-separated)
-    #[arg(short = 'a', long)]
-    agent: Vec<String>,
-    /// Install specific skills (comma-separated)
-    #[arg(short = 's', long)]
-    skill: Vec<String>,
-    /// Install whole bundles the source offers (comma-separated)
-    #[arg(short = 'b', long)]
-    bundle: Vec<String>,
-    /// Also take these optional dependencies (comma-separated)
-    #[arg(long = "with")]
-    optional: Vec<String>,
-    /// Install specific hooks (comma-separated)
-    #[arg(long)]
-    hook: Vec<String>,
-    /// Install specific Pi extensions (comma-separated)
-    #[arg(long, visible_alias = "pi-package")]
-    pi_extension: Vec<String>,
-    /// Copy instead of symlink
-    #[arg(long)]
-    copy: bool,
-    /// Skip confirmation prompts
-    #[arg(short = 'y', long)]
-    yes: bool,
-    /// All items to all harnesses
-    #[arg(long)]
-    all: bool,
-    /// Allow --global --all over a non-empty global lock
-    #[arg(long)]
-    clobber: bool,
-    /// Skip auto-install of skills referenced by selected agents
-    #[arg(long)]
-    no_auto_skills: bool,
-}
-
-impl AddFlags {
-    fn into_args(self, source: Option<String>) -> AddArgs {
-        AddArgs {
-            source,
-            global: self.global,
-            harness: self.harness,
-            agent: self.agent,
-            skill: self.skill,
-            bundle: self.bundle,
-            optional: self.optional,
-            hook: self.hook,
-            pi_extension: self.pi_extension,
-            copy: self.copy,
-            yes: self.yes,
-            all: self.all,
-            clobber: self.clobber,
-            no_auto_skills: self.no_auto_skills,
-        }
-    }
-}
-
-#[derive(Args)]
-struct ReportFlags {
-    /// Report about an installed skill
-    #[arg(long)]
-    skill: Option<String>,
-    /// Report about an installed agent
-    #[arg(long)]
-    agent: Option<String>,
-    /// Report about an installed hook
-    #[arg(long)]
-    hook: Option<String>,
-    /// Any installed asset by name, kind auto-detected
-    #[arg(long)]
-    asset: Option<String>,
-    /// Issue title
-    #[arg(long)]
-    title: String,
-    /// Issue body text
-    #[arg(long)]
-    body: Option<String>,
-    /// Read the body from a file
-    #[arg(long, conflicts_with = "body")]
-    body_file: Option<std::path::PathBuf>,
-    #[arg(short = 'g', long)]
-    global: bool,
-    /// project | global (default project; all rejected)
-    #[arg(long)]
-    scope: Option<String>,
-    /// Upstream repo for vstack-owned issues
-    #[arg(long)]
-    upstream: Option<String>,
-    /// Routing label: cli | skills | harness | review-gate | docs | tech-debt
-    #[arg(long)]
-    area: Option<String>,
-    /// Print the decision and exact gh command; file nothing
-    #[arg(long)]
-    dry_run: bool,
-}
-
-impl ReportFlags {
-    fn into_args(self) -> commands::report::ReportArgs {
-        commands::report::ReportArgs {
-            skill: self.skill,
-            agent: self.agent,
-            hook: self.hook,
-            asset: self.asset,
-            title: self.title,
-            body: self.body,
-            body_file: self.body_file,
-            global: self.global,
-            scope: self.scope,
-            upstream: self.upstream,
-            area: self.area,
-            dry_run: self.dry_run,
-        }
-    }
 }
 
 #[derive(Subcommand)]
@@ -208,6 +86,10 @@ enum Command {
         scope: Option<String>,
         #[arg(short = 'y', long)]
         yes: bool,
+        /// Install these items despite their safety findings, recording the
+        /// review against the exact content and findings shown
+        #[arg(long = "allow-unsafe")]
+        allow_unsafe: Vec<String>,
     },
     /// Record an observed item into the manifest (content moves to the
     /// local source)
@@ -238,13 +120,20 @@ enum Command {
         #[arg(long)]
         harness: Option<String>,
     },
-    /// Detection + declaration sanity for this machine
+    /// Detection + declaration sanity for this machine, or authoring
+    /// validation over a catalog directory with --catalog
     Check {
         #[arg(short = 'g', long)]
         global: bool,
         /// project | global | all (default all)
         #[arg(long)]
         scope: Option<String>,
+        /// Validate this catalog directory instead of this machine
+        #[arg(long)]
+        catalog: Option<std::path::PathBuf>,
+        /// With --catalog, also fail on advisories
+        #[arg(long)]
+        strict: bool,
     },
     /// File an issue about an installed asset, routed by ownership
     Report(ReportFlags),
@@ -282,6 +171,25 @@ enum Command {
         #[arg(long)]
         scope: Option<String>,
     },
+}
+
+/// Sanity for this machine, or for a catalog directory. They answer
+/// different questions — what is installed here, versus what this content
+/// would do anywhere — and only the second one belongs in a repository's CI.
+fn check(
+    env: &Env,
+    global: bool,
+    scope: Option<String>,
+    catalog: Option<std::path::PathBuf>,
+    strict: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match catalog {
+        Some(catalog) => commands::check_catalog::run(&catalog, strict),
+        None => {
+            let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::All)?;
+            commands::check::run(env, filter)
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -346,9 +254,10 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             global,
             scope,
             yes,
+            allow_unsafe,
         } => {
             let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::Project)?;
-            commands::apply_cmd::run(&env, filter, plan, yes)?;
+            commands::apply_cmd::run(&env, filter, plan, yes, allow_unsafe)?;
         }
         Command::Adopt {
             kind,
@@ -369,10 +278,12 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::All)?;
             commands::list::run(&env, filter, harness)?;
         }
-        Command::Check { global, scope } => {
-            let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::All)?;
-            commands::check::run(&env, filter)?;
-        }
+        Command::Check {
+            global,
+            scope,
+            catalog,
+            strict,
+        } => check(&env, global, scope, catalog, strict)?,
         Command::UpdatePi { check, scope } => {
             let filter = ScopeFilter::resolve(scope.as_deref(), false, ScopeFilter::All)?;
             commands::update_pi::run(&env, filter, check)?;

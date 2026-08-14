@@ -35,9 +35,10 @@ Observation (scanner truth) · Drift. Core modules mirror the verbs: `model`, `s
 
 ## Layout
 
-`crates/core` — pure domain. `crates/app` — Tauri commands, one module per
-page domain; events stream scan progress. `crates/cli` — thin verbs over
-the same core. `ui/` — React 19 + Tailwind v4 +
+`crates/core` — pure domain, with `quality/` holding the content rules and
+both scores, disjoint from render and engine. `crates/app` — Tauri
+commands, one module per page domain; events stream scan progress.
+`crates/cli` — thin verbs over the same core. `ui/` — React 19 + Tailwind v4 +
 shadcn/ui + zustand over generated bindings (tauri-specta). Adapters in
 `core/harness/` own paths and rendering only; what each harness supports
 lives in one capability table read by core and UI.
@@ -305,6 +306,48 @@ lives in one capability table read by core and UI.
   before its first write, naming the flag that answers it. Agent- and
   CI-driven runs are the normal case. Interactive selection lives in
   the GUI; the CLI has no pickers.
+- **Two scores, never averaged, and only one of them gates.** Safety
+  answers "is this dangerous" and can hold an install back; quality
+  answers "is this well made" and never does. Averaging them would let a
+  well-written attack outscore a clumsy honest skill on the number that
+  decides. Safety is `100 − Σ deductions` (Critical 25 / High 15 /
+  Medium 8 / Low 3), first hit per rule at full weight and repeats at a
+  point each until they have cost as much again — a pattern being
+  pervasive says something, and says it once. Quality is wshobson's
+  weighted-dimension model, static layer only: no LLM judge, no
+  simulation, no letter grades, because none of them fit a path where
+  someone is waiting to install one skill.
+- **The aggregate warns; a Critical blocks by itself.** Threshold
+  arithmetic alone lets one Critical finding through at 75. Blocking is
+  therefore per-finding *and* aggregate: any Critical, or a score below
+  the block threshold (default 60; warn 80). Thresholds live in app
+  settings, never in a manifest — a manifest travels with the repository
+  it describes, and a catalog able to lower the bar it is measured
+  against is not being measured.
+- **Rules read typed per-kind inputs, and say when they cannot read.**
+  There is no "content" field meaning a different thing per kind: a skill
+  carries its tree and byte budgets, a hook its registration and script,
+  an MCP server its command, args, env and headers, a plugin its manifest
+  and lifecycle scripts. A rule whose bytes are not in this path's input
+  reports itself not applicable, because silence would read as a pass.
+  Fenced and backticked content is scanned at one severity lower rather
+  than exempted — the model reads a payload in a code block exactly as it
+  reads one in prose — with secrets the single exception, and a matched
+  token never appears in any message, log or record, only a fingerprint.
+- **An override is permission for one decision, not for an item.** It
+  binds to the installation, the rendered content hash, the rule set
+  version and the exact finding fingerprints that were reviewed; it is
+  written into the manifest by the same transaction that installs what it
+  unblocks; and it goes stale the moment any of those four move. A
+  one-time review must never become a standing bypass.
+- **Rule severities are calibrated against real catalogs, not inherited.**
+  A Critical blocks an install on its own, so the tier is only worth
+  something if it is precise. Patterns that fired only on legitimate
+  content were retired with their evidence recorded beside them, and
+  deobfuscation reports only what has no typographic use — invisible and
+  bidirectional characters, letters chosen to imitate other letters —
+  while normalizing emoji and compatibility forms silently so the other
+  rules still read a plain string.
 - vstack never emits a pasteable command line. Errors, hints, and
   recovery instructions present the verb and its parameters as data —
   cross-platform shell quoting is a cost the product declines to carry,

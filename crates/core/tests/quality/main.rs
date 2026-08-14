@@ -1,0 +1,9 @@
+//! The safety gate end to end: what a plan says about the content it would
+//! write, what refuses to install, and what an override does and does not
+//! buy.
+#![cfg(unix)]
+
+mod gate;
+mod kinds;
+mod rules;
+mod scoring;

@@ -17,6 +17,7 @@ pub mod model;
 pub mod names;
 pub mod pi_ext;
 pub mod process;
+pub mod quality;
 pub mod remote;
 pub mod render;
 pub mod report;

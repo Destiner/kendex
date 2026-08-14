@@ -28,6 +28,7 @@ export function view(scope: Scope): AuditView {
     plan: [],
     notes: [],
     warnings: [],
+    safety: [],
   };
   store.state.views.push(fresh);
   return fresh;

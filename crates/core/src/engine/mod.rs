@@ -25,6 +25,7 @@ mod desired_mcp;
 mod desired_skill;
 mod desired_source;
 mod expansion;
+mod gate;
 mod gemini;
 mod item_plan;
 pub mod ops;
@@ -35,6 +36,7 @@ mod targets;
 mod tree_plan;
 mod unmanaged;
 
+pub use gate::ItemSafety;
 use item_plan::plan_item;
 use scope_writes::{
     plan_config_edits, plan_lock_write, plan_schema_upgrade, plan_settings_seed, source_revisions,
@@ -99,6 +101,10 @@ pub struct EngineReport {
     /// Members of an uninstalled bundle that stay, and what still accounts
     /// for them — the other half of the preview a bundle removal shows.
     pub kept: Vec<KeptInstall>,
+    /// What the safety rules found in the content this plan would write.
+    /// Blocked rows also appear as conflicts in `drift`; the rest install
+    /// and are worth reading first.
+    pub safety: Vec<ItemSafety>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -116,6 +122,10 @@ pub struct PlanOptions {
     /// the preview with what keeps them, so an uninstall says both halves:
     /// what goes, and what stays.
     pub uninstalled_bundles: Vec<String>,
+    /// Items whose safety findings the user has read and accepted. Each one
+    /// is recorded in the manifest by the same plan that installs it, bound
+    /// to the content, rule set and findings that were reviewed.
+    pub allow_unsafe: Vec<String>,
 }
 
 /// Compute drift and the plan that would fix it, in one pass — the Audit
@@ -130,7 +140,15 @@ pub fn plan_scope(
     // Identity first: every derived path and the eventual scope lock key
     // off the canonical root, whatever spelling the caller passed.
     let scope = &scope.canonical();
-    let state = desired_state(env, scope, manifest, lock)?;
+    let mut state = desired_state(env, scope, manifest, lock)?;
+    // The gate runs before anything is planned for these items: a blocked
+    // rendering must never reach the op list, and an override it grants has
+    // to ride out on the manifest write this same plan performs.
+    let thresholds = crate::settings::load(env)
+        .map(|settings| settings.safety)
+        .unwrap_or_default();
+    let safety = gate::run(scope, manifest, options, thresholds, &mut state);
+    let state = state;
     let mut drift = Vec::new();
     let mut ops: Vec<PlannedOp> = Vec::new();
     let mut new_lock = Lock {
@@ -145,8 +163,15 @@ pub fn plan_scope(
         let path = manifest::manifest_path(env, scope);
         let mut updated = updated.clone();
         updated.schema = manifest::MANIFEST_SCHEMA;
+        // One write, whatever put it there: skills an agent gained
+        // upstream, a review of findings this run was asked to record, or
+        // both. Naming only one of them would misdescribe the other.
+        let granted = updated.safety_overrides.len() > manifest.safety_overrides.len();
         ops.push(PlannedOp {
-            description: "Add new catalog skills to vstack.toml".into(),
+            description: match granted {
+                true => "Update vstack.toml with the safety findings you accepted".into(),
+                false => "Add new catalog skills to vstack.toml".into(),
+            },
             op: Op::WriteManifest {
                 pre: crate::apply::Pre::observed(&path)?,
                 path,
@@ -227,6 +252,7 @@ pub fn plan_scope(
         set_changes,
         sweepable,
         kept,
+        safety,
     };
     unmanaged_rows(env, scope, manifest, lock, &state.items, &mut report.drift);
     Ok(report)
@@ -287,6 +313,45 @@ pub fn audit(env: &Env, scope: &Scope) -> Result<EngineReport> {
     plan_declared(env, scope, &PlanOptions::default())
 }
 
+/// The other scoring path: the safety of what is on disk in this scope
+/// right now, declared or not. The plan-time path scores content nobody has
+/// installed yet, which is what gates a fresh install; this scores what a
+/// tool would load if it started this second, which is what an audit is
+/// about. Same rules, different bytes.
+pub fn observed_safety(env: &Env, scope: &Scope) -> Result<Vec<ItemSafety>> {
+    let scope = scope.canonical();
+    let settings = crate::settings::load(env)?;
+    let scan = crate::scan::scan_scopes(env, &settings.harness_roots, std::slice::from_ref(&scope));
+    Ok(scan
+        .items
+        .iter()
+        .map(|item| {
+            let input = crate::quality::observe::input_for(item);
+            let content_hash = gate::content_hash(&input);
+            let result = crate::quality::audit(input);
+            let (verdict, reasons) =
+                crate::quality::verdict(&result.findings, &result.safety, settings.safety);
+            ItemSafety {
+                kind: item.kind,
+                name: item.name.clone(),
+                harness: item.harness,
+                scope: item.scope.clone(),
+                safety: result.safety,
+                quality: result.quality,
+                findings: result.findings,
+                skipped: result.skipped,
+                verdict,
+                reasons,
+                content_hash,
+                // An override speaks for an installation a plan is about to
+                // write. What is already on disk is reported as it is.
+                override_state: crate::quality::overrides::OverrideState::Absent,
+            }
+        })
+        .filter(|row| !row.findings.is_empty() || row.verdict != crate::quality::Verdict::Clean)
+        .collect())
+}
+
 /// What a refresh would do: regenerate everything declared, and re-derive
 /// the closure in both directions — a dependency that appeared upstream is
 /// an addition, one that went away leaves an installation nothing needs. The
@@ -320,6 +385,7 @@ fn plan_declared(env: &Env, scope: &Scope, options: &PlanOptions) -> Result<Engi
                 set_changes: Vec::new(),
                 sweepable: Vec::new(),
                 kept: Vec::new(),
+                safety: Vec::new(),
             };
             if matches!(other, ManifestFile::Legacy { .. }) {
                 report

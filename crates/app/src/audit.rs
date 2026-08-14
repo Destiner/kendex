@@ -1,6 +1,6 @@
 use serde::Serialize;
 use specta::Type;
-use vstack_core::engine::{self, DriftRow, ItemWarning, PlanOptions, ops};
+use vstack_core::engine::{self, DriftRow, ItemSafety, ItemWarning, PlanOptions, ops};
 use vstack_core::env::Env;
 use vstack_core::lock::{load as load_lock, lock_path};
 use vstack_core::model::{HarnessId, ItemKind, Scope};
@@ -20,6 +20,10 @@ pub struct AuditView {
     pub plan: Vec<String>,
     pub notes: Vec<String>,
     pub warnings: Vec<ItemWarning>,
+    /// What the safety rules found in the content installed here. Each row
+    /// carries two scores that are never combined: safety, which can hold an
+    /// install back, and quality, which only ever informs.
+    pub safety: Vec<ItemSafety>,
 }
 
 pub(crate) fn view(env: &Env, scope: &Scope) -> Result<AuditView, String> {
@@ -35,6 +39,7 @@ pub(crate) fn view(env: &Env, scope: &Scope) -> Result<AuditView, String> {
             .collect(),
         notes: report.notes,
         warnings: report.warnings,
+        safety: engine::observed_safety(env, scope).map_err(|e| e.to_string())?,
     })
 }
 

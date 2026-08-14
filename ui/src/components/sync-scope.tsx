@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { AuditView, DriftRow } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { SafetyFindings } from "@/components/safety-findings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -108,6 +109,7 @@ export function SyncScopeCard({
             {warning.remediation ? ` — fix: ${warning.remediation}` : ""}
           </p>
         ))}
+        <SafetyFindings rows={view.safety} />
       </CardContent>
       <ConfirmDialog
         open={reviewOpen}

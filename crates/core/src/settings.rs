@@ -20,6 +20,12 @@ pub struct AppSettings {
     pub harness_roots: BTreeMap<String, PathBuf>,
     #[serde(default)]
     pub appearance: Appearance,
+    /// Where the safety score starts warning and stops installing. These
+    /// live here rather than in a manifest on purpose: a manifest travels
+    /// with the repository it describes, and a catalog able to lower the bar
+    /// it is measured against is not being measured.
+    #[serde(default)]
+    pub safety: crate::quality::Thresholds,
 }
 
 impl Default for AppSettings {
@@ -29,6 +35,7 @@ impl Default for AppSettings {
             projects: Vec::new(),
             harness_roots: BTreeMap::new(),
             appearance: Appearance::System,
+            safety: crate::quality::Thresholds::default(),
         }
     }
 }

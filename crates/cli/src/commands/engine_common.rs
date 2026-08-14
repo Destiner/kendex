@@ -31,6 +31,7 @@ pub fn print_report(report: &EngineReport) {
             say(&format!("  fix: {fix}"));
         }
     }
+    print_safety(report);
     if report.plan.is_empty() {
         say("nothing to do");
         return;
@@ -38,6 +39,45 @@ pub fn print_report(report: &EngineReport) {
     say("plan:");
     for op in &report.plan.ops {
         say(&format!("  - {}", op.description));
+    }
+}
+
+/// What the safety rules found in the content this plan would write. Held
+/// back items come first: they are the ones nothing will install.
+pub fn print_safety(report: &EngineReport) {
+    let mut rows: Vec<&vstack_core::engine::ItemSafety> = report
+        .safety
+        .iter()
+        .filter(|row| !row.findings.is_empty())
+        .collect();
+    rows.sort_by_key(|row| (!row.blocked(), row.safety.score));
+    for row in rows {
+        let held = match row.blocked() {
+            true => " — held back, nothing will be installed",
+            false => "",
+        };
+        say(&format!(
+            "safety: {} {} for {} scores {}/100{held}",
+            row.kind.name(),
+            row.name,
+            row.harness.display_name(),
+            row.safety.score
+        ));
+        for finding in &row.findings {
+            say(&format!(
+                "  [{}] {}: {}",
+                finding.severity.name(),
+                finding.location,
+                finding.message
+            ));
+            say(&format!("    fix: {}", finding.remediation));
+        }
+        if row.blocked() {
+            say(&format!(
+                "    to install it anyway, review the findings and re-run with --allow-unsafe {}",
+                row.name
+            ));
+        }
     }
 }
 

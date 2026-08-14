@@ -1,0 +1,81 @@
+import type { ItemSafety, Severity } from "@/bindings";
+import { Badge } from "@/components/ui/badge";
+import {
+  type BadgeVariant,
+  kindLabel,
+  SEVERITY_LABELS,
+  toolName,
+  VERDICT_LABELS,
+} from "@/lib/labels";
+
+const SEVERITY_BADGES: Record<Severity, BadgeVariant> = {
+  critical: "destructive",
+  high: "destructive",
+  medium: "secondary",
+  low: "outline",
+};
+
+// Two scores, side by side and never combined: one says whether the
+// content is dangerous, the other whether it is well made, and only the
+// first one can hold an install back.
+function Scores({ row }: { row: ItemSafety }) {
+  return (
+    <span className="text-muted-foreground">
+      Safety {row.safety.score}/100
+      {row.quality ? ` · Quality ${row.quality.score}/100` : ""}
+    </span>
+  );
+}
+
+export function SafetyFindings({ rows }: { rows: ItemSafety[] }) {
+  const worth = rows.filter(
+    (row) => row.verdict !== "clean" || row.findings.length > 0,
+  );
+  if (worth.length === 0) return null;
+
+  return (
+    <div className="space-y-3 border-t pt-3">
+      {worth.map((row) => (
+        <div
+          key={`${row.kind}:${row.name}:${row.harness}`}
+          className="space-y-1 text-sm"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant={row.verdict === "block" ? "destructive" : "secondary"}
+            >
+              {VERDICT_LABELS[row.verdict]}
+            </Badge>
+            <span className="font-semibold">{row.name}</span>
+            <span className="text-muted-foreground">
+              {kindLabel(row.kind)} · {toolName(row.harness)}
+            </span>
+            <Scores row={row} />
+          </div>
+          {row.override.state === "stale" ? (
+            <p className="text-xs text-muted-foreground">
+              You accepted this before, but {row.override.why}.
+            </p>
+          ) : null}
+          {row.findings.map((finding) => (
+            <div
+              key={`${finding.rule}:${finding.location}:${finding.message}`}
+              className="flex flex-wrap items-start gap-2 text-xs"
+            >
+              <Badge variant={SEVERITY_BADGES[finding.severity]}>
+                {SEVERITY_LABELS[finding.severity]}
+              </Badge>
+              <span className="min-w-0 flex-1 break-words text-muted-foreground">
+                {finding.message}
+                <span className="block break-all font-mono">
+                  {finding.location}
+                </span>
+                <span className="block">Fix: {finding.remediation}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}

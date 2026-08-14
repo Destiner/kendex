@@ -10,7 +10,7 @@ import { ACME, API, GLOBAL, proj } from "./fixture-scopes";
 export function views(): AuditView[] {
   const acme = proj(ACME);
   return [
-    { scope: GLOBAL, drift: [], plan: [], notes: [], warnings: [] },
+    { scope: GLOBAL, drift: [], plan: [], notes: [], warnings: [], safety: [] },
     {
       scope: acme,
       drift: [
@@ -54,8 +54,16 @@ export function views(): AuditView[] {
       ],
       notes: [],
       warnings: [],
+      safety: [],
     },
-    { scope: proj(API), drift: [], plan: [], notes: [], warnings: [] },
+    {
+      scope: proj(API),
+      drift: [],
+      plan: [],
+      notes: [],
+      warnings: [],
+      safety: [],
+    },
   ];
 }
 

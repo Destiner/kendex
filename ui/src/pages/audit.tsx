@@ -24,7 +24,8 @@ export function AuditPage() {
     (view) =>
       view.drift.length > 0 ||
       view.notes.length > 0 ||
-      view.warnings.length > 0,
+      view.warnings.length > 0 ||
+      view.safety.length > 0,
   );
   const allClean = !auditing && active.length === 0;
 

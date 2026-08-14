@@ -121,6 +121,12 @@ pub fn validate_skill_tree(
     findings
 }
 
+/// Whether this harness's loader can hold an item under this name — the
+/// one structural check an author can make before anything is rendered.
+pub fn validate_name(harness: HarnessId, name: &str) -> Vec<Finding> {
+    name_findings(harness, name)
+}
+
 fn name_findings(harness: HarnessId, name: &str) -> Vec<Finding> {
     match format_caps(harness).name_rule {
         NameRule::Any => segment_findings(harness, name),

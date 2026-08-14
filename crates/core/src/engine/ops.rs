@@ -96,6 +96,7 @@ pub fn remove(env: &Env, scope: &Scope, names: &[String], sweep: bool) -> Result
             removal_filter: Some(removing),
             sweep_unneeded: sweep,
             uninstalled_bundles: bundles,
+            ..PlanOptions::default()
         },
     )?;
     report

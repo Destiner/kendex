@@ -30,6 +30,7 @@ const TOP_LEVEL: &[&str] = &[
     "pi-extensions",
     "bundles",
     "suppressed",
+    "safety-overrides",
     "optional-dependencies",
     "agent-skills",
     "agent-launch-instructions",

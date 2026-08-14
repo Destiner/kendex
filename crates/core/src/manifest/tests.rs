@@ -1,4 +1,5 @@
 use super::*;
+use crate::error::CoreError;
 use crate::model::ItemKind;
 
 #[test]

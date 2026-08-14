@@ -2,6 +2,7 @@ pub mod add;
 pub mod adopt;
 pub mod apply_cmd;
 pub mod check;
+pub mod check_catalog;
 pub mod engine_common;
 pub mod import;
 pub mod init;

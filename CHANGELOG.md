@@ -8,6 +8,35 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- Everything you install is now read before it lands, and again after.
+  Two separate scores come out of it, and they are never mixed together.
+  The safety score answers "could this hurt me" — content that tells the
+  model to ignore its instructions, a line that downloads a script and
+  runs it, a command that reads your SSH key and sends it somewhere, a
+  real credential left in a file, a server launched from a package name
+  anyone could have registered. The quality score answers "is this well
+  written" — does it say when to use it, is the detail behind a pointer
+  instead of all in the front door, would it read the same on another
+  tool. Only safety can hold anything back; quality is there to inform.
+  Every finding names the file and line, says what it found in plain
+  words, and comes with the fix. Examples inside code blocks are read too
+  — the model reads them either way — but they count for less than a live
+  instruction, except for credentials, which count the same wherever they
+  are. A leaked key is never repeated anywhere: you get a fingerprint,
+  enough to tell two leaks apart and useless to anyone who sees it. Text
+  carrying hidden characters, or letters chosen to look like other
+  letters, is reported as such — content that needs decoding to look
+  clean has told you something.
+- `vstack check --catalog <dir>` validates a catalog the way an install
+  would, and exits non-zero when something is wrong — so a repository can
+  find out in its own CI rather than in someone else's install preview.
+  It checks both halves: whether each tool's loader could actually hold
+  the item (a name it will not accept, a SKILL.md that disagrees with its
+  own folder, a body past the tightest size cap) and whether the content
+  is safe. `--strict` also fails on advice. A reusable GitHub Actions
+  workflow ships with it — catalog repositories point one line at
+  `.github/workflows/catalog-check.yml` and get the gate. What `vstack
+  init` scaffolds passes it on the first run.
 - Install a whole set at once. A catalog can offer named bundles — a
   starter kit, a review workflow, the tools one team shares — and
   installing one brings in every agent, skill, command and hook it
@@ -38,6 +67,20 @@ changes carry a **Breaking** call-out with their migration note inline.
   and those reasons drive removal decisions. Migration: existing
   install records gain a single "asked for directly" reason, the only
   safe reading.
+- **Breaking:** installing can now be refused. Anything the safety check
+  rates as critical is held back on its own, and so is anything whose
+  overall score falls below 60; between 60 and 80 it installs and warns.
+  A held-back item shows up the way any other conflict does — it appears
+  in the preview with what was found and why, and nothing about it is
+  written. Migration: the two thresholds are yours to set in app
+  settings, and nothing else changes for content that passes. If you have
+  read the findings and want it anyway, `vstack apply --allow-unsafe
+  <name>` installs it and records the review in your `vstack.toml` — but
+  that record is bound to the exact content, the exact rules, and the
+  exact problems you were shown. Change any of them and it stops
+  applying and the item is held back again. The record lives with the
+  project rather than in a global list precisely so it cannot quietly
+  become a permanent exemption.
 - **Breaking:** `vstack refresh` no longer changes what is installed
   without asking. Regenerating what is already installed stays
   automatic; anything being added or removed (including dependencies a
