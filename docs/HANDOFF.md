@@ -61,24 +61,64 @@ semantic palette. That flat grayscale is the "pure black and white" complaint.
 The pages and the 16 shadcn components in `ui/src/components/ui/` are otherwise
 stock and inconsistent in spacing, borders, elevation, focus, and radius.
 
-### The target
+### The target — the owner's Vercel reference
 
-Vercel's dashboard aesthetic: **ultra-clean, generous whitespace, hairline
-borders, subtle elevation (not heavy shadows), high-contrast type, one confident
-accent, and crisp semantic colors used sparingly.** Concretely:
+**The owner supplied four Vercel dashboard screenshots as the explicit bar.**
+They live at `/home/method/dev/.vstack-design-refs/` (outside the repo, so not
+committed): `vercel-deployments.png`, `vercel-env-vars.png`, `vercel-domains.png`,
+`vercel-observability.png`. **Open them and study them before touching a token.**
+(Ignore the bright-blue rectangle around one sidebar item in two shots — that is
+a screenshot focus-ring artifact, not a design element to copy.)
 
-- **Add a brand accent hue** — apply it to `--primary`, `--accent`, `--ring`,
-  and interactive/hover/focus states. A refined blue is the Vercel-native
-  choice; pick and commit to one, tuned for both themes.
-- **Add a semantic palette** — good / warning / critical / info tokens, mapped
-  to the severity vocabulary already in `ui/src/lib/labels.ts`
-  (`SEVERITY_LABELS`, `VERDICT_LABELS`, `STATE_BADGES`). The safety and drift
-  badges should read at a glance by color, not just text.
-- **Neutrals with a slight cool bias**, not pure `0`-chroma grey — a chosen
-  neutral reads considered.
-- Keep **light / dark / system** — the three-state theme is already wired in
-  `index.css` (`:root` = light, `.dark` = dark, `@theme inline` maps tokens to
-  Tailwind). Redo the palette in all three consistently; check contrast.
+What those screens actually do, extracted for you to match:
+
+- **Ground is true near-black, not grey.** Dark theme sits on ~`oklch(0.10–0.12)`,
+  effectively `#0a0a0a`, not the current `oklch(0.145)` washed grey-black. The
+  sidebar and content share the ground, separated only by a **hairline border at
+  ~8–12% white** — barely visible, never a hard line.
+- **Color is present but rationed.** The dashboard is mostly neutral; color
+  appears only where it carries meaning:
+  - **Status dots**: green = ready/good, red = error/critical, amber = warning —
+    small filled dots beside the label, plus the label text in the same hue.
+  - **A filled blue "Production/primary" pill** (with an up-arrow icon) vs. a
+    neutral outline "Preview" pill. Blue is the accent: active nav, links,
+    primary emphasis.
+  - **Amber "Needs Attention" pills** — dark amber fill, amber text — for
+    warnings. Maps directly onto our safety `warning` severity.
+  - Charts use **categorical line colors** (blue / orange / green) on a very
+    faint grid with an emphasized just-now endpoint.
+- **Buttons have a clear hierarchy.** The one primary action is a **high-contrast
+  solid** (white on dark, e.g. "Buy"); secondaries are **dark outline** pills
+  ("Connect External", "Transfer In"). Matches our one-primary-action rule.
+- **Type hierarchy is crisp.** Large bold near-white page titles; a muted grey
+  subtitle line; tiny **uppercase letter-spaced section labels** in the sidebar
+  (`COMPUTE`, `CDN`, `SERVICES`) separating grouped items; monospace for hashes
+  and identifiers.
+- **Density and rhythm.** Generous row height, hairline dividers between rows,
+  right-aligned metadata + avatar, consistent medium radius (~8px) on every
+  pill / input / card / button. Cards (Observability) are a hair lighter than the
+  ground, rounded, with a title + big number + chart and a chevron affordance.
+- **Inputs**: dark fill, subtle border, rounded, with a right-aligned keyboard
+  hint chip (`/`, `F`). Filter dropdowns are equal-height dark pills with a
+  chevron.
+
+### Translate that into our tokens
+
+- **Add a brand accent hue** — a refined Vercel-style blue — on `--primary`,
+  `--accent`, `--ring`, and interactive/hover/focus states, tuned for both
+  themes.
+- **Add a semantic palette** — `good` / `warning` / `critical` / `info` tokens,
+  wired to the vocabulary already in `ui/src/lib/labels.ts` (`SEVERITY_LABELS`,
+  `VERDICT_LABELS`, `STATE_BADGES`), so the safety/drift badges read by color at
+  a glance (green/amber/red/blue dots + pills), exactly like Vercel's status
+  column.
+- **Deepen and cool the neutrals** — a true near-black dark ground and
+  slightly-cool-biased greys, not pure `0`-chroma; hairline borders at low
+  opacity.
+- Keep **light / dark / system** — the three-state theme is wired in `index.css`
+  (`:root` = light, `.dark` = dark, `@theme inline` maps tokens to Tailwind).
+  Redo the palette in all three consistently; check contrast. Vercel's reference
+  is dark, but light must stay first-class.
 
 ### Where the work lives
 
@@ -93,18 +133,34 @@ accent, and crisp semantic colors used sparingly.** Concretely:
   `settings.tsx`, `sidebar.tsx`, `components/page-header.tsx`,
   `components/safety-findings.tsx`, `components/sync-scope.tsx`.
 
-### Method
+### Method — drive the real app in a browser and compare against Vercel
 
-- Iterate in the mock: `cd ui && VITE_MOCK=1 npx vite --port 5273`. The mock
-  swaps the Tauri bridge for in-memory data (`src/dev/mock*.ts`,
-  `src/dev/fixture-declared.ts`). Drive it with the **agent-browser** skill;
-  screenshot BEFORE/AFTER each page to a scratchpad dir **outside the repo**
-  (guard has a 200 KB file ceiling — keep images out of the tree).
-- The mock fixture already includes a blocked-safety item, so Home's "held back
-  for safety" row and the Review page's findings render live (verify they show
-  color once the semantic palette lands).
-- **Iterate until it genuinely reads as a polished consumer product, not until
-  it passes.** The owner is judging against Vercel; match the bar.
+**This is not a fire-and-forget edit. Load the app in a browser and actively,
+repeatedly compare each screen side-by-side against the Vercel references, the
+way a designer would.** Concretely, on every iteration:
+
+1. **Run the front end in a browser you can drive.** The app is a Tauri front end
+   (React), so use the mock which serves it over plain HTTP for Chrome:
+   `cd ui && VITE_MOCK=1 npx vite --port 5273`, then drive it with the
+   **agent-browser** skill (Chrome via CDP). The mock swaps the Tauri bridge for
+   in-memory data (`src/dev/mock*.ts`, `src/dev/fixture-declared.ts`) and already
+   includes a blocked-safety item so Home's "held back for safety" row and the
+   Review page's findings render with real color. (The real Tauri window itself
+   is WebKit and hard to drive headless — do the visual iteration against the
+   Vite mock in Chrome; save the real-WebKit pass for Task 2.)
+2. **Screenshot every page** to a dir **outside the repo** (guard has a 200 KB
+   file ceiling — keep images out of the tree), e.g.
+   `/var/tmp/.../scratchpad/ui-shots/`.
+3. **Open your screenshot and the matching Vercel reference at
+   `/home/method/dev/.vstack-design-refs/` side by side and name the specific
+   gaps** — ground too grey? borders too hard? no color on the status badges?
+   inconsistent radius/row-height? weak type hierarchy? primary button not
+   distinct? Fix the token or component, re-run, re-compare. **Loop until the gap
+   to Vercel is closed, not until the build passes.** The owner is judging
+   against these exact screens.
+4. Walk **every** page this way — Home, Review & apply, Library (Installed +
+   Add), Tools & Projects, Customize, Settings — plus the shadcn primitives that
+   appear on them (badge, button, card, input, select, tabs, dialog, table).
 - Keep the guarantees intact: vocabulary stays in `labels.ts` (no eng-speak —
   already audited clean); exactly one primary action per view; confirm-with-
   preview before any file change.
@@ -174,6 +230,7 @@ Delete this handoff file in that same closing commit.
 | `docs/RELEASING.md` | Release mechanics + user gates |
 | `.claude/skills/app-deploy/SKILL.md` | Release step list |
 | **`ui/src/index.css`** | **Design tokens — the palette to redo (Task 1)** |
+| **`/home/method/dev/.vstack-design-refs/`** | **Owner's four Vercel reference screenshots (Task 1 target; outside the repo)** |
 | `ui/src/lib/labels.ts` | User-facing vocabulary + severity/verdict maps |
 | `ui/src/dev/` | Mock data for the `VITE_MOCK=1` browser loop |
 | `tools/guard` | The gate — read it |
