@@ -47,9 +47,14 @@
 >   both themes, status dots + tinted pills, underline tabs, mono
 >   identifiers, browser-verified page by page against the owner's four
 >   Vercel references (before/after shots outside the tree).
->   REMAINING: real-app Tauri walkthrough — the flows are covered by
->   the 530-test Rust suite; seeing them in the real window is best done
->   interactively.
+>   Real-app Tauri walkthrough DONE (fc7e573): drove the real window on a
+>   headless X display against a sandboxed home — adoption, preview→apply,
+>   v0.1→v0.2 migration, project add + folder scan, remove-to-trash,
+>   scope-busy error, all verified on disk. It caught a real bug: the
+>   app/CLI apply path planned from a schema-normalized manifest and
+>   silently skipped the promised "Upgrade vstack.toml" op — fixed
+>   both-sides via engine::plan_apply, plus byte-faithful schema-line
+>   rewrite hardening; adversarial review folded in.
 > - Phase 7 release: repo is release-READY (ARCHITECTURE + per-adapter
 >   docs carry every durable decision; CHANGELOG Unreleased carries all
 >   12 breaking-register rows; suite green). The release ACT is
