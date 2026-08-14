@@ -38,14 +38,14 @@ export function ScopeCard({
               onKindClick ? (
                 <Badge
                   key={kind}
-                  asChild
                   variant="outline"
                   className="cursor-pointer hover:bg-accent"
-                >
-                  <button type="button" onClick={() => onKindClick(kind)}>
-                    {count} {kindLabel(kind, count)}
-                  </button>
-                </Badge>
+                  render={
+                    <button type="button" onClick={() => onKindClick(kind)}>
+                      {count} {kindLabel(kind, count)}
+                    </button>
+                  }
+                />
               ) : (
                 <Badge key={kind} variant="outline">
                   {count} {kindLabel(kind, count)}

@@ -49,20 +49,20 @@ function ProjectRow({
           counts.map(([kind, count]) => (
             <Badge
               key={kind}
-              asChild
               variant="outline"
               className="cursor-pointer hover:bg-accent"
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  setScope({ project: root });
-                  goToLibrary({ kind });
-                }}
-              >
-                {count} {kindLabel(kind, count)}
-              </button>
-            </Badge>
+              render={
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScope({ project: root });
+                    goToLibrary({ kind });
+                  }}
+                >
+                  {count} {kindLabel(kind, count)}
+                </button>
+              }
+            />
           ))
         )}
         <Button

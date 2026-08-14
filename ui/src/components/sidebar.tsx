@@ -88,18 +88,27 @@ export function Sidebar() {
           </p>
           <Select
             value={scopeValue}
-            onValueChange={(value) =>
+            onValueChange={(value) => {
+              if (value === null) return;
               setScope(
                 value === "all"
                   ? "all"
                   : value === "global"
                     ? "global"
                     : { project: value },
-              )
-            }
+              );
+            }}
           >
             <SelectTrigger className="w-full" size="sm">
-              <SelectValue />
+              <SelectValue>
+                {(value: string) =>
+                  value === "all"
+                    ? "Everything"
+                    : value === "global"
+                      ? "Personal — all projects"
+                      : scopeName({ scope: "project", root: value })
+                }
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Everything</SelectItem>

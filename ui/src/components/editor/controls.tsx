@@ -35,7 +35,12 @@ export function AddEntry({
 }) {
   if (options.length === 0) return null;
   return (
-    <Select value="" onValueChange={onAdd}>
+    <Select
+      value=""
+      onValueChange={(value) => {
+        if (value !== null) onAdd(value);
+      }}
+    >
       <SelectTrigger size="sm" className="w-64">
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
@@ -79,6 +84,11 @@ export function CommitInput({
 }
 
 const TRI_STATE = { true: true, false: false } as const;
+const TRI_STATE_LABELS = {
+  unset: "Not set",
+  true: "True",
+  false: "False",
+} as const;
 
 export function TriStateSelect({
   label,
@@ -92,12 +102,18 @@ export function TriStateSelect({
   return (
     <Select
       value={value === null ? "unset" : String(value)}
-      onValueChange={(next) =>
-        onChange(next === "unset" ? null : TRI_STATE[next as "true" | "false"])
-      }
+      onValueChange={(next) => {
+        if (next === null || next === "unset") {
+          onChange(null);
+          return;
+        }
+        onChange(TRI_STATE[next as "true" | "false"]);
+      }}
     >
       <SelectTrigger size="sm" className="w-full" aria-label={label}>
-        <SelectValue />
+        <SelectValue>
+          {(next: "unset" | "true" | "false") => TRI_STATE_LABELS[next]}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="unset">Not set</SelectItem>

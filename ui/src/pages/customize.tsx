@@ -58,16 +58,19 @@ export function CustomizePage() {
             <span className="text-sm text-muted-foreground">Editing</span>
             <Select
               value={scope.scope === "global" ? "global" : scope.root}
-              onValueChange={(value) =>
+              onValueChange={(value) => {
+                if (value === null) return;
                 void setScope(
                   value === "global"
                     ? { scope: "global" }
                     : { scope: "project", root: value },
-                )
-              }
+                );
+              }}
             >
               <SelectTrigger className="w-80" size="sm">
-                <SelectValue />
+                <SelectValue>
+                  {(value: string) => (value === "global" ? "Global" : value)}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="global">Global</SelectItem>

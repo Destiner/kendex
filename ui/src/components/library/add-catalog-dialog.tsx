@@ -64,9 +64,17 @@ export function AddCatalogDialog({
         >
           <div className="space-y-1.5">
             <Label htmlFor="catalog-target">Add to</Label>
-            <Select value={targetScope} onValueChange={setTargetScope}>
+            <Select
+              value={targetScope}
+              onValueChange={(value) => setTargetScope(value ?? targetScope)}
+            >
               <SelectTrigger id="catalog-target" className="w-full">
-                <SelectValue />
+                <SelectValue>
+                  {(value: string) => {
+                    const target = scopes.find((s) => scopeLabel(s) === value);
+                    return target ? scopeName(target) : value;
+                  }}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {scopes.map((scope) => (

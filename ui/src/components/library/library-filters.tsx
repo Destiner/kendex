@@ -61,9 +61,16 @@ export function LibraryFilters({
             /
           </kbd>
         </div>
-        <Select value={kind} onValueChange={onKindChange}>
+        <Select
+          value={kind}
+          onValueChange={(value) => onKindChange(value ?? kind)}
+        >
           <SelectTrigger className="w-40">
-            <SelectValue />
+            <SelectValue>
+              {(value: string) =>
+                value === "any" ? "All types" : kindLabel(value as ItemKind, 2)
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="any">All types</SelectItem>
@@ -74,9 +81,16 @@ export function LibraryFilters({
             ))}
           </SelectContent>
         </Select>
-        <Select value={harness} onValueChange={onHarnessChange}>
+        <Select
+          value={harness}
+          onValueChange={(value) => onHarnessChange(value ?? harness)}
+        >
           <SelectTrigger className="w-40">
-            <SelectValue />
+            <SelectValue>
+              {(value: string) =>
+                value === "any" ? "All tools" : toolName(value as HarnessId)
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="any">All tools</SelectItem>

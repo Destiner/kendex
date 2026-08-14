@@ -252,6 +252,14 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Changed
 
+- The building blocks behind every control — menus, dialogs, switches,
+  tabs, tooltips — were swapped for Base UI, their maintained successor.
+  Nothing looks or behaves differently day to day; dropdown labels,
+  keyboard navigation, and focus behavior were verified page by page
+  against the previous build. The one deliberate change: arrowing
+  through tabs now moves focus without switching the tab until you press
+  Enter, which matches how tabs work across current apps.
+
 - The app now summarizes instead of listing. Review & apply used to repeat
   an identical warning under every hook it touched — seven hooks sharing
   one settings file meant seven copies — and gave every clean plugin its

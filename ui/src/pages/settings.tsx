@@ -33,6 +33,18 @@ const SAFETY_LEVELS = {
 
 type SafetyLevel = keyof typeof SAFETY_LEVELS;
 
+const THEME_LABELS: Record<Appearance, string> = {
+  system: "System",
+  light: "Light",
+  dark: "Dark",
+};
+
+const SAFETY_LABELS: Record<SafetyLevel, string> = {
+  strict: "Strict",
+  balanced: "Balanced",
+  lenient: "Lenient",
+};
+
 function safetyLevelOf(warn: number, block: number): SafetyLevel | "custom" {
   for (const [name, t] of Object.entries(SAFETY_LEVELS)) {
     if (t["warn-below"] === warn && t["block-below"] === block)
@@ -74,7 +86,9 @@ export function SettingsPage() {
                   }
                 >
                   <SelectTrigger className="w-36">
-                    <SelectValue />
+                    <SelectValue>
+                      {(value: Appearance) => THEME_LABELS[value]}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="system">System</SelectItem>
@@ -109,7 +123,9 @@ export function SettingsPage() {
                   }}
                 >
                   <SelectTrigger className="w-36 shrink-0">
-                    <SelectValue />
+                    <SelectValue>
+                      {(value: SafetyLevel) => SAFETY_LABELS[value]}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="strict">Strict</SelectItem>
