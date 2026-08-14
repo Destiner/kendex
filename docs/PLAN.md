@@ -30,8 +30,14 @@
 >   (catalog + marketplace) with member-of uninstall semantics and
 >   hold-backs. Adversarial review #6 folded (offline-removal blocker
 >   fixed both-sides).
-> - Phase 5 ⏳ next: quality gates + scoring (decision table 2; the
->   structural validators already landed in Phase 1).
+> - Phase 5 ⏳: quality/safety gates landed (47b40fc — 12 rules,
+>   deobfuscation, two scoring paths, Critical-blocks gate, fully-bound
+>   overrides, vstack check + CI workflow + opt-in real-CLI smoke).
+>   Adversarial review #7 running over 1db4011..47b40fc (gate is a
+>   security control — reviewing evasion, redaction leaks, override
+>   soundness, and false-positive blast radius on the real fleet). Fold
+>   findings, then Phase 6 (UI — owner IA approval gate FIRST), Phase 7
+>   release.
 > - Standing: subagent reports may arrive only as idle notifications —
 >   recover them from the session's `subagents/*.jsonl` (user CLAUDE.md).
 >   Engine/render changes get adversarial review before merge. Commits
