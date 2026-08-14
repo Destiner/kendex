@@ -35,16 +35,15 @@
 >   overrides, vstack check + CI workflow + opt-in real-CLI smoke).
 >   Adversarial review #7 folded (8 findings, 4 blockers — gate
 >   recalibrated; whole real fleet passes with zero false blocks).
-> - Phase 6 ⏳ OWNER-GATED. Vocabulary audit passed (labels.ts clean,
->   no eng-speak in visible text). The IA proposal is delivered as an
->   artifact for the owner: recommends merging Library+Catalogs (bundles
->   as the headline add path), renaming Sync -> Review & apply with
->   safety findings inline, merging Tools+Projects, recasting Home as
->   triage. **Held for owner approval before the restructure + visual
->   pass** -- the plan's one gate, not satisfiable autonomously. When
->   approved: cheap-model implementation with Chromium iteration,
->   one-primary-action check, real-app walkthrough.
-> - Phase 7 prereqs advancing in parallel (per-adapter docs from the
+> - Phase 6 ⏳ in flight. IA proposal delivered to owner (artifact +
+>   file); per the autonomous "move past blockers" directive the main
+>   loop is IMPLEMENTING the recommended IA (8 rooms -> 5: Home as
+>   triage, Sync -> Review & apply with safety inline, Library+Catalogs
+>   merged with bundles as the add path, Tools+Projects merged, Customize
+>   + Settings kept) via a cheap-model UI agent iterating in the mock
+>   (VITE_MOCK=1). Owner adjusts from the committed result. Vocabulary
+>   audit already passed. Real-app (Tauri) walkthrough after the mock
+>   pass. > - Phase 7 prereqs advancing in parallel (per-adapter docs from the
 >   research). The release itself is owner-gated (signing keys,
 >   publishing, real-repo migration -- see the release-state memory) and
 >   waits on Phase 6.
