@@ -118,3 +118,60 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Rendered-markdown preview (SKILL.md etc.) — no typography plugin in this
+ * project, so the handful of tags marked actually emits get their own
+ * light styling here rather than pulling one in for a single use site. */
+@layer components {
+  .prose-preview :where(h1, h2, h3, h4) {
+    @apply mt-4 mb-2 font-semibold first:mt-0;
+  }
+  .prose-preview h1 {
+    @apply text-lg;
+  }
+  .prose-preview h2 {
+    @apply text-base;
+  }
+  .prose-preview :where(h3, h4) {
+    @apply text-sm;
+  }
+  .prose-preview p {
+    @apply my-2 leading-relaxed;
+  }
+  .prose-preview :where(ul, ol) {
+    @apply my-2 pl-5;
+  }
+  .prose-preview ul {
+    @apply list-disc;
+  }
+  .prose-preview ol {
+    @apply list-decimal;
+  }
+  .prose-preview li {
+    @apply my-0.5;
+  }
+  .prose-preview a {
+    @apply text-primary underline underline-offset-2;
+  }
+  .prose-preview code {
+    @apply rounded bg-muted px-1 py-0.5 font-mono text-[0.85em];
+  }
+  .prose-preview pre {
+    @apply my-2 overflow-x-auto rounded-md border bg-muted/30 p-3;
+  }
+  .prose-preview pre code {
+    @apply bg-transparent p-0;
+  }
+  .prose-preview blockquote {
+    @apply my-2 border-l-2 pl-3 text-muted-foreground;
+  }
+  .prose-preview hr {
+    @apply my-4 border-border;
+  }
+  .prose-preview table {
+    @apply my-2 w-full border-collapse text-xs;
+  }
+  .prose-preview :where(th, td) {
+    @apply border px-2 py-1 text-left;
+  }
+}

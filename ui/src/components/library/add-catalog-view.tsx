@@ -1,6 +1,7 @@
 import { Plus, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Scope } from "@/bindings";
+import { SectionLabel } from "@/components/card-section";
 import { CatalogScopeGroup } from "@/components/catalog-scope";
 import { AddCatalogDialog } from "@/components/library/add-catalog-dialog";
 import { BundleGallery } from "@/components/library/bundle-gallery";
@@ -39,7 +40,7 @@ export function AddCatalogView() {
   const hasBundles = bundles.length > 0;
 
   return (
-    <div className="space-y-6 p-8">
+    <div className="mx-auto w-full max-w-5xl space-y-6 p-8">
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {warnings.map((w) => (
         <p key={w} className="text-sm text-muted-foreground">
@@ -50,7 +51,7 @@ export function AddCatalogView() {
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-medium">Bundles</h2>
+            <SectionLabel>Bundles</SectionLabel>
             <p className="text-sm text-muted-foreground">
               Curated sets from your catalogs — install everything in one go.
             </p>
@@ -84,7 +85,7 @@ export function AddCatalogView() {
 
       <section className="space-y-3 border-t pt-6">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-medium">Catalogs</h2>
+          <SectionLabel>Catalogs</SectionLabel>
           <Button onClick={() => setAddOpen(true)}>
             <Plus className="size-4" /> Add a catalog
           </Button>

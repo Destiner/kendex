@@ -82,8 +82,17 @@ function CatalogRow({
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
         <GitBranch className="size-4 shrink-0 text-muted-foreground" />
         <span className="font-semibold">{row.name}</span>
-        <span className="break-all text-muted-foreground">{row.reference}</span>
-        {row.head ? <Badge variant="outline">@{row.head}</Badge> : null}
+        {/* Reference is a git ref (branch, tag, or a commit id someone
+            pinned) — data, not a description, so it reads as a mono badge
+            rather than the same prose line an item's description gets. */}
+        <Badge variant="outline" className="break-all font-mono">
+          {row.reference}
+        </Badge>
+        {row.head ? (
+          <Badge variant="outline" className="font-mono">
+            @{row.head}
+          </Badge>
+        ) : null}
         {row.enabled ? null : <Badge variant="secondary">Off</Badge>}
         <span className="text-muted-foreground">
           {stillInUse

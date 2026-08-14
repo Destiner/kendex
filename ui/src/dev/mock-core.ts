@@ -19,11 +19,20 @@ export const coreHandlers: Record<string, Handler> = {
     kind: ItemKind;
     name: string;
     harness: HarnessId;
-  }) => ({
-    path: `~/.claude/${kind}s/${name}${kind === "skill" ? "/SKILL.md" : ".md"}`,
-    content: `---\nname: ${name}\ndescription: A mock ${kind} for preview.\n---\n\nThis is placeholder content for **${name}**.\n`,
-    truncated: false,
-  }),
+  }) =>
+    // Hooks preview as a shell script so the mono code path is exercised
+    // in the mock, not only the markdown one.
+    kind === "hook"
+      ? {
+          path: `~/.claude/hooks/${name}.sh`,
+          content: `#!/usr/bin/env bash\n# ${name} — mock hook body\nset -euo pipefail\necho "hook ${name} ran"\n`,
+          truncated: false,
+        }
+      : {
+          path: `~/.claude/${kind}s/${name}${kind === "skill" ? "/SKILL.md" : ".md"}`,
+          content: `---\nname: ${name}\ndescription: A mock ${kind} for preview.\n---\n\nThis is placeholder content for **${name}**.\n`,
+          truncated: false,
+        },
   scan_machine: () => ({
     harnesses: store.state.harnesses,
     items: store.state.items,

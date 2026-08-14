@@ -58,6 +58,8 @@ export interface ItemGroup {
   harnesses: string[];
   /** True when several harnesses read the same physical artifact. */
   shared: boolean;
+  /** Most recent installation mtime, or null when none of them have one. */
+  modifiedAt: number | null;
 }
 
 export function groupItems(items: ObservedItem[]): ItemGroup[] {
@@ -74,6 +76,7 @@ export function groupItems(items: ObservedItem[]): ItemGroup[] {
         installations: [],
         harnesses: [],
         shared: false,
+        modifiedAt: null,
       };
       groups.set(key, group);
     }
@@ -90,8 +93,22 @@ export function groupItems(items: ObservedItem[]): ItemGroup[] {
       byPath.set(install.path, set);
     }
     group.shared = [...byPath.values()].some((harnesses) => harnesses.size > 1);
+    const times = group.installations
+      .map((i) => i.modifiedAt)
+      .filter((t): t is number => t != null);
+    group.modifiedAt = times.length > 0 ? Math.max(...times) : null;
   }
   return [...groups.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/** Every distinct scope a group's installations live in, in first-seen order. */
+export function groupScopes(group: ItemGroup): Scope[] {
+  const seen = new Map<string, Scope>();
+  for (const install of group.installations) {
+    const key = scopeLabel(install.scope);
+    if (!seen.has(key)) seen.set(key, install.scope);
+  }
+  return [...seen.values()];
 }
 
 export function countByKind(items: ObservedItem[]): Map<ItemKind, number> {

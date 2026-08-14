@@ -48,6 +48,13 @@ function item(
 const GH = "Work with GitHub: branches, pull requests, releases";
 const ORCH = "Coordinates multi-step work across other agents";
 
+// A spread of ages so the Library table's "Updated" column has something
+// to show beyond "—" — real mtimes, just picked for variety here.
+const NOW = Math.floor(Date.now() / 1000);
+const MINUTES_AGO = (n: number) => NOW - n * 60;
+const HOURS_AGO = (n: number) => NOW - n * 3600;
+const DAYS_AGO = (n: number) => NOW - n * 86400;
+
 export function harnesses(): DetectedHarness[] {
   return [
     { harness: "claude", root: "~/.claude", version: "2.1.34" },
@@ -65,7 +72,11 @@ export function items(): ObservedItem[] {
       "claude",
       proj(ACME),
       `${ACME}/.claude/skills/github`,
-      { fileState: link(`${ACME}/.agents/skills/github`), description: GH },
+      {
+        fileState: link(`${ACME}/.agents/skills/github`),
+        description: GH,
+        modifiedAt: MINUTES_AGO(12),
+      },
     ),
     item(
       "skill",
@@ -73,7 +84,7 @@ export function items(): ObservedItem[] {
       "codex",
       proj(ACME),
       `${ACME}/.agents/skills/github`,
-      { description: GH },
+      { description: GH, modifiedAt: MINUTES_AGO(12) },
     ),
     item("skill", "github", "pi", proj(ACME), `${ACME}/.agents/skills/github`, {
       description: GH,
@@ -87,6 +98,7 @@ export function items(): ObservedItem[] {
       {
         fileState: link(`${ACME}/.agents/skills/deploy`),
         description: "Ship to staging and production safely",
+        modifiedAt: HOURS_AGO(5),
       },
     ),
     item(
@@ -106,6 +118,7 @@ export function items(): ObservedItem[] {
       {
         fileState: link("~/.local/share/vstack2/rendered/skills/code-review"),
         description: "A structured checklist for reviewing changes",
+        modifiedAt: DAYS_AGO(9),
       },
     ),
     item(
@@ -130,11 +143,16 @@ export function items(): ObservedItem[] {
       "claude",
       proj(ACME),
       `${ACME}/.claude/agents/reviewer.md`,
-      { fileState: FILE, description: "Reviews changes before they merge" },
+      {
+        fileState: FILE,
+        description: "Reviews changes before they merge",
+        modifiedAt: DAYS_AGO(2),
+      },
     ),
     item("hook", "guard", "claude", proj(ACME), `${ACME}/.claude/hooks/guard`, {
       fileState: FILE,
       description: "Runs checks before every commit",
+      modifiedAt: HOURS_AGO(30),
     }),
     item(
       "command",

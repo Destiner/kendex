@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { HarnessId, ItemKind } from "@/bindings";
+import type { ItemKind } from "@/bindings";
 import { ItemDetail } from "@/components/item-detail";
+import { InstalledRow } from "@/components/library/installed-row";
 import { LibraryFilters } from "@/components/library/library-filters";
-import { StatusDot } from "@/components/status-dot";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -13,10 +12,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { filterItems, groupItems } from "@/lib/derive";
-import { kindLabel, toolName } from "@/lib/labels";
+import {
+  filterItems,
+  groupItems,
+  projectScopes,
+  type ScopeSelection,
+} from "@/lib/derive";
 import { isSearchShortcutKey } from "@/lib/search-shortcut";
-import { cn } from "@/lib/utils";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 
@@ -32,9 +34,13 @@ export function InstalledView() {
   const [harness, setHarness] = useState<string>(
     () => useNavStore.getState().libraryFilter?.tool ?? "any",
   );
+  // Page-local, alongside kind/harness — narrows within whatever the
+  // sidebar's global scope already shows, rather than replacing it.
+  const [where, setWhere] = useState<string>("any");
   const [search, setSearch] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const projects = result ? projectScopes(result) : [];
 
   // The filter is a one-time handoff from wherever the link was clicked
   // (Tools, Projects); once applied, further tab visits start from "any"
@@ -54,16 +60,23 @@ export function InstalledView() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  const effectiveScope: ScopeSelection =
+    where === "any"
+      ? scope
+      : where === "global"
+        ? "global"
+        : { project: where };
+
   const groups = useMemo(() => {
     if (!result) return [];
     const filtered = filterItems(result.items, {
-      scope,
+      scope: effectiveScope,
       kind: kind === "any" ? undefined : (kind as ItemKind),
       harness: harness === "any" ? undefined : harness,
       search,
     });
     return groupItems(filtered);
-  }, [result, scope, kind, harness, search]);
+  }, [result, effectiveScope, kind, harness, search]);
 
   const selected = groups.find((g) => g.key === selectedKey) ?? null;
   const hasAnyItems = (result?.items.length ?? 0) > 0;
@@ -71,6 +84,7 @@ export function InstalledView() {
   const clearFilters = () => {
     setKind("any");
     setHarness("any");
+    setWhere("any");
     setSearch("");
   };
 
@@ -84,6 +98,9 @@ export function InstalledView() {
         onKindChange={setKind}
         harness={harness}
         onHarnessChange={setHarness}
+        where={where}
+        onWhereChange={setWhere}
+        projects={projects}
       />
       <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1">
         <div className="min-w-0 flex-1 overflow-y-auto">
@@ -93,59 +110,25 @@ export function InstalledView() {
                 <TableHead>Name</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Tools</TableHead>
+                <TableHead>Where</TableHead>
+                <TableHead className="text-right">Updated</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {groups.map((group) => (
-                <TableRow
+                <InstalledRow
                   key={group.key}
-                  onClick={() =>
+                  group={group}
+                  selected={group.key === selectedKey}
+                  onSelect={() =>
                     setSelectedKey(group.key === selectedKey ? null : group.key)
                   }
-                  className={cn(
-                    "cursor-pointer",
-                    group.key === selectedKey && "bg-muted/60",
-                  )}
-                >
-                  <TableCell className="font-medium">
-                    {group.name}
-                    {group.description ? (
-                      <p className="max-w-96 truncate text-xs font-normal text-muted-foreground">
-                        {group.description}
-                      </p>
-                    ) : null}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {kindLabel(group.kind)}
-                  </TableCell>
-                  <TableCell>
-                    <span className="flex flex-wrap gap-1">
-                      {group.harnesses.map((h) => (
-                        <Badge key={h} variant="outline">
-                          {toolName(h as HarnessId)}
-                        </Badge>
-                      ))}
-                      {group.shared ? (
-                        <Badge variant="secondary">Shared files</Badge>
-                      ) : null}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    {group.installations.some((i) => i.enabled === false) ? (
-                      <Badge variant="secondary">Off</Badge>
-                    ) : (
-                      <span className="flex items-center gap-1.5 text-xs text-good">
-                        <StatusDot tone="good" />
-                        Active
-                      </span>
-                    )}
-                  </TableCell>
-                </TableRow>
+                />
               ))}
               {groups.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="py-10">
+                  <TableCell colSpan={6} className="py-10">
                     {hasAnyItems ? (
                       <div className="flex flex-col items-center gap-3 text-center">
                         <div>
@@ -185,7 +168,9 @@ export function InstalledView() {
             </TableBody>
           </Table>
         </div>
-        {selected ? <ItemDetail group={selected} /> : null}
+        {selected ? (
+          <ItemDetail group={selected} onClose={() => setSelectedKey(null)} />
+        ) : null}
       </div>
     </div>
   );

@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { kindLabel, toolName } from "@/lib/labels";
+import { kindLabel, scopeName, toolName } from "@/lib/labels";
 
 const KINDS: ItemKind[] = [
   "agent",
@@ -37,6 +37,9 @@ export function LibraryFilters({
   onKindChange,
   harness,
   onHarnessChange,
+  where,
+  onWhereChange,
+  projects,
 }: {
   searchRef: RefObject<HTMLInputElement | null>;
   search: string;
@@ -45,11 +48,19 @@ export function LibraryFilters({
   onKindChange: (value: string) => void;
   harness: string;
   onHarnessChange: (value: string) => void;
+  where: string;
+  onWhereChange: (value: string) => void;
+  /** Project roots that currently have at least one item, for the picker. */
+  projects: string[];
 }) {
   return (
     <div className="border-b px-8 py-3">
-      <div className="mx-auto flex w-full max-w-5xl gap-2">
-        <div className="relative max-w-56 flex-1">
+      {/* Narrower windows (900px, the density check point) can't fit search
+          plus three pickers at full width — this scrolls sideways instead
+          of squeezing the search box down to unreadable, à la the table's
+          own overflow wrapper. */}
+      <div className="mx-auto flex w-full max-w-5xl gap-2 overflow-x-auto">
+        <div className="relative w-56 shrink-0">
           <Input
             ref={searchRef}
             placeholder="Search by name…"
@@ -65,7 +76,7 @@ export function LibraryFilters({
           value={kind}
           onValueChange={(value) => onKindChange(value ?? kind)}
         >
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-40 shrink-0">
             <SelectValue>
               {(value: string) =>
                 value === "any" ? "All types" : kindLabel(value as ItemKind, 2)
@@ -85,7 +96,7 @@ export function LibraryFilters({
           value={harness}
           onValueChange={(value) => onHarnessChange(value ?? harness)}
         >
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-40 shrink-0">
             <SelectValue>
               {(value: string) =>
                 value === "any" ? "All tools" : toolName(value as HarnessId)
@@ -101,6 +112,33 @@ export function LibraryFilters({
             ))}
           </SelectContent>
         </Select>
+        {projects.length > 0 ? (
+          <Select
+            value={where}
+            onValueChange={(value) => onWhereChange(value ?? where)}
+          >
+            <SelectTrigger className="w-40 shrink-0">
+              <SelectValue>
+                {(value: string) =>
+                  value === "any"
+                    ? "All locations"
+                    : value === "global"
+                      ? "Personal"
+                      : scopeName({ scope: "project", root: value })
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="any">All locations</SelectItem>
+              <SelectItem value="global">Personal</SelectItem>
+              {projects.map((root) => (
+                <SelectItem key={root} value={root}>
+                  {scopeName({ scope: "project", root })}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
       </div>
     </div>
   );
