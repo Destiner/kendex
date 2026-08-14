@@ -2,6 +2,7 @@ import { FolderPlus, FolderSearch, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { ItemKind } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { KindCountBadges } from "@/components/kind-count-badges";
 import { ScopeCard } from "@/components/tools/scope-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { countByKind } from "@/lib/derive";
-import { kindLabel } from "@/lib/labels";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 import { useSettingsStore } from "@/stores/settings";
@@ -43,28 +43,13 @@ function ProjectRow({
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
-        {counts.length === 0 ? (
-          <span className="text-xs text-muted-foreground">Nothing yet</span>
-        ) : (
-          counts.map(([kind, count]) => (
-            <Badge
-              key={kind}
-              variant="outline"
-              className="cursor-pointer hover:bg-accent"
-              render={
-                <button
-                  type="button"
-                  onClick={() => {
-                    setScope({ project: root });
-                    goToLibrary({ kind });
-                  }}
-                >
-                  {count} {kindLabel(kind, count)}
-                </button>
-              }
-            />
-          ))
-        )}
+        <KindCountBadges
+          counts={counts}
+          onKindClick={(kind) => {
+            setScope({ project: root });
+            goToLibrary({ kind });
+          }}
+        />
         <Button
           variant="ghost"
           size="icon"

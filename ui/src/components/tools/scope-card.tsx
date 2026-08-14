@@ -1,5 +1,5 @@
 import type { ItemKind } from "@/bindings";
-import { Badge } from "@/components/ui/badge";
+import { KindCountBadges } from "@/components/kind-count-badges";
 import {
   Card,
   CardContent,
@@ -7,7 +7,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { kindLabel } from "@/lib/labels";
 
 /** A compact scope summary: title, one-line description, linked count pills. */
 export function ScopeCard({
@@ -29,30 +28,12 @@ export function ScopeCard({
       </CardHeader>
       <CardContent>
         <div className="flex flex-wrap gap-1.5">
-          {counts.length === 0 ? (
-            <span className="text-sm text-muted-foreground">
-              Nothing from vstack yet.
-            </span>
-          ) : (
-            counts.map(([kind, count]) =>
-              onKindClick ? (
-                <Badge
-                  key={kind}
-                  variant="outline"
-                  className="cursor-pointer hover:bg-accent"
-                  render={
-                    <button type="button" onClick={() => onKindClick(kind)}>
-                      {count} {kindLabel(kind, count)}
-                    </button>
-                  }
-                />
-              ) : (
-                <Badge key={kind} variant="outline">
-                  {count} {kindLabel(kind, count)}
-                </Badge>
-              ),
-            )
-          )}
+          <KindCountBadges
+            counts={counts}
+            onKindClick={onKindClick}
+            emptyLabel="Nothing from vstack yet."
+            emptyClassName="text-sm text-muted-foreground"
+          />
         </div>
       </CardContent>
     </Card>

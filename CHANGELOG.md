@@ -260,6 +260,10 @@ changes carry a **Breaking** call-out with their migration note inline.
   through tabs now moves focus without switching the tab until you press
   Enter, which matches how tabs work across current apps.
 
+- Keyboard focus now looks the same on every control: buttons and tabs
+  had kept an older, heavier focus outline than the rest of the app, and
+  the checkbox's error outline was too faint in dark mode.
+
 - The app now summarizes instead of listing. Review & apply used to repeat
   an identical warning under every hook it touched — seven hooks sharing
   one settings file meant seven copies — and gave every clean plugin its

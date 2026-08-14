@@ -1,7 +1,7 @@
 import type { HarnessId, ItemKind } from "@/bindings";
+import { KindCountBadges } from "@/components/kind-count-badges";
 import { StatusDot } from "@/components/status-dot";
-import { Badge } from "@/components/ui/badge";
-import { kindLabel, toolName } from "@/lib/labels";
+import { toolName } from "@/lib/labels";
 import { useNavStore } from "@/stores/nav";
 
 /** One detected (or missing) AI coding tool, as a single compact row. */
@@ -42,25 +42,10 @@ export function HarnessRow({
         {detectedRoot}
       </span>
       <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-        {counts.length === 0 ? (
-          <span className="text-xs text-muted-foreground">Nothing yet</span>
-        ) : (
-          counts.map(([kind, count]) => (
-            <Badge
-              key={kind}
-              variant="outline"
-              className="cursor-pointer hover:bg-accent"
-              render={
-                <button
-                  type="button"
-                  onClick={() => goToLibrary({ tool: id, kind })}
-                >
-                  {count} {kindLabel(kind, count)}
-                </button>
-              }
-            />
-          ))
-        )}
+        <KindCountBadges
+          counts={counts}
+          onKindClick={(kind) => goToLibrary({ tool: id, kind })}
+        />
       </div>
     </div>
   );
