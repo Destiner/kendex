@@ -54,7 +54,58 @@ export function views(): AuditView[] {
       ],
       notes: [],
       warnings: [],
-      safety: [],
+      safety: [
+        {
+          kind: "skill",
+          name: "scraper",
+          harness: "claude",
+          scope: acme,
+          safety: {
+            score: 50,
+            deductions: [
+              {
+                rule: "credential-theft",
+                location: "SKILL.md:12",
+                severity: "critical",
+                points: 25,
+                repeat: false,
+              },
+              {
+                rule: "dangerous-commands",
+                location: "SKILL.md:20",
+                severity: "high",
+                points: 15,
+                repeat: false,
+              },
+            ],
+          },
+          quality: null,
+          findings: [
+            {
+              rule: "credential-theft",
+              severity: "critical",
+              location: "SKILL.md:12",
+              message: "reads a credential file and sends it to a remote host",
+              remediation:
+                "remove the line that uploads the file, or install this skill only if you trust its source",
+            },
+            {
+              rule: "dangerous-commands",
+              severity: "high",
+              location: "SKILL.md:20",
+              message: "runs a shell command that deletes files without asking",
+              remediation: "scope the command to a specific path, or drop it",
+            },
+          ],
+          skipped: [],
+          verdict: "block",
+          reasons: [
+            "A serious finding holds an item back on its own, whatever the score.",
+          ],
+          contentHash: "a1b2c3d4e5f6",
+          override: { state: "absent" },
+        },
+      ],
     },
     {
       scope: proj(API),
