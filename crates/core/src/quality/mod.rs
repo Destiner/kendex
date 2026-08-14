@@ -19,6 +19,7 @@ use specta::Type;
 use crate::model::{HarnessId, ItemKind};
 
 pub mod dimensions;
+mod homoglyph;
 pub mod observe;
 pub mod overrides;
 mod rules;
@@ -35,7 +36,7 @@ pub use text::{Line, Normalization};
 /// change to what the rules catch — a new rule, a widened pattern, a
 /// re-calibrated severity — must bump this and stale every override that
 /// was granted against the old behaviour.
-pub const RULESET_VERSION: u32 = 1;
+pub const RULESET_VERSION: u32 = 2;
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Type, Hash,
@@ -59,10 +60,11 @@ impl Severity {
         }
     }
 
-    /// One step down — what a hit inside fenced content costs. A payload
-    /// shown as an example is still a payload the model reads, so it is
-    /// scanned and reported; it just weighs less than a live one. Low is the
-    /// floor: a fenced Low finding still says what it found.
+    /// One step down — what a hit costs on a line that is quoting rather
+    /// than instructing: a blockquote, or any line of a supporting file. It
+    /// is still scanned and still reported; it just weighs less than the
+    /// same words in the file a harness actually loads. Low is the floor: a
+    /// lowered Low finding still says what it found.
     pub fn lowered(self) -> Severity {
         match self {
             Severity::Critical => Severity::High,
@@ -114,9 +116,14 @@ impl Finding {
     }
 }
 
-/// One file inside a tree, with the budget it occupies. `text` is `None`
-/// for bytes that are not valid UTF-8 — content rules read text, and a
-/// binary blob is measured, never guessed at.
+/// One file inside a tree, with the budget it occupies.
+///
+/// `text` is `None` only for the binary assets a skill legitimately ships —
+/// an image, a font, an archive. Everything else is decoded *lossily*: a
+/// file that is text with one bad byte in it is still read, and the bytes
+/// that had to be replaced are reported by `undecodable-content`. Refusing
+/// to read such a file would mean one appended byte turns a payload
+/// invisible to every rule, which is a pass nobody earned.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TreeFile {
     pub path: PathBuf,
@@ -124,12 +131,26 @@ pub struct TreeFile {
     pub text: Option<String>,
 }
 
+/// Extensions whose contents are not text and are not read as instructions
+/// by any harness. Anything not on this list is decoded and scanned.
+const BINARY_ASSETS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "ico", "icns", "pdf", "zip", "gz", "tgz",
+    "bz2", "xz", "zst", "tar", "7z", "woff", "woff2", "ttf", "otf", "eot", "mp3", "mp4", "wav",
+    "ogg", "webm", "mov", "wasm", "so", "dylib", "dll", "exe", "bin", "class", "jar", "pyc", "o",
+    "a",
+];
+
 impl TreeFile {
     pub fn read(path: PathBuf, bytes: &[u8]) -> TreeFile {
+        let binary = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .is_some_and(|e| BINARY_ASSETS.contains(&e.as_str()));
         TreeFile {
-            path,
             bytes: bytes.len(),
-            text: String::from_utf8(bytes.to_vec()).ok(),
+            text: (!binary).then(|| String::from_utf8_lossy(bytes).into_owned()),
+            path,
         }
     }
 }
@@ -142,6 +163,47 @@ pub struct McpEntry {
     pub env: BTreeMap<String, String>,
     pub headers: BTreeMap<String, String>,
     pub url: Option<String>,
+}
+
+impl McpEntry {
+    /// The entry as it sits in a harness's config, read the same way whether
+    /// a plan is about to write it or a scan just found it — the two paths
+    /// must agree about what a server is, or they cannot agree about whether
+    /// it is safe.
+    pub fn from_json(value: &serde_json::Value) -> McpEntry {
+        let strings = |key: &str| -> Vec<String> {
+            value
+                .get(key)
+                .and_then(|v| v.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let map = |key: &str| -> BTreeMap<String, String> {
+            value
+                .get(key)
+                .and_then(|v| v.as_object())
+                .map(|table| {
+                    table
+                        .iter()
+                        .filter_map(|(k, v)| v.as_str().map(|v| (k.clone(), v.to_owned())))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let string = |key: &str| value.get(key).and_then(|v| v.as_str()).map(str::to_owned);
+        McpEntry {
+            command: string("command"),
+            args: strings("args"),
+            env: map("env"),
+            headers: map("headers"),
+            url: string("url"),
+        }
+    }
 }
 
 /// A plugin's readable sources.

@@ -13,7 +13,9 @@ use std::path::Path;
 
 use crate::model::{ItemKind, ObservedItem};
 
-use super::{AuditInput, Content, PluginSources, TreeFile, UNREAD_MCP_ENTRY, UNREADABLE_PLUGIN};
+use super::{
+    AuditInput, Content, McpEntry, PluginSources, TreeFile, UNREAD_MCP_ENTRY, UNREADABLE_PLUGIN,
+};
 
 /// Total bytes read from one tree, and the number of files. A hostile or
 /// merely enormous tree must not turn an audit into a memory problem.
@@ -27,9 +29,7 @@ pub fn input_for(item: &ObservedItem) -> AuditInput {
         ItemKind::Skill => read_tree(&item.path),
         ItemKind::Agent | ItemKind::Command | ItemKind::PiExtension => read_document(&item.path),
         ItemKind::Hook => read_hook(&item.path),
-        ItemKind::McpServer => Content::Unread {
-            why: UNREAD_MCP_ENTRY,
-        },
+        ItemKind::McpServer => read_mcp(&item.path, &item.name),
         ItemKind::Plugin => read_plugin(&item.path),
     };
     AuditInput {
@@ -44,13 +44,13 @@ pub fn input_for(item: &ObservedItem) -> AuditInput {
 const UNREADABLE_FILE: &str = "the installed file could not be read from disk";
 const NOT_A_TREE: &str = "the installed skill is not a directory on disk";
 
+/// Decoded the same way a plan's own bytes are: lossily, so one byte that
+/// is not text cannot make a whole file invisible to every rule. What had to
+/// be replaced is reported by `undecodable-content`.
 fn read_document(path: &Path) -> Content {
     match std::fs::read(path) {
-        Ok(bytes) => match String::from_utf8(bytes) {
-            Ok(text) => Content::Document { text },
-            Err(_) => Content::Unread {
-                why: "the installed file is not text",
-            },
+        Ok(bytes) => Content::Document {
+            text: String::from_utf8_lossy(&bytes).into_owned(),
         },
         Err(_) => Content::Unread {
             why: UNREADABLE_FILE,
@@ -69,6 +69,43 @@ fn read_hook(path: &Path) -> Content {
         matcher: None,
         command: path.display().to_string(),
         script: Some(text),
+    }
+}
+
+/// The server entry a harness would launch, dug back out of the config file
+/// that holds it.
+///
+/// The scan reaches this file to learn the server's *name*; reading it again
+/// for the command line is what lets the MCP rules run at all. Every layout
+/// vstack writes nests the servers under one key and each server under its
+/// own name, so the same walk covers JSON, JSONC and TOML. Where the entry
+/// cannot be found the input says so and the rules report themselves not
+/// applicable, which is the honest answer and never a pass.
+fn read_mcp(path: &Path, name: &str) -> Content {
+    const NESTS: &[&str] = &["mcpServers", "mcp_servers", "servers", "mcp"];
+    let Some(root) = read_config(path) else {
+        return Content::Unread {
+            why: UNREAD_MCP_ENTRY,
+        };
+    };
+    let entry = NESTS
+        .iter()
+        .filter_map(|nest| root.get(nest))
+        .find_map(|table| table.get(name));
+    match entry {
+        Some(value) => Content::Mcp(McpEntry::from_json(value)),
+        None => Content::Unread {
+            why: UNREAD_MCP_ENTRY,
+        },
+    }
+}
+
+/// A config file as JSON, whichever of the two syntaxes it is written in.
+fn read_config(path: &Path) -> Option<serde_json::Value> {
+    let text = std::fs::read_to_string(path).ok()?;
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("toml") => toml::from_str::<serde_json::Value>(&text).ok(),
+        _ => serde_json::from_str(&crate::scan::jsonc::to_json(&text)).ok(),
     }
 }
 
@@ -106,13 +143,24 @@ fn walk(root: &Path, dir: &Path, files: &mut Vec<TreeFile>, budget: &mut usize) 
         let Ok(bytes) = std::fs::read(&path) else {
             continue;
         };
-        let taken = bytes.len().min(*budget);
+        let taken = char_boundary(&bytes, bytes.len().min(*budget));
         *budget -= taken;
         let Ok(relative) = path.strip_prefix(root) else {
             continue;
         };
         files.push(TreeFile::read(relative.to_path_buf(), &bytes[..taken]));
     }
+}
+
+/// `at`, moved back to the nearest character boundary. Cutting a tree off
+/// mid-character would leave bytes that will not decode, and those are now
+/// reported — a budget the scanner chose is not the file's fault.
+fn char_boundary(bytes: &[u8], at: usize) -> usize {
+    let mut at = at;
+    while at > 0 && at < bytes.len() && bytes[at] & 0xC0 == 0x80 {
+        at -= 1;
+    }
+    at
 }
 
 /// A plugin directory, when the observation points at one. The scanner

@@ -30,14 +30,34 @@ const PREFIXES: &[(&str, usize)] = &[
 /// case-sensitive: every prefix here is published in one exact casing.
 pub fn find_secret(value: &str) -> Option<&str> {
     value
-        .split(|c: char| {
-            c.is_whitespace()
-                || matches!(
-                    c,
-                    '"' | '\'' | ',' | ';' | ':' | '=' | ')' | '}' | '<' | '>'
-                )
-        })
+        .split(|c: char| !is_token_char(c))
         .find(|token| looks_issued(token))
+}
+
+/// The same text with every issued-looking token replaced by its
+/// fingerprint. A rule that quotes a config value back to the user runs it
+/// through here first, so no message, log or record can carry a usable key
+/// even when the rule that found it was looking for something else.
+pub fn redact(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut start = 0;
+    for (index, c) in value.char_indices() {
+        if is_token_char(c) {
+            continue;
+        }
+        push_token(&mut out, &value[start..index]);
+        out.push(c);
+        start = index + c.len_utf8();
+    }
+    push_token(&mut out, &value[start..]);
+    out
+}
+
+fn push_token(out: &mut String, token: &str) {
+    match looks_issued(token) {
+        true => out.push_str(&fingerprint_secret(token)),
+        false => out.push_str(token),
+    }
 }
 
 fn looks_issued(token: &str) -> bool {

@@ -83,7 +83,7 @@ pub(super) fn run(
         let (verdict, reasons) =
             crate::quality::verdict(&result.findings, &result.safety, thresholds);
         let mut recorded = manifest.safety_overrides.get(&item.key);
-        if verdict == Verdict::Block && granted(options, &item) {
+        if verdict == Verdict::Block && granted(options, &item, &content_hash) {
             let minted = overrides::mint(&content_hash, &result.findings, None);
             let updated = state
                 .manifest_update
@@ -116,14 +116,38 @@ pub(super) fn run(
     safety
 }
 
-/// Whether this run was asked to record a review of this item. A name
-/// covers every harness it installs to; the record that comes out of it is
-/// still one per installation, bound to that installation's own content.
-fn granted(options: &PlanOptions, item: &Desired) -> bool {
-    options
-        .allow_unsafe
-        .iter()
-        .any(|named| named == &item.name || named == &item.key)
+/// Whether this run was asked to record a review of *this* content.
+///
+/// The flag names an installation and the content that was shown with it:
+/// `name@<hash>`, where the hash is the one printed beside the findings. A
+/// bare name does not grant, and that is the whole point — a name in a
+/// shell history, a Makefile or a CI job would re-grant against content
+/// nobody has read, which is the standing bypass an override exists to not
+/// become. When the content changes the printed hash changes with it, so
+/// re-running the same command line blocks again and prints the new one.
+fn granted(options: &PlanOptions, item: &Desired, content_hash: &str) -> bool {
+    options.allow_unsafe.iter().any(|named| {
+        let Some((name, shown)) = named.rsplit_once('@') else {
+            return false;
+        };
+        (name == item.name || name == item.key)
+            && shown.len() >= SHOWN_HASH
+            && content_hash.starts_with(shown)
+    })
+}
+
+/// How much of the content hash is printed, and the least a flag may carry.
+/// Long enough that nobody types a prefix that matches something else by
+/// accident, short enough to copy off a terminal.
+pub const SHOWN_HASH: usize = 12;
+
+/// The flag that would grant this exact decision, as the user should type
+/// it back.
+pub fn allow_unsafe_flag(name: &str, content_hash: &str) -> String {
+    format!(
+        "{name}@{}",
+        &content_hash[..SHOWN_HASH.min(content_hash.len())]
+    )
 }
 
 fn refusal(item: &Desired, row: &ItemSafety) -> Refused {
@@ -149,15 +173,24 @@ pub(super) fn content_hash(input: &AuditInput) -> String {
     let mut material = format!("{}|{}|", input.kind.name(), input.location);
     match &input.content {
         Content::Document { text } => material.push_str(text),
+        // Sorted, because a plan builds the tree in render order and a scan
+        // reads it back in directory order. The same files are the same
+        // content whichever order they arrived in, and an override that
+        // survived the install has to still recognise what it reviewed.
         Content::SkillTree { files } => {
-            for file in files {
-                material.push_str(&format!(
-                    "{}:{}:{}\n",
-                    file.path.display(),
-                    file.bytes,
-                    file.text.as_deref().unwrap_or_default()
-                ));
-            }
+            let mut entries: Vec<String> = files
+                .iter()
+                .map(|file| {
+                    format!(
+                        "{}:{}:{}\n",
+                        file.path.display(),
+                        file.bytes,
+                        file.text.as_deref().unwrap_or_default()
+                    )
+                })
+                .collect();
+            entries.sort();
+            material.push_str(&entries.concat());
         }
         Content::Hook {
             event,
@@ -244,40 +277,11 @@ fn registration(
 /// writes it — command, arguments, environment, headers and url, exactly as
 /// the harness will store them.
 fn mcp_entry(edits: &[(std::path::PathBuf, ConfigEdit)]) -> Option<McpEntry> {
-    let value = edits.iter().find_map(|(_, edit)| match edit {
-        ConfigEdit::UpsertMcpServer { value, .. } => Some(value),
-        _ => None,
-    })?;
-    let strings = |key: &str| -> Vec<String> {
-        value
-            .get(key)
-            .and_then(|v| v.as_array())
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|item| item.as_str().map(str::to_owned))
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
-    let map = |key: &str| -> std::collections::BTreeMap<String, String> {
-        value
-            .get(key)
-            .and_then(|v| v.as_object())
-            .map(|table| {
-                table
-                    .iter()
-                    .filter_map(|(k, v)| v.as_str().map(|v| (k.clone(), v.to_owned())))
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
-    let string = |key: &str| value.get(key).and_then(|v| v.as_str()).map(str::to_owned);
-    Some(McpEntry {
-        command: string("command"),
-        args: strings("args"),
-        env: map("env"),
-        headers: map("headers"),
-        url: string("url"),
-    })
+    edits
+        .iter()
+        .find_map(|(_, edit)| match edit {
+            ConfigEdit::UpsertMcpServer { value, .. } => Some(value),
+            _ => None,
+        })
+        .map(McpEntry::from_json)
 }

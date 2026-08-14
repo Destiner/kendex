@@ -1,8 +1,15 @@
 //! What an MCP server is launched as: the command line a harness will run
 //! on every session, the reach it is given, and where its code comes from.
+//!
+//! These rules quote the config value they matched, because "one of your
+//! arguments is wrong" helps nobody. A command line is also the most common
+//! place to find an API key pasted in, so every value quoted here goes
+//! through the same redactor `plaintext-secrets` uses first: a token never
+//! travels in a message, whichever rule found the line it was on.
 
 use crate::model::ItemKind;
 
+use super::super::secret::redact;
 use super::super::{McpEntry, UNREAD_MCP_ENTRY};
 use super::{AuditRule, Content, Finding, Outcome, Prepared, Severity};
 
@@ -51,7 +58,8 @@ impl AuditRule for McpCommandInjection {
                 severity: Severity::High,
                 location: prepared.input.location.clone(),
                 message: format!(
-                    "this server's command line runs another command to build itself (`{part}`), so whatever that prints becomes part of what launches"
+                    "this server's command line runs another command to build itself (`{}`), so whatever that prints becomes part of what launches",
+                    redact(part)
                 ),
                 remediation:
                     "write the value out, or pass it through the server's environment where it stays one value"
@@ -82,7 +90,8 @@ impl AuditRule for BroadPermissions {
                 severity: Severity::High,
                 location: location.clone(),
                 message: format!(
-                    "this server listens on `{host}`, which accepts connections from anything that can reach this machine"
+                    "this server listens on `{}`, which accepts connections from anything that can reach this machine",
+                    redact(&host)
                 ),
                 remediation: "bind it to `127.0.0.1` so only this machine can talk to it".to_owned(),
             });
@@ -92,7 +101,10 @@ impl AuditRule for BroadPermissions {
                 rule: self.id().to_owned(),
                 severity: Severity::High,
                 location,
-                message: format!("this filesystem server is given `{root}` to read and write"),
+                message: format!(
+                    "this filesystem server is given `{}` to read and write",
+                    redact(&root)
+                ),
                 remediation: "point it at the one project directory it needs".to_owned(),
             });
         }
@@ -162,10 +174,12 @@ impl AuditRule for SupplyChain {
             severity: Severity::Medium,
             location: prepared.input.location.clone(),
             message: format!(
-                "this server installs `{package}` from npm on every launch, and that name belongs to whoever registered it first"
+                "this server installs `{}` from npm on every launch, and that name belongs to whoever registered it first",
+                redact(&package)
             ),
             remediation: format!(
-                "use the publisher's scoped name (`@owner/{package}`) or pin an exact version you have read"
+                "use the publisher's scoped name (`@owner/{}`) or pin an exact version you have read",
+                redact(&package)
             ),
         }])
     }

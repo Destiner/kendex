@@ -11,7 +11,7 @@ use crate::settings::AppSettings;
 mod copilot;
 mod files;
 mod hooks;
-mod jsonc;
+pub(crate) mod jsonc;
 mod plugins;
 mod provenance;
 mod readers;

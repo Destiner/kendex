@@ -102,10 +102,10 @@ evidence in `docs/research/harnesskit.md`.
 | Piece | Verdict | Rationale |
 |---|---|---|
 | Rules-engine shape (trait + registry) | **adopt** (HarnessKit) | One `AuditRule` trait, one registry; add a `remediation` field to findings, drop the trait-level severity (three of their rules already contradict it). Inputs are *typed per kind* (skill tree with byte/file budgets, hook registration, MCP command+args+env+headers, plugin manifest+scripts) — "content" is defined per kind, not assumed. |
-| Safety rules (6 content, 3 MCP/permission, 2 plugin) | **adopt, amended** | Port the 11 rules; replace the fenced-code exemption (a real bypass) with "fenced content scans at one severity lower — except secret/token matches, which never downgrade". Secret findings are redacted: the matched token never appears in messages, logs, or UI. Plugin rules run where plugin sources are actually readable (installed files at scan; resolved content at install) and are explicitly n/a elsewhere — a desired plugin is only a settings edit today. |
+| Safety rules (6 content, 3 MCP/permission, 2 plugin) | **adopt, amended** | Port the 11 rules; replace the fenced-code exemption (a real bypass) with "the file a harness loads is scanned at full weight, fences included — a fenced `sh` block in a SKILL.md *is* the instruction; content that is plainly quoting rather than instructing (a blockquote, a skill's supporting files) scans one severity lower; secret/token matches never downgrade anywhere". Secret findings are redacted: the matched token never appears in messages, logs, or UI. Plugin rules run where plugin sources are actually readable (installed files at scan; resolved content at install) and are explicitly n/a elsewhere — a desired plugin is only a settings edit today. |
 | Their 5 `cli-*` rules | **skip** | vstack has no installed-CLI ItemKind. |
 | Safety scoring math | **adopt** (HarnessKit) | `100 − Σ deductions` (25/15/8/3), first hit full, repeats −1, floor 0 — every deduction names a rule at a location. The aggregate score *warns*; blocking is per-finding (next row), because threshold math alone lets a single Critical (score 75) sail through. |
-| Blocking rule | **new** | Any Critical finding blocks on its own, independent of the aggregate; aggregate warn < 80, block < 60. Overrides bind to the exact decision: (installation, rendered-content hash, ruleset version, finding fingerprints) — stale the moment any of them changes, recorded in the manifest *in the same transaction as the apply they unblock*, visible in Audit. A one-time review must never become a standing bypass. |
+| Blocking rule | **new** | Any Critical finding blocks on its own, independent of the aggregate; aggregate warn < 80, block < 60. Overrides bind to the exact decision: (installation, rendered-content hash, ruleset version, finding fingerprints) — stale the moment any of them changes, granted by a flag that carries the content hash it was shown with (`--allow-unsafe name@hash`, never a bare name), recorded in the manifest *in the same transaction as the apply they unblock*, visible in Audit. A one-time review must never become a standing bypass. |
 | Deobfuscation | **hybrid** | Their invisible-char strip + the parked vstack ideas: NFKC + homoglyph folding, with normalization-that-changes-content reported as a finding (severity calibrated against real catalogs during the phase — legitimate text also normalizes). |
 | Quality scoring | **adopt static layer only** (wshobson) | Weighted dimensions + multiplicative anti-pattern penalty, advisory, never blocking; skip the LLM judge, Monte Carlo, Elo, badges, letter grades — wrong cost model for a desktop install path. |
 | Structural output validators | **adopt, relocated** | Their `validate_generated.py` checks become Rust validators living beside each adapter, run *inside plan preview* so errors block apply — strictly stronger than their after-the-fact CI. |
@@ -148,8 +148,8 @@ Phase 1):
   freely installable CLIs, and a run where every check skipped is a
   reported failure to gate, never green.
 
-**Done when:** rules ported with per-rule tests (fence downgrade with
-the secrets exception, obfuscation finding, redaction); scores visible
+**Done when:** rules ported with per-rule tests (the downgrade and what
+it does not reach, obfuscation finding, redaction); scores visible
 in Audit and plan; Critical-blocks + fully-bound override round-trips
 and goes stale on a ruleset bump; `vstack check` exits non-zero on a
 seeded-bad catalog fixture; suite green.

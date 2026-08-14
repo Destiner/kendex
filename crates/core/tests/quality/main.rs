@@ -3,7 +3,10 @@
 //! buy.
 #![cfg(unix)]
 
+mod fixture;
 mod gate;
 mod kinds;
+mod overrides;
+mod reading;
 mod rules;
 mod scoring;

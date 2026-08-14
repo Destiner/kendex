@@ -27,9 +27,33 @@ function Scores({ row }: { row: ItemSafety }) {
   );
 }
 
+// An item whose findings someone read and accepted is installed and staying,
+// so calling it held back would be the opposite of the truth. Only a block
+// with no live acceptance behind it is held back.
+function heldBack(row: ItemSafety) {
+  return row.verdict === "block" && row.override.state !== "active";
+}
+
+// A row where every rule was skipped has not been audited, and showing
+// nothing would read as an audit that passed. It gets a line of its own
+// saying what could not be looked at.
+function NotChecked({ row }: { row: ItemSafety }) {
+  if (row.skipped.length === 0) return null;
+  return (
+    <p className="text-xs text-muted-foreground">
+      Not fully checked here: {row.skipped.length} rule
+      {row.skipped.length === 1 ? "" : "s"} had nothing to read —{" "}
+      {row.skipped[0].reason}
+    </p>
+  );
+}
+
 export function SafetyFindings({ rows }: { rows: ItemSafety[] }) {
   const worth = rows.filter(
-    (row) => row.verdict !== "clean" || row.findings.length > 0,
+    (row) =>
+      row.verdict !== "clean" ||
+      row.findings.length > 0 ||
+      row.skipped.length > 0,
   );
   if (worth.length === 0) return null;
 
@@ -41,10 +65,10 @@ export function SafetyFindings({ rows }: { rows: ItemSafety[] }) {
           className="space-y-1 text-sm"
         >
           <div className="flex flex-wrap items-center gap-2">
-            <Badge
-              variant={row.verdict === "block" ? "destructive" : "secondary"}
-            >
-              {VERDICT_LABELS[row.verdict]}
+            <Badge variant={heldBack(row) ? "destructive" : "secondary"}>
+              {row.verdict === "block" && !heldBack(row)
+                ? "Accepted by you"
+                : VERDICT_LABELS[row.verdict]}
             </Badge>
             <span className="font-semibold">{row.name}</span>
             <span className="text-muted-foreground">
@@ -57,6 +81,13 @@ export function SafetyFindings({ rows }: { rows: ItemSafety[] }) {
               You accepted this before, but {row.override.why}.
             </p>
           ) : null}
+          {row.override.state === "active" ? (
+            <p className="text-xs text-muted-foreground">
+              You read these findings and accepted them, so this stays
+              installed.
+            </p>
+          ) : null}
+          <NotChecked row={row} />
           {row.findings.map((finding) => (
             <div
               key={`${finding.rule}:${finding.location}:${finding.message}`}

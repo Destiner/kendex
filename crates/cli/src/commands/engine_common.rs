@@ -44,11 +44,15 @@ pub fn print_report(report: &EngineReport) {
 
 /// What the safety rules found in the content this plan would write. Held
 /// back items come first: they are the ones nothing will install.
+///
+/// A row with no findings is still printed when some rule could not run,
+/// because "nothing was found" and "nothing could be looked at" are
+/// different answers and only one of them is a pass.
 pub fn print_safety(report: &EngineReport) {
     let mut rows: Vec<&vstack_core::engine::ItemSafety> = report
         .safety
         .iter()
-        .filter(|row| !row.findings.is_empty())
+        .filter(|row| !row.findings.is_empty() || !row.skipped.is_empty())
         .collect();
     rows.sort_by_key(|row| (!row.blocked(), row.safety.score));
     for row in rows {
@@ -72,13 +76,26 @@ pub fn print_safety(report: &EngineReport) {
             ));
             say(&format!("    fix: {}", finding.remediation));
         }
+        print_skipped(row);
         if row.blocked() {
             say(&format!(
-                "    to install it anyway, review the findings and re-run with --allow-unsafe {}",
-                row.name
+                "    to install it anyway, review the findings above and re-run with --allow-unsafe {}",
+                vstack_core::engine::allow_unsafe_flag(&row.name, &row.content_hash)
             ));
         }
     }
+}
+
+/// The rules that apply to this kind and had no bytes to read here.
+fn print_skipped(row: &vstack_core::engine::ItemSafety) {
+    let Some(first) = row.skipped.first() else {
+        return;
+    };
+    say(&format!(
+        "  not fully checked: {} rule(s) had nothing to read — {}",
+        row.skipped.len(),
+        first.reason
+    ));
 }
 
 /// Prompted apply: `--yes` skips the prompt; a non-tty without `--yes`

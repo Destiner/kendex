@@ -52,7 +52,7 @@ impl AuditRule for PromptInjection {
                 }
                 findings.push(Finding {
                     rule: self.id().to_owned(),
-                    severity: line.weigh(phrase, Severity::Critical),
+                    severity: line.weigh(Severity::Critical),
                     location: at(doc, line),
                     message: format!(
                         "this line tells the model to set aside the instructions it was given (\"{phrase}\")"
@@ -71,12 +71,12 @@ struct Rce;
 impl AuditRule for Rce {
     fn check(&self, prepared: &Prepared) -> Outcome {
         scan_docs(prepared, AUTHORED, |doc, line, findings| {
-            let Some((needle, what)) = fetch_and_run(line) else {
+            let Some(what) = fetch_and_run(line) else {
                 return;
             };
             findings.push(Finding {
                 rule: self.id().to_owned(),
-                severity: line.weigh(needle, Severity::Critical),
+                severity: line.weigh(Severity::Critical),
                 location: at(doc, line),
                 message: format!("this line {what}, so whatever the far end serves is what runs"),
                 remediation:
@@ -91,39 +91,40 @@ impl AuditRule for Rce {
     }
 }
 
-/// The needle that matched and a plain description of it.
-fn fetch_and_run(line: &Line) -> Option<(&'static str, &'static str)> {
+/// A plain description of what this line fetches and runs, if it does.
+fn fetch_and_run(line: &Line) -> Option<&'static str> {
     const SHELLS: &[&str] = &["| sh", "|sh", "| bash", "|bash", "| zsh", "| python"];
-    let downloads = ["curl", "wget"].iter().find(|verb| line.has(verb));
-    if let Some(download) = downloads {
-        if let Some(pipe) = SHELLS.iter().find(|shell| line.has(shell)) {
-            return Some((pipe, "pipes a download straight into a shell"));
+    if ["curl", "wget"].iter().any(|verb| line.has(verb)) {
+        if SHELLS.iter().any(|shell| line.has(shell)) {
+            return Some("pipes a download straight into a shell");
         }
         if line.has("/tmp/")
             && ["&& sh", "&& bash", "chmod +x"]
                 .iter()
                 .any(|run| line.has(run))
         {
-            return Some((download, "downloads a file and then executes it"));
+            return Some("downloads a file and then executes it");
         }
     }
     if line.has("base64") && line.has("|") && (line.has("-d") || line.has("--decode")) {
-        return Some(("base64", "decodes hidden text and pipes it onward"));
+        return Some("decodes hidden text and pipes it onward");
     }
     line.has("eval(")
-        .then_some(("eval(", "hands a built-up string to an interpreter"))
+        .then_some("hands a built-up string to an interpreter")
 }
 
 /// Files that hold credentials, and the verbs that would send them
 /// somewhere.
 ///
-/// Two calibrations against HarnessKit. It counted a bare `http` as an
+/// Three calibrations against HarnessKit. It counted a bare `http` as an
 /// outbound verb, which makes every page documenting an AWS path and
 /// linking to AWS docs a Critical finding, so the verbs here are the ones
-/// that actually send. And it matched the bare word `credentials`, which
-/// fires on the sentence "bad credentials" in a troubleshooting section —
-/// the paths below are all path-shaped, and `.aws/` already covers the file
-/// that word was aiming at.
+/// that actually send. It matched the bare word `credentials`, which fires
+/// on the sentence "bad credentials" in a troubleshooting section — the
+/// paths below are all path-shaped, and `.aws/` already covers the file that
+/// word was aiming at. And every match now has to begin at a boundary,
+/// because without one `.env` matches `process.env`, which is how every
+/// Node, Vite, Deno and Python program in existence reads its own settings.
 const CREDENTIAL_FILES: &[&str] = &[".ssh/", ".aws/", ".netrc", ".pgpass", ".env"];
 
 const OUTBOUND: &[&str] = &[
@@ -147,10 +148,13 @@ impl AuditRule for CredentialTheft {
 
     fn check(&self, prepared: &Prepared) -> Outcome {
         scan_docs(prepared, AUTHORED, |doc, line, findings| {
-            let Some(file) = CREDENTIAL_FILES.iter().find(|path| line.has(path)) else {
+            let sends = OUTBOUND.iter().find(|verb| line.has(verb));
+            let Some(file) = CREDENTIAL_FILES
+                .iter()
+                .find(|path| names_file(line, path, sends.is_some()))
+            else {
                 return;
             };
-            let sends = OUTBOUND.iter().find(|verb| line.has(verb));
             let (base, message) = match sends {
                 Some(verb) => (
                     Severity::Critical,
@@ -168,7 +172,7 @@ impl AuditRule for CredentialTheft {
             };
             findings.push(Finding {
                 rule: self.id().to_owned(),
-                severity: line.weigh(file, base),
+                severity: line.weigh(base),
                 location: at(doc, line),
                 message,
                 remediation:
@@ -177,4 +181,40 @@ impl AuditRule for CredentialTheft {
             });
         })
     }
+}
+
+/// Whether this line names `path` as a file, rather than as part of a
+/// longer word.
+///
+/// Two things are being told apart here, both settled against a real
+/// catalog.
+///
+/// Reading an environment variable is not credential theft. `process.env.X`,
+/// `os.environ[...]`, `import.meta.env` and `Deno.env` are how a program
+/// reads settings the user already gave it, and matching `.env` inside them
+/// made the most ordinary line in Node and Python a finding. A letter, digit
+/// or dot sitting in front of the match means the text is a longer name, so
+/// none of those are files.
+///
+/// And `.env` is a project's own config file, not a user's key store. Every
+/// README that documents one names it, every loader script opens it, and
+/// none of that says anything — so unlike `~/.ssh/` and `~/.aws/`, naming it
+/// is not a finding at all. `.env` counts only when the same line is also
+/// sending something away, which is the shape of `cat .env | curl …`.
+fn names_file(line: &Line, path: &str, sends: bool) -> bool {
+    let env_file = path == ".env";
+    if env_file && !sends {
+        return false;
+    }
+    line.occurrences(path).into_iter().any(|at| {
+        let starts = !line
+            .before(at)
+            .is_some_and(|c| c.is_alphanumeric() || c == '.');
+        // `.environment` is not `.env`; `.env.local` is.
+        let ends = !env_file
+            || !line
+                .after(at, path.len())
+                .is_some_and(|c| c.is_alphanumeric() || c == '_');
+        starts && ends
+    })
 }

@@ -86,8 +86,8 @@ enum Command {
         scope: Option<String>,
         #[arg(short = 'y', long)]
         yes: bool,
-        /// Install these items despite their safety findings, recording the
-        /// review against the exact content and findings shown
+        /// Install an item despite its safety findings, as `name@hash` using
+        /// the hash printed beside them — a bare name does not grant
         #[arg(long = "allow-unsafe")]
         allow_unsafe: Vec<String>,
     },

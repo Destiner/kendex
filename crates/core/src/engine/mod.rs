@@ -28,6 +28,7 @@ mod expansion;
 mod gate;
 mod gemini;
 mod item_plan;
+mod observed;
 pub mod ops;
 mod removal;
 mod scope_writes;
@@ -36,8 +37,9 @@ mod targets;
 mod tree_plan;
 mod unmanaged;
 
-pub use gate::ItemSafety;
+pub use gate::{ItemSafety, allow_unsafe_flag};
 use item_plan::plan_item;
+pub use observed::observed_safety;
 use scope_writes::{
     plan_config_edits, plan_lock_write, plan_schema_upgrade, plan_settings_seed, source_revisions,
 };
@@ -166,7 +168,7 @@ pub fn plan_scope(
         // One write, whatever put it there: skills an agent gained
         // upstream, a review of findings this run was asked to record, or
         // both. Naming only one of them would misdescribe the other.
-        let granted = updated.safety_overrides.len() > manifest.safety_overrides.len();
+        let granted = updated.safety_overrides != manifest.safety_overrides;
         ops.push(PlannedOp {
             description: match granted {
                 true => "Update vstack.toml with the safety findings you accepted".into(),
@@ -311,45 +313,6 @@ fn plan_refusals(
 /// unmanaged items; nothing is planned that would touch a legacy file.
 pub fn audit(env: &Env, scope: &Scope) -> Result<EngineReport> {
     plan_declared(env, scope, &PlanOptions::default())
-}
-
-/// The other scoring path: the safety of what is on disk in this scope
-/// right now, declared or not. The plan-time path scores content nobody has
-/// installed yet, which is what gates a fresh install; this scores what a
-/// tool would load if it started this second, which is what an audit is
-/// about. Same rules, different bytes.
-pub fn observed_safety(env: &Env, scope: &Scope) -> Result<Vec<ItemSafety>> {
-    let scope = scope.canonical();
-    let settings = crate::settings::load(env)?;
-    let scan = crate::scan::scan_scopes(env, &settings.harness_roots, std::slice::from_ref(&scope));
-    Ok(scan
-        .items
-        .iter()
-        .map(|item| {
-            let input = crate::quality::observe::input_for(item);
-            let content_hash = gate::content_hash(&input);
-            let result = crate::quality::audit(input);
-            let (verdict, reasons) =
-                crate::quality::verdict(&result.findings, &result.safety, settings.safety);
-            ItemSafety {
-                kind: item.kind,
-                name: item.name.clone(),
-                harness: item.harness,
-                scope: item.scope.clone(),
-                safety: result.safety,
-                quality: result.quality,
-                findings: result.findings,
-                skipped: result.skipped,
-                verdict,
-                reasons,
-                content_hash,
-                // An override speaks for an installation a plan is about to
-                // write. What is already on disk is reported as it is.
-                override_state: crate::quality::overrides::OverrideState::Absent,
-            }
-        })
-        .filter(|row| !row.findings.is_empty() || row.verdict != crate::quality::Verdict::Clean)
-        .collect())
 }
 
 /// What a refresh would do: regenerate everything declared, and re-derive

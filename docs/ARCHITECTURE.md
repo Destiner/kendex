@@ -330,16 +330,31 @@ lives in one capability table read by core and UI.
   an MCP server its command, args, env and headers, a plugin its manifest
   and lifecycle scripts. A rule whose bytes are not in this path's input
   reports itself not applicable, because silence would read as a pass.
-  Fenced and backticked content is scanned at one severity lower rather
-  than exempted — the model reads a payload in a code block exactly as it
-  reads one in prose — with secrets the single exception, and a matched
-  token never appears in any message, log or record, only a fingerprint.
+  Bytes that will not decode as text are read lossily and what had to be
+  replaced is reported, so one stray byte cannot hide a file from every
+  rule. A matched token never appears in any message, log or record, only
+  a fingerprint — that holds for every rule that quotes a value it found,
+  not only the one that looks for keys.
+- **The file a harness loads is scanned at full weight, fences included.**
+  A fenced `sh` block in a SKILL.md is not an illustration of the
+  instruction, it *is* the instruction, and it is the shape every real
+  skill writes its commands in — discounting it would mean the gate blocks
+  the unnatural spelling of an attack and waves through the natural one.
+  What weighs one severity less is content that is plainly quoting rather
+  than instructing: a blockquote, and every line of a skill's supporting
+  files (`tests/`, `fixtures/`, `references/`), settled against a real
+  catalog that ships tests asserting on dangerous command lines. Secrets
+  never weigh less anywhere.
 - **An override is permission for one decision, not for an item.** It
   binds to the installation, the rendered content hash, the rule set
   version and the exact finding fingerprints that were reviewed; it is
   written into the manifest by the same transaction that installs what it
-  unblocks; and it goes stale the moment any of those four move. A
-  one-time review must never become a standing bypass.
+  unblocks; and it goes stale the moment any of those four move. The flag
+  that grants one carries the content hash it was shown with
+  (`--allow-unsafe name@hash`), so a bare name in a shell history, a
+  Makefile or a CI job grants nothing. A one-time review must never become
+  a standing bypass, and the audit reports an accepted item as accepted
+  rather than as held back.
 - **Rule severities are calibrated against real catalogs, not inherited.**
   A Critical blocks an install on its own, so the tier is only worth
   something if it is precise. Patterns that fired only on legitimate
@@ -347,7 +362,11 @@ lives in one capability table read by core and UI.
   deobfuscation reports only what has no typographic use — invisible and
   bidirectional characters, letters chosen to imitate other letters —
   while normalizing emoji and compatibility forms silently so the other
-  rules still read a plain string.
+  rules still read a plain string. The confusables table covers Cyrillic,
+  Greek, Armenian, Cherokee and the Latin-extended, phonetic and
+  small-capital letters that imitate ASCII; it is not the whole of
+  Unicode's data and the module says so rather than implying coverage it
+  does not have.
 - vstack never emits a pasteable command line. Errors, hints, and
   recovery instructions present the verb and its parameters as data —
   cross-platform shell quoting is a cost the product declines to carry,

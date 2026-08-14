@@ -71,7 +71,7 @@ fn an_upstream_member_addition_previews_too() {
         .expect("the member upstream gained is in the preview");
     assert!(added.reason.contains("part of the starter bundle"));
     assert!(
-        installed(&f, ItemKind::Skill, "deploy") == false,
+        !installed(&f, ItemKind::Skill, "deploy"),
         "planning a refresh installed something"
     );
 }

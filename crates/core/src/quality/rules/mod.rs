@@ -16,14 +16,18 @@
 //! | `plugin-source-trust` | plugin manifests and origin | Medium, Low without a manifest |
 //! | `plugin-lifecycle-scripts` | plugin package.json | Medium, Low for a quiet script |
 //! | `obfuscated-content` | what deobfuscation changed | Low |
+//! | `undecodable-content` | bytes that would not decode as text | Medium |
 //!
 //! HarnessKit exempted fenced code and blockquotes from all six content
-//! rules, which is a bypass: the model reads a payload wrapped in
-//! backticks exactly as it reads one that is not. Here fenced content is
-//! scanned and its findings weigh one severity less — a documented example
-//! is worth reporting and worth less than a live instruction. The one
-//! exception is `plaintext-secrets`: a credential in a code block is
-//! exactly as leaked as one in prose, so it never downgrades.
+//! rules, which is a bypass: the model reads a payload wrapped in backticks
+//! exactly as it reads one that is not, and a fenced `sh` block in a
+//! SKILL.md is not an example of the instruction, it *is* the instruction.
+//! So the file a harness loads is scanned at full weight whatever it puts
+//! inside a fence. What weighs one severity less is content that is plainly
+//! quoting rather than instructing: a blockquote, and every line of a
+//! skill's supporting files. The one exception is `plaintext-secrets`: a
+//! credential in a code block is exactly as leaked as one in prose, so it
+//! never downgrades anywhere.
 
 use crate::model::ItemKind;
 
@@ -36,7 +40,8 @@ mod secrets;
 mod shell;
 
 pub(super) fn registry() -> Vec<Box<dyn AuditRule>> {
-    let mut rules: Vec<Box<dyn AuditRule>> = vec![Box::new(ObfuscatedContent)];
+    let mut rules: Vec<Box<dyn AuditRule>> =
+        vec![Box::new(ObfuscatedContent), Box::new(UndecodableContent)];
     rules.extend(content::rules());
     rules.extend(shell::rules());
     rules.extend(secrets::rules());
@@ -129,6 +134,44 @@ impl AuditRule for ObfuscatedContent {
                             "check the file for hidden characters; if the text is meant to be plain, retype the affected words in plain ASCII"
                                 .to_owned(),
                     }
+                })
+                .collect(),
+        )
+    }
+}
+
+/// A file that is not the text it claims to be.
+///
+/// Bytes that will not decode are read anyway, with the bad ones replaced,
+/// so a payload cannot be hidden from every rule by appending one stray
+/// byte. What the replacement costs is honesty about the rest of the file:
+/// some of what was scanned is a guess, and the reader deserves to know
+/// which file it was. Medium, because the file still scored on everything
+/// that did decode.
+struct UndecodableContent;
+
+impl AuditRule for UndecodableContent {
+    fn id(&self) -> &'static str {
+        "undecodable-content"
+    }
+
+    fn check(&self, prepared: &Prepared) -> Outcome {
+        Outcome::Ran(
+            prepared
+                .normalized
+                .iter()
+                .filter(|report| report.undecodable > 0)
+                .map(|report| Finding {
+                    rule: self.id().to_owned(),
+                    severity: Severity::Medium,
+                    location: report.location.clone(),
+                    message: format!(
+                        "{} byte(s) of this file are not text and were read as best they could be, so part of it was scanned as a guess",
+                        report.undecodable
+                    ),
+                    remediation:
+                        "save the file as UTF-8 text, or remove it if it was never meant to be text"
+                            .to_owned(),
                 })
                 .collect(),
         )

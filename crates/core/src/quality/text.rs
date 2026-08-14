@@ -11,6 +11,7 @@
 
 use unicode_normalization::UnicodeNormalization;
 
+use super::homoglyph;
 use super::{AuditInput, Content, Doc, Prepared, Severity, TreeFile};
 
 /// What deobfuscation had to do to one document. Only the two counts are
@@ -23,6 +24,9 @@ pub struct Normalization {
     pub invisible: usize,
     /// Letters folded to the Latin letters they imitate.
     pub homoglyphs: usize,
+    /// Bytes that were not valid UTF-8 and had to be replaced to read this
+    /// as text at all.
+    pub undecodable: usize,
 }
 
 impl Normalization {
@@ -38,6 +42,11 @@ impl Normalization {
     pub fn changed(&self) -> bool {
         self.invisible > 0 || self.homoglyphs > 0
     }
+
+    /// Whether anything here is worth handing to a rule at all.
+    pub fn reportable(&self) -> bool {
+        self.changed() || self.undecodable > 0
+    }
 }
 
 /// One line of a document, classified.
@@ -48,11 +57,11 @@ pub struct Line {
     /// ASCII-lowercased with whitespace flattened to spaces. Byte offsets
     /// match `text` exactly, so a match found here locates in the original.
     pub lower: String,
-    /// Inside a code fence or a blockquote. Content here is documentation
-    /// until proven otherwise, and its findings cost one severity less.
-    pub fenced: bool,
-    /// Byte ranges of inline `code` spans.
-    spans: Vec<(usize, usize)>,
+    /// This line is quoting something rather than instructing it, so its
+    /// findings cost one severity less — a blockquote, or any line of a
+    /// skill's supporting files. A code fence is not one of these: see
+    /// `lines`.
+    pub describing: bool,
 }
 
 impl Line {
@@ -66,28 +75,41 @@ impl Line {
         self.find(needle).is_some()
     }
 
-    /// True when this byte offset falls inside an inline code span — a flag
-    /// written as `--force` is being described, not invoked.
-    pub fn quoted_at(&self, at: usize) -> bool {
-        self.spans
-            .iter()
-            .any(|(start, end)| at >= *start && at < *end)
+    /// Every offset where `needle` sits in this line. A line that mentions
+    /// a path twice is two chances to match, and taking only the first lets
+    /// one innocent mention hide a guilty one behind it.
+    pub fn occurrences(&self, needle: &str) -> Vec<usize> {
+        let mut found = Vec::new();
+        let mut from = 0;
+        while let Some(at) = find_phrase(&self.lower[from..], needle) {
+            found.push(from + at);
+            from += at + 1;
+        }
+        found
     }
 
-    /// This line read as description rather than instruction — what every
-    /// line of a supporting file is.
-    pub fn describing(self) -> Line {
+    /// The character just before `at`, or `None` at the start of the line.
+    pub fn before(&self, at: usize) -> Option<char> {
+        self.lower[..at].chars().next_back()
+    }
+
+    /// The character just after a match of `len` bytes at `at`.
+    pub fn after(&self, at: usize, len: usize) -> Option<char> {
+        self.lower[at + len..].chars().next()
+    }
+
+    /// Mark this line as description rather than instruction.
+    pub fn as_description(self) -> Line {
         Line {
-            fenced: true,
+            describing: true,
             ..self
         }
     }
 
-    /// What a hit on `needle` weighs here: one severity less inside fenced
-    /// or backticked content, full weight in live prose.
-    pub fn weigh(&self, needle: &str, base: Severity) -> Severity {
-        let quoted = self.find(needle).is_some_and(|at| self.quoted_at(at));
-        match self.fenced || quoted {
+    /// What a hit weighs here: one severity less on a line that is
+    /// describing, full weight otherwise.
+    pub fn weigh(&self, base: Severity) -> Severity {
+        match self.describing {
             true => base.lowered(),
             false => base,
         }
@@ -134,7 +156,7 @@ pub fn prepare(input: AuditInput) -> Prepared {
     let mut docs = Vec::new();
     let mut clean = |location: String, text: &str| -> String {
         let (out, report) = deobfuscate(&location, text);
-        if report.changed() {
+        if report.reportable() {
             normalized.push(report);
         }
         out
@@ -196,7 +218,7 @@ fn tree_docs(
             let text = clean(location.clone(), &text);
             docs.push(Doc {
                 lines: match supporting {
-                    true => lines(&text).into_iter().map(Line::describing).collect(),
+                    true => lines(&text).into_iter().map(Line::as_description).collect(),
                     false => lines(&text),
                 },
                 location,
@@ -210,9 +232,10 @@ fn tree_docs(
 }
 
 /// A file that comes along with a skill rather than being what a harness
-/// loads. Its findings weigh one severity less, for the same reason a
-/// fenced example does: a test asserting that a command line is passed
-/// through is describing that command line, not issuing it.
+/// loads. Its findings weigh one severity less: a test asserting that a
+/// command line is passed through is describing that command line, not
+/// issuing it, and a reference page is background reading the model pulls in
+/// only when it needs the detail.
 ///
 /// This was settled by a real catalog. The vstack `orch` skill ships tests
 /// that assert `--dangerously-skip-permissions` reaches the launcher, and
@@ -220,11 +243,22 @@ fn tree_docs(
 /// are exactly what those rules look for, and neither is the skill telling
 /// a model to do anything. A key in one of these files still counts in
 /// full, because `plaintext-secrets` never downgrades.
+///
+/// The primary file — SKILL.md, an agent or command body, a hook's script —
+/// is never supporting, whatever it puts inside a fence.
 fn is_supporting(path: &std::path::Path) -> bool {
     path.components().any(|component| {
         matches!(
             component.as_os_str().to_str(),
-            Some("tests" | "test" | "__tests__" | "fixtures" | "testdata")
+            Some(
+                "tests"
+                    | "test"
+                    | "__tests__"
+                    | "fixtures"
+                    | "testdata"
+                    | "references"
+                    | "reference"
+            )
         )
     })
 }
@@ -261,6 +295,10 @@ fn hook_content(
 
 /// Invisible characters out, NFKC, then homoglyphs folded — in that order,
 /// so a fullwidth letter becomes ASCII before the confusable table sees it.
+///
+/// Bytes that were not valid UTF-8 arrive here already replaced by U+FFFD
+/// (see `TreeFile::read`), and counting them is how `undecodable-content`
+/// learns that some of what it read is a guess.
 pub fn deobfuscate(location: &str, text: &str) -> (String, Normalization) {
     let mut report = Normalization {
         location: location.to_owned(),
@@ -271,6 +309,7 @@ pub fn deobfuscate(location: &str, text: &str) -> (String, Normalization) {
         .filter(|c| {
             let invisible = is_invisible(*c);
             report.invisible += usize::from(invisible && is_reportable(*c));
+            report.undecodable += usize::from(*c == char::REPLACEMENT_CHARACTER);
             !invisible
         })
         .collect();
@@ -278,7 +317,7 @@ pub fn deobfuscate(location: &str, text: &str) -> (String, Normalization) {
         .nfkc()
         .collect::<String>()
         .chars()
-        .map(|c| match fold_homoglyph(c) {
+        .map(|c| match homoglyph::fold(c) {
             Some(latin) => {
                 report.homoglyphs += 1;
                 latin
@@ -310,71 +349,24 @@ fn is_reportable(c: char) -> bool {
     !matches!(c as u32, 0xFE00..=0xFE0F | 0xE0100..=0xE01EF)
 }
 
-/// Cyrillic and Greek letters that are drawn as Latin ones. The table is
-/// deliberately narrow: only characters whose confusion turns one readable
-/// English word into another.
-fn fold_homoglyph(c: char) -> Option<char> {
-    const CYRILLIC: &str = "аеорсухіјѕАВЕКМНОРСТУХ";
-    const CYRILLIC_LATIN: &str = "aeopcyxijsABEKMHOPCTYX";
-    const GREEK: &str = "ΑΒΕΖΗΙΚΜΝΟΡΤΥΧοναρ";
-    const GREEK_LATIN: &str = "ABEZHIKMNOPTYXovap";
-    let lookup = |from: &str, to: &str| {
-        from.chars()
-            .position(|candidate| candidate == c)
-            .and_then(|index| to.chars().nth(index))
-    };
-    lookup(CYRILLIC, CYRILLIC_LATIN).or_else(|| lookup(GREEK, GREEK_LATIN))
-}
-
-/// Split into lines, marking which sit inside a code fence or a blockquote
-/// and where each line's inline code spans are.
+/// Split into lines, marking the ones that are quoting somebody else.
+///
+/// A code fence is deliberately *not* one of those marks. A fenced `sh`
+/// block in a SKILL.md is not an illustration of the instruction, it is the
+/// instruction — it is the shape every real skill writes its commands in,
+/// and exempting it would mean the gate blocks the unnatural spelling of an
+/// attack and waves the natural one through. A blockquote is different: it
+/// is markdown's way of saying "these are someone else's words".
 pub fn lines(text: &str) -> Vec<Line> {
-    let mut fence: Option<String> = None;
     text.lines()
         .enumerate()
-        .map(|(index, raw)| {
-            let trimmed = raw.trim_start();
-            let delimiter = fence_delimiter(trimmed);
-            let inside = fence.is_some();
-            let is_delimiter = delimiter.is_some();
-            match (&fence, delimiter) {
-                (Some(open), Some(found)) if found.starts_with(open.as_str()) => fence = None,
-                (None, Some(found)) => fence = Some(found),
-                _ => {}
-            }
-            Line {
-                number: index + 1,
-                lower: flatten(raw),
-                fenced: inside || is_delimiter || trimmed.starts_with('>'),
-                spans: code_spans(raw),
-                text: raw.to_owned(),
-            }
+        .map(|(index, raw)| Line {
+            number: index + 1,
+            lower: flatten(raw),
+            describing: raw.trim_start().starts_with('>'),
+            text: raw.to_owned(),
         })
         .collect()
-}
-
-/// The backtick or tilde run that opens or closes a fence, when the line is
-/// one. Three or more of the same character, per CommonMark.
-fn fence_delimiter(trimmed: &str) -> Option<String> {
-    let marker = trimmed.chars().next().filter(|c| *c == '`' || *c == '~')?;
-    let run: String = trimmed.chars().take_while(|c| *c == marker).collect();
-    (run.chars().count() >= 3).then_some(run)
-}
-
-/// Byte ranges covered by inline `code` spans, backticks included.
-fn code_spans(raw: &str) -> Vec<(usize, usize)> {
-    let mut spans = Vec::new();
-    let mut open: Option<usize> = None;
-    for (offset, c) in raw.char_indices() {
-        if c != '`' {
-            continue;
-        }
-        match open.take() {
-            Some(start) => spans.push((start, offset + 1)),
-            None => open = Some(offset),
-        }
-    }
-    spans
 }
 
 /// ASCII-lowercase with every whitespace byte turned into a space. Both

@@ -81,7 +81,7 @@ impl SafetyBypass {
     ) -> Finding {
         Finding {
             rule: self.id().to_owned(),
-            severity: line.weigh(needle, base),
+            severity: line.weigh(base),
             location: at(doc, line),
             message: format!("`{needle}` {what}"),
             remediation:
@@ -122,7 +122,7 @@ impl AuditRule for DangerousCommands {
             let mut hit = |needle: &str, what: &str| {
                 findings.push(Finding {
                     rule: self.id().to_owned(),
-                    severity: line.weigh(needle, base),
+                    severity: line.weigh(base),
                     location: at(doc, line),
                     message: format!("`{needle}` {what}"),
                     remediation:
