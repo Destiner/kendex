@@ -67,6 +67,20 @@
 >   (session was locked; compositor withheld synthetic input): drag,
 >   snap, edge-resize, minimize on Hyprland — 30 seconds with the real
 >   window (`tauri dev`).
+>   UI round 4 landed (through 6b52576), owner-driven: window controls
+>   embedded in the pane (no titlebar row/border), tab dividers gone,
+>   breadcrumb only when nested, status footer; sonner toasts at point
+>   of action replacing buried error text (settings error field
+>   deleted); native folder pickers + reveal-in-file-browser + item
+>   content preview (new commands, adversarial-reviewed — plugin ACL
+>   defaults dropped as unforced surface); tilde expansion on typed
+>   paths; SectionLabel type hierarchy app-wide; Review & apply
+>   ordered by urgency with adopt feedback (backend was sound — pure
+>   feedback gap); Library detail panel (close affordances, kind
+>   icons, Where/Updated columns + filter, sanitized md/code preview
+>   via marked, description-only subtext); Home = attention + recent
+>   activity + glance tiles; Base UI checkbox display regression
+>   fixed (span collapses without inline-flex).
 > - Phase 7 release: repo is release-READY (ARCHITECTURE + per-adapter
 >   docs carry every durable decision; CHANGELOG Unreleased carries all
 >   12 breaking-register rows; suite green). The release ACT is
