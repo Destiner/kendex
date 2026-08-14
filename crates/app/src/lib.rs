@@ -3,6 +3,7 @@ mod commands;
 mod editor;
 pub mod recovery;
 mod sources;
+mod window;
 
 use tauri_specta::{Builder, collect_commands};
 
@@ -32,6 +33,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         sources::sources_refresh,
         sources::bundles_overview,
         sources::bundle_install,
+        window::window_minimize,
+        window::window_toggle_maximize,
+        window::window_close,
     ])
 }
 

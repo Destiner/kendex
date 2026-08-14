@@ -1,5 +1,7 @@
 import { useEffect } from "react";
+import { NavBar } from "@/components/nav-bar";
 import { Sidebar } from "@/components/sidebar";
+import { Titlebar } from "@/components/titlebar";
 import { CustomizePage } from "@/pages/customize";
 import { LibraryPage } from "@/pages/library";
 import { OverviewPage } from "@/pages/overview";
@@ -53,16 +55,22 @@ export default function App() {
   const page = useNavStore((s) => s.page);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        {page === "home" && <OverviewPage />}
-        {page === "library" && <LibraryPage />}
-        {page === "tools" && <ToolsProjectsPage />}
-        {page === "review" && <ReviewPage />}
-        {page === "customize" && <CustomizePage />}
-        {page === "settings" && <SettingsPage />}
-      </main>
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      <Titlebar />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar />
+        <main className="flex flex-1 flex-col overflow-hidden">
+          <NavBar />
+          <div className="flex-1 overflow-y-auto">
+            {page === "home" && <OverviewPage />}
+            {page === "library" && <LibraryPage />}
+            {page === "tools" && <ToolsProjectsPage />}
+            {page === "review" && <ReviewPage />}
+            {page === "customize" && <CustomizePage />}
+            {page === "settings" && <SettingsPage />}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

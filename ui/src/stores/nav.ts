@@ -22,6 +22,17 @@ export interface LibraryFilter {
   kind?: ItemKind;
 }
 
+/** Where the back button returns to: a page plus its tab state at push time. */
+export interface HistoryEntry {
+  page: Page;
+  libraryTab: LibraryTab;
+  toolsTab: ToolsTab;
+}
+
+// Small and fixed so a long session of cross-page hops never grows the
+// stack unbounded — nobody needs to back up more than this in practice.
+const HISTORY_CAP = 20;
+
 interface NavState {
   page: Page;
   scope: ScopeSelection;
@@ -29,11 +40,13 @@ interface NavState {
   toolsTab: ToolsTab;
   /** Consumed once by Installed on mount, then cleared. */
   libraryFilter: LibraryFilter | null;
+  history: HistoryEntry[];
   setPage: (page: Page) => void;
   setScope: (scope: ScopeSelection) => void;
   goToLibrary: (opts?: { tab?: LibraryTab } & LibraryFilter) => void;
   goToTools: (tab: ToolsTab) => void;
   clearLibraryFilter: () => void;
+  back: () => void;
 }
 
 export const useNavStore = create<NavState>((set) => ({
@@ -42,14 +55,46 @@ export const useNavStore = create<NavState>((set) => ({
   libraryTab: "installed",
   toolsTab: "tools",
   libraryFilter: null,
-  setPage: (page) => set({ page }),
+  history: [],
+  // A direct page pick starts a fresh navigation context — an old back
+  // trail pointing at a page the user deliberately left is a bug, not a
+  // shortcut, and a stale filter from before the jump shouldn't resurface.
+  setPage: (page) => set({ page, history: [], libraryFilter: null }),
   setScope: (scope) => set({ scope }),
   goToLibrary: ({ tab = "installed", tool, kind } = {}) =>
-    set({
+    set((state) => ({
       page: "library",
       libraryTab: tab,
       libraryFilter: tool || kind ? { tool, kind } : null,
-    }),
-  goToTools: (tab) => set({ page: "tools", toolsTab: tab }),
+      history: pushHistory(state, "library"),
+    })),
+  goToTools: (tab) =>
+    set((state) => ({
+      page: "tools",
+      toolsTab: tab,
+      history: pushHistory(state, "tools"),
+    })),
   clearLibraryFilter: () => set({ libraryFilter: null }),
+  back: () =>
+    set((state) => {
+      const prior = state.history.at(-1);
+      if (!prior) return state;
+      return {
+        ...prior,
+        libraryFilter: null,
+        history: state.history.slice(0, -1),
+      };
+    }),
 }));
+
+// Only a real page change is worth a stack entry — switching tabs within
+// the page you're already on isn't a "place" to come back to.
+function pushHistory(state: NavState, destination: Page): HistoryEntry[] {
+  if (state.page === destination) return state.history;
+  const entry: HistoryEntry = {
+    page: state.page,
+    libraryTab: state.libraryTab,
+    toolsTab: state.toolsTab,
+  };
+  return [...state.history, entry].slice(-HISTORY_CAP);
+}

@@ -5,6 +5,10 @@ import { type Handler, label, same, store, view } from "./mock-state";
 export const coreHandlers: Record<string, Handler> = {
   app_version: () => "0.1.0",
   capability_table: () => capabilityTable(),
+  // No real window to act on in the mock browser harness.
+  window_minimize: () => null,
+  window_toggle_maximize: () => null,
+  window_close: () => null,
   scan_machine: () => ({
     harnesses: store.state.harnesses,
     items: store.state.items,

@@ -100,6 +100,9 @@ export const commands = {
 	 *  one name and applies the plan that follows from it.
 	 */
 	bundleInstall: (scope: Scope, source: string, name: string) => typedError<BundleRow[], string>(__TAURI_INVOKE("bundle_install", { scope, source, name })),
+	windowMinimize: () => typedError<null, string>(__TAURI_INVOKE("window_minimize")),
+	windowToggleMaximize: () => typedError<null, string>(__TAURI_INVOKE("window_toggle_maximize")),
+	windowClose: () => typedError<null, string>(__TAURI_INVOKE("window_close")),
 };
 
 /* Types */

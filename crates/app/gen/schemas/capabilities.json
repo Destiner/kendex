@@ -1,1 +1,1 @@
-{}
+{"main":{"identifier":"main","description":"The frameless window draws its own titlebar; dragging it invokes the ACL-gated built-in start_dragging, which needs an explicit grant. Our own window commands are plain app commands and need none.","local":true,"windows":["main"],"permissions":["core:window:allow-start-dragging"]}}

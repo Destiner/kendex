@@ -264,6 +264,16 @@ changes carry a **Breaking** call-out with their migration note inline.
   had kept an older, heavier focus outline than the rest of the app, and
   the checkbox's error outline was too faint in dark mode.
 
+- The app draws its own title bar now — the system frame is gone.
+  Window controls sit top-right in the app's own style, the bar is a
+  drag handle (double-click to maximize), and the whole window looks
+  the same in both themes instead of wearing the desktop's frame.
+
+- You can step back. Following a link across pages — a count on Home,
+  a tool's badge into the Library — leaves a quiet back arrow and a
+  breadcrumb ("Library / Installed") at the top of the page; clicking
+  a section in the sidebar starts fresh.
+
 - Long "affects" lists on Review & apply fold away instead of printing
   a wall of identifiers: you see the count and the first few names with
   a "+17 more" you can expand. And when several findings hit the exact

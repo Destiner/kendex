@@ -31,6 +31,25 @@ fn committed_bindings_are_current() {
     );
 }
 
+/// Guards the window commands' wiring into `collect_commands!` — a command
+/// defined but never registered would pass compilation and only show up
+/// missing here.
+#[test]
+fn bindings_export_window_commands() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let fresh_path = tmp.path().join("bindings.ts");
+    vstack_app::specta_builder()
+        .export(exporter(), &fresh_path)
+        .expect("bindings export");
+    let fresh = std::fs::read_to_string(&fresh_path).expect("fresh bindings readable");
+    for command in ["window_minimize", "window_toggle_maximize", "window_close"] {
+        assert!(
+            fresh.contains(command),
+            "expected generated bindings to export `{command}`"
+        );
+    }
+}
+
 #[test]
 #[ignore = "writes ui/src/bindings.ts in place"]
 fn regenerate_bindings() {

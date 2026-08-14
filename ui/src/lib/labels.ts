@@ -9,6 +9,7 @@ import type {
   Severity,
   Verdict,
 } from "@/bindings";
+import type { LibraryTab, Page, ToolsTab } from "@/stores/nav";
 
 export const TOOL_NAMES: Record<HarnessId, string> = {
   claude: "Claude Code",
@@ -141,3 +142,44 @@ export function skipReasonShort(reason: string): string {
 export const moreItemsLabel = (hiddenCount: number): string =>
   `+${hiddenCount} more`;
 export const FEWER_ITEMS_LABEL = "Show less";
+
+export const PAGE_LABELS: Record<Page, string> = {
+  home: "Home",
+  review: "Review & apply",
+  library: "Library",
+  tools: "Tools & Projects",
+  customize: "Customize",
+  settings: "Settings",
+};
+
+const LIBRARY_TAB_LABELS: Record<LibraryTab, string> = {
+  installed: "Installed",
+  add: "Add from a catalog",
+};
+
+const TOOLS_TAB_LABELS: Record<ToolsTab, string> = {
+  tools: "Tools",
+  projects: "Projects",
+};
+
+// Where you are, in one line — pages without tabs read as just their name.
+export function breadcrumbLabel(nav: {
+  page: Page;
+  libraryTab: LibraryTab;
+  toolsTab: ToolsTab;
+}): string {
+  if (nav.page === "library") {
+    return `${PAGE_LABELS.library} / ${LIBRARY_TAB_LABELS[nav.libraryTab]}`;
+  }
+  if (nav.page === "tools") {
+    return `${PAGE_LABELS.tools} / ${TOOLS_TAB_LABELS[nav.toolsTab]}`;
+  }
+  return PAGE_LABELS[nav.page];
+}
+
+export const BACK_LABEL = "Back";
+export const WINDOW_CONTROL_LABELS = {
+  minimize: "Minimize",
+  maximize: "Maximize",
+  close: "Close",
+} as const;
