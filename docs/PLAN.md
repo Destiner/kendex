@@ -42,10 +42,12 @@
 >   control the engine already backed. Mock-verified every page in
 >   Chromium (before/after shots outside repo), vocabulary audit passed,
 >   one primary action per view. IA APPROVED by owner (proceed with recommendation).
->   REMAINING: (a) UI visual polish to Vercel grade — the owner's ask:
->   the tokens are stock shadcn monochrome; add a brand accent + semantic
->   palette, both themes, all through ui/src/index.css tokens; make every
->   page + shadcn component consistent (see docs/HANDOFF.md Task 1); (b) real-app Tauri walkthrough — the flows are covered by
+>   UI visual polish to Vercel grade landed (fb34766): blue accent +
+>   good/warning/critical/info semantic palette through index.css tokens,
+>   both themes, status dots + tinted pills, underline tabs, mono
+>   identifiers, browser-verified page by page against the owner's four
+>   Vercel references (before/after shots outside the tree).
+>   REMAINING: real-app Tauri walkthrough — the flows are covered by
 >   the 530-test Rust suite; seeing them in the real window is best done
 >   interactively.
 > - Phase 7 release: repo is release-READY (ARCHITECTURE + per-adapter
