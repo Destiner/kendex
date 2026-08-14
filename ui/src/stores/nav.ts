@@ -45,6 +45,10 @@ interface NavState {
   setScope: (scope: ScopeSelection) => void;
   goToLibrary: (opts?: { tab?: LibraryTab } & LibraryFilter) => void;
   goToTools: (tab: ToolsTab) => void;
+  /** A cross-page link from chrome that's always on screen (e.g. the status
+   * footer) — pushes history like the other goTo* helpers so back and the
+   * breadcrumb work, without needing per-tab state of its own. */
+  goTo: (page: Page) => void;
   clearLibraryFilter: () => void;
   back: () => void;
 }
@@ -73,6 +77,11 @@ export const useNavStore = create<NavState>((set) => ({
       page: "tools",
       toolsTab: tab,
       history: pushHistory(state, "tools"),
+    })),
+  goTo: (page) =>
+    set((state) => ({
+      page,
+      history: pushHistory(state, page),
     })),
   clearLibraryFilter: () => set({ libraryFilter: null }),
   back: () =>

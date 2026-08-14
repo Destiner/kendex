@@ -2,19 +2,14 @@ import { Minus, Square, X } from "lucide-react";
 import { commands } from "@/bindings";
 import { Button } from "@/components/ui/button";
 import { WINDOW_CONTROL_LABELS } from "@/lib/labels";
+import { cn } from "@/lib/utils";
 
-// The frameless window has no OS titlebar, so this bar both provides the
-// drag handle and hosts the window controls it replaced. data-tauri-drag-region
-// only affects the element it's on — the buttons inside stay clickable
-// because they don't carry it themselves.
-export function Titlebar() {
+// Floats over the content pane's top-right corner, above the drag strip
+// beneath it — normal hit-testing gives clicks to whichever element is on
+// top, so the buttons stay clickable without needing a drag-region cutout.
+export function WindowControls({ className }: { className?: string }) {
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: double-click here is a convenience alias for the maximize button already in the bar
-    <div
-      data-tauri-drag-region
-      onDoubleClick={() => void commands.windowToggleMaximize()}
-      className="flex h-8 shrink-0 items-center justify-end border-b bg-background"
-    >
+    <div className={cn("flex items-center", className)}>
       <Button
         variant="ghost"
         size="icon-sm"

@@ -89,6 +89,26 @@ describe("nav store", () => {
     expect(state.libraryFilter).toBeNull();
   });
 
+  it("goTo pushes history like the other cross-page helpers", () => {
+    useNavStore.getState().goTo("review");
+
+    const state = useNavStore.getState();
+    expect(state.page).toBe("review");
+    expect(state.history).toEqual([
+      { page: "home", libraryTab: "installed", toolsTab: "tools" },
+    ]);
+  });
+
+  it("back() after goTo restores the page it was called from", () => {
+    useNavStore.getState().goToTools("projects");
+    useNavStore.getState().goTo("review");
+    useNavStore.getState().back();
+
+    const state = useNavStore.getState();
+    expect(state.page).toBe("tools");
+    expect(state.toolsTab).toBe("projects");
+  });
+
   it("caps the history stack so it never grows without bound", () => {
     for (let i = 0; i < 25; i++) {
       useNavStore.getState().goToLibrary();

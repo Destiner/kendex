@@ -18,7 +18,12 @@ const emptyResult: ScanResult = {
 
 describe("scan store", () => {
   beforeEach(() => {
-    useScanStore.setState({ result: null, scanning: false, error: null });
+    useScanStore.setState({
+      result: null,
+      scanning: false,
+      error: null,
+      lastScanAt: null,
+    });
     vi.clearAllMocks();
   });
 
@@ -35,6 +40,29 @@ describe("scan store", () => {
     expect(state.result).toEqual(emptyResult);
     expect(state.error).toBeNull();
     expect(state.scanning).toBe(false);
+  });
+
+  it("stamps lastScanAt on a successful scan", async () => {
+    vi.mocked(commands.scanMachine).mockResolvedValue({
+      status: "ok",
+      data: emptyResult,
+    });
+
+    await useScanStore.getState().refresh();
+
+    expect(useScanStore.getState().lastScanAt).not.toBeNull();
+  });
+
+  it("leaves lastScanAt untouched when a scan fails", async () => {
+    useScanStore.setState({ lastScanAt: 123 });
+    vi.mocked(commands.scanMachine).mockResolvedValue({
+      status: "error",
+      error: "boom",
+    });
+
+    await useScanStore.getState().refresh();
+
+    expect(useScanStore.getState().lastScanAt).toBe(123);
   });
 
   it("keeps the last good result when a rescan fails", async () => {

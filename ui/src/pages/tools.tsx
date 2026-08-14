@@ -18,7 +18,7 @@ export function ToolsProjectsPage() {
         value={toolsTab}
         onValueChange={(value) => goToTools(value as ToolsTab)}
       >
-        <div className="border-b px-8 py-3">
+        <div className="px-8 py-3">
           <div className="mx-auto w-full max-w-5xl">
             <TabsList>
               <TabsTrigger value="tools">Tools</TabsTrigger>

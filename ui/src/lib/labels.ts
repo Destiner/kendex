@@ -183,3 +183,14 @@ export const WINDOW_CONTROL_LABELS = {
   maximize: "Maximize",
   close: "Close",
 } as const;
+
+// The status footer's left side: what the last scan is telling you.
+export const SCANNING_LABEL = "Scanning…";
+export const scanStatusLabel = (scannedAgo: string | null): string =>
+  scannedAgo ? `Up to date · scanned ${scannedAgo}` : "Up to date";
+
+// The status footer's right side: quiet counts that link to Review & apply.
+export const pendingChangesLabel = (count: number): string =>
+  count === 1 ? "1 pending change" : `${count} pending changes`;
+export const heldBackFooterLabel = (count: number): string =>
+  count === 1 ? "1 held back" : `${count} held back`;

@@ -19,7 +19,7 @@ export function LibraryPage() {
         onValueChange={(value) => goToLibrary({ tab: value as LibraryTab })}
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
-        <div className="border-b px-8 py-3">
+        <div className="px-8 py-3">
           <div className="mx-auto w-full max-w-5xl">
             <TabsList>
               <TabsTrigger value="installed">Installed</TabsTrigger>

@@ -7,6 +7,7 @@ import {
   SlidersHorizontal,
   TerminalSquare,
 } from "lucide-react";
+import { commands } from "@/bindings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,7 +46,12 @@ export function Sidebar() {
 
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
-      <div className="flex items-center justify-between px-4 py-4">
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: double-click here is a convenience alias for the maximize button already on screen */}
+      <div
+        data-tauri-drag-region
+        onDoubleClick={() => void commands.windowToggleMaximize()}
+        className="flex items-center justify-between px-4 py-4"
+      >
         <span className="font-semibold tracking-tight">vstack</span>
         <Button
           variant="ghost"

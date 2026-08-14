@@ -265,9 +265,21 @@ changes carry a **Breaking** call-out with their migration note inline.
   the checkbox's error outline was too faint in dark mode.
 
 - The app draws its own title bar now — the system frame is gone.
-  Window controls sit top-right in the app's own style, the bar is a
-  drag handle (double-click to maximize), and the whole window looks
-  the same in both themes instead of wearing the desktop's frame.
+  Window controls sit top-right in the app's own style, the top edge
+  is a drag handle (double-click to maximize), and the whole window
+  looks the same in both themes instead of wearing the desktop's
+  frame. The controls float inside the page rather than taking a bar
+  of their own, so content starts higher, and the heavy divider lines
+  under the old bar and under tab strips are gone.
+
+- A quiet status strip runs along the bottom of the window: whether
+  the last scan is current ("Up to date · scanned 2m ago"), and — when
+  there's something to do — how many changes are pending and how many
+  installs are held back, each a click away from Review & apply.
+
+- The back arrow and breadcrumb now appear only after you follow a
+  link from one page into another; opening a page from the sidebar
+  shows neither.
 
 - You can step back. Following a link across pages — a count on Home,
   a tool's badge into the Library — leaves a quiet back arrow and a
