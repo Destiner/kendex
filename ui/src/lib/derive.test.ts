@@ -6,6 +6,7 @@ import {
   filterItems,
   groupItems,
   groupScopes,
+  recentItems,
   scopeMatches,
 } from "./derive";
 
@@ -127,6 +128,31 @@ describe("countByKind", () => {
     ]);
     expect(counts.get("skill")).toBe(2);
     expect(counts.get("agent")).toBe(1);
+  });
+});
+
+describe("recentItems", () => {
+  it("sorts by modifiedAt descending and drops groups with no timestamp", () => {
+    const groups = groupItems([
+      item({ name: "old", modifiedAt: 100 }),
+      item({ name: "new", modifiedAt: 300 }),
+      item({ name: "mid", modifiedAt: 200 }),
+      item({ name: "never", modifiedAt: null }),
+    ]);
+    expect(recentItems(groups, 10).map((g) => g.name)).toEqual([
+      "new",
+      "mid",
+      "old",
+    ]);
+  });
+
+  it("caps at the requested limit", () => {
+    const groups = groupItems([
+      item({ name: "a", modifiedAt: 1 }),
+      item({ name: "b", modifiedAt: 2 }),
+      item({ name: "c", modifiedAt: 3 }),
+    ]);
+    expect(recentItems(groups, 2)).toHaveLength(2);
   });
 });
 

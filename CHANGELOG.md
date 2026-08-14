@@ -264,6 +264,12 @@ changes carry a **Breaking** call-out with their migration note inline.
   had kept an older, heavier focus outline than the rest of the app, and
   the checkbox's error outline was too faint in dark mode.
 
+- Home earned its place: what needs attention leads, a new "Recent
+  activity" list shows the latest-changed items on your machine (each
+  row jumps to the Library, filtered), and the count tiles moved
+  below as an at-a-glance strip. The stray error line at the bottom
+  is gone — errors show where they happen now.
+
 - Review & apply explains itself now — "Changes vstack wants to make,
   and things it found; nothing touches your files until you apply" —
   and the page reads in order of urgency: held-back items in a tinted
@@ -379,6 +385,11 @@ changes carry a **Breaking** call-out with their migration note inline.
   requires a `provider/model` form. Migration: refresh regenerates.
 
 ### Fixed
+
+- The checkboxes in Customize's agent-skills grid were collapsing
+  into thin slivers — a leftover from the component-library switch
+  that only this grid exercised. They render as proper checkboxes
+  again.
 
 - When something fails, you now hear about it where you clicked: a
   small notice appears in the corner with the reason, in plain words.

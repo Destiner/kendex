@@ -6,7 +6,7 @@ import {
   type Scope,
 } from "@/bindings";
 import { Skeleton } from "@/components/ui/skeleton";
-import { renderMarkdown } from "@/lib/markdown";
+import { renderMarkdown, stripFrontmatter } from "@/lib/markdown";
 
 type PreviewState =
   | { status: "loading" }
@@ -86,7 +86,9 @@ export function ItemPreview({
               event.preventDefault();
           }}
           // biome-ignore lint/security/noDangerouslySetInnerHtml: renderMarkdown escapes raw HTML tags and unsafe link/image URLs before this ever runs
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(state.content) }}
+          dangerouslySetInnerHTML={{
+            __html: renderMarkdown(stripFrontmatter(state.content)),
+          }}
         />
       ) : (
         <pre className="max-h-96 overflow-auto rounded-md border bg-muted/30 p-3 font-mono text-xs">

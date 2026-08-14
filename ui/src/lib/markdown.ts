@@ -45,3 +45,13 @@ renderer.use({
 export function renderMarkdown(source: string): string {
   return renderer.parse(source, { async: false }) as string;
 }
+
+// SKILL.md and agent files open with a YAML frontmatter block that the
+// preview's own header already surfaces as name/description — left in, it
+// renders as a stray "---" rule followed by raw "key: value" text instead
+// of prose.
+const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
+
+export function stripFrontmatter(source: string): string {
+  return source.replace(FRONTMATTER, "");
+}

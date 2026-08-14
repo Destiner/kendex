@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderMarkdown } from "./markdown";
+import { renderMarkdown, stripFrontmatter } from "./markdown";
 
 describe("renderMarkdown", () => {
   it("renders ordinary markdown", () => {
@@ -31,5 +31,21 @@ describe("renderMarkdown", () => {
     const html = renderMarkdown("![alt](javascript:alert(1))");
     expect(html).not.toContain("<img");
     expect(html).toContain("alt");
+  });
+});
+
+describe("stripFrontmatter", () => {
+  it("leaves content with no frontmatter untouched", () => {
+    expect(stripFrontmatter("# Title\n\nBody.")).toBe("# Title\n\nBody.");
+  });
+
+  it("removes a terminated frontmatter block", () => {
+    const source = "---\nname: deploy\ndescription: ships it\n---\n# Title\n";
+    expect(stripFrontmatter(source)).toBe("# Title\n");
+  });
+
+  it("leaves an unterminated block alone rather than eating the rest", () => {
+    const source = "---\nname: deploy\n\n# Title\n";
+    expect(stripFrontmatter(source)).toBe(source);
   });
 });

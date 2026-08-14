@@ -192,6 +192,14 @@ export const UNMANAGED_SECTION_EXPLAINER =
 export const adoptedToastLabel = (name: string): string =>
   `Now managing ${name}`;
 
+// Home page copy: attention keeps its own subtitle since it's the lead;
+// the other two sections are self-explanatory under their SectionLabel.
+export const HOME_SUBTITLE = "What needs your attention, and what changed";
+export const ALL_CAUGHT_UP_TITLE = "You're all caught up.";
+export const ALL_CAUGHT_UP_DETAIL =
+  "Everything matches what you've chosen to install.";
+export const RECENT_ACTIVITY_EMPTY = "Nothing has changed on this machine yet.";
+
 export const BACK_LABEL = "Back";
 export const WINDOW_CONTROL_LABELS = {
   minimize: "Minimize",
