@@ -55,6 +55,18 @@
 >   silently skipped the promised "Upgrade vstack.toml" op — fixed
 >   both-sides via engine::plan_apply, plus byte-faithful schema-line
 >   rewrite hardening; adversarial review folded in.
+>   UI round 3 landed (through 46a6581): primitives migrated Radix →
+>   Base UI with pixel-diffed parity both themes (plus a shadcn canon
+>   pass — focus-ring consistency, dead variants, one shared count-badge
+>   row); Review & apply's affected-list walls fold behind a +N-more
+>   disclosure and findings sharing one affected set group under it
+>   (fixture grown to the real 21-plugin density); frameless window
+>   with in-app titlebar (three window commands via tauri-specta,
+>   start-dragging capability granted per adversarial review) and a
+>   tested back/breadcrumb history stack. OWNER TO VERIFY hands-on
+>   (session was locked; compositor withheld synthetic input): drag,
+>   snap, edge-resize, minimize on Hyprland — 30 seconds with the real
+>   window (`tauri dev`).
 > - Phase 7 release: repo is release-READY (ARCHITECTURE + per-adapter
 >   docs carry every durable decision; CHANGELOG Unreleased carries all
 >   12 breaking-register rows; suite green). The release ACT is
