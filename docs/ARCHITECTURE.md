@@ -15,7 +15,8 @@ Four verbs over one model: **scan → declare → diff → apply**.
   Useful read-only with zero adoption; nothing copies into a shadow store.
 - **Declare** — a per-scope `vstack.toml` manifest is the only durable home
   of user intent.
-- **Diff** — drift = declared vs observed. The Audit page is this diff.
+- **Diff** — drift = declared vs observed. The Review & apply page is this
+  diff.
 - **Apply** — make disk match declaration, plan shown first. Adopt is the
   reverse arrow: record an observed item into the manifest.
 

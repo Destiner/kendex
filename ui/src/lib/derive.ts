@@ -1,4 +1,11 @@
-import type { ItemKind, ObservedItem, ScanResult, Scope } from "@/bindings";
+import type {
+  AuditView,
+  ItemKind,
+  ItemSafety,
+  ObservedItem,
+  ScanResult,
+  Scope,
+} from "@/bindings";
 
 export type ScopeSelection = "all" | "global" | { project: string };
 
@@ -101,6 +108,20 @@ export function projectScopes(result: ScanResult): string[] {
     if (item.scope.scope === "project") roots.add(item.scope.root);
   }
   return [...roots].sort();
+}
+
+// An item whose findings someone read and accepted is installed and staying,
+// so calling it held back would be the opposite of the truth. Only a block
+// with no live acceptance behind it is held back.
+export function heldBack(row: ItemSafety): boolean {
+  return row.verdict === "block" && row.override.state !== "active";
+}
+
+export function heldBackCount(views: AuditView[]): number {
+  return views.reduce(
+    (sum, view) => sum + view.safety.filter(heldBack).length,
+    0,
+  );
 }
 
 /** What a bundle carries, short enough to sit under its name. */

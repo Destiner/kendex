@@ -1,13 +1,11 @@
 import { useEffect } from "react";
 import { Sidebar } from "@/components/sidebar";
-import { AuditPage } from "@/pages/audit";
 import { CustomizePage } from "@/pages/customize";
-import { HarnessesPage } from "@/pages/harnesses";
-import { ItemsPage } from "@/pages/items";
+import { LibraryPage } from "@/pages/library";
 import { OverviewPage } from "@/pages/overview";
-import { ScopesPage } from "@/pages/scopes";
+import { ReviewPage } from "@/pages/review";
 import { SettingsPage } from "@/pages/settings";
-import { SourcesPage } from "@/pages/sources";
+import { ToolsProjectsPage } from "@/pages/tools";
 import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
@@ -58,12 +56,10 @@ export default function App() {
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <Sidebar />
       <main className="flex-1 overflow-y-auto">
-        {page === "overview" && <OverviewPage />}
-        {page === "items" && <ItemsPage />}
-        {page === "harnesses" && <HarnessesPage />}
-        {page === "scopes" && <ScopesPage />}
-        {page === "audit" && <AuditPage />}
-        {page === "sources" && <SourcesPage />}
+        {page === "home" && <OverviewPage />}
+        {page === "library" && <LibraryPage />}
+        {page === "tools" && <ToolsProjectsPage />}
+        {page === "review" && <ReviewPage />}
         {page === "customize" && <CustomizePage />}
         {page === "settings" && <SettingsPage />}
       </main>

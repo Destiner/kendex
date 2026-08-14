@@ -6,7 +6,7 @@ import { scopeLabel } from "@/lib/derive";
 import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
 
-export function AuditPage() {
+export function ReviewPage() {
   const { views, auditing, error, busy, refresh, applyPlan, adopt } =
     useAuditStore();
   const scope = useNavStore((s) => s.scope);
@@ -32,8 +32,8 @@ export function AuditPage() {
   return (
     <div>
       <PageHeader
-        title="Sync"
-        subtitle="Review what's out of sync, then apply fixes"
+        title="Review & apply"
+        subtitle="Review what's changed, then apply it"
       />
       <div className="space-y-4 p-8">
         {error ? <p className="text-sm text-destructive">{error}</p> : null}

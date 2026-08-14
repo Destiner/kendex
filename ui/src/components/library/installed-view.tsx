@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import type { HarnessId, ItemKind } from "@/bindings";
 import { ItemDetail } from "@/components/item-detail";
-import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,10 +44,11 @@ const HARNESSES: HarnessId[] = [
   "copilot",
 ];
 
-export function ItemsPage() {
+/** "Installed": everything on this machine, filterable, with a detail pane. */
+export function InstalledView() {
   const result = useScanStore((s) => s.result);
   const scope = useNavStore((s) => s.scope);
-  const setPage = useNavStore((s) => s.setPage);
+  const goToLibrary = useNavStore((s) => s.goToLibrary);
   const [kind, setKind] = useState<string>("any");
   const [harness, setHarness] = useState<string>("any");
   const [search, setSearch] = useState("");
@@ -75,11 +75,7 @@ export function ItemsPage() {
   };
 
   return (
-    <div className="flex h-full flex-col">
-      <PageHeader
-        title="Library"
-        subtitle="Everything installed across your tools"
-      />
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex gap-2 border-b px-8 py-3">
         <Input
           placeholder="Search by name…"
@@ -200,9 +196,9 @@ export function ItemsPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setPage("sources")}
+                          onClick={() => goToLibrary("add")}
                         >
-                          Go to Catalogs
+                          Add from a catalog
                         </Button>
                       </div>
                     )}

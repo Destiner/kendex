@@ -1,7 +1,6 @@
 import { GitBranch } from "lucide-react";
 import { useState } from "react";
-import type { BundleRow, Scope, SourceRow } from "@/bindings";
-import { CatalogBundles } from "@/components/catalog-bundles";
+import type { Scope, SourceRow } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,20 +11,16 @@ import { scopeName, scopePath } from "@/lib/labels";
 export function CatalogScopeGroup({
   scope,
   rows,
-  bundles,
   busy,
   onToggle,
   onRemove,
-  onInstallBundle,
   onAddFocus,
 }: {
   scope: Scope;
   rows: SourceRow[];
-  bundles: BundleRow[];
   busy: boolean;
   onToggle: (name: string, enabled: boolean) => void;
   onRemove: (name: string) => void;
-  onInstallBundle: (source: string, name: string) => void;
   onAddFocus: () => void;
 }) {
   const path = scopePath(scope);
@@ -51,19 +46,13 @@ export function CatalogScopeGroup({
           </div>
         ) : (
           rows.map((row) => (
-            <div key={row.name} className="space-y-2">
-              <CatalogRow
-                row={row}
-                busy={busy}
-                onToggle={(enabled) => onToggle(row.name, enabled)}
-                onRemove={() => onRemove(row.name)}
-              />
-              <CatalogBundles
-                rows={bundles.filter((bundle) => bundle.source === row.name)}
-                busy={busy}
-                onInstall={(name) => onInstallBundle(row.name, name)}
-              />
-            </div>
+            <CatalogRow
+              key={row.name}
+              row={row}
+              busy={busy}
+              onToggle={(enabled) => onToggle(row.name, enabled)}
+              onRemove={() => onRemove(row.name)}
+            />
           ))
         )}
       </CardContent>

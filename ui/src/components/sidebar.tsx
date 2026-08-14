@@ -1,11 +1,9 @@
 import {
-  FolderTree,
-  GitBranch,
+  CircleCheck,
   Home,
   Library,
   RefreshCw,
   Settings,
-  ShieldAlert,
   SlidersHorizontal,
   TerminalSquare,
 } from "lucide-react";
@@ -26,12 +24,10 @@ import { type Page, useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 
 const NAV: { page: Page; label: string; icon: typeof Home }[] = [
-  { page: "overview", label: "Home", icon: Home },
-  { page: "items", label: "Library", icon: Library },
-  { page: "harnesses", label: "Tools", icon: TerminalSquare },
-  { page: "scopes", label: "Projects", icon: FolderTree },
-  { page: "audit", label: "Sync", icon: ShieldAlert },
-  { page: "sources", label: "Catalogs", icon: GitBranch },
+  { page: "home", label: "Home", icon: Home },
+  { page: "review", label: "Review & apply", icon: CircleCheck },
+  { page: "library", label: "Library", icon: Library },
+  { page: "tools", label: "Tools & Projects", icon: TerminalSquare },
   { page: "customize", label: "Customize", icon: SlidersHorizontal },
   { page: "settings", label: "Settings", icon: Settings },
 ];
@@ -77,7 +73,7 @@ export function Sidebar() {
           >
             <Icon className="size-4" />
             <span className="flex-1 text-left">{label}</span>
-            {target === "audit" && driftCount > 0 ? (
+            {target === "review" && driftCount > 0 ? (
               <Badge variant="secondary">{driftCount}</Badge>
             ) : null}
           </button>

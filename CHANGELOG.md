@@ -252,6 +252,17 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Changed
 
+- The app is reorganized around what you're trying to do, not around its
+  internals: six sidebar destinations instead of eight. Home now leads
+  with what needs your attention — out of date, held back for safety, or
+  otherwise worth a look — each with its fix one click away, and a quiet
+  all-clear when there's nothing to do. Sync is now Review & apply, the
+  same preview-then-apply screen. Library and Catalogs merge into one
+  Library, with Installed and Add from a catalog as its two modes;
+  bundles — a catalog's ready-made sets — lead the add flow instead of
+  hiding under each catalog's entry. Tools and Projects merge into one
+  Tools & Projects, since both answer "where does my setup apply."
+
 - **Breaking:** agent tool permissions are typed intent, preserved from
   source to every renderer and never widened. A missing `role:` no longer
   renders Codex `sandbox_mode = "danger-full-access"` (role-less agents get

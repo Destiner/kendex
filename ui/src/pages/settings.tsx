@@ -74,7 +74,7 @@ export function SettingsPage() {
               ))
             )}
             <p className="text-xs text-muted-foreground">
-              Add or remove projects on the Projects page.
+              Add or remove projects on the Tools & Projects page.
             </p>
           </CardContent>
         </Card>
@@ -86,7 +86,7 @@ export function SettingsPage() {
           <CardContent className="space-y-1 text-sm">
             {overrides.length === 0 ? (
               <p className="text-muted-foreground">
-                None. Set one from the Tools page if a tool lives somewhere
+                None. Set one from Tools & Projects if a tool lives somewhere
                 unusual.
               </p>
             ) : (

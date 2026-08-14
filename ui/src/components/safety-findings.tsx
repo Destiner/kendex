@@ -1,5 +1,6 @@
 import type { ItemSafety, Severity } from "@/bindings";
 import { Badge } from "@/components/ui/badge";
+import { heldBack } from "@/lib/derive";
 import {
   type BadgeVariant,
   kindLabel,
@@ -25,13 +26,6 @@ function Scores({ row }: { row: ItemSafety }) {
       {row.quality ? ` · Quality ${row.quality.score}/100` : ""}
     </span>
   );
-}
-
-// An item whose findings someone read and accepted is installed and staying,
-// so calling it held back would be the opposite of the truth. Only a block
-// with no live acceptance behind it is held back.
-function heldBack(row: ItemSafety) {
-  return row.verdict === "block" && row.override.state !== "active";
 }
 
 // A row where every rule was skipped has not been audited, and showing
