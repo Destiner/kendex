@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Enforcement, HarnessId, ItemKind } from "@/bindings";
+import { StatusDot } from "@/components/status-dot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,13 +47,17 @@ export function HarnessCard({
         <CardTitle className="flex items-center gap-2 text-base">
           {name}
           {detectedRoot ? (
-            <Badge variant="secondary">Detected</Badge>
+            <Badge variant="good" className="gap-1.5">
+              <StatusDot tone="good" /> Detected
+            </Badge>
           ) : (
-            <Badge variant="outline">Not installed</Badge>
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <StatusDot tone="muted" /> Not installed
+            </span>
           )}
         </CardTitle>
         {version ? (
-          <p className="text-xs text-muted-foreground">{version}</p>
+          <p className="font-mono text-xs text-muted-foreground">{version}</p>
         ) : null}
         {detectedRoot ? (
           <p className="break-all font-mono text-xs text-muted-foreground">

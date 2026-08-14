@@ -1,5 +1,6 @@
-import { CheckCircle2, ShieldAlert, TriangleAlert } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
+import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,7 +13,7 @@ import { useSettingsStore } from "@/stores/settings";
 
 interface AttentionRow {
   key: string;
-  icon: typeof ShieldAlert;
+  tone: "critical" | "warning" | "info";
   title: string;
   detail: string;
   action?: { label: string; onClick: () => void };
@@ -25,12 +26,11 @@ function AttentionCard({
   row: AttentionRow;
   primary: boolean;
 }) {
-  const Icon = row.icon;
   return (
     <Card>
       <CardContent className="flex items-center justify-between gap-4 py-4">
         <div className="flex items-start gap-3">
-          <Icon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+          <StatusDot tone={row.tone} className="mt-2" />
           <div>
             <p className="font-medium">{row.title}</p>
             <p className="text-sm text-muted-foreground">{row.detail}</p>
@@ -75,7 +75,7 @@ export function OverviewPage() {
   if (blocked > 0) {
     rows.push({
       key: "safety",
-      icon: ShieldAlert,
+      tone: "critical",
       title:
         blocked === 1
           ? "1 install held back for safety"
@@ -87,7 +87,7 @@ export function OverviewPage() {
   if (driftCount > 0) {
     rows.push({
       key: "drift",
-      icon: TriangleAlert,
+      tone: "info",
       title:
         driftCount === 1
           ? "1 thing is out of date"
@@ -99,7 +99,7 @@ export function OverviewPage() {
   if (missing.length > 0) {
     rows.push({
       key: "missing-projects",
-      icon: TriangleAlert,
+      tone: "warning",
       title:
         missing.length === 1
           ? "1 project folder can't be found"
@@ -117,7 +117,7 @@ export function OverviewPage() {
   if (result.warnings.length > 0) {
     rows.push({
       key: "warnings",
-      icon: TriangleAlert,
+      tone: "warning",
       title:
         result.warnings.length === 1
           ? "1 file couldn't be read"

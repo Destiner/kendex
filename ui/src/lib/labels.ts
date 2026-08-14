@@ -57,14 +57,37 @@ export const VERDICT_LABELS: Record<Verdict, string> = {
   clean: "Nothing found",
 };
 
-export type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
+export type BadgeVariant =
+  | "default"
+  | "secondary"
+  | "destructive"
+  | "outline"
+  | "good"
+  | "warning"
+  | "critical"
+  | "info";
 
 export const STATE_BADGES: Record<DriftState, BadgeVariant> = {
-  missing: "default",
-  stale: "default",
+  missing: "info",
+  stale: "info",
   orphaned: "outline",
   unmanaged: "secondary",
-  conflict: "destructive",
+  conflict: "warning",
+};
+
+// How serious a safety finding reads at a glance.
+export const SEVERITY_BADGES: Record<Severity, BadgeVariant> = {
+  critical: "critical",
+  high: "warning",
+  medium: "info",
+  low: "secondary",
+};
+
+// What the safety check decided, at a glance.
+export const VERDICT_BADGES: Record<Verdict, BadgeVariant> = {
+  block: "critical",
+  warn: "warning",
+  clean: "good",
 };
 
 // "Personal" follows the ecosystem convention (Claude Code skills docs):

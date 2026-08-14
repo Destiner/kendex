@@ -252,6 +252,15 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Changed
 
+- The app has a considered look now instead of stock defaults: a
+  near-black ground with a blue accent, and color that carries meaning —
+  green means healthy, amber means worth attention, red means held back,
+  blue means an update is waiting. Status dots and tinted pills replace
+  the grey-on-grey badges, the one primary action on each screen is the
+  one blue button, file paths and versions read in monospace, and both
+  the light and dark themes got the same treatment. Pressing `/` now
+  jumps to the Library search box, and the box says so.
+
 - The safety check's caution level is a Settings control now (Strict /
   Balanced / Lenient) rather than a threshold with no way to set it.
 

@@ -26,7 +26,7 @@ export function FrontmatterTab({
 
   return (
     <Tabs defaultValue={harnesses[0]}>
-      <TabsList variant="line">
+      <TabsList>
         {harnesses.map((harness) => (
           <TabsTrigger key={harness} value={harness}>
             {toolName(harness)}

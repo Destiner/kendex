@@ -67,33 +67,35 @@ export function SyncScopeCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {view.drift.map((row) => (
-          <div
-            key={`${row.kind}:${row.name}:${row.harness}`}
-            className="flex flex-wrap items-start gap-2 text-sm"
-          >
-            <Badge variant={STATE_BADGES[row.state]}>
-              {STATE_LABELS[row.state]}
-            </Badge>
-            <span className="font-semibold">{row.name}</span>
-            <span className="text-muted-foreground">
-              {kindLabel(row.kind)} · {toolName(row.harness)}
-            </span>
-            <span className="min-w-0 flex-1 basis-full break-words text-muted-foreground">
-              {row.detail}
-            </span>
-            {row.state === "unmanaged" ? (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={() => onAdopt(row.kind, row.name, row.harness)}
-              >
-                Start managing
-              </Button>
-            ) : null}
-          </div>
-        ))}
+        <div className="divide-y divide-border">
+          {view.drift.map((row) => (
+            <div
+              key={`${row.kind}:${row.name}:${row.harness}`}
+              className="flex flex-wrap items-start gap-2 py-3 text-sm first:pt-0 last:pb-0"
+            >
+              <span className="font-semibold">{row.name}</span>
+              <Badge variant={STATE_BADGES[row.state]}>
+                {STATE_LABELS[row.state]}
+              </Badge>
+              <span className="text-muted-foreground">
+                {kindLabel(row.kind)} · {toolName(row.harness)}
+              </span>
+              <span className="min-w-0 flex-1 basis-full break-words text-muted-foreground">
+                {row.detail}
+              </span>
+              {row.state === "unmanaged" ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => onAdopt(row.kind, row.name, row.harness)}
+                >
+                  Start managing
+                </Button>
+              ) : null}
+            </div>
+          ))}
+        </div>
         {view.notes.map((note) => (
           <p key={note} className="text-xs text-muted-foreground">
             {note}

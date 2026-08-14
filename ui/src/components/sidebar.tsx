@@ -67,7 +67,7 @@ export function Sidebar() {
             className={cn(
               "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
               page === target
-                ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                ? "bg-sidebar-accent font-medium text-sidebar-foreground"
                 : "text-muted-foreground hover:bg-sidebar-accent/60",
             )}
           >
@@ -83,7 +83,9 @@ export function Sidebar() {
         // Without projects there is nothing to filter between — the picker
         // would render two choices that show identical lists.
         <div className="border-t px-3 py-3">
-          <p className="mb-1 px-1 text-xs text-muted-foreground">Show</p>
+          <p className="mb-1 px-1 text-[10px] font-medium tracking-widest text-muted-foreground/70 uppercase">
+            Show
+          </p>
           <Select
             value={scopeValue}
             onValueChange={(value) =>

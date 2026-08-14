@@ -1,20 +1,14 @@
-import type { ItemSafety, Severity } from "@/bindings";
+import type { ItemSafety } from "@/bindings";
 import { Badge } from "@/components/ui/badge";
 import { heldBack } from "@/lib/derive";
 import {
-  type BadgeVariant,
   kindLabel,
+  SEVERITY_BADGES,
   SEVERITY_LABELS,
   toolName,
+  VERDICT_BADGES,
   VERDICT_LABELS,
 } from "@/lib/labels";
-
-const SEVERITY_BADGES: Record<Severity, BadgeVariant> = {
-  critical: "destructive",
-  high: "destructive",
-  medium: "secondary",
-  low: "outline",
-};
 
 // Two scores, side by side and never combined: one says whether the
 // content is dangerous, the other whether it is well made, and only the
@@ -59,7 +53,15 @@ export function SafetyFindings({ rows }: { rows: ItemSafety[] }) {
           className="space-y-1 text-sm"
         >
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={heldBack(row) ? "destructive" : "secondary"}>
+            <Badge
+              variant={
+                heldBack(row)
+                  ? VERDICT_BADGES.block
+                  : row.verdict === "block"
+                    ? "warning"
+                    : VERDICT_BADGES[row.verdict]
+              }
+            >
               {row.verdict === "block" && !heldBack(row)
                 ? "Accepted by you"
                 : VERDICT_LABELS[row.verdict]}

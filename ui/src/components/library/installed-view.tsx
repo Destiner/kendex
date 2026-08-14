@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { HarnessId, ItemKind } from "@/bindings";
 import { ItemDetail } from "@/components/item-detail";
+import { StatusDot } from "@/components/status-dot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,7 @@ import {
 } from "@/components/ui/table";
 import { filterItems, groupItems } from "@/lib/derive";
 import { kindLabel, toolName } from "@/lib/labels";
+import { isSearchShortcutKey } from "@/lib/search-shortcut";
 import { cn } from "@/lib/utils";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
@@ -53,6 +55,18 @@ export function InstalledView() {
   const [harness, setHarness] = useState<string>("any");
   const [search, setSearch] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isSearchShortcutKey(event.key, event.target as HTMLElement | null))
+        return;
+      event.preventDefault();
+      searchRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const groups = useMemo(() => {
     if (!result) return [];
@@ -77,12 +91,18 @@ export function InstalledView() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex gap-2 border-b px-8 py-3">
-        <Input
-          placeholder="Search by name…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="max-w-56"
-        />
+        <div className="relative max-w-56 flex-1">
+          <Input
+            ref={searchRef}
+            placeholder="Search by name…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pr-8"
+          />
+          <kbd className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+            /
+          </kbd>
+        </div>
         <Select value={kind} onValueChange={setKind}>
           <SelectTrigger className="w-40">
             <SelectValue />
@@ -160,7 +180,8 @@ export function InstalledView() {
                     {group.installations.some((i) => i.enabled === false) ? (
                       <Badge variant="secondary">Off</Badge>
                     ) : (
-                      <span className="text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1.5 text-xs text-good">
+                        <StatusDot tone="good" />
                         Active
                       </span>
                     )}

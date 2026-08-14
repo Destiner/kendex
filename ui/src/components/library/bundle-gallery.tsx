@@ -34,7 +34,9 @@ export function BundleGallery({
               <Package className="size-4 shrink-0 text-muted-foreground" />
               <span className="font-medium">{row.name}</span>
               {row.version ? (
-                <Badge variant="outline">{row.version}</Badge>
+                <Badge variant="outline" className="font-mono">
+                  {row.version}
+                </Badge>
               ) : null}
               <Badge variant="secondary">{row.source}</Badge>
             </div>
