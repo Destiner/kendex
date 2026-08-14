@@ -1,13 +1,18 @@
 import { useState } from "react";
 import type { AuditView, DriftRow } from "@/bindings";
+import { SectionLabel } from "@/components/card-section";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { SafetyFindings } from "@/components/safety-findings";
+import {
+  BlockedFindings,
+  SafetyCleanSummary,
+} from "@/components/safety-findings";
+import { SafetyWarnings } from "@/components/safety-findings-affected";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { groupWarnings } from "@/lib/group-findings";
+import { groupWarnings, partitionSafety } from "@/lib/group-findings";
 import {
   driftDetail,
   kindLabel,
@@ -16,6 +21,7 @@ import {
   scopeName,
   scopePath,
   toolName,
+  UNMANAGED_SECTION_EXPLAINER,
 } from "@/lib/labels";
 
 export function SyncScopeCard({
@@ -37,6 +43,7 @@ export function SyncScopeCard({
   const changes = view.drift.filter((row) => row.state !== "unmanaged");
   const unmanaged = view.drift.filter((row) => row.state === "unmanaged");
   const orphans = view.drift.filter((row) => row.state === "orphaned");
+  const { blocked, warn, clean } = partitionSafety(view.safety);
   // With nothing else to fix, removing left-behind items is the only
   // change on offer — defaulting the checkbox on keeps it reachable.
   const orphansOnly = orphans.length > 0 && view.plan.length === 0;
@@ -70,66 +77,39 @@ export function SyncScopeCard({
           ) : null}
         </CardTitle>
       </CardHeader>
+      {/* Sections read top to bottom in order of urgency: held-back items
+          can't be worked around, so they lead; changes are what applying
+          this card does; safety warnings install anyway but deserve a
+          look; not-managed items are pure housekeeping; an all-clear
+          summary, if that's all there is, is the quietest thing here. */}
       <CardContent className="space-y-4">
+        <BlockedFindings rows={blocked} />
         {changes.length > 0 ? (
-          <div className="divide-y divide-border">
-            {changes.map((row) => {
-              const detail = driftDetail(row);
-              return (
-                <div
-                  key={`${row.kind}:${row.name}:${row.harness}`}
-                  className="flex flex-wrap items-center gap-2 py-2.5 text-sm first:pt-0 last:pb-0"
-                >
-                  <span className="font-semibold">{row.name}</span>
-                  <Badge variant={STATE_BADGES[row.state]}>
-                    {STATE_LABELS[row.state]}
-                  </Badge>
-                  <span className="text-muted-foreground">
-                    {kindLabel(row.kind)} · {toolName(row.harness)}
-                  </span>
-                  {detail ? (
-                    <span className="text-muted-foreground">{detail}</span>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        ) : null}
-        {unmanaged.length > 0 ? (
           <div className="space-y-1.5">
-            <p className="text-sm font-medium">
-              Not managed yet · {unmanaged.length}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Found on this computer. Manage them to keep them updated and
-              checked.
-            </p>
+            <SectionLabel>Changes</SectionLabel>
             <div className="divide-y divide-border">
-              {unmanaged.map((row) => (
-                <div
-                  key={`${row.kind}:${row.name}:${row.harness}`}
-                  className="flex items-center gap-2 py-2.5 text-sm last:pb-0"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="font-medium">{row.name}</span>{" "}
-                    <span className="text-muted-foreground">
+              {changes.map((row) => {
+                const detail = driftDetail(row);
+                return (
+                  <div
+                    key={`${row.kind}:${row.name}:${row.harness}`}
+                    className="flex flex-wrap items-center gap-2 py-2.5 first:pt-0 last:pb-0"
+                  >
+                    <span className="text-sm font-medium">{row.name}</span>
+                    <Badge variant={STATE_BADGES[row.state]}>
+                      {STATE_LABELS[row.state]}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
                       {kindLabel(row.kind)} · {toolName(row.harness)}
                     </span>
-                    <span className="block truncate font-mono text-xs text-muted-foreground">
-                      {row.detail}
-                    </span>
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="shrink-0"
-                    disabled={busy}
-                    onClick={() => onAdopt(row.kind, row.name, row.harness)}
-                  >
-                    Start managing
-                  </Button>
-                </div>
-              ))}
+                    {detail ? (
+                      <span className="text-xs text-muted-foreground">
+                        {detail}
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           </div>
         ) : null}
@@ -150,7 +130,48 @@ export function SyncScopeCard({
             {group.remediation ? ` — fix: ${group.remediation}` : ""}
           </p>
         ))}
-        <SafetyFindings rows={view.safety} />
+        <SafetyWarnings rows={warn} />
+        {unmanaged.length > 0 ? (
+          <div className="space-y-1.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <SectionLabel>Not managed yet</SectionLabel>
+              <span className="text-xs text-muted-foreground">
+                {unmanaged.length}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {UNMANAGED_SECTION_EXPLAINER}
+            </p>
+            <div className="divide-y divide-border/60 rounded-lg border bg-muted/30">
+              {unmanaged.map((row) => (
+                <div
+                  key={`${row.kind}:${row.name}:${row.harness}`}
+                  className="flex items-center gap-2 px-3 py-2.5"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="text-sm font-medium">{row.name}</span>{" "}
+                    <span className="text-xs text-muted-foreground">
+                      {kindLabel(row.kind)} · {toolName(row.harness)}
+                    </span>
+                    <span className="block truncate font-mono text-xs text-muted-foreground">
+                      {row.detail}
+                    </span>
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="shrink-0"
+                    disabled={busy}
+                    onClick={() => onAdopt(row.kind, row.name, row.harness)}
+                  >
+                    Start managing
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        <SafetyCleanSummary rows={clean} />
       </CardContent>
       <ConfirmDialog
         open={reviewOpen}

@@ -1,21 +1,11 @@
-import { ChevronDown, ChevronRight } from "lucide-react";
-import { useState } from "react";
 import type { Finding, ItemSafety } from "@/bindings";
+import { SectionLabel } from "@/components/card-section";
 import { Badge } from "@/components/ui/badge";
 import { heldBack } from "@/lib/derive";
+import { groupSkipped } from "@/lib/group-findings";
 import {
-  type AffectedSetGroup,
-  type FindingItem,
-  groupByAffectedSet,
-  groupFindings,
-  groupSkipped,
-  partitionSafety,
-} from "@/lib/group-findings";
-import {
-  FEWER_ITEMS_LABEL,
   hookDisplayName,
   kindLabel,
-  moreItemsLabel,
   SEVERITY_BADGES,
   SEVERITY_LABELS,
   skipReasonShort,
@@ -26,7 +16,8 @@ import {
 
 // A hook's raw identifier ("PreToolUse:*:claude-hook") is never the title —
 // the trailing name is, with the full identifier kept in mono beneath it.
-function ItemTitle({
+// Shared with the affected-set groups in safety-findings-affected.tsx.
+export function ItemTitle({
   row,
 }: {
   row: {
@@ -38,8 +29,8 @@ function ItemTitle({
   const name = row.kind === "hook" ? hookDisplayName(row.name) : row.name;
   return (
     <span className="min-w-0">
-      <span className="font-semibold">{name}</span>{" "}
-      <span className="text-muted-foreground">
+      <span className="text-sm font-medium">{name}</span>{" "}
+      <span className="text-xs text-muted-foreground">
         {kindLabel(row.kind)} · {toolName(row.harness)}
       </span>
       {row.kind === "hook" ? (
@@ -51,17 +42,29 @@ function ItemTitle({
   );
 }
 
-function FindingLine({ finding }: { finding: Finding }) {
+// The badge anchors a fixed-width column so every finding's message lines
+// up regardless of severity label length; the fix line sits visually
+// quieter than the message so a scan of the stack reads problem, then
+// remedy, without the two competing for attention.
+export function FindingLine({ finding }: { finding: Finding }) {
   return (
-    <div className="flex flex-wrap items-start gap-2 text-xs">
-      <Badge variant={SEVERITY_BADGES[finding.severity]}>
+    <div className="flex items-start gap-2 text-xs">
+      <Badge
+        variant={SEVERITY_BADGES[finding.severity]}
+        className="mt-0.5 shrink-0"
+      >
         {SEVERITY_LABELS[finding.severity]}
       </Badge>
-      <span className="min-w-0 flex-1 break-words text-muted-foreground">
-        {finding.message}
-        <span className="block break-all font-mono">{finding.location}</span>
-        <span className="block">Fix: {finding.remediation}</span>
-      </span>
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <p className="break-words text-muted-foreground">{finding.message}</p>
+        <p className="break-all font-mono text-muted-foreground">
+          {finding.location}
+        </p>
+        <p className="break-words text-muted-foreground/70">
+          <span className="text-muted-foreground/50">↳ Fix: </span>
+          {finding.remediation}
+        </p>
+      </div>
     </div>
   );
 }
@@ -110,92 +113,26 @@ function BlockedItem({ row }: { row: ItemSafety }) {
   );
 }
 
-// A finding affecting the collection of hooks in one settings file reads as
-// "N hooks in settings.json"; anything else just gets the plain kind name —
-// a plugin's declaration doesn't live in one file a person would recognize.
-function affectedLabel(items: FindingItem[], location: string): string {
-  const kind = items[0].kind;
-  const label = kindLabel(kind, items.length).toLowerCase();
-  if (kind !== "hook") return label;
-  const file = location.split("/").pop()?.split(":")[0];
-  return file ? `${label} in ${file}` : label;
-}
+// One export per verdict, so the page can place each at the urgency it
+// earns — held-back items loudest near the top of the card, warnings from
+// safety-findings-affected.tsx second, the clean summary last and quietest —
+// rather than always stacking block/warn/clean together as one unit.
 
-const COLLAPSE_THRESHOLD = 4;
-
-// Collapsed by default: a finding affecting a real plugin set (20+) prints
-// a wall of mono identifiers nobody reads end to end. The first handful
-// establishes what's affected; the rest is a click away.
-function AffectedList({ group }: { group: AffectedSetGroup }) {
-  const [expanded, setExpanded] = useState(false);
-  const items = group.items;
-  const visible = expanded ? items : items.slice(0, COLLAPSE_THRESHOLD);
-  const hiddenCount = items.length - visible.length;
-  const canCollapse = items.length > COLLAPSE_THRESHOLD;
+// Held back items stop an install outright; the tinted panel keeps them the
+// loudest thing on the card no matter what else is going on.
+export function BlockedFindings({ rows }: { rows: ItemSafety[] }) {
+  if (rows.length === 0) return null;
   return (
-    <p className="text-muted-foreground">
-      Affects {items.length} {affectedLabel(items, group.findings[0].location)}:{" "}
-      <span className="inline-flex flex-wrap gap-x-1">
-        {visible.map((item, i) => (
-          <span
-            key={`${item.harness}:${item.kind}:${item.name}`}
-            className="inline-block break-all font-mono"
-          >
-            {item.name}
-            {i < visible.length - 1 ? "," : ""}
-          </span>
-        ))}
-      </span>
-      {canCollapse ? (
-        <button
-          type="button"
-          onClick={() => setExpanded((e) => !e)}
-          className="ml-1 inline-flex items-center gap-0.5 align-middle text-foreground hover:underline"
-        >
-          {expanded ? (
-            <ChevronDown className="size-3" />
-          ) : (
-            <ChevronRight className="size-3" />
-          )}
-          {expanded ? FEWER_ITEMS_LABEL : moreItemsLabel(hiddenCount)}
-        </button>
-      ) : null}
-    </p>
-  );
-}
-
-// One block per distinct affected item-set: every finding that hit that
-// exact set stacks above a single affected list, so two rules landing on
-// the same 21 plugins (Codex's bundled registry) don't print the wall twice.
-function AffectedGroup({ group }: { group: AffectedSetGroup }) {
-  if (group.items.length === 1) {
-    const only = group.items[0];
-    return (
-      <div className="space-y-0.5">
-        <ItemTitle row={only} />
-        {group.findings.map((finding) => (
-          <FindingLine
-            key={`${finding.rule}:${finding.location}:${finding.message}`}
-            finding={finding}
-          />
-        ))}
-      </div>
-    );
-  }
-  return (
-    <div className="space-y-1 text-xs">
-      {group.findings.map((finding) => (
-        <FindingLine
-          key={`${finding.rule}:${finding.location}:${finding.message}`}
-          finding={finding}
-        />
+    <div className="space-y-3 rounded-lg border border-critical/30 bg-critical/5 p-3">
+      <SectionLabel className="text-critical">Held back</SectionLabel>
+      {rows.map((row) => (
+        <BlockedItem key={`${row.kind}:${row.name}:${row.harness}`} row={row} />
       ))}
-      <AffectedList group={group} />
     </div>
   );
 }
 
-function CleanSummary({ rows }: { rows: ItemSafety[] }) {
+export function SafetyCleanSummary({ rows }: { rows: ItemSafety[] }) {
   if (rows.length === 0) return null;
   const total = rows.length;
   const sentences = [
@@ -208,33 +145,4 @@ function CleanSummary({ rows }: { rows: ItemSafety[] }) {
     }),
   ];
   return <p className="text-sm text-muted-foreground">{sentences.join(" ")}</p>;
-}
-
-export function SafetyFindings({ rows }: { rows: ItemSafety[] }) {
-  const { blocked, warn, clean } = partitionSafety(rows);
-  if (blocked.length === 0 && warn.length === 0 && clean.length === 0) {
-    return null;
-  }
-  const affectedGroups = groupByAffectedSet(groupFindings(warn));
-
-  return (
-    <div className="space-y-3 border-t pt-3">
-      {blocked.map((row) => (
-        <BlockedItem key={`${row.kind}:${row.name}:${row.harness}`} row={row} />
-      ))}
-      {affectedGroups.length > 0 ? (
-        <div className="space-y-2">
-          {affectedGroups.map((group) => (
-            <AffectedGroup
-              key={group.items
-                .map((i) => `${i.harness}:${i.kind}:${i.name}`)
-                .join("|")}
-              group={group}
-            />
-          ))}
-        </div>
-      ) : null}
-      <CleanSummary rows={clean} />
-    </div>
-  );
 }

@@ -264,6 +264,27 @@ changes carry a **Breaking** call-out with their migration note inline.
   had kept an older, heavier focus outline than the rest of the app, and
   the checkbox's error outline was too faint in dark mode.
 
+- Review & apply explains itself now — "Changes vstack wants to make,
+  and things it found; nothing touches your files until you apply" —
+  and the page reads in order of urgency: held-back items in a tinted
+  panel that is unmistakably first, then the changes applying would
+  make, then safety notes worth a look, then items not managed yet
+  (with a line on what managing does), then the all-clear. Clicking
+  "Start managing" confirms itself ("Now managing …") instead of the
+  row silently vanishing.
+
+- Clicking an item in the Library opens a proper detail panel: close
+  it with the X, Escape, or another click on the row. It shows the
+  item's type, tools, where it lives, its file path, when it last
+  changed, and where it came from — plus the item's own content,
+  rendered nicely for text and shown as code for scripts — and a
+  "Show in file browser" button opens the folder on disk. The table
+  itself gained type icons, a "Where" column and filter (Personal or
+  per project), a quiet "Updated" column, and one rule for the line
+  under each name: it is always the item's description, never a
+  version or commit hash — those now live in the panel and read as
+  data, not prose. Both Library tabs share one content width.
+
 - Anywhere a folder path can be typed — adding a project, scanning
   for projects, tool-folder overrides — a Browse… button now opens
   the system folder picker instead of making you type the path.

@@ -1,17 +1,37 @@
 import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AuditView } from "@/bindings";
 import { commands } from "@/bindings";
 import { useAuditStore } from "./audit";
 
 vi.mock("@/bindings", () => ({
   commands: {
     auditAll: vi.fn(),
+    applyPlan: vi.fn(),
+    adoptItem: vi.fn(),
+    toggleItem: vi.fn(),
+    removeItem: vi.fn(),
   },
 }));
 
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
+
+vi.mock("./scan", () => ({
+  useScanStore: { getState: () => ({ refresh: vi.fn() }) },
+}));
+
+const globalScope = { scope: "global" as const };
+
+const emptyView: AuditView = {
+  scope: globalScope,
+  drift: [],
+  plan: [],
+  notes: [],
+  warnings: [],
+  safety: [],
+};
 
 describe("audit store refresh", () => {
   beforeEach(() => {
@@ -68,5 +88,65 @@ describe("audit store refresh", () => {
     await useAuditStore.getState().refresh();
 
     expect(toast.error).not.toHaveBeenCalled();
+  });
+});
+
+describe("audit store run() actions", () => {
+  beforeEach(() => {
+    useAuditStore.setState({
+      views: [emptyView],
+      auditing: false,
+      error: null,
+      busy: false,
+      backgroundFailureAnnounced: false,
+    });
+    vi.clearAllMocks();
+  });
+
+  it("toasts an apply failure with the backend message, not silently", async () => {
+    vi.mocked(commands.applyPlan).mockResolvedValue({
+      status: "error",
+      error: "disk is full",
+    });
+
+    await useAuditStore.getState().applyPlan(globalScope, false);
+
+    expect(toast.error).toHaveBeenCalledWith("disk is full");
+    expect(useAuditStore.getState().error).toBe("disk is full");
+  });
+
+  it("toasts an adopt failure with the backend message", async () => {
+    vi.mocked(commands.adoptItem).mockResolvedValue({
+      status: "error",
+      error: "permission denied",
+    });
+
+    await useAuditStore.getState().adopt(globalScope, "hook", "lint", "claude");
+
+    expect(toast.error).toHaveBeenCalledWith("permission denied");
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("toasts a success message when adopting an item", async () => {
+    vi.mocked(commands.adoptItem).mockResolvedValue({
+      status: "ok",
+      data: emptyView,
+    });
+
+    await useAuditStore.getState().adopt(globalScope, "hook", "lint", "claude");
+
+    expect(toast.success).toHaveBeenCalledWith("Now managing lint");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("does not toast success for a silent action like applying a plan", async () => {
+    vi.mocked(commands.applyPlan).mockResolvedValue({
+      status: "ok",
+      data: emptyView,
+    });
+
+    await useAuditStore.getState().applyPlan(globalScope, false);
+
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });

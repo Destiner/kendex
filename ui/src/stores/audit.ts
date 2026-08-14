@@ -7,6 +7,7 @@ import {
   type ItemKind,
   type Scope,
 } from "@/bindings";
+import { adoptedToastLabel } from "@/lib/labels";
 import { useScanStore } from "./scan";
 
 interface AuditState {
@@ -41,10 +42,14 @@ export function sameScope(a: Scope, b: Scope): boolean {
 }
 
 export const useAuditStore = create<AuditState>((set, get) => {
+  // A row that vanishes with no word said is indistinguishable from a
+  // button that did nothing — every outcome here gets a toast, success or
+  // failure, on top of the state update the page renders from.
   const run = async (
     action: () => Promise<
       { status: "ok"; data: AuditView } | { status: "error"; error: string }
     >,
+    successMessage?: string,
   ) => {
     set({ busy: true });
     const response = await action();
@@ -54,9 +59,11 @@ export const useAuditStore = create<AuditState>((set, get) => {
         busy: false,
         error: null,
       });
+      if (successMessage) toast.success(successMessage);
       await useScanStore.getState().refresh();
     } else {
       set({ busy: false, error: response.error });
+      toast.error(response.error);
     }
   };
 
@@ -90,7 +97,10 @@ export const useAuditStore = create<AuditState>((set, get) => {
     applyPlan: (scope, removeOrphans) =>
       run(() => commands.applyPlan(scope, removeOrphans)),
     adopt: (scope, kind, name, harness) =>
-      run(() => commands.adoptItem(scope, kind, name, harness)),
+      run(
+        () => commands.adoptItem(scope, kind, name, harness),
+        adoptedToastLabel(name),
+      ),
     toggle: (scope, name, enabled) =>
       run(() => commands.toggleItem(scope, name, enabled)),
     removeItem: (scope, name) => run(() => commands.removeItem(scope, name)),

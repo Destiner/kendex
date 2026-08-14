@@ -182,6 +182,16 @@ export const SETTINGS_SUBTITLE = "How vstack looks and behaves on this machine";
 export const SAFETY_HELP =
   "Strict catches more but sometimes flags things that are actually fine. Lenient trusts more, and only stops the riskiest items.";
 
+// Review & apply page copy: what the page is, and what "managing" an item
+// buys you — said once here so "Start managing" doesn't need to explain
+// itself on every row.
+export const REVIEW_SUBTITLE =
+  "Changes vstack wants to make, and things it found — nothing touches your files until you apply.";
+export const UNMANAGED_SECTION_EXPLAINER =
+  "vstack keeps managed items updated, checked for safety, and synced across tools.";
+export const adoptedToastLabel = (name: string): string =>
+  `Now managing ${name}`;
+
 export const BACK_LABEL = "Back";
 export const WINDOW_CONTROL_LABELS = {
   minimize: "Minimize",
