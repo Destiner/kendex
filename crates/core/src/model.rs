@@ -165,6 +165,13 @@ pub struct ObservedItem {
     /// Best-effort provenance: git origin URL of the content's real location.
     pub origin: Option<String>,
     pub description: Option<String>,
+    /// Unix seconds the primary file last changed, as `u32` because specta
+    /// refuses to export a 64-bit int (precision loss crossing the IPC
+    /// boundary) — good until year 2106. `None` where the item has no
+    /// single file of its own to stat (a config-entry kind, or a stat that
+    /// failed) — a shared file's mtime does not describe any one entry
+    /// inside it.
+    pub modified_at: Option<u32>,
 }
 
 /// A harness found on this machine.

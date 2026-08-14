@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
 
 use crate::model::FileState;
 
@@ -8,6 +9,20 @@ pub struct FoundFile {
     pub path: PathBuf,
     pub enabled: bool,
     pub description: Option<String>,
+    pub modified_at: Option<u32>,
+}
+
+/// Best-effort: a stat that fails (permissions, a link race, a clock before
+/// 1970 or past 2106) reports unavailable rather than failing the whole
+/// scan over one timestamp.
+pub fn mtime_unix(path: &Path) -> Option<u32> {
+    fs::metadata(path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|d| u32::try_from(d.as_secs()).ok())
 }
 
 pub fn state_of(path: &Path) -> FileState {
@@ -63,11 +78,13 @@ fn collect_files(
             None => stem.to_owned(),
         };
         let description = read_description(&path);
+        let modified_at = mtime_unix(&path);
         found.push(FoundFile {
             name,
             path,
             enabled,
             description,
+            modified_at,
         });
     }
 }
@@ -114,6 +131,7 @@ pub fn scan_subdirs(dir: &Path, marker: &str) -> Vec<FoundFile> {
         found.push(FoundFile {
             name: name.to_owned(),
             description: read_description(&marker_path),
+            modified_at: mtime_unix(&marker_path),
             path,
             enabled,
         });
@@ -196,6 +214,22 @@ mod tests {
         let found = scan_file_dir(tmp.path(), &["md"], None);
         let names: Vec<_> = found.iter().map(|f| (f.name.as_str(), f.enabled)).collect();
         assert_eq!(names, [("a", true), ("b", false), ("ns/c", true)]);
+        assert!(found.iter().all(|f| f.modified_at.is_some()));
+    }
+
+    #[test]
+    fn mtime_reads_a_real_files_stat_and_reports_none_for_a_missing_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("a.md");
+        fs::write(&path, "").unwrap();
+        let before = std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as u32
+            - 1;
+
+        assert!(mtime_unix(&path).unwrap() >= before);
+        assert_eq!(mtime_unix(&tmp.path().join("gone.md")), None);
     }
 
     #[test]
@@ -215,6 +249,7 @@ mod tests {
         let names: Vec<_> = found.iter().map(|f| (f.name.as_str(), f.enabled)).collect();
         assert_eq!(names, [("off", false), ("real", true)]);
         assert_eq!(found[1].description.as_deref(), Some("x"));
+        assert!(found[1].modified_at.is_some());
     }
 
     #[test]

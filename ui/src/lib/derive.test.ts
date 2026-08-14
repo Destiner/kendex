@@ -19,6 +19,7 @@ function item(overrides: Partial<ObservedItem>): ObservedItem {
     enabled: true,
     origin: null,
     description: null,
+    modifiedAt: null,
     ...overrides,
   };
 }

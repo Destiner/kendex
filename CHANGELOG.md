@@ -338,6 +338,11 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Fixed
 
+- Typing a folder the way a terminal spells it — `~/dev/my-project` —
+  now works everywhere a path can be typed: adding a project, scanning
+  a folder for projects, and tool-folder overrides. Before, the `~`
+  was taken literally and the add failed.
+
 - Applying from the app (and `vstack apply`) now performs the "Upgrade
   vstack.toml to the current format" step it promised. Before, the
   preview listed the upgrade but the apply quietly skipped it, so a v0.1

@@ -31,18 +31,29 @@ pub fn get_settings() -> Result<AppSettings, String> {
     settings::load(&env()?).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-#[specta::specta]
-pub fn update_settings(settings: AppSettings) -> Result<AppSettings, String> {
-    let env = env()?;
-    settings::save(&env, &settings).map_err(|e| e.to_string())?;
+fn update_settings_at(env: &Env, mut settings: AppSettings) -> Result<AppSettings, String> {
+    for root in settings.harness_roots.values_mut() {
+        *root = crate::paths::expand_tilde(&env.home, &root.to_string_lossy());
+    }
+    settings::save(env, &settings).map_err(|e| e.to_string())?;
     Ok(settings)
 }
 
 #[tauri::command]
 #[specta::specta]
+pub fn update_settings(settings: AppSettings) -> Result<AppSettings, String> {
+    update_settings_at(&env()?, settings)
+}
+
+fn register_project_at(env: &Env, path: &str) -> Result<AppSettings, String> {
+    let expanded = crate::paths::expand_tilde(&env.home, path);
+    settings::register_project(env, &expanded).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn register_project(path: String) -> Result<AppSettings, String> {
-    settings::register_project(&env()?, path.as_ref()).map_err(|e| e.to_string())
+    register_project_at(&env()?, &path)
 }
 
 #[tauri::command]
@@ -51,14 +62,19 @@ pub fn unregister_project(path: String) -> Result<AppSettings, String> {
     settings::unregister_project(&env()?, path.as_ref()).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-#[specta::specta]
-pub fn discover_projects(root: String) -> Result<Vec<String>, String> {
-    Ok(discover::discover_projects(root.as_ref())
+fn discover_projects_at(env: &Env, root: &str) -> Result<Vec<String>, String> {
+    let expanded = crate::paths::expand_tilde(&env.home, root);
+    Ok(discover::discover_projects(&expanded)
         .map_err(|e| e.to_string())?
         .into_iter()
         .map(|p| p.display().to_string())
         .collect())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn discover_projects(root: String) -> Result<Vec<String>, String> {
+    discover_projects_at(&env()?, &root)
 }
 
 #[derive(Serialize, Type)]
@@ -144,4 +160,61 @@ pub fn report_route(
         label: route.label,
         issue_url,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vstack_core::env::FakeOs;
+
+    fn env_in(dir: &std::path::Path) -> Env {
+        Env::fake(dir, FakeOs::Linux)
+    }
+
+    #[test]
+    fn register_project_expands_a_typed_tilde_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env = env_in(tmp.path());
+        std::fs::create_dir_all(tmp.path().join("dev/hyprtrade")).unwrap();
+
+        let settings = register_project_at(&env, "~/dev/hyprtrade").unwrap();
+        assert_eq!(
+            settings.projects,
+            [tmp.path().join("dev/hyprtrade").canonicalize().unwrap()]
+        );
+    }
+
+    #[test]
+    fn discover_projects_expands_a_typed_tilde_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env = env_in(tmp.path());
+        std::fs::create_dir_all(tmp.path().join("dev/app/.claude")).unwrap();
+
+        let found = discover_projects_at(&env, "~/dev").unwrap();
+        assert_eq!(
+            found,
+            [tmp.path()
+                .join("dev/app")
+                .canonicalize()
+                .unwrap()
+                .display()
+                .to_string()]
+        );
+    }
+
+    #[test]
+    fn harness_root_overrides_expand_a_typed_tilde() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env = env_in(tmp.path());
+        let mut settings = AppSettings::default();
+        settings
+            .harness_roots
+            .insert("claude".into(), "~/elsewhere/.claude".into());
+
+        let saved = update_settings_at(&env, settings).unwrap();
+        assert_eq!(
+            saved.harness_roots.get("claude"),
+            Some(&tmp.path().join("elsewhere/.claude"))
+        );
+    }
 }

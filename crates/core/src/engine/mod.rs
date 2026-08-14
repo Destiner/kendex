@@ -28,6 +28,7 @@ mod expansion;
 mod gate;
 mod gemini;
 mod item_plan;
+mod item_source;
 mod observed;
 pub mod ops;
 mod removal;
@@ -39,6 +40,7 @@ mod unmanaged;
 
 pub use gate::{ItemSafety, allow_unsafe_flag};
 use item_plan::plan_item;
+pub use item_source::{ItemSource, item_source};
 pub use observed::observed_safety;
 use scope_writes::{
     plan_config_edits, plan_lock_write, plan_schema_upgrade, plan_settings_seed, source_revisions,

@@ -1,14 +1,29 @@
-import type { AppSettings, Scope } from "@/bindings";
+import type { AppSettings, HarnessId, ItemKind, Scope } from "@/bindings";
 import { capabilityTable } from "./caps";
 import { type Handler, label, same, store, view } from "./mock-state";
 
 export const coreHandlers: Record<string, Handler> = {
   app_version: () => "0.1.0",
   capability_table: () => capabilityTable(),
-  // No real window to act on in the mock browser harness.
+  // No real window or OS pickers to act on in the mock browser harness.
   window_minimize: () => null,
   window_toggle_maximize: () => null,
   window_close: () => null,
+  pick_folder: () => null,
+  reveal_path: () => null,
+  item_source: ({
+    kind,
+    name,
+  }: {
+    scope: Scope;
+    kind: ItemKind;
+    name: string;
+    harness: HarnessId;
+  }) => ({
+    path: `~/.claude/${kind}s/${name}${kind === "skill" ? "/SKILL.md" : ".md"}`,
+    content: `---\nname: ${name}\ndescription: A mock ${kind} for preview.\n---\n\nThis is placeholder content for **${name}**.\n`,
+    truncated: false,
+  }),
   scan_machine: () => ({
     harnesses: store.state.harnesses,
     items: store.state.items,

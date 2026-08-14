@@ -1,7 +1,7 @@
 use serde::Serialize;
 use specta::Type;
 use vstack_core::apply::{Op, PlannedOp, Pre};
-use vstack_core::engine::{self, PlanOptions, ops};
+use vstack_core::engine::{self, ItemSource, PlanOptions, ops};
 use vstack_core::env::Env;
 use vstack_core::lock::{load as load_lock, lock_path};
 use vstack_core::manifest::{self, Finding, Manifest};
@@ -146,6 +146,20 @@ pub fn editor_inventory(scope: Scope) -> Result<EditorInventory, String> {
     available.dedup();
     inventory.available_skills = available;
     Ok(inventory)
+}
+
+/// The primary file behind one installed item, for the Library preview
+/// pane — SKILL.md for a skill, the document itself for everything else
+/// that has its own file.
+#[tauri::command]
+#[specta::specta]
+pub fn item_source(
+    scope: Scope,
+    kind: ItemKind,
+    name: String,
+    harness: HarnessId,
+) -> Result<ItemSource, String> {
+    engine::item_source(&env()?, &scope, kind, &name, harness).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

@@ -80,6 +80,24 @@ export const commands = {
 	/**  Write an edited manifest and reconcile the scope to it. */
 	updateManifest: (scope: Scope, manifest: Manifest_Deserialize) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("update_manifest", { scope, manifest })),
 	editorInventory: (scope: Scope) => typedError<EditorInventory, string>(__TAURI_INVOKE("editor_inventory", { scope })),
+	/**
+	 *  The primary file behind one installed item, for the Library preview
+	 *  pane — SKILL.md for a skill, the document itself for everything else
+	 *  that has its own file.
+	 */
+	itemSource: (scope: Scope, kind: ItemKind, name: string, harness: HarnessId) => typedError<ItemSource, string>(__TAURI_INVOKE("item_source", { scope, kind, name, harness })),
+	/**
+	 *  Native folder picker. Blocking, so this must not run on the main thread
+	 *  — an async command already runs off it, which is what the plugin's own
+	 *  docs call for.
+	 */
+	pickFolder: () => typedError<string | null, string>(__TAURI_INVOKE("pick_folder")),
+	/**
+	 *  Shows `path` in the system file browser. Only ever reveals a path that
+	 *  is actually there — the plain-word error is the fix, not a stack trace
+	 *  from the OS call that would have failed instead.
+	 */
+	revealPath: (path: string) => typedError<null, string>(__TAURI_INVOKE("reveal_path", { path })),
 	/**  Every declared source in every scope — the Sources page's one query. */
 	sourcesOverview: () => typedError<SourceRow[], string>(__TAURI_INVOKE("sources_overview")),
 	sourceAdd: (scope: Scope, name: string, reference: string) => typedError<SourceRow[], string>(__TAURI_INVOKE("source_add", { scope, name, reference })),
@@ -409,6 +427,12 @@ export type ItemSafety = {
 	override: OverrideState,
 };
 
+export type ItemSource = {
+	path: string,
+	content: string,
+	truncated: boolean,
+};
+
 /**
  *  A per-item render or parse warning, with the fix when there is one —
  *  shown in plan previews, the CLI, and the Audit page.
@@ -591,6 +615,15 @@ export type ObservedItem = {
 	/**  Best-effort provenance: git origin URL of the content's real location. */
 	origin: string | null,
 	description: string | null,
+	/**
+	 *  Unix seconds the primary file last changed, as `u32` because specta
+	 *  refuses to export a 64-bit int (precision loss crossing the IPC
+	 *  boundary) — good until year 2106. `None` where the item has no
+	 *  single file of its own to stat (a config-entry kind, or a stat that
+	 *  failed) — a shared file's mtime does not describe any one entry
+	 *  inside it.
+	 */
+	modifiedAt: number | null,
 };
 
 export type OpSupport = {

@@ -1,6 +1,8 @@
 pub mod audit;
 mod commands;
 mod editor;
+mod native;
+mod paths;
 pub mod recovery;
 mod sources;
 mod window;
@@ -26,6 +28,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         editor::get_manifest,
         editor::update_manifest,
         editor::editor_inventory,
+        editor::item_source,
+        native::pick_folder,
+        native::reveal_path,
         sources::sources_overview,
         sources::source_add,
         sources::source_remove,
@@ -94,6 +99,8 @@ pub fn run() -> tauri::Result<()> {
     }
     let builder = specta_builder();
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(builder.invoke_handler())
         .run(tauri::generate_context!())
 }

@@ -139,6 +139,7 @@ fn scan_surface(
                     path: found.path,
                     enabled: Some(found.enabled),
                     description: found.description,
+                    modified_at: found.modified_at,
                 });
             }
         }
@@ -154,6 +155,7 @@ fn scan_surface(
                     path: found.path,
                     enabled: Some(found.enabled),
                     description: found.description,
+                    modified_at: found.modified_at,
                 });
             }
         }
@@ -193,6 +195,9 @@ fn scan_structured_file(
                     enabled: entry.enabled,
                     origin: None,
                     description: entry.description,
+                    // One file holds every entry of this kind; its mtime
+                    // would describe all of them at once, not this one.
+                    modified_at: None,
                 });
             }
         }

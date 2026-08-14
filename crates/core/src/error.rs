@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+use crate::model::{HarnessId, ItemKind};
+
 #[derive(Debug, Error)]
 pub enum CoreError {
     #[error("cannot locate the home directory on this system")]
@@ -105,6 +107,13 @@ pub enum CoreError {
 
     #[error("pi package {name}: {message}")]
     PiPackage { name: String, message: String },
+
+    #[error("no {} named '{name}' found for {} in this scope", kind.name(), harness.name())]
+    ItemNotFound {
+        kind: ItemKind,
+        name: String,
+        harness: HarnessId,
+    },
 
     #[error("{command} failed: {stderr}")]
     GitFailed { command: String, stderr: String },

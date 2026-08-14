@@ -40,6 +40,7 @@ function item(
     enabled: true,
     origin: "vanillagreencom/vstack",
     description: null,
+    modifiedAt: null,
     ...over,
   };
 }
