@@ -24,9 +24,14 @@
 >   (B7), catalog metadata + bundle group identity for Phase 4.
 >   Adversarial review #5 folded (10 findings incl. repointed-source
 >   identity).
-> - Phase 4 ⏳ next: bundles + dependencies (reason edges, suppressions,
->   optional selections, dependency-aware remove, preview-first refresh
->   B10, removal preconditions).
+> - Phase 4 ✅ — typed reason edges (B6), skill dependencies with
+>   suppressions and optional selections, dependency-aware remove with
+>   real removal preconditions, preview-first refresh (B10), bundles
+>   (catalog + marketplace) with member-of uninstall semantics and
+>   hold-backs. Adversarial review #6 folded (offline-removal blocker
+>   fixed both-sides).
+> - Phase 5 ⏳ next: quality gates + scoring (decision table 2; the
+>   structural validators already landed in Phase 1).
 > - Standing: subagent reports may arrive only as idle notifications —
 >   recover them from the session's `subagents/*.jsonl` (user CLAUDE.md).
 >   Engine/render changes get adversarial review before merge. Commits
@@ -105,100 +110,6 @@ evidence in `docs/research/harnesskit.md`.
 | Score presentation | **adopt** (HarnessKit) | Safety and quality are two scores, never averaged; Audit rows gain a findings column, no new page. |
 
 ## Phases
-
-### Phase 4 — bundles + dependencies (directive 4)
-
-Both concepts, kept distinct: a **bundle** is a curated installable set
-(agents + skills + commands + hooks) with a name and provenance; a
-**dependency** is one item requiring another.
-
-**The provenance model — intent in the manifest, cache in the lock.**
-The manifest (the only durable home of intent) records *choices, not
-closure*: the requested-item set, installed bundles, optional-dependency
-selections, and suppressions (a member or dependency the user removed
-and wants kept removed). Derived members and dependencies are **not**
-written as individual declarations — that would promote every derived
-install into a user request and break uninstall. The plan derives the
-closure; the lock caches it as **reason edges** — structured values
-(edge kind + the source/kind/name/harness/scope of the counterpart),
-not strings: `requested`, `required-by`, `member-of`. An installation
-holds a *set* of edges (requested *and* member of two bundles *and*
-required by three items); losing the lock loses nothing — the graph
-rebuilds from manifest + catalogs.
-
-**Dependencies** — keep v1's frontmatter schema (`dependencies:
-{required, optional}`, bare names; minimal and sound), fix the semantics
-it botched, and scope it honestly:
-
-- Skills-only, same-source-only in v0.2, as in v1 (a catalog author
-  cannot know a consumer's source aliases, so cross-source references
-  have no stable identity to name — cross-kind and cross-source
-  curation is what bundles are for). Unresolvable or ambiguous names
-  are findings, never silent drops.
-- Harness propagation: a dependency installs for the parent's harness
-  set intersected with its own support; the missing remainder is a
-  warning on the parent, not a block.
-- No body-scrape fallback (v1's 106-line prose parser dies here).
-- Cycles are detected and reported as info — v1's real `orch ↔ dev`
-  pair is an intentional co-install, not an error; only an unresolvable
-  graph blocks. Suppressing a member of a required cycle marks every
-  parent in the cycle with the missing-dependency warning.
-- Refresh re-expands, preview-first, in *both* directions: upstream
-  additions **and** removals (a bundle dropping a member, a dep
-  disappearing) show in the plan; nothing installs or uninstalls
-  without the preview/confirm step. This changes CLI `refresh`, which
-  today applies its plan directly (`refresh.rs:58`) — regeneration of
-  existing installations stays automatic, set changes require
-  confirmation or `--yes` (register B10). On a non-TTY the confirm step
-  refuses before writing anything rather than prompting — the standing
-  non-interactive rule, which every new prompt in this cycle inherits.
-- A user's removal of a required dep records a suppression; refresh
-  honors it; Audit shows a "missing required dependency" warning on the
-  parent rather than resurrecting the dep (durable-removal semantics,
-  same shape as `mapping.rs`).
-- Optional deps become a real install-time choice (checkbox in UI, flag
-  in CLI), persisted as manifest selections — the choice survives
-  refresh and other machines.
-- Remove is dependency-aware: removing an item warns about dependents;
-  removing the last dependent offers to sweep orphans whose only
-  remaining edge was `required-by` it.
-- Removal ops bind to real preconditions (today `removal.rs` trashes
-  with `Pre::Any` — a file changed after preview still gets moved):
-  hash for files/trees, link target for managed symlinks. Bundle
-  uninstall multiplies the stakes.
-
-**Bundles:**
-
-- Catalog authoring: v1-shaped catalogs declare bundles in the source's
-  `vstack.toml` (`[bundles.<name>]` with member lists + description);
-  marketplace-shaped catalogs get them for free — each plugin entry *is*
-  a bundle (manifest, members, version, category from Phase 3).
-- Manifest declaration: `[bundles]` in the user's `vstack.toml` declares
-  the installed bundle; scan/diff/apply stay item-level over the derived
-  members (no new verbs).
-- Uninstall semantics — **decided**: removing a bundle removes the
-  members whose only remaining reason edges came from that bundle;
-  members that are also `requested`, `required-by` a surviving item, or
-  `member-of` another installed bundle stay. The preview lists exactly
-  what goes and what stays, with the reason. Justification: the edge
-  set makes this the only answer that never deletes something the user
-  asked for and never strands unwanted leftovers — the two failure
-  modes v1's model couldn't even express.
-- Removing a single member from an installed bundle records a
-  suppression (same mechanism as dependencies): refresh neither
-  resurrects it nor pretends the bundle is complete — Audit shows the
-  bundle as "installed, N members held back".
-- UI: bundles browsable/installable from the Sources page (metadata from
-  Phase 3); the full Library/Catalogs reshape waits for Phase 6.
-
-**Done when:** bundle install/uninstall round-trips with edge-tracked
-members and the preview shows the keep/remove split with reasons; a
-multi-edge installation (requested + bundle member + dependency) behaves
-correctly through every removal order; suppressions survive refresh and
-lock loss; an upstream member removal previews before anything
-uninstalls; dangling deps and cycles are findings; optional selections
-persist in the manifest; removal preconditions bind to hashes/targets;
-suite green.
 
 ### Phase 5 — quality gates + scoring (directive 7)
 
