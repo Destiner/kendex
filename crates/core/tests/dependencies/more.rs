@@ -131,6 +131,152 @@ fn refresh_previews_what_upstream_added_and_took_away() {
     assert!(installed(&f, "dev") && installed(&f, "github"));
 }
 
+/// A removal made while the catalog is offline sticks. What still wants an
+/// item is written into the record when it is installed, so the plan can say
+/// it has to stay removed with nothing to read — and the catalog coming back
+/// does not undo it.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_removal_made_while_the_catalog_is_offline_is_not_undone_by_its_return() {
+    let f = fixture("[skills.dev]\nsource = \"cat\"\n\n[skills.github]\nsource = \"cat\"\n");
+    apply_now(&f);
+    assert!(installed(&f, "github"));
+
+    let offline = f.source.with_extension("offline");
+    fs::rename(&f.source, &offline).unwrap();
+    let report = remove(&f, "github", false);
+    assert!(!installed(&f, "github"));
+    assert!(
+        manifest_of(&f).is_suppressed(ItemKind::Skill, "github"),
+        "the removal was not written down"
+    );
+    assert!(
+        report
+            .notes
+            .iter()
+            .any(|note| note.contains("cannot be read right now")),
+        "{:?}",
+        report.notes
+    );
+
+    fs::rename(&offline, &f.source).unwrap();
+    let report = plan_refresh(&f.env, &f.scope).unwrap();
+    apply::execute(&f.env, &report.plan, None).unwrap();
+    assert!(
+        !installed(&f, "github"),
+        "the catalog's return brought it back"
+    );
+    assert!(
+        audit(&f.env, &f.scope)
+            .unwrap()
+            .warnings
+            .iter()
+            .any(|w| w.name == "dev" && w.message.contains("missing required dependency"))
+    );
+}
+
+/// The record is a cache, so a removal has to work without one too: with the
+/// record deleted the catalogs still say what would come back, and the
+/// removal is written down from that rather than quietly doing nothing.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_removal_is_written_down_with_the_record_deleted() {
+    let f = fixture("[skills.dev]\nsource = \"cat\"\n\n[skills.github]\nsource = \"cat\"\n");
+    apply_now(&f);
+    fs::remove_file(lock_path(&f.env, &f.scope)).unwrap();
+
+    remove(&f, "github", false);
+    assert!(manifest_of(&f).is_suppressed(ItemKind::Skill, "github"));
+
+    let report = plan_refresh(&f.env, &f.scope).unwrap();
+    apply::execute(&f.env, &report.plan, None).unwrap();
+    assert!(
+        !lock_of(&f).entries.contains_key("skill:github:claude"),
+        "a refresh took it back on"
+    );
+    assert!(installed(&f, "dev"));
+}
+
+/// A declaration and a recorded removal for one name contradict each other.
+/// A removal only ever speaks for what would otherwise be derived, so the
+/// declaration wins: the item installs, and nothing calls it missing while it
+/// sits on disk.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_declared_skill_installs_and_reports_nothing_missing_when_it_is_also_kept_removed() {
+    let f = fixture(
+        "[skills.dev]\nsource = \"cat\"\n\n[skills.github]\nsource = \"cat\"\n\n[suppressed]\nskill = [\"github\"]\n",
+    );
+    let report = audit(&f.env, &f.scope).unwrap();
+    apply::execute(&f.env, &report.plan, None).unwrap();
+
+    assert!(installed(&f, "github"));
+    assert!(
+        !report
+            .warnings
+            .iter()
+            .any(|w| w.message.contains("kept removed")),
+        "{:?}",
+        report.warnings
+    );
+    assert!(
+        report
+            .notes
+            .iter()
+            .any(|note| note.contains("github") && note.contains("declaration wins")),
+        "{:?}",
+        report.notes
+    );
+}
+
+/// Two skills that require each other are walked more than once, because each
+/// pass teaches the other one something new. What they have to report is
+/// still reported once.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn skills_that_require_each_other_report_each_finding_once() {
+    let f = fixture("[skills.dev]\nsource = \"cat\"\n");
+    skill(
+        &f.source,
+        "dev",
+        "dependencies:\n  required: [github, nowhere]\n",
+    );
+    skill(&f.source, "github", "dependencies:\n  required: [dev]\n");
+
+    let said: Vec<String> = audit(&f.env, &f.scope)
+        .unwrap()
+        .warnings
+        .iter()
+        .filter(|w| w.message.contains("nowhere"))
+        .map(|w| w.name.clone())
+        .collect();
+    assert_eq!(said, ["dev"]);
+
+    // A dependency both of them require and the user took away: each says so,
+    // and each says it once.
+    let f = fixture("[skills.dev]\nsource = \"cat\"\n\n[suppressed]\nskill = [\"docs\"]\n");
+    skill(
+        &f.source,
+        "dev",
+        "dependencies:\n  required: [github, docs]\n",
+    );
+    skill(
+        &f.source,
+        "github",
+        "dependencies:\n  required: [dev, docs]\n",
+    );
+    skill(&f.source, "docs", "");
+
+    let said: Vec<String> = audit(&f.env, &f.scope)
+        .unwrap()
+        .warnings
+        .iter()
+        .filter(|w| w.message.contains("kept removed"))
+        .map(|w| w.name.clone())
+        .collect();
+    assert_eq!(said, ["dev", "github"]);
+}
+
 /// A catalog that cannot be read this pass knows nothing about what needs
 /// what, so it must not be the reason anything is uninstalled.
 #[test]

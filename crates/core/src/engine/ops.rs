@@ -1,7 +1,9 @@
+use std::collections::BTreeSet;
+
 use super::{EngineReport, PlanOptions, plan_scope};
 use crate::env::Env;
 use crate::error::Result;
-use crate::lock::lock_path;
+use crate::lock::{Lock, Reason, lock_path};
 use crate::manifest::{self, Manifest};
 use crate::model::{HarnessId, ItemKind, Scope};
 
@@ -81,16 +83,24 @@ pub fn remove(env: &Env, scope: &Scope, names: &[String], sweep: bool) -> Result
         }
     }
     manifest.optional_dependencies.retain(|_, t| !t.is_empty());
-    for (kind, name) in still_derived(env, scope, &manifest, names) {
+    for (kind, name) in kept_removed(env, scope, &manifest, &lock, names, &removing, &bundles) {
         manifest.suppress(kind, &name);
     }
-    let options = PlanOptions {
-        remove_orphans: true,
-        removal_filter: Some(removing),
-        sweep_unneeded: sweep,
-        uninstalled_bundles: bundles,
-    };
-    let mut report = plan_scope(env, scope, &manifest, &lock, &options)?;
+    let mut report = plan_scope(
+        env,
+        scope,
+        &manifest,
+        &lock,
+        &PlanOptions {
+            remove_orphans: true,
+            removal_filter: Some(removing),
+            sweep_unneeded: sweep,
+            uninstalled_bundles: bundles,
+        },
+    )?;
+    report
+        .notes
+        .extend(unreadable_origins(env, scope, &manifest, &lock, names));
     ensure_manifest_persisted(env, scope, &manifest, &mut report)?;
     Ok(report)
 }
@@ -99,23 +109,109 @@ pub fn remove(env: &Env, scope: &Scope, names: &[String], sweep: bool) -> Result
 /// and as what: a dependency of a skill that stays, or a member of a bundle
 /// that is still installed. Those are the removals that have to be written
 /// down, or the next plan would simply undo them.
+///
+/// Two readings answer it, and either one alone has a blind spot: the record
+/// says nothing once it has been deleted, and the catalogs say nothing while
+/// they cannot be read. So both are asked and anything either one names is
+/// written down — over-recording a removal costs a line the next `add`
+/// clears, while missing one puts back something the user took away.
+#[allow(clippy::too_many_arguments)]
+fn kept_removed(
+    env: &Env,
+    scope: &Scope,
+    manifest: &Manifest,
+    lock: &Lock,
+    names: &[String],
+    removing: &[String],
+    bundles: &[String],
+) -> BTreeSet<(ItemKind, String)> {
+    let mut kept = recorded_edges(lock, names, removing, bundles);
+    kept.extend(still_derived(env, scope, manifest, names));
+    kept
+}
+
+/// What the record already says holds these installations up. Every one
+/// carries the edges it was installed under, so an edge from something that
+/// is not going away is exactly what would derive the item again — and
+/// reading it costs no catalog, which is what makes a removal stick while a
+/// source is unreadable.
+fn recorded_edges(
+    lock: &Lock,
+    names: &[String],
+    removing: &[String],
+    bundles: &[String],
+) -> BTreeSet<(ItemKind, String)> {
+    lock.entries
+        .values()
+        .filter(|entry| names.contains(&entry.name))
+        .filter(|entry| {
+            entry.reasons.iter().any(|reason| match reason {
+                Reason::Requested => false,
+                Reason::RequiredBy { by } => !removing.contains(&by.name),
+                Reason::MemberOf { bundle } => !bundles.contains(&bundle.name),
+            })
+        })
+        .map(|entry| (entry.kind, entry.name.clone()))
+        .collect()
+}
+
+/// What the catalogs say the manifest still implies, now that the
+/// declarations are gone. This is the reading that survives a deleted
+/// record, and the one that sees an edge the catalog gained since the last
+/// install.
 fn still_derived(
     env: &Env,
     scope: &Scope,
     manifest: &Manifest,
     names: &[String],
-) -> Vec<(ItemKind, String)> {
+) -> BTreeSet<(ItemKind, String)> {
     let mut state = crate::engine::desired::DesiredState::default();
     let expansion = super::expansion::expand(env, scope, manifest, &mut state);
-    let mut derived = Vec::new();
+    let mut derived = BTreeSet::new();
     for name in names {
         for kind in super::expansion::PLANNED_KINDS {
             if expansion.contains(kind, name) {
-                derived.push((kind, name.clone()));
+                derived.insert((kind, name.clone()));
             }
         }
     }
     derived
+}
+
+/// The catalogs behind what is going away that cannot be read right now.
+/// What else still wants an item is written in its catalog, so an unreadable
+/// one means the preview cannot show the whole consequence of the removal.
+/// The removal itself stands either way — the record already says what has
+/// to stay removed.
+fn unreadable_origins(
+    env: &Env,
+    scope: &Scope,
+    manifest: &Manifest,
+    lock: &Lock,
+    names: &[String],
+) -> Vec<String> {
+    let mut sources: Vec<String> = lock
+        .entries
+        .values()
+        .filter(|entry| names.contains(&entry.name))
+        .map(|entry| entry.source.clone())
+        .collect();
+    sources.sort();
+    sources.dedup();
+    sources
+        .into_iter()
+        .filter(|source| {
+            !matches!(
+                crate::source::resolve(env, scope, source, manifest),
+                Ok(crate::source::SourceState::Ready(_))
+            )
+        })
+        .map(|source| {
+            format!(
+                "the catalog '{source}' cannot be read right now, so this preview cannot show everything that still wants what is going — the removal stands, and what has to stay removed is recorded"
+            )
+        })
+        .collect()
 }
 
 /// Flip declarations; disabling is non-destructive (invariant 5).

@@ -185,6 +185,16 @@ pub(super) fn expand(
         for (name, decl) in manifest.declared(kind) {
             let harnesses = target_harnesses(decl, manifest, kind, scope);
             expansion.declared(kind, name, decl, harnesses);
+            // A removal is recorded so that nothing derives the item back on
+            // its own. Declaring it by name is the plainest statement that it
+            // is wanted, so it installs and the record sits there doing
+            // nothing — one of the two has to go, and the user picks which.
+            if manifest.is_suppressed(kind, name) {
+                state.notes.push(format!(
+                    "{} {name} is declared and also kept removed — the declaration wins and it installs; drop it from [suppressed] in vstack.toml to settle it",
+                    kind.name()
+                ));
+            }
         }
     }
     let mut catalogs = Catalogs {

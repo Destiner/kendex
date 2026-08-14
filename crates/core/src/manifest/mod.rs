@@ -258,6 +258,15 @@ impl Manifest {
             .is_some_and(|names| names.iter().any(|held| held == name))
     }
 
+    /// Whether this item stays out of the plan. A recorded removal only ever
+    /// speaks for an item that would otherwise be derived — it is what keeps
+    /// a dependency or a bundle member from coming back on its own. A
+    /// declaration by name outranks it, the same way asking for the item
+    /// again does, so a declared item installs and reports nothing missing.
+    pub fn is_held_back(&self, kind: crate::model::ItemKind, name: &str) -> bool {
+        self.is_suppressed(kind, name) && !self.declared(kind).contains_key(name)
+    }
+
     /// Record that this item stays removed. Re-suppressing is a no-op, so a
     /// second removal of the same name writes nothing new.
     pub fn suppress(&mut self, kind: crate::model::ItemKind, name: &str) {

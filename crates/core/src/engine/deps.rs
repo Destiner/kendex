@@ -79,6 +79,11 @@ pub(super) fn expand(
         .map(|(name, _)| name.clone())
         .collect();
     let mut edges: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    // An item is walked again whenever it gains a tool to install on, and
+    // its findings are recomputed against that larger set each time. Keeping
+    // only the last set per item is what stops a pair of skills that require
+    // each other from reporting everything they find twice.
+    let mut findings: BTreeMap<String, Vec<ItemWarning>> = BTreeMap::new();
     while let Some(parent) = queue.pop_front() {
         // A declaration no tool here can hold installs nothing, so it needs
         // nothing either; the declaration itself reports that.
@@ -86,7 +91,12 @@ pub(super) fn expand(
             continue;
         };
         let harnesses = expansion.harnesses(ItemKind::Skill, &parent);
-        for (dep, harnesses) in wanted_by(&parent, &source, &harnesses, manifest, catalogs, state) {
+        let mut found = Vec::new();
+        let wanted = wanted_by(
+            &parent, &source, &harnesses, manifest, catalogs, state, &mut found,
+        );
+        findings.insert(parent.clone(), found);
+        for (dep, harnesses) in wanted {
             edges.entry(parent.clone()).or_default().insert(dep.clone());
             let decl = ItemDecl {
                 source: source.clone(),
@@ -118,6 +128,7 @@ pub(super) fn expand(
             }
         }
     }
+    state.warnings.extend(findings.into_values().flatten());
     for members in cycles(&edges) {
         state.notes.push(format!(
             "skills {} require each other — all of them install",
@@ -128,8 +139,9 @@ pub(super) fn expand(
 
 /// One item's dependencies, resolved against its own catalog: the required
 /// ones, plus the optional ones this manifest chose. Everything that cannot
-/// be resolved is a warning on the item that asked for it — a dependency is
-/// never dropped in silence.
+/// be resolved goes into `found` as a finding on the item that asked for it —
+/// a dependency is never dropped in silence.
+#[allow(clippy::too_many_arguments)]
 fn wanted_by(
     parent: &str,
     source: &str,
@@ -137,6 +149,7 @@ fn wanted_by(
     manifest: &Manifest,
     catalogs: &mut Catalogs,
     state: &mut DesiredState,
+    found: &mut Vec<ItemWarning>,
 ) -> Vec<(String, Vec<HarnessId>)> {
     let Some((sealed, config)) = catalogs.get(source, state) else {
         return Vec::new();
@@ -153,7 +166,7 @@ fn wanted_by(
         .cloned()
         .unwrap_or_default();
     for name in chosen.iter().filter(|c| !declared.optional.contains(c)) {
-        state.warnings.push(warn(
+        found.push(warn(
             parent,
             format!("{name} was chosen as an optional dependency, and {parent} does not offer one by that name"),
             format!("remove {name} from optional-dependencies.{parent} in vstack.toml"),
@@ -165,11 +178,11 @@ fn wanted_by(
         .iter()
         .chain(declared.optional.iter().filter(|o| chosen.contains(o)))
     {
-        let Some(dep) = resolve(name, parent, sealed, config, source, state) else {
+        let Some(dep) = resolve(name, parent, sealed, config, source, found) else {
             continue;
         };
-        if manifest.is_suppressed(ItemKind::Skill, &dep) {
-            state.warnings.push(warn(
+        if manifest.is_held_back(ItemKind::Skill, &dep) {
+            found.push(warn(
                 parent,
                 format!("missing required dependency: {parent} requires {dep}, which is kept removed"),
                 format!("add the skill {dep} again to restore it, or drop it from {parent}'s dependencies"),
@@ -178,7 +191,7 @@ fn wanted_by(
         }
         wanted.push((
             dep.clone(),
-            for_harnesses(&dep, parent, harnesses, manifest, state),
+            for_harnesses(&dep, parent, harnesses, manifest, found),
         ));
     }
     wanted
@@ -193,7 +206,7 @@ fn resolve(
     sealed: &SealedSource,
     config: &SourceConfig,
     source: &str,
-    state: &mut DesiredState,
+    found: &mut Vec<ItemWarning>,
 ) -> Option<String> {
     if find_item(sealed, config, ItemKind::Skill, name).is_some() {
         return Some(name.to_owned());
@@ -205,7 +218,7 @@ fn resolve(
     match candidates.len() {
         1 => candidates.into_iter().next(),
         0 => {
-            state.warnings.push(warn(
+            found.push(warn(
                 parent,
                 format!("{parent} requires {name}, which the catalog '{source}' does not offer"),
                 format!("add {name} to that catalog, or drop it from {parent}'s dependencies"),
@@ -213,7 +226,7 @@ fn resolve(
             None
         }
         _ => {
-            state.warnings.push(warn(
+            found.push(warn(
                 parent,
                 format!(
                     "{parent} requires {name}, and the catalog '{source}' offers {}",
@@ -235,7 +248,7 @@ fn for_harnesses(
     parent: &str,
     parent_harnesses: &[HarnessId],
     manifest: &Manifest,
-    state: &mut DesiredState,
+    found: &mut Vec<ItemWarning>,
 ) -> Vec<HarnessId> {
     let own = manifest.skills.get(dep).and_then(|d| d.harnesses.clone());
     let installs: Vec<HarnessId> = parent_harnesses
@@ -249,7 +262,7 @@ fn for_harnesses(
         .map(|harness| harness.display_name())
         .collect();
     if !missing.is_empty() {
-        state.warnings.push(warn(
+        found.push(warn(
             parent,
             format!(
                 "missing required dependency: {} {} {parent} without {dep}, which it requires",

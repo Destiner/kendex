@@ -229,7 +229,21 @@ lives in one capability table read by core and UI.
   each. A member the user takes away on their own is a suppression, the
   same durable removal a dependency gets: refresh honors it, and the audit
   reports the bundle as installed with members held back rather than
-  pretending it is whole. Authoring lives with the catalog —
+  pretending it is whole. Writing that suppression down asks both the lock
+  and the catalogs, because either alone has a blind spot — the lock says
+  nothing once it is deleted, the catalogs say nothing while they cannot be
+  read — and anything either names is recorded, since a stale line costs
+  the next `add` to clear while a missing one puts back what the user took
+  away. A removal that names an installation is an instruction and goes
+  even with its catalog unreadable; one nobody named is kept, because
+  "nothing needs it anymore" is not something an unreadable catalog can
+  say. A suppression only ever speaks for derived presence: declaring the
+  item outranks it, so it installs and the contradiction is reported rather
+  than leaving the item installed and called missing at the same time. Two
+  installed sets can carry one member and ask for it differently — the
+  tools are both, a set that is switched on installs it switched on, and
+  what neither rule settles is a finding naming both sets, never whichever
+  name sorts first. Authoring lives with the catalog —
   `[bundles.<name>]` in the source's own `vstack.toml`, or nothing at all
   for a marketplace-shaped catalog, where each plugin is a set already —
   and a set's members are its own catalog's items, since a bare name from

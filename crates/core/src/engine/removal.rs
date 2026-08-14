@@ -310,22 +310,27 @@ pub(super) fn orphans(
         // is stranded and must be cleaned up like any other orphan.
         let unreachable_source = manifest.declared(entry.kind).contains_key(&entry.name)
             && !state.processed.contains(&(entry.kind, entry.name.clone()));
+        // The caller named this installation: an instruction about this exact
+        // item, not a judgement about what anything still wants.
+        let named = options
+            .removal_filter
+            .as_ref()
+            .is_some_and(|names| names.contains(&entry.name));
         // An installation nobody declared was derived from one that was, and
         // the catalog it came from is where its reason is written down. With
         // that catalog offline, "nothing requires it anymore" is not
         // something this pass knows — so it keeps what it cannot account for.
-        let unreadable_origin =
-            derived_only(entry) && !origin_readable(env, scope, manifest, state, &entry.source);
+        // Being named is not that judgement, and it still goes.
+        let unreadable_origin = derived_only(entry)
+            && !named
+            && !origin_readable(env, scope, manifest, state, &entry.source);
         if unreachable_source || unreadable_origin {
             new_lock.entries.insert(key.clone(), entry.clone());
             continue;
         }
-        let named = options
-            .removal_filter
-            .as_ref()
-            .is_none_or(|names| names.contains(&entry.name));
         let unneeded = derived_only(entry);
-        let removable = (options.remove_orphans && named) || (options.sweep_unneeded && unneeded);
+        let removable = (options.remove_orphans && (named || options.removal_filter.is_none()))
+            || (options.sweep_unneeded && unneeded);
         drift.push(DriftRow {
             kind: entry.kind,
             name: entry.name.clone(),

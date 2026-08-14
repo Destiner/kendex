@@ -223,6 +223,27 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Fixed
 
+- Removing something while its catalog is unavailable now sticks. If the
+  catalog was offline, moved, or not downloaded yet, the removal went
+  through and then the next refresh quietly put the item back — silently,
+  under `vstack refresh --yes` in a script. The removal now stands on what
+  vstack already recorded about why the item was installed, so it stays
+  removed when the catalog comes back, and the preview says out loud that
+  a catalog it could not read may hold consequences it cannot show you.
+- An item that is both asked for by name and marked as kept-removed now
+  installs and reads as installed. Before, it was installed on disk while
+  the audit called it a missing dependency and reported its bundle as
+  incomplete. Asking for something by name is the stronger statement, so
+  it wins, and the contradiction is reported once with how to clear it.
+- A bundle you have switched on no longer installs its items switched off
+  because some other, switched-off bundle happens to carry the same item.
+  Whichever bundle sorts first used to decide, so the result depended on
+  the names. An item two bundles carry is now on if either bundle is on,
+  and anything else the two disagree about — which catalog it comes from,
+  how it is installed — is reported with both bundle names instead of
+  being settled silently.
+- Two skills that require each other no longer report each of their
+  findings twice in the audit.
 - Bringing a Gemini MCP server into a project no longer switches that
   server back on for your whole machine. Gemini records whether a server
   is on in one file every project shares; a project now reads that file
