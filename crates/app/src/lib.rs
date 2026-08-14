@@ -1,4 +1,4 @@
-mod audit;
+pub mod audit;
 mod commands;
 mod editor;
 pub mod recovery;

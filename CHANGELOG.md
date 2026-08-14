@@ -295,6 +295,18 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Fixed
 
+- Applying from the app (and `vstack apply`) now performs the "Upgrade
+  vstack.toml to the current format" step it promised. Before, the
+  preview listed the upgrade but the apply quietly skipped it, so a v0.1
+  setup file stayed old forever and the promise came back after every
+  apply. Found by walking the real app through the migration, not by the
+  test suite — the apply path planned from a copy of the file that no
+  longer looked old. The upgrade also now finds the real `schema` line
+  even when a comment mentions the same text or the spacing is unusual,
+  and changes only that line — comments and formatting survive
+  byte-for-byte. Applying a folder whose setup file was deleted out from
+  under the preview now says so instead of silently succeeding.
+
 - The safety check no longer flags ordinary code for reading its own
   settings. `process.env.API_URL`, `os.environ[...]`, `import.meta.env`
   and `Deno.env` are how every JavaScript and Python program reads the

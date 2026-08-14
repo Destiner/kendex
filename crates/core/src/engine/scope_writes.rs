@@ -103,9 +103,33 @@ pub(super) fn plan_lock_write(
     Ok(())
 }
 
+/// The schema assignment on one line, rewritten to the new value with every
+/// other byte — indentation, spacing style, trailing comment — kept. None
+/// when the line is not a plain `schema = <from>` integer assignment; a
+/// comment that merely mentions the text must never match.
+fn rewrite_schema_line(line: &str, from: u32, to: u32) -> Option<String> {
+    let body = line.trim_start();
+    let indent = &line[..line.len() - body.len()];
+    let body = body.strip_prefix("schema")?;
+    let after_key = body.trim_start();
+    let key_ws = &body[..body.len() - after_key.len()];
+    let after_eq = after_key.strip_prefix('=')?;
+    let value = after_eq.trim_start();
+    let eq_ws = &after_eq[..after_eq.len() - value.len()];
+    let digits = value.len() - value.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    let (number, tail) = value.split_at(digits);
+    if number != from.to_string() {
+        return None;
+    }
+    if !(tail.trim_start().is_empty() || tail.trim_start().starts_with('#')) {
+        return None;
+    }
+    Some(format!("{indent}schema{key_ws}={eq_ws}{to}{tail}"))
+}
+
 /// Upgrade an older-schema manifest through the normal journaled apply.
 /// The bump is a surgical text edit — the schema line changes and nothing
-/// else does (invariant 10); only if the line has an unexpected spelling
+/// else does (invariant 10); only if no schema assignment can be found
 /// does the plan fall back to a full rewrite.
 pub(super) fn plan_schema_upgrade(
     env: &Env,
@@ -115,14 +139,34 @@ pub(super) fn plan_schema_upgrade(
 ) -> Result<()> {
     let path = manifest::manifest_path(env, scope);
     let description = "Upgrade vstack.toml to the current format".to_owned();
-    let old_line = format!("schema = {}", manifest.schema);
-    let new_line = format!("schema = {}", manifest::MANIFEST_SCHEMA);
     let current = crate::fs::read_if_exists(&path)?.unwrap_or_default();
-    let op = match current.lines().any(|line| line.trim() == old_line) {
+    let mut rewritten = false;
+    let upgraded_text: String = current
+        .split_inclusive('\n')
+        .map(|line| {
+            let (body, newline) = match line.strip_suffix('\n') {
+                Some(body) => (body, "\n"),
+                None => (line, ""),
+            };
+            match rewritten {
+                false => {
+                    match rewrite_schema_line(body, manifest.schema, manifest::MANIFEST_SCHEMA) {
+                        Some(new_body) => {
+                            rewritten = true;
+                            format!("{new_body}{newline}")
+                        }
+                        None => line.to_owned(),
+                    }
+                }
+                true => line.to_owned(),
+            }
+        })
+        .collect();
+    let op = match rewritten {
         true => Op::WriteFile {
             pre: crate::apply::Pre::observed(&path)?,
             path,
-            bytes: current.replacen(&old_line, &new_line, 1).into_bytes(),
+            bytes: upgraded_text.into_bytes(),
         },
         false => {
             let mut upgraded = manifest.clone();

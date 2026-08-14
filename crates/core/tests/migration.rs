@@ -104,6 +104,49 @@ fn an_interrupted_migration_rolls_back_byte_identically() {
     }
 }
 
+/// A comment that merely mentions the schema line must never absorb the
+/// rewrite; the real assignment below it is the one that changes.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_comment_mentioning_the_schema_line_is_not_the_schema_line() {
+    let f = fixture();
+    let tricky = f.original.replacen(
+        "# my project setup",
+        "# was schema = 1 before the migration",
+        1,
+    );
+    fs::write(&f.manifest_path, &tricky).unwrap();
+
+    let report = audit(&f.env, &f.scope).unwrap();
+    apply::execute(&f.env, &report.plan, None).unwrap();
+
+    let migrated = fs::read_to_string(&f.manifest_path).unwrap();
+    assert_eq!(migrated, tricky.replace("schema = 1\n", "schema = 2\n"));
+    assert!(migrated.contains("# was schema = 1 before the migration"));
+}
+
+/// Non-canonical but valid spellings upgrade in place too — compact
+/// spacing and a trailing comment survive byte-for-byte; nothing falls
+/// back to a whole-file rewrite that would strip comments.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn unusual_schema_spellings_upgrade_in_place() {
+    for (spelling, upgraded) in [
+        ("schema=1", "schema=2"),
+        ("schema = 1   # v0.1", "schema = 2   # v0.1"),
+    ] {
+        let f = fixture();
+        let variant = f.original.replacen("schema = 1", spelling, 1);
+        fs::write(&f.manifest_path, &variant).unwrap();
+
+        let report = audit(&f.env, &f.scope).unwrap();
+        apply::execute(&f.env, &report.plan, None).unwrap();
+
+        let migrated = fs::read_to_string(&f.manifest_path).unwrap();
+        assert_eq!(migrated, variant.replacen(spelling, upgraded, 1));
+    }
+}
+
 #[test]
 #[allow(clippy::unwrap_used)]
 fn a_newer_schema_refuses_to_load() {

@@ -2,7 +2,7 @@ use serde::Serialize;
 use specta::Type;
 use vstack_core::engine::{self, DriftRow, ItemSafety, ItemWarning, PlanOptions, ops};
 use vstack_core::env::Env;
-use vstack_core::lock::{load as load_lock, lock_path};
+use vstack_core::error::CoreError;
 use vstack_core::model::{HarnessId, ItemKind, Scope};
 use vstack_core::{apply, manifest};
 
@@ -26,7 +26,7 @@ pub struct AuditView {
     pub safety: Vec<ItemSafety>,
 }
 
-pub(crate) fn view(env: &Env, scope: &Scope) -> Result<AuditView, String> {
+pub fn view(env: &Env, scope: &Scope) -> Result<AuditView, String> {
     let report = engine::audit(env, scope).map_err(|e| e.to_string())?;
     Ok(AuditView {
         scope: scope.clone(),
@@ -59,24 +59,35 @@ pub fn audit_all() -> Result<Vec<AuditView>, String> {
     scopes.iter().map(|scope| view(&env, scope)).collect()
 }
 
-#[tauri::command]
-#[specta::specta]
-pub fn apply_plan(scope: Scope, remove_orphans: bool) -> Result<AuditView, String> {
-    let env = env()?;
-    let path = manifest::manifest_path(&env, &scope);
-    let loaded = manifest::load_for_mutation(&path)
-        .map_err(|e| e.to_string())?
-        .ok_or("no manifest for this scope yet")?;
-    let lock = load_lock(&lock_path(&env, &scope)).map_err(|e| e.to_string())?;
+/// The apply path plans through the same loader the audit view used, so
+/// the listed plan is what executes — including the schema upgrade a v0.1
+/// manifest is owed on its first apply. (Orphan removal is the one opt-in
+/// extra; the dialog lists each left-behind item beside its checkbox.)
+pub fn apply_scope(env: &Env, scope: &Scope, remove_orphans: bool) -> Result<AuditView, String> {
+    // A manifest that vanished or turned legacy since the preview must be
+    // said out loud, not answered with a silent empty apply.
+    let path = manifest::manifest_path(env, scope);
+    match manifest::load(&path).map_err(|e| e.to_string())? {
+        manifest::ManifestFile::Current(_) => {}
+        manifest::ManifestFile::Absent => return Err("no manifest for this scope yet".into()),
+        manifest::ManifestFile::Legacy { .. } => {
+            return Err(CoreError::LegacyManifest { path }.to_string());
+        }
+    }
     let options = PlanOptions {
         remove_orphans,
         removal_filter: None,
         ..PlanOptions::default()
     };
-    let report =
-        engine::plan_scope(&env, &scope, &loaded, &lock, &options).map_err(|e| e.to_string())?;
-    apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
-    view(&env, &scope)
+    let report = engine::plan_apply(env, scope, &options).map_err(|e| e.to_string())?;
+    apply::execute(env, &report.plan, None).map_err(|e| e.to_string())?;
+    view(env, scope)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn apply_plan(scope: Scope, remove_orphans: bool) -> Result<AuditView, String> {
+    apply_scope(&env()?, &scope, remove_orphans)
 }
 
 #[tauri::command]

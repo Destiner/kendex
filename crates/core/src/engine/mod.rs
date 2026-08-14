@@ -312,7 +312,7 @@ fn plan_refusals(
 /// Read-only audit for a scope. A legacy or absent manifest still reports
 /// unmanaged items; nothing is planned that would touch a legacy file.
 pub fn audit(env: &Env, scope: &Scope) -> Result<EngineReport> {
-    plan_declared(env, scope, &PlanOptions::default())
+    plan_apply(env, scope, &PlanOptions::default())
 }
 
 /// What a refresh would do: regenerate everything declared, and re-derive
@@ -320,7 +320,7 @@ pub fn audit(env: &Env, scope: &Scope) -> Result<EngineReport> {
 /// an addition, one that went away leaves an installation nothing needs. The
 /// caller previews the set changes before any of it is applied.
 pub fn plan_refresh(env: &Env, scope: &Scope) -> Result<EngineReport> {
-    plan_declared(
+    plan_apply(
         env,
         scope,
         &PlanOptions {
@@ -330,7 +330,12 @@ pub fn plan_refresh(env: &Env, scope: &Scope) -> Result<EngineReport> {
     )
 }
 
-fn plan_declared(env: &Env, scope: &Scope, options: &PlanOptions) -> Result<EngineReport> {
+/// Plan what disk needs to match declaration, from the manifest as it sits
+/// on disk. This is the loader the audit view AND the confirmed apply both
+/// use — planning an apply from a mutation-normalized manifest would drop
+/// the schema-upgrade op the preview promised, leaving a v0.1 manifest
+/// beside a current lock forever.
+pub fn plan_apply(env: &Env, scope: &Scope, options: &PlanOptions) -> Result<EngineReport> {
     let scope = &scope.canonical();
     let manifest_file = manifest::load(&manifest::manifest_path(env, scope))?;
     let lock = crate::lock::load(&lock_path(env, scope))?;

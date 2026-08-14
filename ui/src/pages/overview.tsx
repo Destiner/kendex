@@ -136,7 +136,7 @@ export function OverviewPage() {
 
         {rows.length === 0 ? (
           <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-5 py-4">
-            <CheckCircle2 className="size-5 text-primary" />
+            <CheckCircle2 className="size-5 text-good" />
             <div>
               <p className="font-medium">You're all caught up.</p>
               <p className="text-sm text-muted-foreground">

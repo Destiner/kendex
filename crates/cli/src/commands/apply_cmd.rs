@@ -1,7 +1,7 @@
-use vstack_core::engine::{PlanOptions, plan_scope};
+use vstack_core::engine::{PlanOptions, plan_apply};
 use vstack_core::env::Env;
-use vstack_core::lock::{load as load_lock, lock_path};
-use vstack_core::manifest;
+use vstack_core::error::CoreError;
+use vstack_core::manifest::{self, ManifestFile};
 
 use super::engine_common::{confirm_and_execute, print_report};
 use super::{CliResult, resolve_scopes, say};
@@ -22,19 +22,25 @@ pub fn run(
     allow_unsafe: Vec<String>,
 ) -> CliResult {
     for scope in resolve_scopes(env, filter)? {
+        // Plan from the manifest as it sits on disk — the same loader the
+        // audit uses — so a v0.1 scope gets the schema upgrade its plan
+        // promises instead of a normalized copy that no longer looks old.
         let path = manifest::manifest_path(env, &scope);
-        let Some(loaded) = manifest::load_for_mutation(&path)? else {
-            say(&format!("{}: no manifest", scope.label()));
-            continue;
-        };
-        let lock = load_lock(&lock_path(env, &scope))?;
+        match manifest::load(&path)? {
+            ManifestFile::Current(_) => {}
+            ManifestFile::Absent => {
+                say(&format!("{}: no manifest", scope.label()));
+                continue;
+            }
+            ManifestFile::Legacy { .. } => return Err(CoreError::LegacyManifest { path }.into()),
+        }
         let options = PlanOptions {
             remove_orphans: true,
             removal_filter: None,
             allow_unsafe: allow_unsafe.clone(),
             ..PlanOptions::default()
         };
-        let report = plan_scope(env, &scope, &loaded, &lock, &options)?;
+        let report = plan_apply(env, &scope, &options)?;
         say(&format!("{}:", scope.label()));
         print_report(&report);
         if !plan_only {
