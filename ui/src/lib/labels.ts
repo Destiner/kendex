@@ -134,3 +134,10 @@ const SKIP_REASON_SHORT: Record<string, string> = {
 export function skipReasonShort(reason: string): string {
   return SKIP_REASON_SHORT[reason] ?? "can't be fully checked here yet";
 }
+
+// Copy for the affected-item disclosure on a warning that names many
+// items — collapsed by default so one finding on 21 plugins doesn't read
+// as a wall of text.
+export const moreItemsLabel = (hiddenCount: number): string =>
+  `+${hiddenCount} more`;
+export const FEWER_ITEMS_LABEL = "Show less";

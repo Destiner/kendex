@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Finding, ItemSafety, ItemWarning } from "@/bindings";
 import {
+  groupByAffectedSet,
   groupFindings,
   groupSkipped,
   groupWarnings,
@@ -82,6 +83,49 @@ describe("groupFindings", () => {
     expect(groups).toHaveLength(1);
     expect(groups[0].items).toHaveLength(1);
     expect(groups[0].items[0].name).toBe("solo");
+  });
+});
+
+describe("groupByAffectedSet", () => {
+  it("merges two findings that hit the identical set of items into one group", () => {
+    const rows = ["a", "b", "c"].map((name) => row({ name, findings: [] }));
+    const groups = groupFindings([
+      { ...rows[0], findings: [FINDING] },
+      { ...rows[1], findings: [FINDING] },
+      { ...rows[2], findings: [FINDING] },
+    ]);
+    // Simulate a second, distinct finding hitting the same three items.
+    const secondFinding: Finding = { ...FINDING, rule: "no-manifest" };
+    const groups2 = groupFindings([
+      { ...rows[0], findings: [secondFinding] },
+      { ...rows[1], findings: [secondFinding] },
+      { ...rows[2], findings: [secondFinding] },
+    ]);
+    const merged = groupByAffectedSet([...groups, ...groups2]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].findings).toHaveLength(2);
+    expect(merged[0].items.map((i) => i.name)).toEqual(["a", "b", "c"]);
+  });
+
+  it("keeps findings apart when their affected item-sets differ", () => {
+    const abc = groupFindings(
+      ["a", "b", "c"].map((name) => row({ name, findings: [FINDING] })),
+    );
+    const otherFinding: Finding = { ...FINDING, rule: "no-manifest" };
+    const ab = groupFindings(
+      ["a", "b"].map((name) => row({ name, findings: [otherFinding] })),
+    );
+    const merged = groupByAffectedSet([...abc, ...ab]);
+    expect(merged).toHaveLength(2);
+  });
+
+  it("preserves the order affected-set groups were first seen in", () => {
+    const first = groupFindings([row({ name: "solo1", findings: [FINDING] })]);
+    const second = groupFindings([
+      row({ name: "solo2", findings: [{ ...FINDING, rule: "other-rule" }] }),
+    ]);
+    const merged = groupByAffectedSet([...first, ...second]);
+    expect(merged.map((g) => g.items[0].name)).toEqual(["solo1", "solo2"]);
   });
 });
 

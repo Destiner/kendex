@@ -54,6 +54,23 @@ export const CODEX_PLUGINS = [
   "chrome@openai-bundled",
   "web-search@openai-bundled",
   "file-search@openai-bundled",
+  "image-gen@openai-bundled",
+  "code-interpreter@openai-bundled",
+  "pdf-reader@openai-bundled",
+  "spreadsheet@openai-bundled",
+  "calendar@openai-bundled",
+  "email-draft@openai-bundled",
+  "translate@openai-bundled",
+  "diagram@openai-bundled",
+  "shell-exec@openai-bundled",
+  "git-tools@openai-bundled",
+  "http-client@openai-bundled",
+  "json-tools@openai-bundled",
+  "markdown-preview@openai-bundled",
+  "regex-tester@openai-bundled",
+  "sql-runner@openai-bundled",
+  "unit-convert@openai-bundled",
+  "weather@openai-bundled",
 ];
 
 // Codex records every enabled plugin in one registry file, so the same two

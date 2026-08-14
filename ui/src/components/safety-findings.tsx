@@ -1,16 +1,21 @@
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { useState } from "react";
 import type { Finding, ItemSafety } from "@/bindings";
 import { Badge } from "@/components/ui/badge";
 import { heldBack } from "@/lib/derive";
 import {
-  type FindingGroup,
+  type AffectedSetGroup,
   type FindingItem,
+  groupByAffectedSet,
   groupFindings,
   groupSkipped,
   partitionSafety,
 } from "@/lib/group-findings";
 import {
+  FEWER_ITEMS_LABEL,
   hookDisplayName,
   kindLabel,
+  moreItemsLabel,
   SEVERITY_BADGES,
   SEVERITY_LABELS,
   skipReasonShort,
@@ -108,54 +113,84 @@ function BlockedItem({ row }: { row: ItemSafety }) {
 // A finding affecting the collection of hooks in one settings file reads as
 // "N hooks in settings.json"; anything else just gets the plain kind name —
 // a plugin's declaration doesn't live in one file a person would recognize.
-function affectedLabel(group: FindingGroup): string {
-  const kind = group.items[0].kind;
-  const label = kindLabel(kind, group.items.length).toLowerCase();
+function affectedLabel(items: FindingItem[], location: string): string {
+  const kind = items[0].kind;
+  const label = kindLabel(kind, items.length).toLowerCase();
   if (kind !== "hook") return label;
-  const file = group.location.split("/").pop()?.split(":")[0];
+  const file = location.split("/").pop()?.split(":")[0];
   return file ? `${label} in ${file}` : label;
 }
 
-function WarnGroup({ group }: { group: FindingGroup }) {
+const COLLAPSE_THRESHOLD = 4;
+
+// Collapsed by default: a finding affecting a real plugin set (20+) prints
+// a wall of mono identifiers nobody reads end to end. The first handful
+// establishes what's affected; the rest is a click away.
+function AffectedList({ group }: { group: AffectedSetGroup }) {
+  const [expanded, setExpanded] = useState(false);
+  const items = group.items;
+  const visible = expanded ? items : items.slice(0, COLLAPSE_THRESHOLD);
+  const hiddenCount = items.length - visible.length;
+  const canCollapse = items.length > COLLAPSE_THRESHOLD;
+  return (
+    <p className="text-muted-foreground">
+      Affects {items.length} {affectedLabel(items, group.findings[0].location)}:{" "}
+      <span className="inline-flex flex-wrap gap-x-1">
+        {visible.map((item, i) => (
+          <span
+            key={`${item.harness}:${item.kind}:${item.name}`}
+            className="inline-block break-all font-mono"
+          >
+            {item.name}
+            {i < visible.length - 1 ? "," : ""}
+          </span>
+        ))}
+      </span>
+      {canCollapse ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="ml-1 inline-flex items-center gap-0.5 align-middle text-foreground hover:underline"
+        >
+          {expanded ? (
+            <ChevronDown className="size-3" />
+          ) : (
+            <ChevronRight className="size-3" />
+          )}
+          {expanded ? FEWER_ITEMS_LABEL : moreItemsLabel(hiddenCount)}
+        </button>
+      ) : null}
+    </p>
+  );
+}
+
+// One block per distinct affected item-set: every finding that hit that
+// exact set stacks above a single affected list, so two rules landing on
+// the same 21 plugins (Codex's bundled registry) don't print the wall twice.
+function AffectedGroup({ group }: { group: AffectedSetGroup }) {
   if (group.items.length === 1) {
-    const only: FindingItem = group.items[0];
+    const only = group.items[0];
     return (
       <div className="space-y-0.5">
         <ItemTitle row={only} />
-        <FindingLine finding={group} />
+        {group.findings.map((finding) => (
+          <FindingLine
+            key={`${finding.rule}:${finding.location}:${finding.message}`}
+            finding={finding}
+          />
+        ))}
       </div>
     );
   }
   return (
     <div className="space-y-1 text-xs">
-      <div className="flex flex-wrap items-start gap-2">
-        <Badge variant={SEVERITY_BADGES[group.severity]}>
-          {SEVERITY_LABELS[group.severity]}
-        </Badge>
-        <span className="min-w-0 flex-1 break-words">
-          {group.message}
-          <span className="block break-all font-mono text-muted-foreground">
-            {group.location}
-          </span>
-          <span className="block text-muted-foreground">
-            Fix: {group.remediation}
-          </span>
-        </span>
-      </div>
-      <p className="text-muted-foreground">
-        Affects {group.items.length} {affectedLabel(group)}:{" "}
-        <span className="inline-flex flex-wrap gap-x-1">
-          {group.items.map((item, i) => (
-            <span
-              key={`${item.harness}:${item.kind}:${item.name}`}
-              className="inline-block break-all font-mono"
-            >
-              {item.name}
-              {i < group.items.length - 1 ? "," : ""}
-            </span>
-          ))}
-        </span>
-      </p>
+      {group.findings.map((finding) => (
+        <FindingLine
+          key={`${finding.rule}:${finding.location}:${finding.message}`}
+          finding={finding}
+        />
+      ))}
+      <AffectedList group={group} />
     </div>
   );
 }
@@ -180,18 +215,20 @@ export function SafetyFindings({ rows }: { rows: ItemSafety[] }) {
   if (blocked.length === 0 && warn.length === 0 && clean.length === 0) {
     return null;
   }
-  const warnGroups = groupFindings(warn);
+  const affectedGroups = groupByAffectedSet(groupFindings(warn));
 
   return (
     <div className="space-y-3 border-t pt-3">
       {blocked.map((row) => (
         <BlockedItem key={`${row.kind}:${row.name}:${row.harness}`} row={row} />
       ))}
-      {warnGroups.length > 0 ? (
+      {affectedGroups.length > 0 ? (
         <div className="space-y-2">
-          {warnGroups.map((group) => (
-            <WarnGroup
-              key={`${group.rule}:${group.location}:${group.message}`}
+          {affectedGroups.map((group) => (
+            <AffectedGroup
+              key={group.items
+                .map((i) => `${i.harness}:${i.kind}:${i.name}`)
+                .join("|")}
               group={group}
             />
           ))}

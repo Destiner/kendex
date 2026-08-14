@@ -264,6 +264,12 @@ changes carry a **Breaking** call-out with their migration note inline.
   had kept an older, heavier focus outline than the rest of the app, and
   the checkbox's error outline was too faint in dark mode.
 
+- Long "affects" lists on Review & apply fold away instead of printing
+  a wall of identifiers: you see the count and the first few names with
+  a "+17 more" you can expand. And when several findings hit the exact
+  same set of items, the set is shown once with those findings stacked
+  above it — the same 21 plugin names no longer print twice.
+
 - The app now summarizes instead of listing. Review & apply used to repeat
   an identical warning under every hook it touched — seven hooks sharing
   one settings file meant seven copies — and gave every clean plugin its

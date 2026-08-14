@@ -65,6 +65,36 @@ export function groupFindings(rows: ItemSafety[]): FindingGroup[] {
   return [...groups.values()];
 }
 
+export interface AffectedSetGroup {
+  items: FindingItem[];
+  findings: FindingGroup[];
+}
+
+// Two rules can both fire on the exact same items — Codex records every
+// bundled plugin in one registry file, so "untracked repository" and "no
+// manifest" both land on all of them. Rendered as two FindingGroups, that
+// prints the same affected-item wall twice. This merges any FindingGroups
+// whose affected item-set is identical, so the wall renders once with every
+// finding that hit it stacked above.
+export function groupByAffectedSet(groups: FindingGroup[]): AffectedSetGroup[] {
+  const ordered: AffectedSetGroup[] = [];
+  const bySetKey = new Map<string, AffectedSetGroup>();
+  for (const group of groups) {
+    const key = group.items
+      .map((item) => `${item.kind}:${item.name}:${item.harness}`)
+      .sort()
+      .join("|");
+    let affectedSetGroup = bySetKey.get(key);
+    if (!affectedSetGroup) {
+      affectedSetGroup = { items: group.items, findings: [] };
+      bySetKey.set(key, affectedSetGroup);
+      ordered.push(affectedSetGroup);
+    }
+    affectedSetGroup.findings.push(group);
+  }
+  return ordered;
+}
+
 export interface SkipGroup {
   reason: string;
   count: number;
