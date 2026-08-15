@@ -32,6 +32,24 @@ describe("renderMarkdown", () => {
     expect(html).not.toContain("<img");
     expect(html).toContain("alt");
   });
+
+  it("highlights a fenced code block and still escapes its markup", () => {
+    const source = '```js\nconst x = "<script>alert(1)</script>";\n```';
+    const html = renderMarkdown(source);
+    expect(html).not.toContain("<script>alert");
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).toContain('class="hljs language-js"');
+    expect(html).toContain("hljs-keyword");
+  });
+
+  it("falls back to escaped, unhighlighted text when nothing registered matches", () => {
+    const html = renderMarkdown(
+      "```rust\nlorem ipsum dolor sit amet consectetur\n```",
+    );
+    expect(html).toContain("lorem ipsum dolor sit amet consectetur");
+    expect(html).toContain('class="hljs"');
+    expect(html).not.toContain("language-");
+  });
 });
 
 describe("stripFrontmatter", () => {

@@ -212,6 +212,16 @@ export const ALL_CAUGHT_UP_DETAIL =
   "Everything matches what you've chosen to install.";
 export const RECENT_ACTIVITY_EMPTY = "Nothing has changed on this machine yet.";
 
+// Library flyout's open-actions menu.
+export const OPEN_IN_LABEL = "Open in…";
+export const OPEN_IN_FILE_BROWSER_LABEL = "File browser";
+export const OPEN_IN_EDITOR_LABEL = "Editor";
+export const EDITOR_ERROR_TITLE = "Couldn't open the editor";
+export const EDITOR_ERROR_STEPS = [
+  "Install VSCodium, VS Code, Cursor, Zed, or Sublime — or set VSTACK_EDITOR",
+];
+export const FILE_BROWSER_ERROR_TITLE = "Couldn't open the file browser";
+
 export const BACK_LABEL = "Back";
 export const WINDOW_CONTROL_LABELS = {
   minimize: "Minimize",

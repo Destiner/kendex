@@ -1,4 +1,5 @@
 import { Marked, type Tokens } from "marked";
+import { highlightCode } from "@/lib/highlight";
 
 // Catalog content is adversarial input: a SKILL.md a person previews here
 // was written by whoever published the catalog, not by vstack. marked
@@ -38,6 +39,15 @@ renderer.use({
       if (!safe) return escapeHtml(text);
       const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
       return `<img src="${escapeHtml(safe)}" alt="${escapeHtml(text)}"${titleAttr}>`;
+    },
+    // `text` here is the fence's raw, unescaped source — exactly what
+    // highlightCode expects. highlight.js tokenizes it as plain text and
+    // re-escapes what it emits, so a fenced `<script>` still can't inject.
+    code({ text, lang }: Tokens.Code): string {
+      const requested = lang?.trim().split(/\s+/)[0]?.toLowerCase() || null;
+      const { html, language } = highlightCode(text, requested);
+      const cls = language ? `hljs language-${language}` : "hljs";
+      return `<pre><code class="${cls}">${html}</code></pre>\n`;
     },
   },
 });

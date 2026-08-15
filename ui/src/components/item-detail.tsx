@@ -1,193 +1,218 @@
-import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import { ExternalLink, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
-import { commands, type HarnessId } from "@/bindings";
+import { commands } from "@/bindings";
 import { SectionLabel } from "@/components/card-section";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ItemDetailMeta } from "@/components/item-detail-meta";
 import { ItemPreview } from "@/components/library/item-preview";
 import { ReportDialog } from "@/components/report-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { ItemGroup } from "@/lib/derive";
+import { editorOpenPath } from "@/lib/editor-path";
 import { kindIcon } from "@/lib/kind-icon";
-import { hookDisplayName, kindLabel, scopeName, toolName } from "@/lib/labels";
-import { relativeTime } from "@/lib/relative-time";
+import {
+  EDITOR_ERROR_STEPS,
+  EDITOR_ERROR_TITLE,
+  FILE_BROWSER_ERROR_TITLE,
+  hookDisplayName,
+  OPEN_IN_EDITOR_LABEL,
+  OPEN_IN_FILE_BROWSER_LABEL,
+  OPEN_IN_LABEL,
+} from "@/lib/labels";
+import { cn } from "@/lib/utils";
 import { useAuditStore } from "@/stores/audit";
-
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex gap-3 text-sm">
-      <dt className="w-16 shrink-0 text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 flex-1">{children}</dd>
-    </div>
-  );
-}
-
-// The engine only ever fills origin with "local" (this project's own
-// manifest) or a catalog's repo slug — anything else means it has no
-// provenance to report at all.
-function provenanceLabel(origin: string | null): string | null {
-  if (!origin) return null;
-  return origin === "local" ? "Managed from this project" : `From ${origin}`;
-}
+import { useProblemsStore } from "@/stores/problems";
 
 export function ItemDetail({
   group,
   onClose,
 }: {
-  group: ItemGroup;
+  // null closes the flyout — kept mounted (not conditionally rendered) so
+  // closing plays the slide-out transition instead of vanishing, and so
+  // switching the selected row just swaps content instead of remounting.
+  group: ItemGroup | null;
   onClose: () => void;
 }) {
   const { busy, toggle, removeItem } = useAuditStore();
+  const showError = useProblemsStore((s) => s.showError);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const managed = group.kind === "agent" || group.kind === "skill";
-  const anyDisabled = group.installations.some((i) => i.enabled === false);
-
-  // groupItems only ever creates a group from at least one observed
-  // installation, so the first one stands in for the item as a whole.
-  const primary = group.installations[0];
+  const [lastGroup, setLastGroup] = useState<ItemGroup | null>(null);
+  const open = group != null;
 
   useEffect(() => {
+    if (group) setLastGroup(group);
+  }, [group]);
+
+  useEffect(() => {
+    if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [open, onClose]);
 
+  // Nothing has ever been selected this session — no panel, no click-catcher.
+  const shown = group ?? lastGroup;
+  if (!shown) return null;
+
+  const managed = shown.kind === "agent" || shown.kind === "skill";
+  const anyDisabled = shown.installations.some((i) => i.enabled === false);
+
+  // groupItems only ever creates a group from at least one observed
+  // installation, so the first one stands in for the item as a whole.
+  const primary = shown.installations[0];
   if (!primary) return null;
 
-  const Icon = kindIcon(group.kind);
+  const Icon = kindIcon(shown.kind);
   const displayName =
-    group.kind === "hook" ? hookDisplayName(group.name) : group.name;
-  const provenance = provenanceLabel(primary.origin);
+    shown.kind === "hook" ? hookDisplayName(shown.name) : shown.name;
 
-  const revealInFileBrowser = () => {
+  const openInFileBrowser = () => {
     void commands.revealPath(primary.path).then((response) => {
-      if (response.status === "error") toast.error(response.error);
+      if (response.status === "error") {
+        showError({ title: FILE_BROWSER_ERROR_TITLE, message: response.error });
+      }
     });
   };
 
+  const openInEditor = () => {
+    void commands
+      .openInEditor(editorOpenPath(primary.path))
+      .then((response) => {
+        if (response.status === "error") {
+          showError({
+            title: EDITOR_ERROR_TITLE,
+            message: response.error,
+            steps: EDITOR_ERROR_STEPS,
+          });
+        }
+      });
+  };
+
   return (
-    <aside className="flex w-96 shrink-0 flex-col overflow-y-auto border-l bg-card">
-      <div className="flex items-start justify-between gap-2 p-5 pb-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <Icon className="size-5 shrink-0 text-muted-foreground" />
-          <h2 className="truncate font-semibold">{displayName}</h2>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label="Close"
-          title="Close"
+    <>
+      {/* Sits below the flyout (which absorbs its own clicks) and above the
+          table — a click anywhere else in the content area closes the
+          panel. Transparent rather than a dark scrim: the table stays
+          fully readable while the flyout is open. Stops short of the
+          sidebar and status footer so both stay live. */}
+      {open ? (
+        // biome-ignore lint/a11y/noStaticElementInteractions: transparent click-catcher, not a control
+        // biome-ignore lint/a11y/useKeyWithClickEvents: Escape already closes via the keydown listener above
+        <div
+          className="fixed inset-y-0 right-0 left-56 z-[18]"
           onClick={onClose}
-        >
-          <X className="size-4" />
-        </Button>
-      </div>
-      <div className="flex-1 space-y-5 px-5 pb-5">
-        {group.description ? (
-          <p className="text-sm text-muted-foreground">{group.description}</p>
-        ) : null}
-
-        <div className="space-y-2">
-          <SectionLabel>Details</SectionLabel>
-          <dl className="space-y-1.5">
-            <Row label="Type">{kindLabel(group.kind)}</Row>
-            <Row label="Tools">
-              <span className="flex flex-wrap gap-1">
-                {group.harnesses.map((h) => (
-                  <Badge key={h} variant="outline">
-                    {toolName(h as HarnessId)}
-                  </Badge>
-                ))}
-                {group.shared ? (
-                  <Badge variant="secondary">Shared files</Badge>
-                ) : null}
-              </span>
-            </Row>
-            <Row label="Scope">{scopeName(primary.scope)}</Row>
-            <Row label="Path">
-              <span className="break-all font-mono text-xs">
-                {primary.path}
-              </span>
-            </Row>
-            {primary.fileState.state === "symlink" &&
-            !primary.fileState.broken ? (
-              <Row label="Linked">
-                <span className="break-all font-mono text-xs">
-                  {primary.fileState.target}
-                </span>
-              </Row>
-            ) : null}
-            {group.modifiedAt != null ? (
-              <Row label="Updated">
-                {relativeTime(group.modifiedAt * 1000, Date.now())}
-              </Row>
-            ) : null}
-            {provenance ? <Row label="Source">{provenance}</Row> : null}
-          </dl>
-          {primary.fileState.state === "symlink" && primary.fileState.broken ? (
-            <p className="text-xs text-destructive">The link is broken.</p>
-          ) : null}
+        />
+      ) : null}
+      <aside
+        className={cn(
+          "fixed top-0 right-0 bottom-7 z-[19] flex w-[min(30rem,85vw)] flex-col overflow-y-auto border-l bg-background shadow-lg transition-[transform,opacity] duration-200 ease-out",
+          open
+            ? "translate-x-0 opacity-100"
+            : "pointer-events-none translate-x-full opacity-0",
+        )}
+        inert={!open}
+      >
+        <div className="flex items-start justify-between gap-2 p-6 pb-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Icon className="size-5 shrink-0 text-muted-foreground" />
+            <h2 className="truncate font-semibold">{displayName}</h2>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Close"
+            title="Close"
+            onClick={onClose}
+          >
+            <X className="size-4" />
+          </Button>
         </div>
+        <div className="space-y-6 px-6 pb-6">
+          {shown.description ? (
+            <p className="text-sm text-muted-foreground">{shown.description}</p>
+          ) : null}
 
-        <div className="flex flex-wrap gap-2">
-          {managed ? (
+          <ItemDetailMeta group={shown} primary={primary} />
+
+          <div className="flex flex-wrap gap-2">
+            {managed ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() =>
+                  void toggle(primary.scope, shown.name, anyDisabled)
+                }
+              >
+                {anyDisabled ? "Turn on" : "Turn off"}
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant="outline"
               disabled={busy}
-              onClick={() =>
-                void toggle(primary.scope, group.name, anyDisabled)
-              }
+              onClick={() => setConfirmOpen(true)}
             >
-              {anyDisabled ? "Turn on" : "Turn off"}
+              Remove…
             </Button>
-          ) : null}
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => setConfirmOpen(true)}
-          >
-            Remove…
-          </Button>
-          <Button size="sm" variant="outline" onClick={revealInFileBrowser}>
-            Show in file browser
-          </Button>
-          <ReportDialog
-            scope={primary.scope}
-            name={group.name}
-            kind={group.kind}
-          />
-        </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button size="sm" variant="outline">
+                    <ExternalLink className="size-4" />
+                    {OPEN_IN_LABEL}
+                  </Button>
+                }
+              />
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={openInFileBrowser}>
+                  {OPEN_IN_FILE_BROWSER_LABEL}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={openInEditor}>
+                  {OPEN_IN_EDITOR_LABEL}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <ReportDialog
+              scope={primary.scope}
+              name={shown.name}
+              kind={shown.kind}
+            />
+          </div>
 
-        <div className="space-y-2">
-          <SectionLabel>Content</SectionLabel>
-          <ItemPreview
-            scope={primary.scope}
-            kind={group.kind}
-            name={group.name}
-            harness={primary.harness}
-          />
+          <div className="space-y-2.5">
+            <SectionLabel>Content</SectionLabel>
+            <ItemPreview
+              scope={primary.scope}
+              kind={shown.kind}
+              name={shown.name}
+              harness={primary.harness}
+            />
+          </div>
         </div>
-      </div>
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title={`Remove ${group.name}?`}
-        description="The files vstack manages will be moved to the trash, and it will stop being kept up to date."
-        confirmLabel="Remove"
-        destructive
-        busy={busy}
-        onConfirm={() => {
-          void removeItem(primary.scope, group.name).then(() =>
-            setConfirmOpen(false),
-          );
-        }}
-      />
-    </aside>
+        <ConfirmDialog
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          title={`Remove ${shown.name}?`}
+          description="The files vstack manages will be moved to the trash, and it will stop being kept up to date."
+          confirmLabel="Remove"
+          destructive
+          busy={busy}
+          onConfirm={() => {
+            void removeItem(primary.scope, shown.name).then(() =>
+              setConfirmOpen(false),
+            );
+          }}
+        />
+      </aside>
+    </>
   );
 }

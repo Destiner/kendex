@@ -98,7 +98,12 @@ export function InstalledView() {
         projects={projects}
       />
       <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1">
-        <div className="min-w-0 flex-1 overflow-y-auto">
+        {/* The flyout floats above this pane rather than sharing the row
+            with it, so the table keeps its full width — and its columns
+            stop truncating — whether or not a row is selected. Reserve the
+            scrollbar's lane: the overlay scrollbar otherwise paints over
+            the last column's text on hover. */}
+        <div className="min-w-0 flex-1 overflow-y-auto pr-2 [scrollbar-gutter:stable]">
           <Table>
             <TableHeader>
               <TableRow>
@@ -163,9 +168,7 @@ export function InstalledView() {
             </TableBody>
           </Table>
         </div>
-        {selected ? (
-          <ItemDetail group={selected} onClose={() => setSelectedKey(null)} />
-        ) : null}
+        <ItemDetail group={selected} onClose={() => setSelectedKey(null)} />
       </div>
     </div>
   );

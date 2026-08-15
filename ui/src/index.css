@@ -36,6 +36,16 @@
   --sidebar-accent-foreground: oklch(0.205 0.005 260);
   --sidebar-border: oklch(0.92 0.005 260);
   --sidebar-ring: oklch(0.5 0.19 255 / 60%);
+  /* Syntax-highlighting palette for the CONTENT preview — kept separate
+     from the semantic tokens above since these name token *roles* in code
+     (keyword, string, ...), not UI meaning. */
+  --code-keyword: oklch(0.5 0.18 300);
+  --code-string: oklch(0.5 0.14 165);
+  --code-number: oklch(0.6 0.15 70);
+  --code-title: oklch(0.5 0.17 230);
+  --code-attr: oklch(0.55 0.15 340);
+  --code-type: oklch(0.5 0.13 190);
+  --code-comment: oklch(0.55 0.02 260);
 }
 
 .dark {
@@ -70,6 +80,13 @@
   --sidebar-accent-foreground: oklch(0.97 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.55 0.18 255 / 60%);
+  --code-keyword: oklch(0.72 0.16 300);
+  --code-string: oklch(0.72 0.14 165);
+  --code-number: oklch(0.75 0.15 70);
+  --code-title: oklch(0.72 0.15 230);
+  --code-attr: oklch(0.72 0.14 340);
+  --code-type: oklch(0.7 0.12 190);
+  --code-comment: oklch(0.6 0.02 260);
 }
 
 @theme inline {
@@ -124,7 +141,10 @@
  * light styling here rather than pulling one in for a single use site. */
 @layer components {
   .prose-preview :where(h1, h2, h3, h4) {
-    @apply mt-4 mb-2 font-semibold first:mt-0;
+    @apply mt-5 mb-2 font-semibold tracking-tight first:mt-0;
+  }
+  .prose-preview :where(h1, h2) {
+    @apply border-b pb-1.5;
   }
   .prose-preview h1 {
     @apply text-lg;
@@ -135,11 +155,14 @@
   .prose-preview :where(h3, h4) {
     @apply text-sm;
   }
+  .prose-preview :where(h1, h2, h3, h4) + * {
+    @apply mt-0;
+  }
   .prose-preview p {
-    @apply my-2 leading-relaxed;
+    @apply my-2.5 leading-relaxed;
   }
   .prose-preview :where(ul, ol) {
-    @apply my-2 pl-5;
+    @apply my-2.5 space-y-1 pl-5;
   }
   .prose-preview ul {
     @apply list-disc;
@@ -148,30 +171,103 @@
     @apply list-decimal;
   }
   .prose-preview li {
-    @apply my-0.5;
+    @apply leading-relaxed;
+  }
+  .prose-preview li > :where(ul, ol) {
+    @apply my-1;
   }
   .prose-preview a {
     @apply text-primary underline underline-offset-2;
   }
+  .prose-preview strong {
+    @apply font-semibold;
+  }
   .prose-preview code {
-    @apply rounded bg-muted px-1 py-0.5 font-mono text-[0.85em];
+    @apply rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em];
   }
   .prose-preview pre {
-    @apply my-2 overflow-x-auto rounded-md border bg-muted/30 p-3;
+    @apply my-3 overflow-x-auto rounded-lg border bg-muted/30 p-3;
   }
   .prose-preview pre code {
-    @apply bg-transparent p-0;
+    @apply bg-transparent p-0 text-[0.8em];
   }
   .prose-preview blockquote {
-    @apply my-2 border-l-2 pl-3 text-muted-foreground;
+    @apply my-3 border-l-2 border-muted-foreground/30 pl-3 text-muted-foreground;
   }
   .prose-preview hr {
-    @apply my-4 border-border;
+    @apply my-5 border-border;
   }
   .prose-preview table {
-    @apply my-2 w-full border-collapse text-xs;
+    @apply my-3 w-full border-collapse text-xs;
   }
   .prose-preview :where(th, td) {
     @apply border px-2 py-1 text-left;
+  }
+  .prose-preview th {
+    @apply bg-muted/40 font-medium;
+  }
+}
+
+/* Syntax highlighting for fenced markdown code and the plain-file CONTENT
+ * preview — highlight.js core emits these class names from tokenized TEXT
+ * input, never from the source's own markup, so mapping them to design
+ * tokens here can't reintroduce injected HTML. No hljs theme file is
+ * imported; these map straight onto the --code-* tokens above. */
+@layer components {
+  .hljs {
+    color: var(--foreground);
+  }
+  .hljs-comment,
+  .hljs-quote {
+    color: var(--code-comment);
+    font-style: italic;
+  }
+  .hljs-keyword,
+  .hljs-selector-tag,
+  .hljs-subst,
+  .hljs-doctag {
+    color: var(--code-keyword);
+  }
+  .hljs-string,
+  .hljs-regexp,
+  .hljs-symbol,
+  .hljs-bullet,
+  .hljs-link {
+    color: var(--code-string);
+  }
+  .hljs-number,
+  .hljs-literal {
+    color: var(--code-number);
+  }
+  .hljs-title,
+  .hljs-section,
+  .hljs-selector-id {
+    color: var(--code-title);
+    font-weight: 600;
+  }
+  .hljs-attr,
+  .hljs-attribute,
+  .hljs-variable,
+  .hljs-template-variable,
+  .hljs-selector-class,
+  .hljs-selector-attr,
+  .hljs-params {
+    color: var(--code-attr);
+  }
+  .hljs-type,
+  .hljs-built_in,
+  .hljs-builtin-name,
+  .hljs-tag,
+  .hljs-name {
+    color: var(--code-type);
+  }
+  .hljs-meta {
+    color: var(--muted-foreground);
+  }
+  .hljs-emphasis {
+    font-style: italic;
+  }
+  .hljs-strong {
+    font-weight: 700;
   }
 }
