@@ -15,8 +15,8 @@ import {
 import {
   filterItems,
   groupItems,
+  type Location,
   projectScopes,
-  type ScopeSelection,
 } from "@/lib/derive";
 import { isSearchShortcutKey } from "@/lib/search-shortcut";
 import { useNavStore } from "@/stores/nav";
@@ -36,7 +36,8 @@ export function InstalledView() {
   );
   // Page-local, alongside kind/harness — narrows within whatever the
   // sidebar's global scope already shows, rather than replacing it.
-  const [where, setWhere] = useState<string>("any");
+  // Empty set is "All".
+  const [locations, setLocations] = useState<Set<Location>>(() => new Set());
   const [search, setSearch] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -60,23 +61,17 @@ export function InstalledView() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const effectiveScope: ScopeSelection =
-    where === "any"
-      ? scope
-      : where === "global"
-        ? "global"
-        : { project: where };
-
   const groups = useMemo(() => {
     if (!result) return [];
     const filtered = filterItems(result.items, {
-      scope: effectiveScope,
+      scope,
+      locations,
       kind: kind === "any" ? undefined : (kind as ItemKind),
       harness: harness === "any" ? undefined : harness,
       search,
     });
     return groupItems(filtered);
-  }, [result, effectiveScope, kind, harness, search]);
+  }, [result, scope, locations, kind, harness, search]);
 
   const selected = groups.find((g) => g.key === selectedKey) ?? null;
   const hasAnyItems = (result?.items.length ?? 0) > 0;
@@ -84,7 +79,7 @@ export function InstalledView() {
   const clearFilters = () => {
     setKind("any");
     setHarness("any");
-    setWhere("any");
+    setLocations(new Set());
     setSearch("");
   };
 
@@ -98,8 +93,8 @@ export function InstalledView() {
         onKindChange={setKind}
         harness={harness}
         onHarnessChange={setHarness}
-        where={where}
-        onWhereChange={setWhere}
+        locations={locations}
+        onLocationsChange={setLocations}
         projects={projects}
       />
       <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1">
