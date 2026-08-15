@@ -8,7 +8,11 @@ export type Page =
   | "library"
   | "tools"
   | "customize"
-  | "settings";
+  | "settings"
+  // Reached only from the status footer's problems segment or a review
+  // card's "See all problems" — not in the sidebar, since it isn't a place
+  // you'd navigate to when nothing is wrong.
+  | "problems";
 
 /** Which half of the Library page is showing. */
 export type LibraryTab = "installed" | "add";

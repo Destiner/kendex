@@ -1,6 +1,7 @@
 import { CheckCircle2 } from "lucide-react";
 import { useEffect } from "react";
 import { PageHeader } from "@/components/page-header";
+import { ScopeErrorCard } from "@/components/scope-error-card";
 import { SyncScopeCard } from "@/components/sync-scope";
 import { scopeLabel } from "@/lib/derive";
 import { REVIEW_SUBTITLE } from "@/lib/labels";
@@ -23,6 +24,7 @@ export function ReviewPage() {
   });
   const active = visible.filter(
     (view) =>
+      view.error != null ||
       view.drift.length > 0 ||
       view.notes.length > 0 ||
       view.warnings.length > 0 ||
@@ -50,19 +52,27 @@ export function ReviewPage() {
               </p>
             </div>
           ) : (
-            active.map((view) => (
-              <SyncScopeCard
-                key={scopeLabel(view.scope)}
-                view={view}
-                busy={busy}
-                onApply={(removeOrphans) =>
-                  void applyPlan(view.scope, removeOrphans)
-                }
-                onAdopt={(kind, name, harness) =>
-                  void adopt(view.scope, kind, name, harness)
-                }
-              />
-            ))
+            active.map((view) =>
+              view.error ? (
+                <ScopeErrorCard
+                  key={scopeLabel(view.scope)}
+                  view={view}
+                  error={view.error}
+                />
+              ) : (
+                <SyncScopeCard
+                  key={scopeLabel(view.scope)}
+                  view={view}
+                  busy={busy}
+                  onApply={(removeOrphans) =>
+                    void applyPlan(view.scope, removeOrphans)
+                  }
+                  onAdopt={(kind, name, harness) =>
+                    void adopt(view.scope, kind, name, harness)
+                  }
+                />
+              ),
+            )
           )}
         </div>
       </div>

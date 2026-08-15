@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuditView } from "@/bindings";
 import { commands } from "@/bindings";
 import { useAuditStore } from "./audit";
+import { useProblemsStore } from "./problems";
 
 vi.mock("@/bindings", () => ({
   commands: {
@@ -100,10 +101,13 @@ describe("audit store run() actions", () => {
       busy: false,
       backgroundFailureAnnounced: false,
     });
+    useProblemsStore.setState({
+      dialog: { open: false, title: "", steps: [], actions: [] },
+    });
     vi.clearAllMocks();
   });
 
-  it("toasts an apply failure with the backend message, not silently", async () => {
+  it("shows the error modal with the backend message on an apply failure, not silently", async () => {
     vi.mocked(commands.applyPlan).mockResolvedValue({
       status: "error",
       error: "disk is full",
@@ -111,11 +115,15 @@ describe("audit store run() actions", () => {
 
     await useAuditStore.getState().applyPlan(globalScope, false);
 
-    expect(toast.error).toHaveBeenCalledWith("disk is full");
+    const dialog = useProblemsStore.getState().dialog;
+    expect(dialog.open).toBe(true);
+    expect(dialog.title).toBe("Couldn't apply these changes");
+    expect(dialog.message).toBe("disk is full");
     expect(useAuditStore.getState().error).toBe("disk is full");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it("toasts an adopt failure with the backend message", async () => {
+  it("shows the error modal with the backend message on an adopt failure", async () => {
     vi.mocked(commands.adoptItem).mockResolvedValue({
       status: "error",
       error: "permission denied",
@@ -123,7 +131,10 @@ describe("audit store run() actions", () => {
 
     await useAuditStore.getState().adopt(globalScope, "hook", "lint", "claude");
 
-    expect(toast.error).toHaveBeenCalledWith("permission denied");
+    const dialog = useProblemsStore.getState().dialog;
+    expect(dialog.open).toBe(true);
+    expect(dialog.title).toBe("Couldn't start managing lint");
+    expect(dialog.message).toBe("permission denied");
     expect(toast.success).not.toHaveBeenCalled();
   });
 

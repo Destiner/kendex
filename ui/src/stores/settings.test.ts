@@ -2,6 +2,7 @@ import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppSettings } from "@/bindings";
 import { commands } from "@/bindings";
+import { useProblemsStore } from "./problems";
 import { useScanStore } from "./scan";
 import { useSettingsStore } from "./settings";
 
@@ -39,6 +40,9 @@ describe("settings store", () => {
       lastScanAt: null,
       backgroundFailureAnnounced: false,
     });
+    useProblemsStore.setState({
+      dialog: { open: false, title: "", steps: [], actions: [] },
+    });
     vi.clearAllMocks();
     vi.mocked(commands.scanMachine).mockResolvedValue({
       status: "ok",
@@ -46,7 +50,7 @@ describe("settings store", () => {
     });
   });
 
-  it("toasts a plain-words message and leaves settings untouched when a save fails", async () => {
+  it("shows the error modal with the backend message and leaves settings untouched when a save fails", async () => {
     useSettingsStore.setState({ settings });
     vi.mocked(commands.updateSettings).mockResolvedValue({
       status: "error",
@@ -55,11 +59,14 @@ describe("settings store", () => {
 
     await useSettingsStore.getState().setAppearance("dark");
 
-    expect(toast.error).toHaveBeenCalledWith("disk is full");
+    const dialog = useProblemsStore.getState().dialog;
+    expect(dialog.open).toBe(true);
+    expect(dialog.title).toBe("Couldn't change the appearance");
+    expect(dialog.message).toBe("disk is full");
     expect(useSettingsStore.getState().settings).toBe(settings);
   });
 
-  it("saves settings silently on success — no toast for an instant, visible change", async () => {
+  it("saves settings silently on success — no toast, no modal for an instant, visible change", async () => {
     const updated = { ...settings, appearance: "dark" as const };
     useSettingsStore.setState({ settings });
     vi.mocked(commands.updateSettings).mockResolvedValue({
@@ -70,7 +77,7 @@ describe("settings store", () => {
     await useSettingsStore.getState().setAppearance("dark");
 
     expect(toast.success).not.toHaveBeenCalled();
-    expect(toast.error).not.toHaveBeenCalled();
+    expect(useProblemsStore.getState().dialog.open).toBe(false);
     expect(useSettingsStore.getState().settings).toEqual(updated);
   });
 
@@ -88,7 +95,7 @@ describe("settings store", () => {
     expect(toast.success).toHaveBeenCalledWith("Added acme-web");
   });
 
-  it("toasts failure and resolves false when adding a project fails, without touching settings", async () => {
+  it("shows the error modal and resolves false when adding a project fails, without touching settings", async () => {
     useSettingsStore.setState({ settings });
     vi.mocked(commands.registerProject).mockResolvedValue({
       status: "error",
@@ -101,13 +108,14 @@ describe("settings store", () => {
 
     expect(ok).toBe(false);
     expect(toast.success).not.toHaveBeenCalled();
-    expect(toast.error).toHaveBeenCalledWith(
-      "project already registered: /home/x/acme-web",
-    );
+    const dialog = useProblemsStore.getState().dialog;
+    expect(dialog.open).toBe(true);
+    expect(dialog.title).toBe("Couldn't add the project");
+    expect(dialog.message).toBe("project already registered: /home/x/acme-web");
     expect(useSettingsStore.getState().settings).toBe(settings);
   });
 
-  it("toasts failure without a success toast when removing a project fails", async () => {
+  it("shows the error modal without a success toast when removing a project fails", async () => {
     useSettingsStore.setState({ settings });
     vi.mocked(commands.unregisterProject).mockResolvedValue({
       status: "error",
@@ -116,13 +124,14 @@ describe("settings store", () => {
 
     await useSettingsStore.getState().unregisterProject("/home/x/gone");
 
-    expect(toast.error).toHaveBeenCalledWith(
-      "project not registered: /home/x/gone",
-    );
+    const dialog = useProblemsStore.getState().dialog;
+    expect(dialog.open).toBe(true);
+    expect(dialog.title).toBe("Couldn't stop tracking the project");
+    expect(dialog.message).toBe("project not registered: /home/x/gone");
     expect(toast.success).not.toHaveBeenCalled();
   });
 
-  it("toasts on a failed load instead of storing a buried error", async () => {
+  it("shows the error modal on a failed load instead of storing a buried error", async () => {
     vi.mocked(commands.getSettings).mockResolvedValue({
       status: "error",
       error: "cannot locate the home directory on this system",
@@ -131,13 +140,16 @@ describe("settings store", () => {
 
     await useSettingsStore.getState().load();
 
-    expect(toast.error).toHaveBeenCalledWith(
+    const dialog = useProblemsStore.getState().dialog;
+    expect(dialog.open).toBe(true);
+    expect(dialog.title).toBe("Couldn't load your settings");
+    expect(dialog.message).toBe(
       "cannot locate the home directory on this system",
     );
     expect(useSettingsStore.getState().settings).toBeNull();
   });
 
-  it("toasts and returns an empty list when discovering projects fails", async () => {
+  it("shows the error modal and returns an empty list when discovering projects fails", async () => {
     vi.mocked(commands.discoverProjects).mockResolvedValue({
       status: "error",
       error: "/nope is not a directory",
@@ -146,6 +158,9 @@ describe("settings store", () => {
     const found = await useSettingsStore.getState().discoverProjects("/nope");
 
     expect(found).toEqual([]);
-    expect(toast.error).toHaveBeenCalledWith("/nope is not a directory");
+    const dialog = useProblemsStore.getState().dialog;
+    expect(dialog.open).toBe(true);
+    expect(dialog.title).toBe("Couldn't search that folder");
+    expect(dialog.message).toBe("/nope is not a directory");
   });
 });

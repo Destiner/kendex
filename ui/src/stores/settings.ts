@@ -6,6 +6,7 @@ import {
   type CapabilityRow,
   commands,
 } from "@/bindings";
+import { useProblemsStore } from "./problems";
 import { useScanStore } from "./scan";
 
 interface SettingsState {
@@ -36,7 +37,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (settings.status === "ok") {
       set({ settings: settings.data, capabilities });
     } else {
-      toast.error(settings.error);
+      useProblemsStore.getState().showError({
+        title: "Couldn't load your settings",
+        message: settings.error,
+        steps: ["Try again", "If it keeps happening, restart vstack"],
+        actions: [{ label: "Retry", onClick: () => void get().load() }],
+      });
     }
   },
 
@@ -48,7 +54,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (!current) return;
     const response = await commands.updateSettings({ ...current, appearance });
     if (response.status === "ok") set({ settings: response.data });
-    else toast.error(response.error);
+    else
+      useProblemsStore.getState().showError({
+        title: "Couldn't change the appearance",
+        message: response.error,
+        steps: ["Try again"],
+        actions: [
+          {
+            label: "Retry",
+            onClick: () => void get().setAppearance(appearance),
+          },
+        ],
+      });
   },
 
   setSafety: async (warnBelow, blockBelow) => {
@@ -59,7 +76,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       safety: { "warn-below": warnBelow, "block-below": blockBelow },
     });
     if (response.status === "ok") set({ settings: response.data });
-    else toast.error(response.error);
+    else
+      useProblemsStore.getState().showError({
+        title: "Couldn't update safety settings",
+        message: response.error,
+        steps: ["Try again"],
+        actions: [
+          {
+            label: "Retry",
+            onClick: () => void get().setSafety(warnBelow, blockBelow),
+          },
+        ],
+      });
   },
 
   setHarnessRoot: async (harness, root) => {
@@ -76,7 +104,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       set({ settings: response.data });
       await rescan();
     } else {
-      toast.error(response.error);
+      useProblemsStore.getState().showError({
+        title: "Couldn't update the tool folder",
+        message: response.error,
+        steps: [
+          "Check that the folder exists and vstack can read it",
+          "Try again",
+        ],
+        actions: [
+          {
+            label: "Retry",
+            onClick: () => void get().setHarnessRoot(harness, root),
+          },
+        ],
+      });
     }
   },
 
@@ -88,7 +129,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       await rescan();
       return true;
     }
-    toast.error(response.error);
+    useProblemsStore.getState().showError({
+      title: "Couldn't add the project",
+      message: response.error,
+      steps: [
+        "Check the folder path is correct",
+        "Make sure it isn't already added",
+      ],
+    });
     return false;
   },
 
@@ -98,14 +146,25 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       set({ settings: response.data });
       await rescan();
     } else {
-      toast.error(response.error);
+      useProblemsStore.getState().showError({
+        title: "Couldn't stop tracking the project",
+        message: response.error,
+        steps: ["Try again"],
+      });
     }
   },
 
   discoverProjects: async (root) => {
     const response = await commands.discoverProjects(root);
     if (response.status === "ok") return response.data;
-    toast.error(response.error);
+    useProblemsStore.getState().showError({
+      title: "Couldn't search that folder",
+      message: response.error,
+      steps: [
+        "Check the folder path is correct",
+        "Make sure vstack can read it",
+      ],
+    });
     return [];
   },
 }));

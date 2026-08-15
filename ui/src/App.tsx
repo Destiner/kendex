@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Toaster } from "sonner";
 import { commands } from "@/bindings";
+import { ErrorDialog } from "@/components/error-dialog";
 import { NavBar } from "@/components/nav-bar";
 import { Sidebar } from "@/components/sidebar";
 import { StatusFooter } from "@/components/status-footer";
@@ -8,6 +9,7 @@ import { WindowControls } from "@/components/window-controls";
 import { CustomizePage } from "@/pages/customize";
 import { LibraryPage } from "@/pages/library";
 import { OverviewPage } from "@/pages/overview";
+import { ProblemsPage } from "@/pages/problems";
 import { ReviewPage } from "@/pages/review";
 import { SettingsPage } from "@/pages/settings";
 import { ToolsProjectsPage } from "@/pages/tools";
@@ -79,6 +81,7 @@ export default function App() {
           },
         }}
       />
+      <ErrorDialog />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         <main className="relative flex flex-1 flex-col overflow-hidden">
@@ -100,6 +103,7 @@ export default function App() {
               {page === "review" && <ReviewPage />}
               {page === "customize" && <CustomizePage />}
               {page === "settings" && <SettingsPage />}
+              {page === "problems" && <ProblemsPage />}
             </div>
           </div>
         </main>

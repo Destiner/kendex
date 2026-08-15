@@ -122,6 +122,14 @@ export function views(): AuditView[] {
       notes: [],
       warnings: [],
       safety: [],
+      // Demoes the "scope couldn't be read" path: the review card and
+      // Problems page both need a real error to render, not just an empty
+      // clean scope, or the modal/footer/page have nothing to show.
+      error: {
+        kind: "lock-corrupt",
+        message:
+          "/home/dana/work/api-server/.vstack-lock.json: the file is not valid JSON",
+      },
     },
   ];
 }

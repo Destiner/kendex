@@ -8,6 +8,7 @@ import {
   type Scope,
 } from "@/bindings";
 import { adoptedToastLabel } from "@/lib/labels";
+import { type ErrorAction, useProblemsStore } from "./problems";
 import { useScanStore } from "./scan";
 
 interface AuditState {
@@ -43,13 +44,15 @@ export function sameScope(a: Scope, b: Scope): boolean {
 
 export const useAuditStore = create<AuditState>((set, get) => {
   // A row that vanishes with no word said is indistinguishable from a
-  // button that did nothing — every outcome here gets a toast, success or
-  // failure, on top of the state update the page renders from.
+  // button that did nothing — every outcome here speaks up, success or
+  // failure, on top of the state update the page renders from. Failure is a
+  // modal, not a toast: these are all user-initiated, so the user is looking
+  // right at the button that just broke.
   const run = async (
     action: () => Promise<
       { status: "ok"; data: AuditView } | { status: "error"; error: string }
     >,
-    successMessage?: string,
+    opts: { title: string; successMessage?: string; steps?: string[] },
   ) => {
     set({ busy: true });
     const response = await action();
@@ -59,11 +62,20 @@ export const useAuditStore = create<AuditState>((set, get) => {
         busy: false,
         error: null,
       });
-      if (successMessage) toast.success(successMessage);
+      if (opts.successMessage) toast.success(opts.successMessage);
       await useScanStore.getState().refresh();
     } else {
       set({ busy: false, error: response.error });
-      toast.error(response.error);
+      const retry: ErrorAction = {
+        label: "Retry",
+        onClick: () => void run(action, opts),
+      };
+      useProblemsStore.getState().showError({
+        title: opts.title,
+        message: response.error,
+        steps: opts.steps,
+        actions: [retry],
+      });
     }
   };
 
@@ -95,14 +107,28 @@ export const useAuditStore = create<AuditState>((set, get) => {
     },
 
     applyPlan: (scope, removeOrphans) =>
-      run(() => commands.applyPlan(scope, removeOrphans)),
+      run(() => commands.applyPlan(scope, removeOrphans), {
+        title: "Couldn't apply these changes",
+        steps: [
+          "Nothing was changed — try again",
+          "If it keeps failing, check the project folder is writable",
+        ],
+      }),
     adopt: (scope, kind, name, harness) =>
-      run(
-        () => commands.adoptItem(scope, kind, name, harness),
-        adoptedToastLabel(name),
-      ),
+      run(() => commands.adoptItem(scope, kind, name, harness), {
+        title: `Couldn't start managing ${name}`,
+        successMessage: adoptedToastLabel(name),
+        steps: ["Try again"],
+      }),
     toggle: (scope, name, enabled) =>
-      run(() => commands.toggleItem(scope, name, enabled)),
-    removeItem: (scope, name) => run(() => commands.removeItem(scope, name)),
+      run(() => commands.toggleItem(scope, name, enabled), {
+        title: `Couldn't ${enabled ? "turn on" : "turn off"} ${name}`,
+        steps: ["Try again"],
+      }),
+    removeItem: (scope, name) =>
+      run(() => commands.removeItem(scope, name), {
+        title: `Couldn't remove ${name}`,
+        steps: ["Try again"],
+      }),
   };
 });

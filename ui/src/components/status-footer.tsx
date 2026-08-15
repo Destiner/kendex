@@ -1,6 +1,8 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
+import { StatusDot } from "@/components/status-dot";
 import { heldBackCount } from "@/lib/derive";
+import { problemsFooterLabel } from "@/lib/error-copy";
 import {
   heldBackFooterLabel,
   pendingChangesLabel,
@@ -10,6 +12,7 @@ import {
 import { relativeTime } from "@/lib/relative-time";
 import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
+import { useProblems } from "@/stores/problems";
 import { useScanStore } from "@/stores/scan";
 
 const AGE_TICK_MS = 30_000;
@@ -21,6 +24,7 @@ export function StatusFooter() {
   const scanning = useScanStore((s) => s.scanning);
   const lastScanAt = useScanStore((s) => s.lastScanAt);
   const views = useAuditStore((s) => s.views);
+  const problems = useProblems();
   const goTo = useNavStore((s) => s.goTo);
 
   // "Scanned Nm ago" goes stale on its own; nothing else re-renders this
@@ -36,15 +40,27 @@ export function StatusFooter() {
 
   return (
     <footer className="flex h-7 shrink-0 items-center justify-between border-t bg-background px-4 text-xs text-muted-foreground">
-      <span className="flex items-center gap-1.5">
-        {scanning ? (
-          <>
-            <RefreshCw className="size-3 animate-spin" />
-            {SCANNING_LABEL}
-          </>
-        ) : (
-          scanStatusLabel(lastScanAt ? relativeTime(lastScanAt, now) : null)
-        )}
+      <span className="flex items-center gap-3">
+        {problems.length > 0 ? (
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-critical hover:text-critical/80"
+            onClick={() => goTo("problems")}
+          >
+            <StatusDot tone="critical" />
+            {problemsFooterLabel(problems.length)}
+          </button>
+        ) : null}
+        <span className="flex items-center gap-1.5">
+          {scanning ? (
+            <>
+              <RefreshCw className="size-3 animate-spin" />
+              {SCANNING_LABEL}
+            </>
+          ) : (
+            scanStatusLabel(lastScanAt ? relativeTime(lastScanAt, now) : null)
+          )}
+        </span>
       </span>
       <span className="flex items-center gap-3">
         {pending > 0 ? (
