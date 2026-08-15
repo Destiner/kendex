@@ -1,4 +1,5 @@
 pub mod apply;
+pub mod clock;
 pub mod configedit;
 pub mod discover;
 pub mod engine;

@@ -111,7 +111,7 @@ pub(super) fn trash(env: &Env, path: &Path) -> Result<()> {
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| "pi-package".to_owned());
-    let stamp = crate::lock::timestamp().replace(':', "-");
+    let stamp = crate::clock::timestamp().replace(':', "-");
     let mut dest = dir.join(format!("{stamp}-{base}"));
     let mut counter = 1;
     while dest.exists() {

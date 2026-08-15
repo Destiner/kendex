@@ -61,7 +61,7 @@ pub fn mint(content_hash: &str, findings: &[Finding], note: Option<String>) -> S
         content_hash: content_hash.to_owned(),
         ruleset: RULESET_VERSION,
         findings: fingerprints(findings),
-        granted_at: crate::lock::timestamp(),
+        granted_at: crate::clock::timestamp(),
         note,
     }
 }

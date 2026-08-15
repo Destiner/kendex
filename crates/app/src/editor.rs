@@ -98,7 +98,7 @@ pub fn update_manifest(scope: Scope, manifest: Manifest) -> Result<AuditView, St
         );
     }
     apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
-    view(&env, &scope)
+    Ok(view(&env, &scope))
 }
 
 #[tauri::command]

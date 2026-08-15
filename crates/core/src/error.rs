@@ -42,6 +42,12 @@ pub enum CoreError {
     )]
     LegacyManifest { path: PathBuf },
 
+    #[error("{path} is a v1 vstack lock — migration required; v2 never modifies v1 files")]
+    LegacyLock { path: PathBuf },
+
+    #[error("{path}: this lock file is damaged and could not be read — {message}")]
+    LockCorrupt { path: PathBuf, message: String },
+
     #[error(
         "{path} was written by a newer vstack (format {found}) — update this app before touching it"
     )]

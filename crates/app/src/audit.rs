@@ -10,6 +10,28 @@ fn env() -> Result<Env, String> {
     Env::detect().map_err(|e| e.to_string())
 }
 
+/// Why a scope couldn't be audited: a kind the UI can act on (retry, remove
+/// the project, show the file) plus the plain-words message underneath it.
+#[derive(Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum ScopeErrorKind {
+    /// The lock exists but isn't readable as JSON, or as this build's lock
+    /// shape — damaged, not merely old.
+    LockCorrupt,
+    /// The manifest or lock was written by a newer vstack than this one.
+    SchemaTooNew,
+    /// The manifest parses but fails validation.
+    ManifestInvalid,
+    Other,
+}
+
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopeError {
+    pub kind: ScopeErrorKind,
+    pub message: String,
+}
+
 /// What the Audit page renders: drift rows plus the human-readable plan
 /// that would fix them.
 #[derive(Serialize, Type)]
@@ -24,11 +46,47 @@ pub struct AuditView {
     /// carries two scores that are never combined: safety, which can hold an
     /// install back, and quality, which only ever informs.
     pub safety: Vec<ItemSafety>,
+    /// Set when this one scope couldn't be read at all — a corrupt or
+    /// future-version lock or manifest. Carried as data so one scope's
+    /// failure never blanks every other scope's audit (drift/plan/notes/
+    /// warnings/safety are empty alongside it).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<ScopeError>,
 }
 
-pub fn view(env: &Env, scope: &Scope) -> Result<AuditView, String> {
-    let report = engine::audit(env, scope).map_err(|e| e.to_string())?;
-    Ok(AuditView {
+impl AuditView {
+    fn failed(scope: &Scope, error: &CoreError) -> Self {
+        let kind = match error {
+            CoreError::LockCorrupt { .. } => ScopeErrorKind::LockCorrupt,
+            CoreError::SchemaTooNew { .. } => ScopeErrorKind::SchemaTooNew,
+            CoreError::ManifestInvalid { .. } => ScopeErrorKind::ManifestInvalid,
+            _ => ScopeErrorKind::Other,
+        };
+        AuditView {
+            scope: scope.clone(),
+            drift: Vec::new(),
+            plan: Vec::new(),
+            notes: Vec::new(),
+            warnings: Vec::new(),
+            safety: Vec::new(),
+            error: Some(ScopeError {
+                kind,
+                message: error.to_string(),
+            }),
+        }
+    }
+}
+
+pub fn view(env: &Env, scope: &Scope) -> AuditView {
+    let report = match engine::audit(env, scope) {
+        Ok(report) => report,
+        Err(e) => return AuditView::failed(scope, &e),
+    };
+    let safety = match engine::observed_safety(env, scope) {
+        Ok(safety) => safety,
+        Err(e) => return AuditView::failed(scope, &e),
+    };
+    AuditView {
         scope: scope.clone(),
         drift: report.drift,
         plan: report
@@ -39,8 +97,9 @@ pub fn view(env: &Env, scope: &Scope) -> Result<AuditView, String> {
             .collect(),
         notes: report.notes,
         warnings: report.warnings,
-        safety: engine::observed_safety(env, scope).map_err(|e| e.to_string())?,
-    })
+        safety,
+        error: None,
+    }
 }
 
 #[tauri::command]
@@ -56,7 +115,9 @@ pub fn audit_all() -> Result<Vec<AuditView>, String> {
             .cloned()
             .map(|root| Scope::Project { root }),
     );
-    scopes.iter().map(|scope| view(&env, scope)).collect()
+    // One scope's unreadable lock or manifest must not blank the rest of the
+    // audit — each scope's failure is carried as data on its own view.
+    Ok(scopes.iter().map(|scope| view(&env, scope)).collect())
 }
 
 /// The apply path plans through the same loader the audit view used, so
@@ -81,7 +142,7 @@ pub fn apply_scope(env: &Env, scope: &Scope, remove_orphans: bool) -> Result<Aud
     };
     let report = engine::plan_apply(env, scope, &options).map_err(|e| e.to_string())?;
     apply::execute(env, &report.plan, None).map_err(|e| e.to_string())?;
-    view(env, scope)
+    Ok(view(env, scope))
 }
 
 #[tauri::command]
@@ -104,7 +165,7 @@ pub fn adopt_item(
     apply::execute(&env, &move_plan, None).map_err(|e| e.to_string())?;
     let report = engine::audit(&env, &scope).map_err(|e| e.to_string())?;
     apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
-    view(&env, &scope)
+    Ok(view(&env, &scope))
 }
 
 #[tauri::command]
@@ -114,7 +175,7 @@ pub fn toggle_item(scope: Scope, name: String, enabled: bool) -> Result<AuditVie
     let report = ops::toggle(&env, &scope, std::slice::from_ref(&name), enabled)
         .map_err(|e| e.to_string())?;
     apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
-    view(&env, &scope)
+    Ok(view(&env, &scope))
 }
 
 #[tauri::command]
@@ -127,5 +188,5 @@ pub fn remove_item(scope: Scope, name: String) -> Result<AuditView, String> {
     let report =
         ops::remove(&env, &scope, std::slice::from_ref(&name), false).map_err(|e| e.to_string())?;
     apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
-    view(&env, &scope)
+    Ok(view(&env, &scope))
 }

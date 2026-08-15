@@ -16,18 +16,6 @@ fn v1_lock_path(env: &Env, scope: &Scope) -> PathBuf {
     }
 }
 
-/// A v1 lock keys entries by bare name; v2 keys carry `kind:name:harness`.
-fn is_v1_lock(text: &str) -> bool {
-    serde_json::from_str::<serde_json::Value>(text)
-        .ok()
-        .and_then(|v| {
-            v.get("entries")
-                .and_then(|e| e.as_object())
-                .map(|entries| entries.keys().all(|k| !k.contains(':')))
-        })
-        .unwrap_or(false)
-}
-
 fn backup(env: &Env, path: &PathBuf) -> CliResult {
     if !path.exists() {
         return Ok(());
@@ -38,7 +26,7 @@ fn backup(env: &Env, path: &PathBuf) -> CliResult {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "v1-file".to_owned());
-    let stamp = vstack_core::lock::timestamp().replace(':', "-");
+    let stamp = vstack_core::clock::timestamp().replace(':', "-");
     fs::copy(path, trash.join(format!("{stamp}-v1-{name}")))?;
     Ok(())
 }
@@ -63,7 +51,7 @@ pub fn run(env: &Env, filter: ScopeFilter) -> CliResult {
         let v1_lock_file = v1_lock_path(env, &scope);
         let v1_lock = fs::read_to_string(&v1_lock_file)
             .ok()
-            .filter(|text| is_v1_lock(text));
+            .filter(|text| lock::is_v1_text(text));
 
         if v1_manifest.is_none() && v1_lock.is_none() {
             if already_current {

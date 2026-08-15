@@ -134,8 +134,16 @@ pub fn report_route(
     kind: Option<ItemKind>,
 ) -> Result<ReportRouteView, String> {
     let env = env()?;
-    let lock = vstack_core::lock::load(&vstack_core::lock::lock_path(&env, &scope))
-        .map_err(|e| e.to_string())?;
+    // Read-only lookup: a v1 lock degrades to "no provenance" like the rest
+    // of the read surface, instead of blocking the report dialog outright.
+    let lock = match vstack_core::lock::load_file(&vstack_core::lock::lock_path(&env, &scope))
+        .map_err(|e| e.to_string())?
+    {
+        vstack_core::lock::LockFile::Current(lock) => lock,
+        vstack_core::lock::LockFile::Absent | vstack_core::lock::LockFile::Legacy { .. } => {
+            vstack_core::lock::Lock::default()
+        }
+    };
     let route = vstack_core::report::route(
         &env,
         &scope,

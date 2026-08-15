@@ -386,6 +386,13 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Fixed
 
+- A project carrying files from vstack v1 (or a corrupted vstack
+  file) no longer breaks the Review & apply page with a raw error.
+  A v1 project now shows read-only with a note saying it predates
+  this version; a truly unreadable file shows as a problem for that
+  one project, with the reason — other projects keep working either
+  way.
+
 - The checkboxes in Customize's agent-skills grid were collapsing
   into thin slivers — a leftover from the component-library switch
   that only this grid exercised. They render as proper checkboxes

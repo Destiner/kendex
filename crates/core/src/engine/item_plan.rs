@@ -3,9 +3,10 @@ use std::path::PathBuf;
 
 use super::{DriftRow, DriftState};
 use crate::apply::{Op, PlannedOp, Pre};
+use crate::clock::timestamp;
 use crate::error::Result;
 use crate::hash::hash_tree;
-use crate::lock::{Lock, LockEntry, timestamp};
+use crate::lock::{Lock, LockEntry};
 use crate::model::Scope;
 
 use super::config_edits::ConfigEditPlan;

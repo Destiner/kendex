@@ -138,34 +138,98 @@ pub fn lock_path(env: &Env, scope: &Scope) -> PathBuf {
     }
 }
 
+/// What sits at a lock path. A v1 lock keys entries by bare name and carries
+/// a `harnesses` array; v2 keys carry `kind:name:harness` with one `harness`
+/// field. The shapes are incompatible — deserializing v1 text straight into
+/// [`Lock`] surfaces a raw "missing field" error instead of naming what the
+/// file actually is.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LockFile {
+    Absent,
+    Legacy { raw: String },
+    Current(Lock),
+}
+
+/// `"version": 1` alone cannot identify the old product generation: this
+/// product's own v0.1 locks also say 1 and load compatibly (see
+/// [`LOCK_VERSION`]). The key shape is the discriminator — bare-name keys
+/// against v2's always-present `kind:name:harness` separator — and it only
+/// applies to files not declaring a version above 1, so a current file with
+/// odd keys is diagnosed as corrupt, never mislabeled v1. An empty map
+/// matches both shapes and reads as current, the only reading a lost lock
+/// or a fresh scope can mean.
+fn is_v1(value: &serde_json::Value) -> bool {
+    let version = value.get("version").and_then(serde_json::Value::as_i64);
+    if version.is_some_and(|v| v > 1) {
+        return false;
+    }
+    value
+        .get("entries")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(|entries| !entries.is_empty() && entries.keys().all(|k| !k.contains(':')))
+}
+
+/// Text-taking wrapper for callers (the CLI's one-shot v1 importer) that
+/// have not already parsed the JSON. Unparseable text is not v1 — it is
+/// corrupt, and `load_file` names that distinctly.
+pub fn is_v1_text(text: &str) -> bool {
+    serde_json::from_str(text).is_ok_and(|value| is_v1(&value))
+}
+
+pub fn load_file(path: &Path) -> Result<LockFile> {
+    let Some(text) = read_if_exists(path)? else {
+        return Ok(LockFile::Absent);
+    };
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| CoreError::LockCorrupt {
+            path: path.to_path_buf(),
+            message: e.to_string(),
+        })?;
+    if let Some(version) = value.get("version").and_then(serde_json::Value::as_i64)
+        && version > i64::from(LOCK_VERSION)
+    {
+        return Err(CoreError::SchemaTooNew {
+            path: path.to_path_buf(),
+            found: version,
+        });
+    }
+    if is_v1(&value) {
+        return Ok(LockFile::Legacy { raw: text });
+    }
+    let mut lock: Lock = serde_json::from_value(value).map_err(|e| CoreError::LockCorrupt {
+        path: path.to_path_buf(),
+        message: e.to_string(),
+    })?;
+    backfill_requested_reason(&mut lock);
+    Ok(LockFile::Current(lock))
+}
+
+// A record written before installations carried their reasons: everything
+// installed then was installed because it was asked for, which is the only
+// reading that cannot invent a dependency nobody declared. The next write
+// records it.
+fn backfill_requested_reason(lock: &mut Lock) {
+    for entry in lock.entries.values_mut() {
+        if entry.reasons.is_empty() {
+            entry.reasons.insert(Reason::Requested);
+        }
+    }
+}
+
+/// Load for mutation: a v1 lock is a hard error, never a write target — same
+/// posture as [`crate::manifest::file::load_for_mutation`]. Callers that only
+/// observe (the audit view) use [`load_file`] instead so a v1 lock degrades
+/// to a note rather than blocking the read.
 pub fn load(path: &Path) -> Result<Lock> {
-    match read_if_exists(path)? {
-        None => Ok(Lock {
+    match load_file(path)? {
+        LockFile::Absent => Ok(Lock {
             version: LOCK_VERSION,
             ..Lock::default()
         }),
-        Some(text) => {
-            let mut lock: Lock = serde_json::from_str(&text).map_err(|e| CoreError::JsonParse {
-                path: path.to_path_buf(),
-                message: e.to_string(),
-            })?;
-            if lock.version > LOCK_VERSION {
-                return Err(CoreError::SchemaTooNew {
-                    path: path.to_path_buf(),
-                    found: i64::from(lock.version),
-                });
-            }
-            // A record written before installations carried their reasons:
-            // everything installed then was installed because it was asked
-            // for, which is the only reading that cannot invent a dependency
-            // nobody declared. The next write records it.
-            for entry in lock.entries.values_mut() {
-                if entry.reasons.is_empty() {
-                    entry.reasons.insert(Reason::Requested);
-                }
-            }
-            Ok(lock)
-        }
+        LockFile::Legacy { .. } => Err(CoreError::LegacyLock {
+            path: path.to_path_buf(),
+        }),
+        LockFile::Current(lock) => Ok(lock),
     }
 }
 
@@ -176,37 +240,6 @@ pub fn save(path: &Path, lock: &Lock) -> Result<()> {
     })?;
     text.push('\n');
     atomic_write(path, &text)
-}
-
-/// Now, as an ISO-8601 UTC timestamp (no external time dependency).
-pub fn timestamp() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let days = secs / 86_400;
-    let (year, month, day) = civil_from_days(days as i64);
-    let rem = secs % 86_400;
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
-        rem / 3600,
-        (rem % 3600) / 60,
-        rem % 60
-    )
-}
-
-/// Howard Hinnant's civil-from-days: days since 1970-01-01 → (y, m, d).
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let year = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    (if month <= 2 { year + 1 } else { year }, month, day)
 }
 
 #[cfg(test)]
@@ -232,7 +265,7 @@ mod tests {
                 source: "vstack".into(),
                 source_repo: "vanillagreencom/vstack".into(),
                 method: Method::Symlink,
-                installed_at: timestamp(),
+                installed_at: crate::clock::timestamp(),
                 source_hash: "abc".into(),
                 enabled: true,
                 upstream_skills: None,
@@ -281,9 +314,66 @@ mod tests {
 
     #[test]
     fn timestamps_are_iso8601() {
-        let ts = timestamp();
+        let ts = crate::clock::timestamp();
         assert_eq!(ts.len(), 20);
         assert!(ts.ends_with('Z'));
         assert!(ts.starts_with("20"));
+    }
+
+    /// A v1 lock (bare-name keys, a `harnesses` array, no singular
+    /// `harness`) must read as a recognized legacy shape, never as a raw
+    /// serde "missing field" error.
+    #[test]
+    fn a_v1_lock_reads_as_legacy_not_a_parse_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".vstack-lock.json");
+        std::fs::write(
+            &path,
+            r#"{"version":1,"entries":{"gh":{"name":"gh","kind":"skill","source":"vstack","source_repo":"vanillagreencom/vstack","harnesses":["claude-code"],"method":"symlink","installed_at":"2026-01-01T00:00:00Z","source_hash":"abc"}}}"#,
+        )
+        .unwrap();
+        assert!(matches!(load_file(&path).unwrap(), LockFile::Legacy { .. }));
+        assert!(matches!(load(&path), Err(CoreError::LegacyLock { .. })));
+    }
+
+    /// Malformed JSON is reported as a damaged lock, distinct from the v1
+    /// and future-version cases.
+    #[test]
+    fn unparseable_json_is_reported_as_corrupt() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".vstack-lock.json");
+        std::fs::write(&path, "{not json").unwrap();
+        assert!(matches!(
+            load_file(&path),
+            Err(CoreError::LockCorrupt { .. })
+        ));
+        assert!(matches!(load(&path), Err(CoreError::LockCorrupt { .. })));
+    }
+
+    /// A lock a future vstack wrote refuses to load rather than being
+    /// silently misread or corrupted by an older build.
+    #[test]
+    fn a_newer_lock_refuses_to_load() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".vstack-lock.json");
+        std::fs::write(&path, r#"{"version":99,"entries":{}}"#).unwrap();
+        assert!(matches!(
+            load_file(&path),
+            Err(CoreError::SchemaTooNew { found: 99, .. })
+        ));
+        assert!(matches!(
+            load(&path),
+            Err(CoreError::SchemaTooNew { found: 99, .. })
+        ));
+    }
+
+    /// An empty `entries` map is indistinguishable between v1 and v2 — it
+    /// reads as v2, since that is the only reading a fresh scope can mean.
+    #[test]
+    fn an_empty_lock_reads_as_current() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".vstack-lock.json");
+        std::fs::write(&path, r#"{"version":1,"entries":{}}"#).unwrap();
+        assert!(matches!(load_file(&path).unwrap(), LockFile::Current(_)));
     }
 }

@@ -7,7 +7,7 @@ use specta::Type;
 use crate::apply::{Op, Plan, PlannedOp};
 use crate::env::Env;
 use crate::error::Result;
-use crate::lock::{Lock, lock_path};
+use crate::lock::{Lock, LockFile, lock_path};
 use crate::manifest::{self, Manifest, ManifestFile};
 use crate::model::{HarnessId, ItemKind, Scope};
 
@@ -340,31 +340,55 @@ pub fn plan_refresh(env: &Env, scope: &Scope) -> Result<EngineReport> {
 pub fn plan_apply(env: &Env, scope: &Scope, options: &PlanOptions) -> Result<EngineReport> {
     let scope = &scope.canonical();
     let manifest_file = manifest::load(&manifest::manifest_path(env, scope))?;
-    let lock = crate::lock::load(&lock_path(env, scope))?;
-    match manifest_file {
-        ManifestFile::Current(manifest) => plan_scope(env, scope, &manifest, &lock, options),
-        other => {
-            let mut report = EngineReport {
-                drift: Vec::new(),
-                plan: Plan {
-                    scope: scope.clone(),
-                    ops: Vec::new(),
-                },
-                notes: Vec::new(),
-                warnings: Vec::new(),
-                set_changes: Vec::new(),
-                sweepable: Vec::new(),
-                kept: Vec::new(),
-                safety: Vec::new(),
-            };
-            if matches!(other, ManifestFile::Legacy { .. }) {
-                report
-                    .notes
-                    .push("v1 manifest — read-only until migration (Phase 6 importer)".into());
-            }
-            let empty = Manifest::default();
-            unmanaged_rows(env, scope, &empty, &lock, &[], &mut report.drift);
-            Ok(report)
-        }
+    let lock_file = crate::lock::load_file(&lock_path(env, scope))?;
+    // Absent reads as an empty current lock — a fresh scope, not a legacy
+    // one — so a first-ever install still plans through the normal path.
+    let fresh_lock = match &lock_file {
+        LockFile::Current(lock) => Some(lock.clone()),
+        LockFile::Absent => Some(Lock {
+            version: crate::lock::LOCK_VERSION,
+            ..Lock::default()
+        }),
+        LockFile::Legacy { .. } => None,
+    };
+    if let (ManifestFile::Current(manifest), Some(lock)) = (&manifest_file, &fresh_lock) {
+        return plan_scope(env, scope, manifest, lock, options);
     }
+
+    // Either file can't be planned against as-is (a v1 lock, or a v1
+    // manifest paired with an already-migrated lock and vice versa) — the
+    // scope reads as observation-only rather than failing the whole audit,
+    // matching the manifest's existing legacy posture: nothing is planned
+    // that would touch a file this build won't write to.
+    let mut report = EngineReport {
+        drift: Vec::new(),
+        plan: Plan {
+            scope: scope.clone(),
+            ops: Vec::new(),
+        },
+        notes: Vec::new(),
+        warnings: Vec::new(),
+        set_changes: Vec::new(),
+        sweepable: Vec::new(),
+        kept: Vec::new(),
+        safety: Vec::new(),
+    };
+    if matches!(manifest_file, ManifestFile::Legacy { .. }) {
+        report
+            .notes
+            .push("v1 manifest — read-only until migration (Phase 6 importer)".into());
+    }
+    if matches!(lock_file, LockFile::Legacy { .. }) {
+        report.notes.push(
+            "v1 lock — this project's install history predates v2; read-only until it is migrated"
+                .into(),
+        );
+    }
+    let empty = Manifest::default();
+    let lock = fresh_lock.unwrap_or_else(|| Lock {
+        version: crate::lock::LOCK_VERSION,
+        ..Lock::default()
+    });
+    unmanaged_rows(env, scope, &empty, &lock, &[], &mut report.drift);
+    Ok(report)
 }

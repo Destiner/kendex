@@ -215,7 +215,7 @@ impl Op {
 }
 
 fn unique_in(dir: &Path, base: &str) -> PathBuf {
-    let stamp = crate::lock::timestamp().replace(':', "-");
+    let stamp = crate::clock::timestamp().replace(':', "-");
     let mut candidate = dir.join(format!("{stamp}-{base}"));
     let mut counter = 1;
     while candidate.exists() {

@@ -137,5 +137,8 @@ pub fn refresh_failures(report: &EngineReport) -> Vec<String> {
 }
 
 pub fn is_legacy(error: &CoreError) -> bool {
-    matches!(error, CoreError::LegacyManifest { .. })
+    matches!(
+        error,
+        CoreError::LegacyManifest { .. } | CoreError::LegacyLock { .. }
+    )
 }

@@ -66,7 +66,7 @@ fn v01_fixture() -> Fixture {
 fn apply_performs_the_upgrade_the_preview_promised() {
     let f = v01_fixture();
 
-    let before = view(&f.env, &f.scope).unwrap();
+    let before = view(&f.env, &f.scope);
     assert!(
         before.plan.iter().any(|op| op == UPGRADE_OP),
         "preview must promise the schema upgrade, got: {:?}",
@@ -83,7 +83,7 @@ fn apply_performs_the_upgrade_the_preview_promised() {
         "the upgrade must change the schema line and nothing else"
     );
 
-    let after = view(&f.env, &f.scope).unwrap();
+    let after = view(&f.env, &f.scope);
     assert!(
         !after.plan.iter().any(|op| op == UPGRADE_OP),
         "a second look must not promise the upgrade again, got: {:?}",

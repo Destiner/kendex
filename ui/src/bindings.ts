@@ -170,6 +170,13 @@ export type AuditView_Deserialize = {
 	 *  install back, and quality, which only ever informs.
 	 */
 	safety: ItemSafety[],
+	/**
+	 *  Set when this one scope couldn't be read at all — a corrupt or
+	 *  future-version lock or manifest. Carried as data so one scope's
+	 *  failure never blanks every other scope's audit (drift/plan/notes/
+	 *  warnings/safety are empty alongside it).
+	 */
+	error: ScopeError | null,
 };
 
 /**
@@ -188,6 +195,13 @@ export type AuditView_Serialize = {
 	 *  install back, and quality, which only ever informs.
 	 */
 	safety: ItemSafety[],
+	/**
+	 *  Set when this one scope couldn't be read at all — a corrupt or
+	 *  future-version lock or manifest. Carried as data so one scope's
+	 *  failure never blanks every other scope's audit (drift/plan/notes/
+	 *  warnings/safety are empty alongside it).
+	 */
+	error?: ScopeError | null,
 };
 
 /**  One curated set a catalog offers, as the Catalogs page lists it. */
@@ -726,6 +740,26 @@ export type ScanResult = {
 };
 
 export type Scope = { scope: "global" } | { scope: "project"; root: string };
+
+export type ScopeError = {
+	kind: ScopeErrorKind,
+	message: string,
+};
+
+/**
+ *  Why a scope couldn't be audited: a kind the UI can act on (retry, remove
+ *  the project, show the file) plus the plain-words message underneath it.
+ */
+export type ScopeErrorKind = 
+/**
+ *  The lock exists but isn't readable as JSON, or as this build's lock
+ *  shape — damaged, not merely old.
+ */
+"lock-corrupt" | 
+/**  The manifest or lock was written by a newer vstack than this one. */
+"schema-too-new" | 
+/**  The manifest parses but fails validation. */
+"manifest-invalid" | "other";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 
