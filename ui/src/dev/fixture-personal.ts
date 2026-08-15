@@ -101,6 +101,20 @@ export const UNMANAGED_SKILLS: {
   description: string;
   path: string;
 }[] = [
+  // Same skill, installed by hand for two harnesses — the case the
+  // "not managed yet" list merges into one row instead of two.
+  {
+    name: "agent-browser",
+    harness: "claude",
+    description: "Browser automation CLI for AI agents",
+    path: "/home/method/.claude/skills/agent-browser",
+  },
+  {
+    name: "agent-browser",
+    harness: "pi",
+    description: "Browser automation CLI for AI agents",
+    path: "/home/method/.pi/agent/skills/agent-browser",
+  },
   {
     name: "journal",
     harness: "claude",

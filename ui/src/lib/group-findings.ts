@@ -8,8 +8,18 @@ import type {
   ItemKind,
   ItemSafety,
   ItemWarning,
+  Severity,
 } from "@/bindings";
 import { heldBack } from "@/lib/derive";
+
+// Shared so a collapsed row can lead with whichever finding or rule-group is
+// most serious, without every caller re-deriving the same ranking.
+export const SEVERITY_RANK: Record<Severity, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  critical: 3,
+};
 
 export interface SafetyGroups {
   /** verdict "block" — held back or overridden; always rendered per item. */

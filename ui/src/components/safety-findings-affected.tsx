@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import type { Finding, ItemSafety, Severity } from "@/bindings";
+import type { Finding, ItemSafety } from "@/bindings";
 import { FindingLine } from "@/components/safety-findings";
 import { StatusDot } from "@/components/status-dot";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import {
   type FindingItem,
   groupByAffectedSet,
   groupFindings,
+  SEVERITY_RANK,
 } from "@/lib/group-findings";
 import {
   FEWER_ITEMS_LABEL,
@@ -40,13 +41,6 @@ function scopeChipLabel(group: AffectedSetGroup): string {
   }
   return `${group.items.length} ${kindLabel(group.items[0].kind, group.items.length).toLowerCase()}`;
 }
-
-const SEVERITY_RANK: Record<Severity, number> = {
-  low: 0,
-  medium: 1,
-  high: 2,
-  critical: 3,
-};
 
 // A set-group can carry findings of mixed severity (e.g. a critical and a
 // low finding on the same 21 plugins) — the collapsed row leads with

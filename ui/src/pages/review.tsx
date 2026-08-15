@@ -67,8 +67,8 @@ export function ReviewPage() {
                   onApply={(removeOrphans) =>
                     void applyPlan(view.scope, removeOrphans)
                   }
-                  onAdopt={(kind, name, harness) =>
-                    void adopt(view.scope, kind, name, harness)
+                  onAdopt={(kind, name, harness, opts) =>
+                    void adopt(view.scope, kind, name, harness, opts)
                   }
                 />
               ),

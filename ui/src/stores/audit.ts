@@ -26,6 +26,7 @@ interface AuditState {
     kind: ItemKind,
     name: string,
     harness: HarnessId,
+    opts?: { silent?: boolean },
   ) => Promise<void>;
   toggle: (scope: Scope, name: string, enabled: boolean) => Promise<void>;
   removeItem: (scope: Scope, name: string) => Promise<void>;
@@ -114,10 +115,13 @@ export const useAuditStore = create<AuditState>((set, get) => {
           "If it keeps failing, check the project folder is writable",
         ],
       }),
-    adopt: (scope, kind, name, harness) =>
+    // A merged row adopts every one of its installations in one click —
+    // each is its own backend call, but they're one thing to the user, so
+    // only the first speaks up with a toast.
+    adopt: (scope, kind, name, harness, opts) =>
       run(() => commands.adoptItem(scope, kind, name, harness), {
         title: `Couldn't start managing ${name}`,
-        successMessage: adoptedToastLabel(name),
+        successMessage: opts?.silent ? undefined : adoptedToastLabel(name),
         steps: ["Try again"],
       }),
     toggle: (scope, name, enabled) =>
