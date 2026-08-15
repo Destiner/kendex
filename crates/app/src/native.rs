@@ -3,7 +3,8 @@
 //! Rust APIs behind vstack's own typed commands instead, the same way
 //! `window.rs` wraps the frameless titlebar's OS calls.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use tauri_plugin_dialog::DialogExt;
 
@@ -32,4 +33,150 @@ pub fn reveal_path(path: String) -> Result<(), String> {
         return Err(format!("{path} does not exist"));
     }
     tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| e.to_string())
+}
+
+/// Editors vstack looks for, in preference order, after `VSTACK_EDITOR`.
+const EDITOR_CANDIDATES: [&str; 5] = ["codium", "code", "cursor", "zed", "subl"];
+
+/// Ordered list of editor names or paths to try: the `VSTACK_EDITOR`
+/// override first when set, then the built-in candidates.
+fn editor_candidates(editor_override: Option<&str>) -> Vec<&str> {
+    editor_override
+        .into_iter()
+        .chain(EDITOR_CANDIDATES)
+        .collect()
+}
+
+fn is_executable(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path)
+            .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    {
+        path.is_file()
+    }
+}
+
+/// Resolves the first candidate that exists and is executable. A candidate
+/// given as an absolute path is checked directly; a bare name is walked
+/// across `path_var` the way a shell resolves PATH, so tests can fabricate
+/// both instead of touching the real environment.
+fn resolve_editor_at(path_var: &str, editor_override: Option<&str>) -> Option<PathBuf> {
+    for candidate in editor_candidates(editor_override) {
+        let candidate_path = Path::new(candidate);
+        if candidate_path.is_absolute() {
+            if is_executable(candidate_path) {
+                return Some(candidate_path.to_path_buf());
+            }
+            continue;
+        }
+        for dir in std::env::split_paths(path_var) {
+            let full = dir.join(candidate);
+            if is_executable(&full) {
+                return Some(full);
+            }
+        }
+    }
+    None
+}
+
+/// Opens `path` (file or directory — every candidate editor accepts both)
+/// in the user's code editor. Not routed through `process::Hardened`: that
+/// constructor hardens tool invocations core makes with captured output
+/// and a timeout, but this is an app-shell concern with a different shape
+/// — no shell, nothing to capture, and no timeout, because the editor is
+/// the user's own long-lived GUI app and is meant to outlive us.
+#[tauri::command]
+#[specta::specta]
+pub fn open_in_editor(path: String) -> Result<(), String> {
+    if !Path::new(&path).exists() {
+        return Err(format!("{path} does not exist"));
+    }
+    let path_var = std::env::var("PATH").unwrap_or_default();
+    let editor_override = std::env::var("VSTACK_EDITOR").ok();
+    let editor = resolve_editor_at(&path_var, editor_override.as_deref()).ok_or_else(|| {
+        "No code editor found — install one (VSCodium, VS Code, Cursor, Zed, Sublime) or set VSTACK_EDITOR".to_string()
+    })?;
+    Command::new(editor)
+        .arg(&path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_child| ())
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    fn write_executable(dir: &Path, name: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join(name);
+        std::fs::write(&path, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    #[cfg(unix)]
+    fn write_non_executable(dir: &Path, name: &str) -> PathBuf {
+        let path = dir.join(name);
+        std::fs::write(&path, "not a program").unwrap();
+        path
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolves_the_first_candidate_present_on_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_non_executable(tmp.path(), "codium");
+        let code = write_executable(tmp.path(), "code");
+
+        let found = resolve_editor_at(tmp.path().to_str().unwrap(), None).unwrap();
+        assert_eq!(found, code);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skips_non_executable_matches() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_non_executable(tmp.path(), "codium");
+        write_non_executable(tmp.path(), "code");
+
+        assert_eq!(resolve_editor_at(tmp.path().to_str().unwrap(), None), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn vstack_editor_override_wins_over_the_built_in_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_executable(tmp.path(), "code");
+        let hx = write_executable(tmp.path(), "hx");
+
+        let found = resolve_editor_at(tmp.path().to_str().unwrap(), Some("hx")).unwrap();
+        assert_eq!(found, hx);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn vstack_editor_override_accepts_an_absolute_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let hx = write_executable(tmp.path(), "hx");
+
+        let found = resolve_editor_at("", Some(hx.to_str().unwrap())).unwrap();
+        assert_eq!(found, hx);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn none_found_when_no_candidate_is_on_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(resolve_editor_at(tmp.path().to_str().unwrap(), None), None);
+    }
 }

@@ -98,6 +98,15 @@ export const commands = {
 	 *  from the OS call that would have failed instead.
 	 */
 	revealPath: (path: string) => typedError<null, string>(__TAURI_INVOKE("reveal_path", { path })),
+	/**
+	 *  Opens `path` (file or directory — every candidate editor accepts both)
+	 *  in the user's code editor. Not routed through `process::Hardened`: that
+	 *  constructor hardens tool invocations core makes with captured output
+	 *  and a timeout, but this is an app-shell concern with a different shape
+	 *  — no shell, nothing to capture, and no timeout, because the editor is
+	 *  the user's own long-lived GUI app and is meant to outlive us.
+	 */
+	openInEditor: (path: string) => typedError<null, string>(__TAURI_INVOKE("open_in_editor", { path })),
 	/**  Every declared source in every scope — the Sources page's one query. */
 	sourcesOverview: () => typedError<SourceRow[], string>(__TAURI_INVOKE("sources_overview")),
 	sourceAdd: (scope: Scope, name: string, reference: string) => typedError<SourceRow[], string>(__TAURI_INVOKE("source_add", { scope, name, reference })),

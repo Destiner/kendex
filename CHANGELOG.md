@@ -264,6 +264,29 @@ changes carry a **Breaking** call-out with their migration note inline.
   had kept an older, heavier focus outline than the rest of the app, and
   the checkbox's error outline was too faint in dark mode.
 
+- A held-back item is one entry now, however many tools it's on and
+  however many places its problem appears. The same skill blocked on
+  two tools used to print its full findings twice, and a rule firing
+  at four lines repeated the same sentence and fix four times — now
+  it reads once: the item, what's wrong in plain words, the fix, and
+  the locations as a short list under their shared folder.
+
+- On Review & apply, an item found on several tools is one row with
+  the tools listed ("agent-browser · Skill · Claude Code, Pi") and
+  one Start managing button that handles all of them; paths shorten
+  to ~ and each section breathes with its count in its label.
+
+- The Library detail panel is a full-height flyout now: the table
+  keeps its full width, the panel slides over it with room to
+  breathe, and closing is a click anywhere outside, Escape, or the X.
+  Content previews got real treatment — code with syntax coloring in
+  both themes, markdown rendered like a proper README, the file name
+  pinned above with a copy-path button — and "Open in…" gives you a
+  choice: the file browser, or your code editor (a skill opens as its
+  whole folder; VSCodium, VS Code, Cursor, Zed, and Sublime are
+  found automatically, or set VSTACK_EDITOR). The table's scrollbar
+  also stopped painting over the last column.
+
 - Safety findings finally read like sentences. Each one collapses to
   a single plain-English line — "Contains a command that could do
   real damage", "Installed from an untracked source, so updates

@@ -31,6 +31,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         editor::item_source,
         native::pick_folder,
         native::reveal_path,
+        native::open_in_editor,
         sources::sources_overview,
         sources::source_add,
         sources::source_remove,

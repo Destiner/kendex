@@ -88,9 +88,12 @@ hits=$(scan '#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?\b|rgba?\(|hsla?\(' '^ui/src/.*\.ts
 
 # One hardened constructor builds every external process (invariant 13);
 # a per-call-site discipline misses call sites. crates/app is out of scope:
-# its only Command re-execs this app, replacing the process rather than
-# launching a tool. Integration tests under crates/*/tests run our own
-# binary and are likewise not tool launches.
+# it has two sanctioned raw spawns, neither a hardened tool invocation —
+# one Command re-execs this app, replacing the process rather than
+# launching a tool, and one launches the user's own GUI editor detached,
+# outliving vstack with no output to capture and no timeout that would
+# make sense. Integration tests under crates/*/tests run our own binary
+# and are likewise not tool launches.
 hits=$(scan 'Command::new' '^crates/(core|cli)/src/' | grep -v '^crates/core/src/process/')
 [ -n "$hits" ] && {
   echo "$hits" | head -5

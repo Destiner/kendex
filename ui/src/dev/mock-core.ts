@@ -11,6 +11,7 @@ export const coreHandlers: Record<string, Handler> = {
   window_close: () => null,
   pick_folder: () => null,
   reveal_path: () => null,
+  open_in_editor: () => null,
   item_source: ({
     kind,
     name,

@@ -42,7 +42,12 @@ fn bindings_export_window_commands() {
         .export(exporter(), &fresh_path)
         .expect("bindings export");
     let fresh = std::fs::read_to_string(&fresh_path).expect("fresh bindings readable");
-    for command in ["window_minimize", "window_toggle_maximize", "window_close"] {
+    for command in [
+        "window_minimize",
+        "window_toggle_maximize",
+        "window_close",
+        "open_in_editor",
+    ] {
         assert!(
             fresh.contains(command),
             "expected generated bindings to export `{command}`"
