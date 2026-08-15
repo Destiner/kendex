@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DriftRow } from "@/bindings";
+import { findingHeadline } from "@/lib/finding-headlines";
 import {
   driftDetail,
   hookDisplayName,
@@ -96,6 +97,15 @@ describe("labels", () => {
         row({ state: "conflict", detail: "both a symlink and a real file" }),
       ),
     ).toBe("both a symlink and a real file");
+  });
+
+  it("maps a known rule to its plain-English headline and falls back to the message", () => {
+    expect(findingHeadline("dangerous-commands", "the engine's message")).toBe(
+      "Contains a command that could do real damage",
+    );
+    expect(findingHeadline("some-future-rule", "the engine's message")).toBe(
+      "the engine's message",
+    );
   });
 
   it("shortens a known skip reason and falls back for unknown ones", () => {

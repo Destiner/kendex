@@ -78,7 +78,7 @@ export const CODEX_PLUGINS = [
 export const CODEX_PLUGINS_PATH = "/home/method/.codex/plugins";
 export const CODEX_FINDINGS: Finding[] = [
   {
-    rule: "untracked-repository",
+    rule: "plugin-source-trust",
     severity: "medium",
     location: `${CODEX_PLUGINS_PATH}/registry.json`,
     message:

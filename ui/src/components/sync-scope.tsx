@@ -6,7 +6,10 @@ import {
   BlockedFindings,
   SafetyCleanSummary,
 } from "@/components/safety-findings";
-import { SafetyWarnings } from "@/components/safety-findings-affected";
+import {
+  SafetyWarnings,
+  safetyGroupCount,
+} from "@/components/safety-findings-affected";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +21,7 @@ import {
   kindLabel,
   STATE_BADGES,
   STATE_LABELS,
+  safetyGroupCountLabel,
   scopeName,
   scopePath,
   toolName,
@@ -44,6 +48,7 @@ export function SyncScopeCard({
   const unmanaged = view.drift.filter((row) => row.state === "unmanaged");
   const orphans = view.drift.filter((row) => row.state === "orphaned");
   const { blocked, warn, clean } = partitionSafety(view.safety);
+  const warnGroupCount = safetyGroupCount(warn);
   // With nothing else to fix, removing left-behind items is the only
   // change on offer — defaulting the checkbox on keeps it reachable.
   const orphansOnly = orphans.length > 0 && view.plan.length === 0;
@@ -130,7 +135,20 @@ export function SyncScopeCard({
             {group.remediation ? ` — fix: ${group.remediation}` : ""}
           </p>
         ))}
-        <SafetyWarnings rows={warn} />
+        {warn.length > 0 || clean.length > 0 ? (
+          <div className="space-y-1.5">
+            <SectionLabel>
+              Safety
+              {warnGroupCount > 0 ? (
+                <span className="ml-1.5 font-normal normal-case tracking-normal text-muted-foreground">
+                  · {safetyGroupCountLabel(warnGroupCount)}
+                </span>
+              ) : null}
+            </SectionLabel>
+            <SafetyWarnings rows={warn} />
+            <SafetyCleanSummary rows={clean} />
+          </div>
+        ) : null}
         {unmanaged.length > 0 ? (
           <div className="space-y-1.5">
             <div className="flex items-baseline justify-between gap-2">
@@ -171,7 +189,6 @@ export function SyncScopeCard({
             </div>
           </div>
         ) : null}
-        <SafetyCleanSummary rows={clean} />
       </CardContent>
       <ConfirmDialog
         open={reviewOpen}

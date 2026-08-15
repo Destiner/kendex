@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { heldBack } from "@/lib/derive";
 import { groupSkipped } from "@/lib/group-findings";
 import {
+  cleanSummaryLead,
   hookDisplayName,
   kindLabel,
   SEVERITY_BADGES,
@@ -83,32 +84,38 @@ function NotChecked({ row }: { row: ItemSafety }) {
   );
 }
 
+// Same badge-column-then-content grid as FindingLine below, so the tinted
+// held-back panel and the collapsible safety list read as one system
+// instead of two differently-shaped stacks.
 function BlockedItem({ row }: { row: ItemSafety }) {
   return (
-    <div className="space-y-1 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant={heldBack(row) ? VERDICT_BADGES.block : "warning"}>
-          {heldBack(row) ? VERDICT_LABELS.block : "Accepted by you"}
-        </Badge>
+    <div className="flex items-start gap-2 text-sm">
+      <Badge
+        variant={heldBack(row) ? VERDICT_BADGES.block : "warning"}
+        className="mt-0.5 shrink-0"
+      >
+        {heldBack(row) ? VERDICT_LABELS.block : "Accepted by you"}
+      </Badge>
+      <div className="min-w-0 flex-1 space-y-1">
         <ItemTitle row={row} />
+        {row.override.state === "stale" ? (
+          <p className="text-xs text-muted-foreground">
+            You accepted this before, but {row.override.why}.
+          </p>
+        ) : null}
+        {row.override.state === "active" ? (
+          <p className="text-xs text-muted-foreground">
+            You read these findings and accepted them, so this stays installed.
+          </p>
+        ) : null}
+        <NotChecked row={row} />
+        {row.findings.map((finding) => (
+          <FindingLine
+            key={`${finding.rule}:${finding.location}:${finding.message}`}
+            finding={finding}
+          />
+        ))}
       </div>
-      {row.override.state === "stale" ? (
-        <p className="text-xs text-muted-foreground">
-          You accepted this before, but {row.override.why}.
-        </p>
-      ) : null}
-      {row.override.state === "active" ? (
-        <p className="text-xs text-muted-foreground">
-          You read these findings and accepted them, so this stays installed.
-        </p>
-      ) : null}
-      <NotChecked row={row} />
-      {row.findings.map((finding) => (
-        <FindingLine
-          key={`${finding.rule}:${finding.location}:${finding.message}`}
-          finding={finding}
-        />
-      ))}
     </div>
   );
 }
@@ -132,17 +139,21 @@ export function BlockedFindings({ rows }: { rows: ItemSafety[] }) {
   );
 }
 
+// One quiet line under the safety list — clean items don't get a row of
+// their own, just a tally, so a scan of the section ends on reassurance
+// instead of trailing off after the last warning.
 export function SafetyCleanSummary({ rows }: { rows: ItemSafety[] }) {
   if (rows.length === 0) return null;
-  const total = rows.length;
-  const sentences = [
-    `${total} item${total === 1 ? "" : "s"} checked — nothing found.`,
+  const clauses = [
+    cleanSummaryLead(rows.length),
     ...groupSkipped(rows).map((group) => {
       const noun = group.kind
         ? kindLabel(group.kind, group.count).toLowerCase()
         : `item${group.count === 1 ? "" : "s"}`;
-      return `${group.count} ${noun} ${skipReasonShort(group.reason)}.`;
+      return `${group.count} ${noun} ${skipReasonShort(group.reason)}`;
     }),
   ];
-  return <p className="text-sm text-muted-foreground">{sentences.join(" ")}</p>;
+  return (
+    <p className="text-xs text-muted-foreground">{clauses.join(" · ")}.</p>
+  );
 }

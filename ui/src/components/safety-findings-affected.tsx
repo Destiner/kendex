@@ -1,15 +1,23 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import type { ItemSafety } from "@/bindings";
-import { SectionLabel } from "@/components/card-section";
-import { FindingLine, ItemTitle } from "@/components/safety-findings";
+import type { Finding, ItemSafety, Severity } from "@/bindings";
+import { FindingLine } from "@/components/safety-findings";
+import { StatusDot } from "@/components/status-dot";
+import { Badge } from "@/components/ui/badge";
+import { findingHeadline } from "@/lib/finding-headlines";
 import {
   type AffectedSetGroup,
   type FindingItem,
   groupByAffectedSet,
   groupFindings,
 } from "@/lib/group-findings";
-import { FEWER_ITEMS_LABEL, kindLabel, moreItemsLabel } from "@/lib/labels";
+import {
+  FEWER_ITEMS_LABEL,
+  hookDisplayName,
+  kindLabel,
+  moreItemsLabel,
+  SEVERITY_DOT_TONE,
+} from "@/lib/labels";
 
 // A finding affecting the collection of hooks in one settings file reads as
 // "N hooks in settings.json"; anything else just gets the plain kind name —
@@ -20,6 +28,33 @@ function affectedLabel(items: FindingItem[], location: string): string {
   if (kind !== "hook") return label;
   const file = location.split("/").pop()?.split(":")[0];
   return file ? `${label} in ${file}` : label;
+}
+
+// The scope chip on a collapsed row: a single item is named directly since
+// there's nothing to count, otherwise it's the count and kind — the row's
+// headline already carries the finding, so the chip stays terse.
+function scopeChipLabel(group: AffectedSetGroup): string {
+  if (group.items.length === 1) {
+    const only = group.items[0];
+    return only.kind === "hook" ? hookDisplayName(only.name) : only.name;
+  }
+  return `${group.items.length} ${kindLabel(group.items[0].kind, group.items.length).toLowerCase()}`;
+}
+
+const SEVERITY_RANK: Record<Severity, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  critical: 3,
+};
+
+// A set-group can carry findings of mixed severity (e.g. a critical and a
+// low finding on the same 21 plugins) — the collapsed row leads with
+// whichever is most serious, since that's the one worth surfacing.
+function leadFinding(findings: Finding[]): Finding {
+  return findings.reduce((lead, f) =>
+    SEVERITY_RANK[f.severity] > SEVERITY_RANK[lead.severity] ? f : lead,
+  );
 }
 
 const COLLAPSE_THRESHOLD = 4;
@@ -65,45 +100,69 @@ function AffectedList({ group }: { group: AffectedSetGroup }) {
   );
 }
 
-// One block per distinct affected item-set: every finding that hit that
-// exact set stacks above a single affected list, so two rules landing on
-// the same 21 plugins (Codex's bundled registry) don't print the wall twice.
-function AffectedGroup({ group }: { group: AffectedSetGroup }) {
-  if (group.items.length === 1) {
-    const only = group.items[0];
-    return (
-      <div className="space-y-0.5">
-        <ItemTitle row={only} />
-        {group.findings.map((finding) => (
-          <FindingLine
-            key={`${finding.rule}:${finding.location}:${finding.message}`}
-            finding={finding}
-          />
-        ))}
-      </div>
-    );
-  }
+// One disclosure row per affected-set group: collapsed to a single
+// plain-English line so the stack reads like a checklist, not a wall of
+// engine text. Opening it reveals every finding that hit this set, in full.
+function FindingRow({ group }: { group: AffectedSetGroup }) {
+  const [open, setOpen] = useState(false);
+  const lead = leadFinding(group.findings);
+  const extraCount = group.findings.length - 1;
+
   return (
-    <div className="space-y-1 text-xs">
-      {group.findings.map((finding) => (
-        <FindingLine
-          key={`${finding.rule}:${finding.location}:${finding.message}`}
-          finding={finding}
-        />
-      ))}
-      <AffectedList group={group} />
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full cursor-pointer items-center gap-2 px-3 py-2.5 text-left"
+      >
+        <StatusDot tone={SEVERITY_DOT_TONE[lead.severity]} />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          {findingHeadline(lead.rule, lead.message)}
+          {extraCount > 0 ? (
+            <span className="font-normal text-muted-foreground">
+              {" "}
+              {moreItemsLabel(extraCount)}
+            </span>
+          ) : null}
+        </span>
+        <Badge variant="outline" className="shrink-0 font-normal">
+          {scopeChipLabel(group)}
+        </Badge>
+        {open ? (
+          <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        )}
+      </button>
+      {open ? (
+        <div className="space-y-2 pb-3 pl-7 pr-3">
+          {group.findings.map((finding) => (
+            <FindingLine
+              key={`${finding.rule}:${finding.location}:${finding.message}`}
+              finding={finding}
+            />
+          ))}
+          <AffectedList group={group} />
+        </div>
+      ) : null}
     </div>
   );
+}
+
+// The number of disclosure rows the safety list would render — used by the
+// section header's same-line count, computed here rather than in
+// group-findings.ts since it's a display concern, not grouping logic.
+export function safetyGroupCount(rows: ItemSafety[]): number {
+  return groupByAffectedSet(groupFindings(rows)).length;
 }
 
 export function SafetyWarnings({ rows }: { rows: ItemSafety[] }) {
   const affectedGroups = groupByAffectedSet(groupFindings(rows));
   if (affectedGroups.length === 0) return null;
   return (
-    <div className="space-y-2">
-      <SectionLabel>Safety</SectionLabel>
+    <div className="divide-y divide-border rounded-lg border">
       {affectedGroups.map((group) => (
-        <AffectedGroup
+        <FindingRow
           key={group.items
             .map((i) => `${i.harness}:${i.kind}:${i.name}`)
             .join("|")}

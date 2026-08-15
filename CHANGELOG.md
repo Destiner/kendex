@@ -264,6 +264,28 @@ changes carry a **Breaking** call-out with their migration note inline.
   had kept an older, heavier focus outline than the rest of the app, and
   the checkbox's error outline was too faint in dark mode.
 
+- Safety findings finally read like sentences. Each one collapses to
+  a single plain-English line — "Contains a command that could do
+  real damage", "Installed from an untracked source, so updates
+  can't be checked" — with a colored dot for how serious it is and a
+  chip saying what it applies to ("14 hooks", "21 plugins"). The
+  detail — exact message, file and line, the fix, the full list of
+  affected items — opens on click instead of filling the page.
+
+- Errors got a real home. Anything that fails when you click now
+  opens a small dialog saying what failed, why (in the backend's own
+  words), and the steps to fix it — with a Retry where that makes
+  sense. Ongoing problems — a project vstack can't read, a scan that
+  failed — stay visible as a red count in the bottom status bar for
+  as long as they exist; clicking it opens a Problems page where
+  each one carries its resolution actions (rescan, show the file,
+  stop tracking the project). A project with a problem also says so
+  on Review & apply instead of pretending to be clean.
+
+- The Library's location filter became pills: All · Personal · one
+  per project, multi-selectable with a click, replacing the dropdown
+  — and they narrow within whatever the sidebar already shows.
+
 - Home earned its place: what needs attention leads, a new "Recent
   activity" list shows the latest-changed items on your machine (each
   row jumps to the Library, filtered), and the count tiles moved
