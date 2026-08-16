@@ -81,13 +81,13 @@ fn apply_now(f: &Fixture) -> EngineReport {
 
 #[allow(clippy::unwrap_used)]
 fn toggle(f: &Fixture, name: &str, enabled: bool) {
-    let report = ops::toggle(&f.env, &f.scope, &[name.to_owned()], enabled).unwrap();
+    let report = ops::toggle(&f.env, &f.scope, &[name.to_owned()], None, enabled).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
 }
 
 #[allow(clippy::unwrap_used)]
 fn remove(f: &Fixture, name: &str) {
-    let report = ops::remove(&f.env, &f.scope, &[name.to_owned()], false).unwrap();
+    let report = ops::remove(&f.env, &f.scope, &[name.to_owned()], None, false).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
 }
 

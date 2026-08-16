@@ -292,7 +292,8 @@ mod tests {
         assert!(error.to_string().contains("skills.gh"));
         assert!(error.to_string().contains("disable the source"));
 
-        let report = crate::engine::ops::remove(&env, &scope, &["gh".to_owned()], false).unwrap();
+        let report =
+            crate::engine::ops::remove(&env, &scope, &["gh".to_owned()], None, false).unwrap();
         crate::apply::execute(&env, &report.plan, None).unwrap();
         let report = remove_source(&env, &scope, "cat").unwrap();
         crate::apply::execute(&env, &report.plan, None).unwrap();

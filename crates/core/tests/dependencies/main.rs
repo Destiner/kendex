@@ -101,7 +101,7 @@ fn required_by(source: &str, name: &str, scope: &Scope) -> Reason {
 
 #[allow(clippy::unwrap_used)]
 fn remove(f: &Fixture, name: &str, sweep: bool) -> vstack_core::engine::EngineReport {
-    let report = ops::remove(&f.env, &f.scope, &[name.to_owned()], sweep).unwrap();
+    let report = ops::remove(&f.env, &f.scope, &[name.to_owned()], None, sweep).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     report
 }
@@ -224,7 +224,7 @@ fn removing_the_last_dependent_offers_to_sweep_what_it_needed() {
     let f = fixture("[skills.dev]\nsource = \"cat\"\n");
     apply_now(&f);
 
-    let kept = ops::remove(&f.env, &f.scope, &["dev".to_owned()], false).unwrap();
+    let kept = ops::remove(&f.env, &f.scope, &["dev".to_owned()], None, false).unwrap();
     assert_eq!(kept.sweepable.len(), 1);
     assert_eq!(kept.sweepable[0].name, "github");
     apply::execute(&f.env, &kept.plan, None).unwrap();

@@ -57,29 +57,57 @@ pub fn manifest_for_mutation(env: &Env, scope: &Scope) -> Result<Manifest> {
 /// A name that is an installed bundle removes the set: its members go with
 /// it, except the ones the user also asked for, that a surviving item needs,
 /// or that another installed bundle carries too.
-pub fn remove(env: &Env, scope: &Scope, names: &[String], sweep: bool) -> Result<EngineReport> {
+/// Remove by name. `kind` narrows the removal to one declaration — the
+/// page that knows what it is looking at passes it, so a skill and an
+/// agent sharing a name never go down together. `None` keeps the CLI's
+/// bare-name semantics: the name goes wherever it is declared.
+pub fn remove(
+    env: &Env,
+    scope: &Scope,
+    names: &[String],
+    kind: Option<ItemKind>,
+    sweep: bool,
+) -> Result<EngineReport> {
     let mut manifest = manifest_for_mutation(env, scope)?;
     let lock = crate::lock::load(&lock_path(env, scope))?;
     let bundles: Vec<String> = names
         .iter()
-        .filter(|name| manifest.bundles.contains_key(*name))
+        .filter(|name| kind.is_none() && manifest.bundles.contains_key(*name))
         .cloned()
         .collect();
     let mut removing = names.to_vec();
     removing.extend(super::bundles::recorded_members(&lock, &bundles));
     for name in names {
-        manifest.bundles.remove(name);
-        for kind in DECLARED_KINDS {
-            manifest.declared_mut(kind).remove(name);
+        let kinds: Vec<ItemKind> = match kind {
+            Some(kind) => vec![kind],
+            None => DECLARED_KINDS.to_vec(),
+        };
+        if kind.is_none() {
+            manifest.bundles.remove(name);
+            manifest.plugins.remove(name);
         }
-        manifest.plugins.remove(name);
-        manifest.agent_skills.remove(name);
-        manifest.skill_instructions.remove(name);
-        manifest.optional_dependencies.remove(name);
-        // Taking an item away also un-takes it wherever it was chosen as an
-        // optional extra: that choice is the whole reason it would return.
-        for taken in manifest.optional_dependencies.values_mut() {
-            taken.retain(|chosen| chosen != name);
+        for kind in &kinds {
+            manifest.declared_mut(*kind).remove(name);
+            if let Some(forks) = manifest.forks.get_mut(kind) {
+                forks.remove(name);
+            }
+        }
+        manifest.forks.retain(|_, forks| !forks.is_empty());
+        if kinds.contains(&ItemKind::Plugin) {
+            manifest.plugins.remove(name);
+        }
+        if kinds.contains(&ItemKind::Agent) {
+            manifest.agent_skills.remove(name);
+        }
+        if kinds.contains(&ItemKind::Skill) {
+            manifest.skill_instructions.remove(name);
+            manifest.optional_dependencies.remove(name);
+            // Taking an item away also un-takes it wherever it was chosen
+            // as an optional extra: that choice is the whole reason it
+            // would return.
+            for taken in manifest.optional_dependencies.values_mut() {
+                taken.retain(|chosen| chosen != name);
+            }
         }
     }
     manifest.optional_dependencies.retain(|_, t| !t.is_empty());
@@ -216,16 +244,36 @@ fn unreadable_origins(
 }
 
 /// Flip declarations; disabling is non-destructive (invariant 5).
-pub fn toggle(env: &Env, scope: &Scope, names: &[String], enabled: bool) -> Result<EngineReport> {
+/// Toggle by name; `kind` narrows to one declaration, the same way and
+/// for the same reason as [`remove`].
+pub fn toggle(
+    env: &Env,
+    scope: &Scope,
+    names: &[String],
+    kind: Option<ItemKind>,
+    enabled: bool,
+) -> Result<EngineReport> {
     let mut manifest = manifest_for_mutation(env, scope)?;
     let lock = crate::lock::load(&lock_path(env, scope))?;
     for name in names {
-        for kind in DECLARED_KINDS {
+        let kinds: Vec<ItemKind> = match kind {
+            Some(kind) => vec![kind],
+            None => DECLARED_KINDS.to_vec(),
+        };
+        for kind in kinds {
+            if kind == ItemKind::Plugin {
+                if let Some(plugin) = manifest.plugins.get_mut(name) {
+                    plugin.enabled = enabled;
+                }
+                continue;
+            }
             if let Some(decl) = manifest.declared_mut(kind).get_mut(name) {
                 decl.enabled = enabled;
             }
         }
-        if let Some(plugin) = manifest.plugins.get_mut(name) {
+        if kind.is_none()
+            && let Some(plugin) = manifest.plugins.get_mut(name)
+        {
             plugin.enabled = enabled;
         }
     }

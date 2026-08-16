@@ -120,7 +120,7 @@ pub fn manifest_of(f: &Fixture) -> vstack_core::manifest::Manifest {
 
 #[allow(clippy::unwrap_used)]
 pub fn remove(f: &Fixture, name: &str, sweep: bool) -> EngineReport {
-    let report = ops::remove(&f.env, &f.scope, &[name.to_owned()], sweep).unwrap();
+    let report = ops::remove(&f.env, &f.scope, &[name.to_owned()], None, sweep).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     report
 }

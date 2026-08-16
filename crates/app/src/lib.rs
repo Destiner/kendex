@@ -2,6 +2,7 @@ pub mod audit;
 mod commands;
 mod editor;
 mod native;
+mod packages;
 mod paths;
 pub mod recovery;
 mod sources;
@@ -39,6 +40,18 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         sources::sources_refresh,
         sources::bundles_overview,
         sources::bundle_install,
+        packages::package_versions,
+        packages::updates_overview,
+        packages::updates_refresh,
+        packages::update_set_ignored,
+        packages::package_set_rev,
+        packages::package_diff,
+        packages::package_fork,
+        packages::fork_rename,
+        packages::package_files,
+        packages::package_file,
+        packages::package_readme,
+        packages::package_meta,
         window::window_minimize,
         window::window_toggle_maximize,
         window::window_close,

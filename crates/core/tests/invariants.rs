@@ -262,7 +262,7 @@ fn invariant_5_toggle_is_lossless_rename() {
     apply_now(&f);
     let enabled_agent = fs::read_to_string(agent_file(&f)).unwrap();
 
-    let report = ops::toggle(&f.env, &f.scope, &["rust".into(), "gh".into()], false).unwrap();
+    let report = ops::toggle(&f.env, &f.scope, &["rust".into(), "gh".into()], None, false).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     assert!(!agent_file(&f).exists());
     assert!(f.project.join(".claude/agents/rust.md.disabled").is_file());
@@ -271,7 +271,7 @@ fn invariant_5_toggle_is_lossless_rename() {
     // Disabled is a state, not drift.
     assert_eq!(drift_states(&f), vec![]);
 
-    let report = ops::toggle(&f.env, &f.scope, &["rust".into(), "gh".into()], true).unwrap();
+    let report = ops::toggle(&f.env, &f.scope, &["rust".into(), "gh".into()], None, true).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     assert_eq!(fs::read_to_string(agent_file(&f)).unwrap(), enabled_agent);
     assert!(canonical_skill(&f).join("SKILL.md").is_file());
@@ -286,7 +286,7 @@ fn invariant_6_never_touch_the_unowned() {
     let stray = f.project.join(".claude/skills/handmade");
     fs::create_dir_all(&stray).unwrap();
     fs::write(stray.join("SKILL.md"), "mine").unwrap();
-    let report = ops::remove(&f.env, &f.scope, &["gh".into()], false).unwrap();
+    let report = ops::remove(&f.env, &f.scope, &["gh".into()], None, false).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     assert_eq!(fs::read_to_string(stray.join("SKILL.md")).unwrap(), "mine");
     assert!(!f.project.join(".claude/skills/gh").is_symlink());

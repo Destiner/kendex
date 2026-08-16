@@ -80,7 +80,7 @@ pub fn apply_now(f: &Fixture) {
 
 #[allow(clippy::unwrap_used)]
 fn toggle(f: &Fixture, name: &str, enabled: bool) {
-    let report = ops::toggle(&f.env, &f.scope, &[name.to_owned()], enabled).unwrap();
+    let report = ops::toggle(&f.env, &f.scope, &[name.to_owned()], None, enabled).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
 }
 
@@ -230,7 +230,7 @@ fn mcp_declare_apply_remove_keeps_the_servers_we_never_declared() {
     );
     assert!(is_clean(&f));
 
-    let report = ops::remove(&f.env, &f.scope, &["gh".to_owned()], false).unwrap();
+    let report = ops::remove(&f.env, &f.scope, &["gh".to_owned()], None, false).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     let after = json(&file);
     assert!(after["mcpServers"].get("gh").is_none());
@@ -265,6 +265,7 @@ fn two_mcp_servers_install_into_one_settings_file_in_one_apply() {
         &f.env,
         &f.scope,
         &["gh".to_owned(), "lin".to_owned()],
+        None,
         false,
     )
     .unwrap();
@@ -315,7 +316,7 @@ fn a_command_is_a_plain_file_that_toggles_by_rename() {
     assert_eq!(fs::read_to_string(&parked).unwrap(), "Ship the branch.\n");
     assert!(is_clean(&f));
 
-    let report = ops::remove(&f.env, &f.scope, &["ship".to_owned()], false).unwrap();
+    let report = ops::remove(&f.env, &f.scope, &["ship".to_owned()], None, false).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     assert!(!parked.exists() && !file.exists());
 }
@@ -338,7 +339,7 @@ fn a_plugin_toggle_writes_only_its_own_settings_key() {
     assert_eq!(disabled["model"], "opus");
     assert!(is_clean(&f));
 
-    let report = ops::remove(&f.env, &f.scope, &["fmt@main".to_owned()], false).unwrap();
+    let report = ops::remove(&f.env, &f.scope, &["fmt@main".to_owned()], None, false).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     let removed = json(&settings(&f));
     assert!(removed.get("enabledPlugins").is_none());

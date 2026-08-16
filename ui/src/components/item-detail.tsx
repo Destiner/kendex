@@ -163,7 +163,7 @@ export function ItemDetail({
                 disabled={busy}
                 onCheckedChange={() =>
                   void inEveryScope((scope) =>
-                    toggle(scope, shown.name, anyDisabled),
+                    toggle(scope, shown.kind, shown.name, anyDisabled),
                   )
                 }
               />
@@ -223,9 +223,9 @@ export function ItemDetail({
           destructive
           busy={busy}
           onConfirm={() => {
-            void inEveryScope((scope) => removeItem(scope, shown.name)).then(
-              () => setConfirmOpen(false),
-            );
+            void inEveryScope((scope) =>
+              removeItem(scope, shown.kind, shown.name),
+            ).then(() => setConfirmOpen(false));
           }}
         />
       </aside>

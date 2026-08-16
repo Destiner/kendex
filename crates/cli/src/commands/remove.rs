@@ -17,7 +17,7 @@ pub fn run(env: &Env, names: Vec<String>, filter: ScopeFilter, sweep: Option<boo
     }
     let mut removed_any = false;
     for scope in resolve_scopes(env, filter)? {
-        let report = match ops::remove(env, &scope, &names, sweep.unwrap_or(false)) {
+        let report = match ops::remove(env, &scope, &names, None, sweep.unwrap_or(false)) {
             Ok(report) => report,
             // A scope without a v2 manifest has nothing of ours to remove.
             Err(error) if super::engine_common::is_legacy(&error) => continue,
@@ -112,7 +112,7 @@ fn answer(
     let mut answer = String::new();
     std::io::stdin().read_line(&mut answer)?;
     match matches!(answer.trim(), "y" | "Y" | "yes") {
-        true => Ok(Some(ops::remove(env, scope, names, true)?)),
+        true => Ok(Some(ops::remove(env, scope, names, None, true)?)),
         false => Ok(Some(report)),
     }
 }

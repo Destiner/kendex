@@ -25,8 +25,8 @@ export const commands = {
 	auditAll: () => typedError<AuditView_Serialize[], string>(__TAURI_INVOKE("audit_all")),
 	applyPlan: (scope: Scope, removeOrphans: boolean) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("apply_plan", { scope, removeOrphans })),
 	adoptItem: (scope: Scope, kind: ItemKind, name: string, harness: HarnessId) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("adopt_item", { scope, kind, name, harness })),
-	toggleItem: (scope: Scope, name: string, enabled: boolean) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("toggle_item", { scope, name, enabled })),
-	removeItem: (scope: Scope, name: string) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("remove_item", { scope, name })),
+	toggleItem: (scope: Scope, kind: ItemKind, name: string, enabled: boolean) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("toggle_item", { scope, kind, name, enabled })),
+	removeItem: (scope: Scope, kind: ItemKind, name: string) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("remove_item", { scope, kind, name })),
 	getManifest: (scope: Scope) => typedError<{
 	schema: number,
 	sources?: { [key in string]: SourceDecl_Serialize },
@@ -131,7 +131,39 @@ export const commands = {
 	 *  Install a set whole. Its members derive from the catalog, so this declares
 	 *  one name and applies the plan that follows from it.
 	 */
-	bundleInstall: (scope: Scope, source: string, name: string) => typedError<BundleRow[], string>(__TAURI_INVOKE("bundle_install", { scope, source, name })),
+	bundleInstall: (scope: Scope, source: string, name: string, hold: boolean) => typedError<BundleRow[], string>(__TAURI_INVOKE("bundle_install", { scope, source, name, hold })),
+	packageVersions: (scope: Scope, kind: ItemKind, name: string) => typedError<VersionRow[], string>(__TAURI_INVOKE("package_versions", { scope, kind, name })),
+	/**
+	 *  Every scope's update standing in one query — the sidebar badge, the
+	 *  Updates page, and the Library's fork/edited flags all read this.
+	 */
+	updatesOverview: () => typedError<UpdateRow[], string>(__TAURI_INVOKE("updates_overview")),
+	/**
+	 *  Fetch every source's mirror — pinned ones included, that is the point —
+	 *  then answer with the fresh standing. Fetch problems degrade to
+	 *  warnings; a check for updates is never worth an error dialog.
+	 */
+	updatesRefresh: () => typedError<UpdateRow[], string>(__TAURI_INVOKE("updates_refresh")),
+	updateSetIgnored: (scope: Scope, kind: ItemKind, name: string, repo: string, ignored: boolean) => typedError<UpdateRow[], string>(__TAURI_INVOKE("update_set_ignored", { scope, kind, name, repo, ignored })),
+	/**
+	 *  Hold a package at a version (or let it follow again) and apply the
+	 *  change. The plan is whole-scope, like every apply: packages that follow
+	 *  their source come current in the same pass, which is what following
+	 *  means.
+	 */
+	packageSetRev: (scope: Scope, kind: ItemKind, name: string, rev: string | null) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("package_set_rev", { scope, kind, name, rev })),
+	packageDiff: (scope: Scope, kind: ItemKind, name: string, from: VersionSel, to: VersionSel, harness: "claude" | "codex" | "opencode" | "cursor" | "pi" | "gemini" | "copilot" | null) => typedError<PackageDiff, string>(__TAURI_INVOKE("package_diff", { scope, kind, name, from, to, harness })),
+	/**  Keep an edited install as a local fork, then render it in place. */
+	packageFork: (scope: Scope, kind: ItemKind, name: string, harness: HarnessId) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("package_fork", { scope, kind, name, harness })),
+	forkRename: (scope: Scope, kind: ItemKind, oldName: string, newName: string) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("fork_rename", { scope, kind, oldName, newName })),
+	packageFiles: (scope: Scope, kind: ItemKind, name: string) => typedError<PackageFile[], string>(__TAURI_INVOKE("package_files", { scope, kind, name })),
+	packageFile: (scope: Scope, kind: ItemKind, name: string, path: string) => typedError<ItemSource, string>(__TAURI_INVOKE("package_file", { scope, kind, name, path })),
+	packageReadme: (scope: Scope, kind: ItemKind, name: string) => typedError<{
+	path: string,
+	content: string,
+	truncated: boolean,
+} | null, string>(__TAURI_INVOKE("package_readme", { scope, kind, name })),
+	packageMeta: (scope: Scope, kind: ItemKind, name: string) => typedError<PackageMeta_Serialize, string>(__TAURI_INVOKE("package_meta", { scope, kind, name })),
 	windowMinimize: () => typedError<null, string>(__TAURI_INVOKE("window_minimize")),
 	windowToggleMaximize: () => typedError<null, string>(__TAURI_INVOKE("window_toggle_maximize")),
 	windowClose: () => typedError<null, string>(__TAURI_INVOKE("window_close")),
@@ -241,6 +273,19 @@ export type CapabilityRow = {
 	harness: HarnessId,
 	kind: ItemKind,
 	caps: KindCaps,
+};
+
+/**
+ *  The catalog's own claims about the plugin an item ships in — read-side
+ *  display only, never intent.
+ */
+export type CatalogGroupMeta = {
+	version: string | null,
+	description: string | null,
+	author: string | null,
+	license: string | null,
+	homepage: string | null,
+	category: string | null,
 };
 
 export type CustomHook = CustomHook_Serialize | CustomHook_Deserialize;
@@ -354,11 +399,28 @@ export type Enforcement =
  */
 "not-applicable";
 
+export type FileDiff = {
+	/**  Forward-slash relative path, whatever the platform. */
+	path: string,
+	status: FileStatus,
+	additions: number,
+	deletions: number,
+	/**  One side was not valid UTF-8 and is shown lossily. */
+	lossy: boolean,
+	hunks: Hunk[],
+};
+
 /**
  *  How an observed item exists on disk. Kinds that live as entries inside a
  *  shared config file (MCP servers, some hooks) are `ConfigEntry`.
  */
 export type FileState = { state: "file" } | { state: "dir" } | { state: "symlink"; target: string; broken: boolean } | { state: "config-entry" };
+
+export type FileStatus = "added" | "removed" | "modified" | 
+/**  Holds a NUL byte on either side — compared, never rendered as text. */
+"binary" | 
+/**  Past the size or line budget — reported, not diffed. */
+"too-large";
 
 /**
  *  One safety problem, where it is, and what to do about it. The message
@@ -464,6 +526,11 @@ export type HarnessId = "claude" | "codex" | "opencode" | "cursor" | "pi" | "gem
 export type HookAgents = 
 /**  `"all"`, a role name, or a single agent name. */
 string | string[];
+
+export type Hunk = {
+	header: string,
+	lines: Line[],
+};
 
 /**
  *  A package whose update notifications are switched off, by everything
@@ -609,6 +676,15 @@ export type KindCaps = {
 	 */
 	enforcement: Enforcement,
 };
+
+export type Line = {
+	kind: LineKind,
+	text: string,
+	oldNo: number | null,
+	newNo: number | null,
+};
+
+export type LineKind = "context" | "add" | "remove";
 
 export type Manifest = Manifest_Serialize | Manifest_Deserialize;
 
@@ -776,6 +852,60 @@ export type OverrideState =
 { state: "active" } | 
 /**  Recorded, but what it was granted against has changed since. */
 { state: "stale"; why: string };
+
+export type PackageDiff = {
+	files: FileDiff[],
+	totalAdditions: number,
+	totalDeletions: number,
+	/**  The comparison hit a budget; what is shown is a prefix, not the whole. */
+	truncated: boolean,
+};
+
+/**
+ *  One file inside the package, path relative to the package root with
+ *  forward slashes whatever the platform.
+ */
+export type PackageFile = {
+	path: string,
+	size: number,
+	isReadme: boolean,
+};
+
+export type PackageMeta = PackageMeta_Serialize | PackageMeta_Deserialize;
+
+export type PackageMeta_Deserialize = {
+	source: string,
+	/**  `owner/repo`, when the source is remote. */
+	repo: string | null,
+	/**  A safe https link to the repository, when one can be formed. */
+	repoUrl: string | null,
+	/**  The declaration's hold, when it has one. */
+	rev: string | null,
+	/**  The content revision installed now. */
+	current: VersionRef | null,
+	installedAt: string | null,
+	harnesses: HarnessId[],
+	enabled: boolean,
+	fork: ForkProvenance_Deserialize | null,
+	catalog: CatalogGroupMeta | null,
+};
+
+export type PackageMeta_Serialize = {
+	source: string,
+	/**  `owner/repo`, when the source is remote. */
+	repo: string | null,
+	/**  A safe https link to the repository, when one can be formed. */
+	repoUrl: string | null,
+	/**  The declaration's hold, when it has one. */
+	rev: string | null,
+	/**  The content revision installed now. */
+	current: VersionRef | null,
+	installedAt: string | null,
+	harnesses: HarnessId[],
+	enabled: boolean,
+	fork: ForkProvenance_Serialize | null,
+	catalog: CatalogGroupMeta | null,
+};
 
 /**
  *  One declared plugin. The harness is part of the declaration because more
@@ -978,6 +1108,37 @@ export type Thresholds = {
 	"block-below": number,
 };
 
+/**  One declared package's update standing. */
+export type UpdateRow = {
+	scope: Scope,
+	kind: ItemKind,
+	name: string,
+	source: string,
+	repo: string,
+	/**  The content revision installed now, when the lock records it. */
+	current: VersionRef | null,
+	/**  The newest content revision the mirror knows. */
+	latest: VersionRef | null,
+	/**
+	 *  The package's files changed between current and latest — a moved
+	 *  repository that never touched this package is not an update.
+	 */
+	updateAvailable: boolean,
+	/**  Held at a version (`rev` on the declaration) — manual updates. */
+	pinned: boolean,
+	/**  The user asked to stop hearing about this package's updates. */
+	ignored: boolean,
+	/**
+	 *  The installed files were edited by hand; updating is blocked until
+	 *  the edit is kept as a fork or discarded.
+	 */
+	blockedByLocalEdit: boolean,
+	/**  This package is a local fork of a catalog item. */
+	forked: boolean,
+	/**  Installations of this package disagree on their source commit. */
+	mixed: boolean,
+};
+
 export type Verdict = 
 /**  Nothing found worth saying. */
 "clean" | 
@@ -985,6 +1146,38 @@ export type Verdict =
 "warn" | 
 /**  Nothing installs until a person reviews it. */
 "block";
+
+/**  One version a row points at. */
+export type VersionRef = {
+	commit: string,
+	/**  Release name when a tag points at the commit. */
+	label: string | null,
+	date: string | null,
+};
+
+/**
+ *  One version of a package: a commit that changed its files, wearing any
+ *  tag names that point at it.
+ */
+export type VersionRow = {
+	/**  Full commit id. */
+	id: string,
+	/**  The release name, when a tag points at this commit. */
+	label: string | null,
+	/**  ISO-8601 committer date. */
+	date: string,
+	summary: string,
+	/**  This is the content revision the installed package holds. */
+	installed: boolean,
+	newerThanInstalled: boolean,
+};
+
+/**  One side of the comparison. */
+export type VersionSel = 
+/**  The package's source subtree at a commit. */
+{ at: "commit"; commit: string } | 
+/**  What is installed on disk right now. */
+{ at: "installed" };
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

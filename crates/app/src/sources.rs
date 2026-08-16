@@ -87,12 +87,14 @@ pub fn bundle_install(
     scope: Scope,
     source: String,
     name: String,
+    hold: bool,
 ) -> Result<Vec<BundleRow>, String> {
     let env = env()?;
     let request = AddRequest {
         source: Some(source),
         bundles: vec![name],
         no_auto_skills: true,
+        hold,
         ..AddRequest::default()
     };
     let report = engine_ops::add(&env, &scope, &request).map_err(|e| e.to_string())?;

@@ -85,13 +85,13 @@ fn apply_now(f: &Fixture) -> EngineReport {
 
 #[allow(clippy::unwrap_used)]
 fn toggle(f: &Fixture, name: &str, enabled: bool) {
-    let report = ops::toggle(&f.env, &f.scope, &[name.to_owned()], enabled).unwrap();
+    let report = ops::toggle(&f.env, &f.scope, &[name.to_owned()], None, enabled).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
 }
 
 #[allow(clippy::unwrap_used)]
 fn remove(f: &Fixture, name: &str) {
-    let report = ops::remove(&f.env, &f.scope, &[name.to_owned()], false).unwrap();
+    let report = ops::remove(&f.env, &f.scope, &[name.to_owned()], None, false).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
 }
 
@@ -329,7 +329,7 @@ fn a_global_server_switches_off_in_the_file_gemini_keeps_that_state_in() {
         "back on means Gemini's own default applies again"
     );
 
-    let report = ops::remove(&f.env, &global, &["gh".to_owned()], false).unwrap();
+    let report = ops::remove(&f.env, &global, &["gh".to_owned()], None, false).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     assert!(json(&settings)["mcpServers"].get("gh").is_none());
 }

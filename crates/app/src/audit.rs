@@ -170,23 +170,34 @@ pub fn adopt_item(
 
 #[tauri::command(async)]
 #[specta::specta]
-pub fn toggle_item(scope: Scope, name: String, enabled: bool) -> Result<AuditView, String> {
+pub fn toggle_item(
+    scope: Scope,
+    kind: ItemKind,
+    name: String,
+    enabled: bool,
+) -> Result<AuditView, String> {
     let env = env()?;
-    let report = ops::toggle(&env, &scope, std::slice::from_ref(&name), enabled)
-        .map_err(|e| e.to_string())?;
+    let report = ops::toggle(
+        &env,
+        &scope,
+        std::slice::from_ref(&name),
+        Some(kind),
+        enabled,
+    )
+    .map_err(|e| e.to_string())?;
     apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
     Ok(view(&env, &scope))
 }
 
 #[tauri::command(async)]
 #[specta::specta]
-pub fn remove_item(scope: Scope, name: String) -> Result<AuditView, String> {
+pub fn remove_item(scope: Scope, kind: ItemKind, name: String) -> Result<AuditView, String> {
     let env = env()?;
     // Removing one item never takes its unneeded leftovers with it here:
     // the page has nowhere to preview that yet, and a sweep the user did
     // not see is exactly the surprise the preview step exists to stop.
-    let report =
-        ops::remove(&env, &scope, std::slice::from_ref(&name), false).map_err(|e| e.to_string())?;
+    let report = ops::remove(&env, &scope, std::slice::from_ref(&name), Some(kind), false)
+        .map_err(|e| e.to_string())?;
     apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
     Ok(view(&env, &scope))
 }

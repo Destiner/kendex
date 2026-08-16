@@ -76,7 +76,7 @@ fn apply_now(f: &Fixture) {
 
 #[allow(clippy::unwrap_used)]
 fn toggle(f: &Fixture, name: &str, enabled: bool) {
-    let report = ops::toggle(&f.env, &f.scope, &[name.to_owned()], enabled).unwrap();
+    let report = ops::toggle(&f.env, &f.scope, &[name.to_owned()], None, enabled).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
 }
 
@@ -252,7 +252,7 @@ fn removing_a_command_takes_the_generated_skill_with_it() {
     let tree = f.project.join(".agents/skills/ship");
     assert!(tree.is_dir());
 
-    let report = ops::remove(&f.env, &f.scope, &["ship".to_owned()], false).unwrap();
+    let report = ops::remove(&f.env, &f.scope, &["ship".to_owned()], None, false).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     assert!(!tree.exists(), "the emitted tree is what comes off disk");
     assert!(is_clean(&f));

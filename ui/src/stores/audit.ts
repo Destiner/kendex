@@ -30,8 +30,13 @@ interface AuditState {
     harness: HarnessId,
     opts?: { silent?: boolean },
   ) => Promise<void>;
-  toggle: (scope: Scope, name: string, enabled: boolean) => Promise<void>;
-  removeItem: (scope: Scope, name: string) => Promise<void>;
+  toggle: (
+    scope: Scope,
+    kind: ItemKind,
+    name: string,
+    enabled: boolean,
+  ) => Promise<void>;
+  removeItem: (scope: Scope, kind: ItemKind, name: string) => Promise<void>;
 }
 
 /** How long an audit answers for before a visit pays for a fresh one. */
@@ -143,13 +148,13 @@ export const useAuditStore = create<AuditState>((set, get) => {
         successMessage: opts?.silent ? undefined : adoptedToastLabel(name),
         steps: ["Try again"],
       }),
-    toggle: (scope, name, enabled) =>
-      run(() => commands.toggleItem(scope, name, enabled), {
+    toggle: (scope, kind, name, enabled) =>
+      run(() => commands.toggleItem(scope, kind, name, enabled), {
         title: `Couldn't ${enabled ? "turn on" : "turn off"} ${name}`,
         steps: ["Try again"],
       }),
-    removeItem: (scope, name) =>
-      run(() => commands.removeItem(scope, name), {
+    removeItem: (scope, kind, name) =>
+      run(() => commands.removeItem(scope, kind, name), {
         title: `Couldn't remove ${name}`,
         steps: ["Try again"],
       }),

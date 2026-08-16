@@ -119,11 +119,11 @@ fn a_file_recreated_between_plan_and_apply_aborts_the_rename() {
     let scope = project(&w);
     declare(&w, &scope, "[agents.rust]\nsource = \"cat\"\n");
     apply_now(&w, &scope);
-    let report = ops::toggle(&w.env, &scope, &["rust".to_owned()], false).unwrap();
+    let report = ops::toggle(&w.env, &scope, &["rust".to_owned()], None, false).unwrap();
     apply::execute(&w.env, &report.plan, None).unwrap();
 
     // Re-enable is planned while the enabled name is free.
-    let report = ops::toggle(&w.env, &scope, &["rust".to_owned()], true).unwrap();
+    let report = ops::toggle(&w.env, &scope, &["rust".to_owned()], None, true).unwrap();
     let agent = w.home.join("dev/app/.claude/agents/rust.md");
     put(&agent, "raced in");
 
@@ -157,7 +157,7 @@ fn a_stale_plan_cannot_revert_a_newer_manifest() {
         },
     )
     .unwrap();
-    let removal = ops::remove(&w.env, &scope, &["gh".to_owned()], false).unwrap();
+    let removal = ops::remove(&w.env, &scope, &["gh".to_owned()], None, false).unwrap();
     apply::execute(&w.env, &removal.plan, None).unwrap();
 
     let error = apply::execute(&w.env, &stale.plan, None).unwrap_err();

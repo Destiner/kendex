@@ -81,7 +81,7 @@ export const useSourcesStore = create<SourcesState>((set) => {
       set({ busy: true });
       let response: Awaited<ReturnType<typeof commands.bundleInstall>>;
       try {
-        response = await commands.bundleInstall(scope, source, name);
+        response = await commands.bundleInstall(scope, source, name, false);
       } finally {
         set({ busy: false });
       }

@@ -81,7 +81,7 @@ fn a_file_changed_after_the_preview_aborts_its_removal() {
     let skill_md = f.project.join(".claude/skills/dev/SKILL.md");
     assert!(skill_md.is_file());
 
-    let report = ops::remove(&f.env, &f.scope, &["dev".to_owned()], true).unwrap();
+    let report = ops::remove(&f.env, &f.scope, &["dev".to_owned()], None, true).unwrap();
     fs::write(&skill_md, "edited after the preview\n").unwrap();
     let error = apply::execute(&f.env, &report.plan, None).unwrap_err();
     assert!(

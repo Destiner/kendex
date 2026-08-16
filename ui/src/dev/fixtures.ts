@@ -3,6 +3,7 @@ import type {
   AuditView,
   BundleRow,
   DetectedHarness,
+  ItemKind,
   Manifest_Serialize,
   ObservedItem,
   SourceRow,
@@ -23,6 +24,8 @@ export interface MockState {
   manifests: Record<string, Manifest_Serialize>;
   sources: SourceRow[];
   bundles: BundleRow[];
+  /// Packages whose update notifications the mock user muted.
+  ignored: { kind: ItemKind; name: string }[];
 }
 
 export function initialState(): MockState {
@@ -41,5 +44,6 @@ export function initialState(): MockState {
     manifests: manifests(),
     sources: sources(),
     bundles: bundles(),
+    ignored: [],
   };
 }

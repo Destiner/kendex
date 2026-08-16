@@ -224,7 +224,7 @@ fn a_project_declaration_leaves_the_machine_wide_record_exactly_as_it_was() {
 
     // Removing the declaration takes the project's entry out and still
     // leaves the machine's own switch where the user set it.
-    let removal = ops::remove(&f.env, &f.scope, &["gh".to_owned()], false).unwrap();
+    let removal = ops::remove(&f.env, &f.scope, &["gh".to_owned()], None, false).unwrap();
     apply::execute(&f.env, &removal.plan, None).unwrap();
     assert!(json(&settings(&f))["mcpServers"].get("gh").is_none());
     assert_eq!(fs::read_to_string(&record).unwrap(), held_off);
