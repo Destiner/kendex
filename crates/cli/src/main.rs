@@ -36,6 +36,8 @@ enum Command {
         #[command(flatten)]
         flags: AddFlags,
     },
+    /// What changed between two versions of a package
+    Diff(commands::diff_cmd::DiffArgs),
     /// Keep an edited install as your own local package
     Fork(commands::fork_cmd::ForkArgs),
     /// Hold an item at a version, or let it follow its source again
@@ -216,6 +218,7 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
     };
     match command {
         Command::Add { source, flags } => commands::add::run(&env, flags.into_args(source))?,
+        Command::Diff(args) => commands::diff_cmd::run(&env, args)?,
         Command::Fork(args) => commands::fork_cmd::run(&env, args)?,
         Command::Pin(args) => commands::pin::run(&env, args)?,
         Command::Versions(args) => commands::versions::run(&env, args)?,

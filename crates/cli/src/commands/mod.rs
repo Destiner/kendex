@@ -3,6 +3,7 @@ pub mod adopt;
 pub mod apply_cmd;
 pub mod check;
 pub mod check_catalog;
+pub mod diff_cmd;
 pub mod engine_common;
 pub mod fork_cmd;
 pub mod import;

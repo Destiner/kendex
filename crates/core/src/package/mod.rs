@@ -16,6 +16,7 @@ use crate::model::{ItemKind, Scope};
 use crate::remote::history;
 use crate::source_read::SealedSource;
 
+pub mod diff;
 pub mod updates;
 
 /// One declared package bound to its repository coordinates: where its
@@ -181,6 +182,35 @@ fn installed_commit(lock: &crate::lock::Lock, kind: ItemKind, name: &str) -> Opt
         .filter(|entry| entry.kind == kind && entry.name == name)
         .filter_map(|entry| entry.source_commit.clone())
         .next_back()
+}
+
+/// A version selector as a commit id: whatever the repository can name —
+/// tag, branch, commit — resolved against this item's source. The cache
+/// answers first; the network fills in what it cannot.
+pub fn resolve_version(
+    env: &Env,
+    scope: &Scope,
+    kind: ItemKind,
+    name: &str,
+    selector: &str,
+) -> Result<String> {
+    let manifest = crate::engine::ops::manifest_for_mutation(env, scope)?;
+    let Some(decl) = manifest.declared(kind).get(name) else {
+        return Err(CoreError::NotDeclared {
+            kind,
+            name: name.to_owned(),
+        });
+    };
+    let Some(repo) = manifest
+        .sources
+        .get(&decl.source)
+        .and_then(|s| s.repo.clone())
+    else {
+        return Err(CoreError::ItemRevUnsupported {
+            source_name: decl.source.clone(),
+        });
+    };
+    Ok(resolve_selector(env, &repo, selector)?.commit)
 }
 
 /// Hold an item at a version, or let it follow its source again.

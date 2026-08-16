@@ -12,6 +12,7 @@ dirs.workspace = true
 thiserror.workspace = true
 specta.workspace = true
 sha2.workspace = true
+similar.workspace = true
 yaml-rust2.workspace = true
 fd-lock.workspace = true
 unicode-normalization.workspace = true
