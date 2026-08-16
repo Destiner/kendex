@@ -44,6 +44,12 @@ pub struct SourceAgent {
     pub color: Option<String>,
     pub effort: Option<String>,
     pub permissions: PermissionIntent,
+    /// What jobs this agent helps with, carried verbatim into renderings
+    /// whose loaders tolerate extra keys. The words are the author's own —
+    /// the scan checks them against the closed vocabulary (invariant 15),
+    /// so dropping or rewriting them here would hide a warning the author
+    /// should see.
+    pub tags: Vec<String>,
     pub body: String,
     /// Parse-time findings worth surfacing (unknown keys, odd shapes) that
     /// do not make the agent unusable.
@@ -78,6 +84,12 @@ pub fn parse_source_agent(text: &str) -> Result<SourceAgent, String> {
                 None => agent.warnings.push("empty `role:` ignored".to_owned()),
             },
             "color" => agent.color = scalar(value),
+            "tags" => match parsed.map.string_list(key) {
+                Some(list) => agent.tags = list,
+                None => agent
+                    .warnings
+                    .push("`tags:` is not a list — ignored".to_owned()),
+            },
             "effort" => agent.effort = scalar(value),
             "tools" => match parsed.map.string_list(key) {
                 Some(list) => {

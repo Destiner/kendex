@@ -24,6 +24,9 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
 
     push(format!("name: {}", yaml_scalar(&source.name)));
     push(format!("description: {}", yaml_quoted(&source.description)));
+    if !source.tags.is_empty() {
+        push(format!("tags: {}", yaml_scalar(&source.tags.join(", "))));
+    }
     push("kind: local".to_owned());
     let model = agent.overrides.model.as_deref().unwrap_or(&source.model);
     let resolved = resolve_model(HarnessId::Gemini, model);

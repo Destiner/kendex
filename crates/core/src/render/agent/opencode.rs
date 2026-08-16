@@ -20,6 +20,9 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
         "description: {}\n",
         yaml_scalar(&source.description)
     ));
+    if !source.tags.is_empty() {
+        out.push_str(&format!("tags: {}\n", yaml_scalar(&source.tags.join(", "))));
+    }
     let mode = mode(o);
     out.push_str(&format!("mode: {mode}\n"));
     let model = o.model.as_deref().unwrap_or(&source.model);

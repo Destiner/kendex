@@ -26,6 +26,14 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
         "description = \"{}\"\n",
         escape(&source.description)
     ));
+    if !source.tags.is_empty() {
+        let words: Vec<String> = source
+            .tags
+            .iter()
+            .map(|tag| format!("\"{}\"", escape(tag)))
+            .collect();
+        out.push_str(&format!("tags = [{}]\n", words.join(", ")));
+    }
     let model = o.model.as_deref().unwrap_or(&source.model);
     let resolved = resolve_model(HarnessId::Codex, model);
     warnings.extend(resolved.warning.map(crate::render::RenderWarning::new));

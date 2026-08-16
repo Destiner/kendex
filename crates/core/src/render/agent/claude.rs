@@ -25,6 +25,9 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
         "description: {}",
         forced_quote(&source.description)
     ));
+    if !source.tags.is_empty() {
+        push(format!("tags: {}", yaml_scalar(&source.tags.join(", "))));
+    }
     let model = o.model.as_deref().unwrap_or(&source.model);
     let resolved = resolve_model(HarnessId::Claude, model);
     warnings.extend(resolved.warning.map(crate::render::RenderWarning::new));
@@ -123,6 +126,26 @@ mod tests {
             "---\nname: rust\ndescription: Rust \"systems\" engineer\nmodel: opus\nrole: engineer\ncolor: orange\n---\nBody text.\n",
         )
         .unwrap()
+    }
+
+    /// A source's `tags:` line survives into the rendering — the header is
+    /// where an item says what it is for (invariant 15), and a renderer
+    /// that dropped it would silently untag every managed agent.
+    #[test]
+    fn tags_ride_from_source_into_the_rendering() {
+        let source = parse_source_agent(
+            "---\nname: rust\ndescription: Rust engineer\ntags: performance, refactoring\n---\nBody.\n",
+        )
+        .unwrap();
+        assert_eq!(source.tags, vec!["performance", "refactoring"]);
+        assert!(source.warnings.is_empty(), "{:?}", source.warnings);
+        let scope = Scope::Global;
+        let rendered = generate(&effective(&source, &scope, Vec::new()));
+        assert!(
+            rendered.text.contains("tags: performance, refactoring"),
+            "{}",
+            rendered.text
+        );
     }
 
     fn effective<'a>(

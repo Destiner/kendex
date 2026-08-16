@@ -28,6 +28,9 @@ pub fn generate(agent: &EffectiveAgent) -> Result<RenderedAgent, String> {
         "description: {}\n",
         crate::render::yaml_quoted(&source.description)
     ));
+    if !source.tags.is_empty() {
+        out.push_str(&format!("tags: {}\n", yaml_scalar(&source.tags.join(", "))));
+    }
     if !deny.is_empty() {
         out.push_str(&format!("deny-tools: {}\n", yaml_scalar(&deny.join(", "))));
     }
