@@ -1,9 +1,9 @@
 //! What a mirror's history says about one directory: the commits that
-//! changed it, the tags that name them, and whether it moved between two
-//! commits. Everything here reads the bare mirror through [`Hardened`], with
-//! full commit ids, a `--` separator, and literal pathspecs — a catalog
-//! chooses its own directory names, and a name shaped like git syntax must
-//! stay a name.
+//! changed it (with the tags that name them) and the newest such commit
+//! at-or-before a given one. Everything here reads the bare mirror through
+//! [`Hardened`], with full commit ids only, a `--` separator, and literal
+//! pathspecs — a catalog chooses its own directory names, and a name
+//! shaped like git syntax must stay a name.
 
 use std::path::Path;
 

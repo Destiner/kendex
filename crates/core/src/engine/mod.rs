@@ -46,17 +46,6 @@ pub use gate::{ItemSafety, allow_unsafe_flag};
 pub use item_source::{ItemSource, item_source};
 pub use observed::observed_safety;
 
-/// Whether an installation is provably edited on disk — the "your edits
-/// are here" signal the Updates page and package page show as a fact.
-/// A record that cannot prove either way reads as not-edited. See
-/// `removal::provably_edited`.
-pub fn edited_on_disk(
-    env: &crate::env::Env,
-    scope: &crate::model::Scope,
-    entry: &crate::lock::LockEntry,
-) -> bool {
-    removal::provably_edited(env, scope, entry)
-}
 use scope_writes::{
     plan_config_edits, plan_lock_write, plan_schema_upgrade, plan_settings_seed, source_revisions,
 };
@@ -163,10 +152,11 @@ pub struct PlanOptions {
     /// explicit "discard my edits" everything destructive has to go
     /// through.
     pub overwrite_edited: bool,
-    /// Discard edits for these items only, by name — leaving every other
-    /// edited item in the scope held. The per-package "discard" the app
-    /// offers, which must never take a neighbour's edits with it.
-    pub overwrite_edited_names: Option<Vec<String>>,
+    /// Discard edits for these items only, by kind and name — leaving
+    /// every other edited item in the scope held. The per-package
+    /// "discard" the app offers, which must never take a neighbour's
+    /// edits with it, even one that shares a name across kinds.
+    pub overwrite_edited_names: Option<Vec<(ItemKind, String)>>,
 }
 
 /// Compute drift and the plan that would fix it, in one pass — the Audit

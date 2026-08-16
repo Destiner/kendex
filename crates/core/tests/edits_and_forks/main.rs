@@ -3,6 +3,8 @@
 //! the two ways out are explicit: keep it as a fork, or discard the edits.
 #![cfg(unix)]
 
+mod disabled;
+
 mod forks;
 
 use std::fs;
@@ -208,7 +210,7 @@ fn discarding_one_packages_edits_leaves_another_packages_edits_held() {
         &manifest,
         &lock,
         &PlanOptions {
-            overwrite_edited_names: Some(vec!["gh".to_owned()]),
+            overwrite_edited_names: Some(vec![(ItemKind::Skill, "gh".to_owned())]),
             ..Default::default()
         },
     )
@@ -240,6 +242,55 @@ fn a_hand_made_copy_of_the_desired_bytes_is_clean() {
 
 #[test]
 #[allow(clippy::unwrap_used)]
+fn discarding_a_skills_edits_leaves_a_same_named_agents_edits_held() {
+    let w = world();
+    write_skill(&w.upstream, "rev", "Skill rev.");
+    let dir = w.upstream.join("agents");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("rev.md"),
+        "---\nname: rev\ndescription: agent rev\n---\nAgent body.\n",
+    )
+    .unwrap();
+    commit(&w.upstream, "one");
+    declare(
+        &w,
+        "[skills.rev]\nsource = \"cat\"\n\n[agents.rev]\nsource = \"cat\"\n",
+    );
+    sync_and_apply(&w);
+
+    let skill = w.home.join("app/.agents/skills/rev/SKILL.md");
+    let agent = w.home.join("app/.claude/agents/rev.md");
+    fs::write(&skill, "my skill edit").unwrap();
+    fs::write(&agent, "my agent edit").unwrap();
+
+    let manifest = manifest::load_for_mutation(&manifest::manifest_path(&w.env, &w.scope))
+        .unwrap()
+        .unwrap();
+    let lock = load_lock(&lock_path(&w.env, &w.scope)).unwrap();
+    let report = plan_scope(
+        &w.env,
+        &w.scope,
+        &manifest,
+        &lock,
+        &PlanOptions {
+            overwrite_edited_names: Some(vec![(ItemKind::Skill, "rev".to_owned())]),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    apply::execute(&w.env, &report.plan, None).unwrap();
+
+    assert!(fs::read_to_string(&skill).unwrap().contains("Skill rev."));
+    assert_eq!(
+        fs::read_to_string(&agent).unwrap(),
+        "my agent edit",
+        "discarding the skill took the same-named agent's edit"
+    );
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
 fn a_deleted_install_is_missing_not_an_edit() {
     let w = world();
     write_skill(&w.upstream, "gh", "One.");
@@ -253,62 +304,6 @@ fn a_deleted_install_is_missing_not_an_edit() {
     assert_eq!(row.state, DriftState::Missing, "{row:?}");
     apply::execute(&w.env, &report.plan, None).unwrap();
     assert!(skill_file(&w).is_file(), "a missing install is restored");
-}
-
-#[test]
-#[allow(clippy::unwrap_used)]
-fn an_edit_made_while_disabled_survives_being_re_enabled() {
-    let w = world();
-    write_skill(&w.upstream, "gh", "Upstream.");
-    commit(&w.upstream, "one");
-    // Agents render to a File artifact with a `.disabled` sibling — the
-    // path that would otherwise be missed.
-    let dir = w.upstream.join("agents");
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(
-        dir.join("rev.md"),
-        "---\nname: rev\ndescription: reviewer\n---\nReview carefully.\n",
-    )
-    .unwrap();
-    commit(&w.upstream, "agent");
-    declare(&w, "[agents.rev]\nsource = \"cat\"\n");
-    sync_and_apply(&w);
-
-    // Turn it off, then edit the disabled file, then turn it back on.
-    let toggled = manifest::manifest_path(&w.env, &w.scope);
-    fs::write(
-        &toggled,
-        format!(
-            "schema = 3\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\nenabled = false\n"
-        ),
-    )
-    .unwrap();
-    let report = audit(&w.env, &w.scope).unwrap();
-    apply::execute(&w.env, &report.plan, None).unwrap();
-    let disabled = w.home.join("app/.claude/agents/rev.md.disabled");
-    assert!(disabled.is_file(), "disabled agent keeps its bytes");
-    fs::write(&disabled, "my edited disabled agent").unwrap();
-
-    fs::write(
-        &toggled,
-        format!(
-            "schema = 3\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\n"
-        ),
-    )
-    .unwrap();
-    let report = audit(&w.env, &w.scope).unwrap();
-    let row = report.drift.iter().find(|row| row.name == "rev").unwrap();
-    assert_eq!(
-        row.cause,
-        Some(DriftCause::LocalEdit),
-        "an edit made while off is still an edit: {row:?}"
-    );
-    apply::execute(&w.env, &report.plan, None).unwrap();
-    let enabled = w.home.join("app/.claude/agents/rev.md");
-    let content = fs::read_to_string(&enabled)
-        .or_else(|_| fs::read_to_string(&disabled))
-        .unwrap();
-    assert_eq!(content, "my edited disabled agent");
 }
 
 #[test]

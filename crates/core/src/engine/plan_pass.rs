@@ -48,7 +48,11 @@ pub(super) fn plan_items(
             || options
                 .overwrite_edited_names
                 .as_ref()
-                .is_some_and(|names| names.contains(&item.name));
+                .is_some_and(|names| {
+                    names
+                        .iter()
+                        .any(|(k, n)| *k == item.kind && n == &item.name)
+                });
         if !discard && holds::hold_local_edit(env, item, scope, lock, &mut sink) {
             continue;
         }

@@ -202,20 +202,12 @@ fn installed_tree(
 ) -> Result<Tree> {
     let harness = harness.unwrap_or(HarnessId::Claude);
     let path = match kind {
-        ItemKind::Skill => {
-            // Shared (symlink) installs read the canonical tree; a
-            // copy-method install has none and lives at the native dir.
-            let canonical = crate::engine::desired::skill_canonical(env, scope, name);
-            if canonical.is_dir() {
-                canonical
-            } else if let Some(dir) =
-                crate::engine::desired::native_dir(env, scope, harness, ItemKind::Skill)
-            {
-                dir.join(crate::harness::rendered_name(harness, name))
-            } else {
-                canonical
-            }
-        }
+        ItemKind::Skill => crate::engine::fork::skill_content_path(env, scope, name, harness)
+            .ok_or_else(|| CoreError::ItemNotFound {
+                kind,
+                name: name.to_owned(),
+                harness,
+            })?,
         ItemKind::Agent => {
             let Some(dir) =
                 crate::engine::desired::native_dir(env, scope, harness, ItemKind::Agent)

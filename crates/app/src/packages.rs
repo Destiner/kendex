@@ -169,7 +169,11 @@ pub fn fork_rename(
 /// a neighbour's edits are never taken along.
 #[tauri::command(async)]
 #[specta::specta]
-pub fn apply_discard_edits(scope: Scope, name: String) -> Result<AuditView, String> {
+pub fn apply_discard_edits(
+    scope: Scope,
+    kind: ItemKind,
+    name: String,
+) -> Result<AuditView, String> {
     let env = env()?;
     let manifest = manifest::load_for_mutation(&manifest::manifest_path(&env, &scope))
         .map_err(|e| e.to_string())?
@@ -182,7 +186,7 @@ pub fn apply_discard_edits(scope: Scope, name: String) -> Result<AuditView, Stri
         &manifest,
         &lock,
         &engine::PlanOptions {
-            overwrite_edited_names: Some(vec![name]),
+            overwrite_edited_names: Some(vec![(kind, name)]),
             ..Default::default()
         },
     )

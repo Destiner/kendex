@@ -19,11 +19,13 @@ import { groupItems, groupScopes } from "@/lib/derive";
 import { kindIcon } from "@/lib/kind-icon";
 import { packageDisplayName } from "@/lib/labels";
 import { PAGE_GUTTER, WIDE_CONTENT_WIDTH } from "@/lib/layout";
+import { sameScope } from "@/lib/scope";
 import { cn } from "@/lib/utils";
 import { installedRow, latestRow, versionRowLabel } from "@/lib/versions";
 import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
+import { useUpdatesStore } from "@/stores/updates";
 
 /** One package, full page: provenance left, the file or diff right. */
 export function PackagePage() {
@@ -65,6 +67,16 @@ export function PackagePage() {
     view,
     group?.installations[0]?.harness ?? null,
   );
+  const edited = useUpdatesStore((s) =>
+    s.rows.some(
+      (row) =>
+        ref != null &&
+        row.kind === ref.kind &&
+        row.name === ref.name &&
+        sameScope(row.scope, ref.scope) &&
+        row.blockedByLocalEdit,
+    ),
+  );
 
   // The scan no longer knows this package (removed, renamed): leave the
   // way the user came.
@@ -80,8 +92,16 @@ export function PackagePage() {
   const displayName = packageDisplayName(ref);
   const installed = installedRow(versions);
   const latest = latestRow(versions);
-  const updateAvailable =
-    latest != null && !latest.installed && installed != null;
+  // Update needs meta loaded to know whether the package is held (move the
+  // hold) or following (apply the scope) — acting on a stale null would
+  // silently mistreat a held package as a follower. It is also off while
+  // edits are held: those go through the fork decision first.
+  const canUpdate =
+    latest != null &&
+    !latest.installed &&
+    installed != null &&
+    meta != null &&
+    !edited;
 
   const inEveryScope = async (act: (scope: Scope) => Promise<void>) => {
     for (const scope of groupScopes(group)) await act(scope);
@@ -125,7 +145,7 @@ export function PackagePage() {
             kind={group.kind}
             name={group.name}
             primaryPath={primary.path}
-            updateAvailable={updateAvailable}
+            updateAvailable={canUpdate}
             busy={busy || switching}
             onUpdate={() => latest && updateToLatest(latest)}
             onPreview={() => latest && compare(latest)}

@@ -41,33 +41,6 @@ pub(super) fn edit_holds(env: &Env, scope: &Scope, entry: &LockEntry) -> bool {
     })
 }
 
-/// Whether the installation is *provably* edited — for the surface that
-/// tells the user "you changed this". Unlike [`edit_holds`], a record that
-/// cannot prove either way (no rendered hash, from before this version)
-/// reads as not-edited: a false "you edited this" on every pre-upgrade
-/// install would be a worse lie than a missed one.
-pub(super) fn provably_edited(env: &Env, scope: &Scope, entry: &LockEntry) -> bool {
-    let Some(rendered) = &entry.rendered_hash else {
-        return false;
-    };
-    if !matches!(
-        entry.kind,
-        ItemKind::Skill | ItemKind::Agent | ItemKind::Command
-    ) {
-        return false;
-    }
-    let Owned { files, .. } = installed(env, scope, entry);
-    files
-        .iter()
-        .flat_map(|path| [disabled_name(path), path.clone()])
-        .filter(|path| !path.is_symlink() && path.exists())
-        .any(|path| {
-            crate::hash::hash_tree(&path)
-                .map(|disk| &disk != rendered)
-                .unwrap_or(false)
-        })
-}
-
 /// A removal binds to what the preview showed, like every other mutation
 /// (invariant 7): the exact bytes for a file or tree, the exact target for a
 /// link we manage. Anything edited between preview and apply fails the

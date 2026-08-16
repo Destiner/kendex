@@ -168,10 +168,15 @@ pub(crate) fn read_tree(root: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {
                 continue;
             };
             let rel = rel.join(name);
-            // A link is not content: following one would read whatever it
-            // points at into the capture under this tree's name.
+            // A link is not plain content: following it would read whatever
+            // it points at into the capture under this tree's name. Rather
+            // than silently drop it (and then trash the original), refuse —
+            // nothing the user asked to keep is lost without a word.
             if path.is_symlink() {
-                continue;
+                return Err(CoreError::ForeignSymlink {
+                    points_to: fs::read_link(&path).unwrap_or_default(),
+                    target: path,
+                });
             }
             if path.is_dir() {
                 walk(&path, &rel, files)?;

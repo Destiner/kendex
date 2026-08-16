@@ -104,7 +104,7 @@ export function ForkNotice({
         onConfirm={() => {
           setBusy(true);
           void commands
-            .applyDiscardEdits(scope, name)
+            .applyDiscardEdits(scope, kind, name)
             .then(async (response) => {
               setBusy(false);
               setConfirmDiscard(false);

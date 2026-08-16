@@ -86,6 +86,10 @@ pub fn updates(env: &Env, scope: &Scope) -> Result<Vec<UpdateRow>> {
     };
     let ignored = settings::load(env)?.ignored_updates;
     let key = scope_key(scope);
+    // What the planner will actually hold as an edit — the authoritative
+    // signal, so the "edited by you" flag can never disagree with what
+    // clicking Update does. One plan for the whole scope.
+    let edited = edited_items(env, scope, &manifest, &lock);
     let mut rows = Vec::new();
     for kind in ItemKind::ALL {
         for name in manifest.declared(kind).keys() {
@@ -151,11 +155,7 @@ pub fn updates(env: &Env, scope: &Scope) -> Result<Vec<UpdateRow>> {
                         && &entry.name == name
                         && entry.repo == package.repo
                 }),
-                blocked_by_local_edit: lock
-                    .entries
-                    .values()
-                    .filter(|entry| entry.kind == kind && &entry.name == name)
-                    .any(|entry| crate::engine::edited_on_disk(env, scope, entry)),
+                blocked_by_local_edit: edited.contains(&(kind, name.clone())),
                 forked,
                 repo: package.repo,
                 current,
@@ -166,6 +166,38 @@ pub fn updates(env: &Env, scope: &Scope) -> Result<Vec<UpdateRow>> {
         }
     }
     Ok(rows)
+}
+
+/// The items the planner would hold as hand-edited — read straight from a
+/// plan of the scope, so this matches exactly what an update attempt does.
+/// A plan that cannot be produced (a broken manifest) blocks nothing here;
+/// the audit surfaces that separately.
+fn edited_items(
+    env: &Env,
+    scope: &Scope,
+    manifest: &crate::manifest::Manifest,
+    lock: &crate::lock::Lock,
+) -> std::collections::BTreeSet<(ItemKind, String)> {
+    let Ok(report) = crate::engine::plan_scope(
+        env,
+        scope,
+        manifest,
+        lock,
+        &crate::engine::PlanOptions::default(),
+    ) else {
+        return std::collections::BTreeSet::new();
+    };
+    report
+        .drift
+        .into_iter()
+        .filter(|row| {
+            matches!(
+                row.cause,
+                Some(crate::engine::DriftCause::LocalEdit | crate::engine::DriftCause::Both)
+            )
+        })
+        .map(|row| (row.kind, row.name))
+        .collect()
 }
 
 /// A fork's row: no versions, no update — the Library still needs to

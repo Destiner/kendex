@@ -88,6 +88,16 @@ fn disabled_sibling(path: &std::path::Path) -> std::path::PathBuf {
 /// keyed by physical path so a same-hash coincidence elsewhere never
 /// counts.
 fn wrote_here(env: &Env, scope: &Scope, lock: &Lock, here: &[PathBuf], disk: &str) -> bool {
+    // A toggled item's desired path carries `.disabled` while its recorded
+    // install path does not (or the reverse); compared with the suffix
+    // stripped, an enabled render and its disabled twin are one location.
+    let base = |p: &std::path::Path| {
+        let text = p.display().to_string();
+        text.strip_suffix(".disabled")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| p.to_path_buf())
+    };
+    let here_bases: Vec<PathBuf> = here.iter().map(|p| base(p)).collect();
     lock.entries.values().any(|entry| {
         let Some(rendered) = &entry.rendered_hash else {
             return false;
@@ -96,7 +106,10 @@ fn wrote_here(env: &Env, scope: &Scope, lock: &Lock, here: &[PathBuf], disk: &st
             return false;
         }
         let owned = super::owned::installed(env, scope, entry);
-        owned.files.iter().any(|path| here.contains(path))
+        owned
+            .files
+            .iter()
+            .any(|path| here_bases.contains(&base(path)))
     })
 }
 

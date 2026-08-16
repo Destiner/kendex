@@ -41,32 +41,20 @@ pub fn fork(
         });
     };
     let edited = match kind {
-        ItemKind::Skill => {
-            // The content is the canonical tree when several tools share it
-            // (symlink method); a copy-method install has no canonical
-            // tree and its bytes live at the harness-native directory.
-            let canonical = skill_canonical(env, scope, name);
-            if canonical.is_dir() {
-                canonical
-            } else {
-                let Some(dir) = native_dir(env, scope, harness, ItemKind::Skill) else {
-                    return Err(CoreError::ItemNotFound {
-                        kind,
-                        name: name.to_owned(),
-                        harness,
-                    });
-                };
-                dir.join(crate::harness::rendered_name(harness, name))
+        ItemKind::Skill => skill_content_path(env, scope, name, harness).ok_or({
+            CoreError::ItemNotFound {
+                kind,
+                name: name.to_owned(),
+                harness,
             }
-        }
+        })?,
         ItemKind::Agent => {
             // The local source stores an agent as `agents/<name>.md` in
-            // source form, so only a harness whose rendering is that same
-            // `.md`-with-frontmatter shape round-trips. A codex `.toml` or
-            // cursor `.mdc` rendering cannot be re-read as source — fork
-            // the `.md` copy of the same agent instead.
-            let file = crate::render::agent::file_name(harness, name);
-            if !file.ends_with(".md") || file.ends_with(".agent.md") {
+            // source form, so only a harness whose rendering round-trips
+            // through the source parser can be forked. Claude's `.md` is
+            // the proven one; a codex `.toml`, a cursor `.mdc`, or an
+            // opencode `.md`-without-frontmatter cannot be re-read.
+            if !forkable_agent_harness(harness) {
                 return Err(CoreError::ItemNotInSource {
                     name: name.to_owned(),
                     source_name: format!(
@@ -82,7 +70,7 @@ pub fn fork(
                     harness,
                 });
             };
-            existing_or_disabled(dir.join(file))
+            existing_or_disabled(dir.join(crate::render::agent::file_name(harness, name)))
         }
         other => {
             return Err(CoreError::ItemNotInSource {
@@ -91,7 +79,6 @@ pub fn fork(
             });
         }
     };
-    let edited = existing_or_disabled(edited);
     if edited.is_symlink() || !edited.exists() {
         return Err(CoreError::ItemNotFound {
             kind,
@@ -291,6 +278,39 @@ pub fn rename_fork(env: &Env, scope: &Scope, kind: ItemKind, old: &str, new: &st
         scope: scope.clone(),
         ops,
     })
+}
+
+/// The tree that holds a skill's content for one harness: its own native
+/// tree when it was copied there (each tool a real directory), or the
+/// shared canonical tree when tools symlink to one. Picking canonical-first
+/// would capture whichever tool happens to share it, not the one asked for.
+pub(crate) fn skill_content_path(
+    env: &Env,
+    scope: &Scope,
+    name: &str,
+    harness: HarnessId,
+) -> Option<PathBuf> {
+    if let Some(dir) = native_dir(env, scope, harness, ItemKind::Skill) {
+        let native = dir.join(crate::harness::rendered_name(harness, name));
+        // A real directory here is this tool's own copy; a symlink means
+        // it shares the canonical tree.
+        if native.is_dir() && !native.is_symlink() {
+            return Some(native);
+        }
+    }
+    let canonical = skill_canonical(env, scope, name);
+    canonical.is_dir().then_some(canonical)
+}
+
+/// Whether an agent rendered for this harness can be re-read as local
+/// source. Only the plain `.md`-with-frontmatter shape round-trips; codex
+/// (TOML), cursor (`.mdc`), copilot (`.agent.md`), and opencode (`.md`
+/// without a name field) do not.
+fn forkable_agent_harness(harness: HarnessId) -> bool {
+    matches!(
+        harness,
+        HarnessId::Claude | HarnessId::Gemini | HarnessId::Pi
+    )
 }
 
 /// A disabled installation keeps its bytes under the `.disabled` name.
