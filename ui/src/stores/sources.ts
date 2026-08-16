@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { create } from "zustand";
 import {
   type BundleRow,
@@ -5,8 +6,10 @@ import {
   type Scope,
   type SourceRow,
 } from "@/bindings";
+import { installedAutoToastLabel, UPDATE_MANUALLY_ACTION } from "@/lib/copy";
 import { useAuditStore } from "./audit";
 import { useScanStore } from "./scan";
+import { useUpdatesStore } from "./updates";
 
 interface SourcesState {
   rows: SourceRow[];
@@ -89,6 +92,19 @@ export const useSourcesStore = create<SourcesState>((set) => {
         set({ bundles: response.data, error: null });
         await useScanStore.getState().refresh();
         await useAuditStore.getState().refresh();
+        void useUpdatesStore.getState().load();
+        // The one-time auto-or-manual ask, made at the success moment with
+        // a zero-tap default: it keeps itself current unless the user taps
+        // the other way, which re-declares the same install held at
+        // today's version.
+        toast.success(installedAutoToastLabel(name), {
+          action: {
+            label: UPDATE_MANUALLY_ACTION,
+            onClick: () => {
+              void commands.bundleInstall(scope, source, name, true);
+            },
+          },
+        });
       } else {
         set({ error: response.error });
       }

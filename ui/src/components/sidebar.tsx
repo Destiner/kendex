@@ -1,4 +1,5 @@
 import {
+  ArrowUpCircle,
   CircleCheck,
   Home,
   Library,
@@ -25,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { useAuditStore } from "@/stores/audit";
 import { type Page, useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
+import { useUpdatesStore, visibleUpdateCount } from "@/stores/updates";
 
 // One row shape for the search box and every nav item, so the icon column
 // and the text column line up down the whole sidebar. The transparent border
@@ -37,6 +39,7 @@ const NAV: { page: Page; label: string; icon: typeof Home }[] = [
   { page: "home", label: "Home", icon: Home },
   { page: "review", label: "Review & apply", icon: CircleCheck },
   { page: "library", label: "Library", icon: Library },
+  { page: "updates", label: "Updates", icon: ArrowUpCircle },
   { page: "tools", label: "Tools & Projects", icon: TerminalSquare },
   { page: "customize", label: "Customize", icon: SlidersHorizontal },
   { page: "settings", label: "Settings", icon: Settings },
@@ -48,6 +51,7 @@ export function Sidebar() {
   const driftCount = useAuditStore((s) =>
     s.views.reduce((sum, view) => sum + view.drift.length, 0),
   );
+  const updateCount = useUpdatesStore((s) => visibleUpdateCount(s.rows));
   const projects = result ? projectScopes(result) : [];
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -138,6 +142,11 @@ export function Sidebar() {
             {target === "review" && driftCount > 0 ? (
               <span className="rounded bg-foreground/[0.09] px-1.5 py-0.5 text-[11px] font-medium tabular-nums">
                 {driftCount}
+              </span>
+            ) : null}
+            {target === "updates" && updateCount > 0 ? (
+              <span className="rounded bg-foreground/[0.09] px-1.5 py-0.5 text-[11px] font-medium tabular-nums">
+                {updateCount}
               </span>
             ) : null}
           </button>

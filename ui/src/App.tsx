@@ -14,10 +14,12 @@ import { ProblemsPage } from "@/pages/problems";
 import { ReviewPage } from "@/pages/review";
 import { SettingsPage } from "@/pages/settings";
 import { ToolsProjectsPage } from "@/pages/tools";
+import { UpdatesPage } from "@/pages/updates";
 import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 import { useSettingsStore } from "@/stores/settings";
+import { useUpdatesStore } from "@/stores/updates";
 
 const FOCUS_RESCAN_DEBOUNCE_MS = 5000;
 
@@ -41,20 +43,25 @@ function useAppearance() {
 function useScanTriggers() {
   const refresh = useScanStore((s) => s.refresh);
   const auditRefresh = useAuditStore((s) => s.refresh);
+  const updatesLoad = useUpdatesStore((s) => s.load);
   const load = useSettingsStore((s) => s.load);
   useEffect(() => {
     void load()
       .then(() => refresh())
-      .then(() => auditRefresh());
+      .then(() => auditRefresh())
+      .then(() => updatesLoad());
     let last = Date.now();
     const onFocus = () => {
       if (Date.now() - last < FOCUS_RESCAN_DEBOUNCE_MS) return;
       last = Date.now();
       void refresh();
+      // An update or edit could have landed while the window was away —
+      // the badge should notice without a visit to the page.
+      void updatesLoad();
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [refresh, auditRefresh, load]);
+  }, [refresh, auditRefresh, updatesLoad, load]);
 }
 
 export default function App() {
@@ -101,6 +108,7 @@ export default function App() {
               {page === "home" && <OverviewPage />}
               {page === "library" && <LibraryPage />}
               {page === "package" && <PackagePage />}
+              {page === "updates" && <UpdatesPage />}
               {page === "tools" && <ToolsProjectsPage />}
               {page === "review" && <ReviewPage />}
               {page === "customize" && <CustomizePage />}

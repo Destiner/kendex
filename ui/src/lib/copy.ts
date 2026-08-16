@@ -233,3 +233,9 @@ export const forkedAttentionTitle = (count: number): string =>
     : `You've edited ${count} installed packages`;
 export const FORKED_ATTENTION_DETAIL =
   "Your changes are safe — nothing will overwrite them. Decide whether to keep each as your own copy.";
+
+// The install-time ask, answered by default: installs keep themselves
+// current unless the toast's one tap says otherwise.
+export const installedAutoToastLabel = (name: string): string =>
+  `Installed ${name} — it will keep itself up to date`;
+export const UPDATE_MANUALLY_ACTION = "Update manually instead";
