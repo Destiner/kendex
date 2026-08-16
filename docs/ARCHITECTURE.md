@@ -46,8 +46,15 @@ lives in one capability table read by core and UI.
 
 ## Invariants — what the product guarantees
 
-1. Generated artifacts are always overwritable; refresh regenerates from
-   scratch and re-merges the manifest.
+1. Generated artifacts are always overwritable — by us. Refresh
+   regenerates from scratch and re-merges the manifest, but bytes no
+   apply ever wrote are the user's: an edited installation becomes a
+   conflict naming its exits (keep it as a fork, or discard the edits),
+   and no write, sweep, refusal, or re-shape touches it. Discarding is an
+   explicit option (`overwrite_edited` / `--discard-edits`). The anchor
+   is the lock's rendered hash — what apply last put on disk — and a
+   record that cannot prove which bytes are whose holds too: one
+   conflict, never one silent loss.
 2. Write-only-if-absent: never clobber a user-set value; never re-add a
    user removal. This protects manifest values and unrelated
    structured-config keys — managed generated content is replaceable
@@ -55,7 +62,11 @@ lives in one capability table read by core and UI.
 3. Content hashes cover source bytes plus the manifest sections that shape
    an artifact — editing a shared key invalidates dependents.
 4. Locks record durable provenance; same-source reinstall is a no-op,
-   cross-source name collision is a hard error naming the original.
+   cross-source name collision is a hard error naming the original. The
+   one sanctioned rebind is a recorded fork: remote to `local`, written
+   into the manifest's `[forks.<kind>.<name>]` by the fork operation the
+   user confirmed. A fork keeps the item's installed name, so dependents
+   and bundles keep resolving.
 5. Enable/disable is non-destructive and lossless: file-backed kinds
    toggle by rename; kinds embedded in shared config files toggle by a
    structured edit that preserves every unrelated key. Uninstalling the
@@ -235,6 +246,23 @@ lives in one capability table read by core and UI.
   declaration that produced it: a manifest now naming another repository,
   or another revision, is never served the previous one under the new
   one's name.
+  An item declaration may hold its own `rev`, outranking the source's —
+  and an item's rev is always the full commit id: `vstack pin` and the
+  version picker resolve tags and branches at write time, because a hold
+  a moved tag can move is not a hold. Holds flow through derivation: a
+  pinned bundle pins its members, a pinned skill's dependencies read the
+  pinned catalog, and two parents demanding different revisions of one
+  dependency become a conflict that writes nothing — one filesystem
+  identity exists, and a silent winner would install content somebody
+  pinned away from. Updates are a projection over the mirror, never
+  drift: a held item hashes clean against its held tree, and the Updates
+  page separately asks the mirror what newer content exists (fetching
+  pinned sources too — a pin says what installs, not what exists). A
+  version timeline lists only commits that touched the package's files,
+  decorated with tag names, never replaced by them. Muting a package's
+  update notifications is a machine-local settings entry, not manifest
+  intent: a preference committed to a shared repository would silence a
+  whole team.
   Reuse is verified against a publish receipt written outside the
   checkout: a full content hash of the tree, which costs a read of the
   catalog per plan and is the only check a same-size edit cannot fool.
