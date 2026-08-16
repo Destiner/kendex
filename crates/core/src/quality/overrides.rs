@@ -47,20 +47,26 @@ impl OverrideState {
 }
 
 /// The fingerprints of a finding set, in the one order two sets can be
-/// compared in.
-pub fn fingerprints(findings: &[Finding]) -> Vec<String> {
-    let mut prints: Vec<String> = findings.iter().map(Finding::fingerprint).collect();
+/// compared in. `root` is the item's location, stripped from each print so
+/// two readings of the same bytes at different paths compare equal.
+pub fn fingerprints(findings: &[Finding], root: &str) -> Vec<String> {
+    let mut prints: Vec<String> = findings.iter().map(|f| f.fingerprint(root)).collect();
     prints.sort();
     prints.dedup();
     prints
 }
 
 /// Record a review of exactly this content and these findings.
-pub fn mint(content_hash: &str, findings: &[Finding], note: Option<String>) -> SafetyOverride {
+pub fn mint(
+    content_hash: &str,
+    findings: &[Finding],
+    root: &str,
+    note: Option<String>,
+) -> SafetyOverride {
     SafetyOverride {
         content_hash: content_hash.to_owned(),
         ruleset: RULESET_VERSION,
-        findings: fingerprints(findings),
+        findings: fingerprints(findings, root),
         granted_at: crate::clock::timestamp(),
         note,
     }
@@ -71,6 +77,7 @@ pub fn state(
     recorded: Option<&SafetyOverride>,
     content_hash: &str,
     findings: &[Finding],
+    root: &str,
 ) -> OverrideState {
     let Some(recorded) = recorded else {
         return OverrideState::Absent;
@@ -88,7 +95,7 @@ pub fn state(
             ),
         };
     }
-    if recorded.findings != fingerprints(findings) {
+    if recorded.findings != fingerprints(findings, root) {
         return OverrideState::Stale {
             why: "different problems were found than the ones that were reviewed".to_owned(),
         };

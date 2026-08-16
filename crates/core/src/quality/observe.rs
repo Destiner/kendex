@@ -24,6 +24,27 @@ use super::{
 const MAX_TREE_BYTES: usize = 512 * 1024;
 const MAX_TREE_FILES: usize = 200;
 
+/// One tree's in-memory files as audit input, under the same order and
+/// budgets the observed walk uses. The gate reads a plan's rendered bytes
+/// through this so both scoring paths hash one construction — an override
+/// granted against the plan must still recognise the install when the
+/// audit reads it back off disk.
+pub fn tree_files_from_bytes(files: &[(PathBuf, Vec<u8>)]) -> Vec<TreeFile> {
+    let mut sorted: Vec<&(PathBuf, Vec<u8>)> = files.iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut budget = MAX_TREE_BYTES;
+    let mut out = Vec::new();
+    for (path, bytes) in sorted {
+        if out.len() >= MAX_TREE_FILES || budget == 0 {
+            break;
+        }
+        let taken = char_boundary(bytes, bytes.len().min(budget));
+        budget -= taken;
+        out.push(TreeFile::read(path.clone(), &bytes[..taken]));
+    }
+    out
+}
+
 /// What this observation carries, read as an audit input.
 pub fn input_for(item: &ObservedItem) -> AuditInput {
     let location = item.path.display().to_string();

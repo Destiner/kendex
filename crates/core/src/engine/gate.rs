@@ -73,6 +73,7 @@ pub(super) fn run(
     let mut kept = Vec::new();
     for item in std::mem::take(&mut state.items) {
         let input = input_for(&item);
+        let root = input.location.clone();
         // The override binds to what the rules read, not to what lands on
         // disk. For an MCP server or a plugin those differ: the artifact is
         // a config edit whose backing file may be empty, so hashing the
@@ -84,14 +85,14 @@ pub(super) fn run(
             crate::quality::verdict(&result.findings, &result.safety, thresholds);
         let mut recorded = manifest.safety_overrides.get(&item.key);
         if verdict == Verdict::Block && granted(options, &item, &content_hash) {
-            let minted = overrides::mint(&content_hash, &result.findings, None);
+            let minted = overrides::mint(&content_hash, &result.findings, &root, None);
             let updated = state
                 .manifest_update
                 .get_or_insert_with(|| manifest.clone());
             updated.safety_overrides.insert(item.key.clone(), minted);
             recorded = updated.safety_overrides.get(&item.key);
         }
-        let override_state = overrides::state(recorded, &content_hash, &result.findings);
+        let override_state = overrides::state(recorded, &content_hash, &result.findings, &root);
         let row = ItemSafety {
             kind: item.kind,
             name: item.name.clone(),
@@ -170,7 +171,13 @@ fn refusal(item: &Desired, row: &ItemSafety) -> Refused {
 /// The identity of the bytes the rules read, so an override that was
 /// granted against them stops applying when any of them changes.
 pub(super) fn content_hash(input: &AuditInput) -> String {
-    let mut material = format!("{}|{}|", input.kind.name(), input.location);
+    // The location deliberately stays out of the material. The override is
+    // keyed by installation already, and the two scoring paths read the
+    // same bytes at different paths — the gate at the canonical tree, the
+    // audit at the harness-native link — so folding the path in would make
+    // every accepted symlink-method skill read as edited the moment it
+    // lands on disk.
+    let mut material = format!("{}|", input.kind.name());
     match &input.content {
         Content::Document { text } => material.push_str(text),
         // Sorted, because a plan builds the tree in render order and a scan
@@ -218,15 +225,14 @@ fn input_for(item: &Desired) -> AuditInput {
                 text: String::from_utf8_lossy(bytes).into_owned(),
             },
         ),
+        // Read through the same budgeted constructor the observed audit
+        // uses, so the two paths score and hash one construction.
         Artifact::Tree {
             canonical, files, ..
         } => (
             canonical.display().to_string(),
             Content::SkillTree {
-                files: files
-                    .iter()
-                    .map(|(path, bytes)| crate::quality::TreeFile::read(path.clone(), bytes))
-                    .collect(),
+                files: crate::quality::observe::tree_files_from_bytes(files),
             },
         ),
         Artifact::Registration { script, edits } => registration(item, script.as_ref(), edits),

@@ -48,6 +48,7 @@ pub fn observed_safety(env: &Env, scope: &Scope) -> Result<Vec<ItemSafety>> {
                     recorded,
                     &content_hash,
                     &result.findings,
+                    &item.path.display().to_string(),
                 ),
                 findings: result.findings,
                 skipped: result.skipped,

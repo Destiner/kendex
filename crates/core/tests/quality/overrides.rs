@@ -259,3 +259,62 @@ fn an_override_does_not_cover_a_problem_nobody_reviewed() {
         other => panic!("expected a stale override, got {other:?}"),
     }
 }
+
+/// The same, for a symlink-method install. The gate hashes the canonical
+/// tree; the audit observes the harness-native link. The acceptance must
+/// survive that path difference, or every accepted symlink-method skill
+/// would read as "changed since reviewed" the moment it lands on disk.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_symlink_method_acceptance_reads_active_in_the_observed_scan() {
+    let f = super::fixture::fixture_with_method("symlink");
+    let granted = plan(&f, &[grant(&f).as_str()]);
+    apply::execute(&f.env, &granted.plan, None).unwrap();
+
+    let observed = vstack_core::engine::observed_safety(&f.env, &f.scope).unwrap();
+    let row = observed
+        .iter()
+        .find(|row| row.name == "hostile")
+        .expect("the installed skill is observed");
+    assert_eq!(row.override_state, OverrideState::Active);
+    assert!(!row.blocked(), "an accepted item is not held back");
+}
+
+/// Withdrawing an acceptance is one journaled manifest write. Nothing else
+/// moves with it — the hold-back and the trash ride the next previewed
+/// apply, where the user sees them coming.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_revoked_acceptance_holds_the_item_back_again() {
+    let f = fixture();
+    let granted = plan(&f, &[grant(&f).as_str()]);
+    apply::execute(&f.env, &granted.plan, None).unwrap();
+    assert!(installed(&f, "hostile"));
+
+    let revoke =
+        vstack_core::engine::ops::revoke_override(&f.env, &f.scope, "skill:hostile:claude")
+            .unwrap();
+    apply::execute(&f.env, &revoke, None).unwrap();
+
+    assert!(
+        manifest_of(&f).safety_overrides.is_empty(),
+        "the record is gone"
+    );
+    assert!(installed(&f, "hostile"), "revoke alone moves no files");
+
+    let after = audit(&f.env, &f.scope).unwrap();
+    let row = after
+        .safety
+        .iter()
+        .find(|row| row.name == "hostile")
+        .unwrap();
+    assert!(row.blocked(), "the block is back");
+    assert!(
+        !after.plan.is_empty(),
+        "the next apply is what takes the installed copy away"
+    );
+
+    let missing =
+        vstack_core::engine::ops::revoke_override(&f.env, &f.scope, "skill:hostile:claude");
+    assert!(missing.is_err(), "revoking twice says so");
+}

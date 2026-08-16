@@ -101,12 +101,22 @@ impl Finding {
     /// This exact finding's identity. An override binds to a set of these,
     /// so a review of one problem can never wave through a different one
     /// that appears later at the same place.
-    pub fn fingerprint(&self) -> String {
+    /// `root` is the item's own location, stripped from the finding's so
+    /// the print names the file *within* the item. The gate reads a skill
+    /// at its canonical tree and the audit reads it back through the
+    /// harness-native link — same bytes, two spellings of the path — and a
+    /// print that kept the absolute path would call every accepted
+    /// symlink-method install a different set of findings.
+    pub fn fingerprint(&self, root: &str) -> String {
+        let location = match self.location.strip_prefix(root) {
+            Some(rest) => rest.trim_start_matches('/'),
+            None => self.location.as_str(),
+        };
         let material = format!(
             "{}|{}|{}|{}",
             self.rule,
             self.severity.name(),
-            self.location,
+            location,
             self.message
         );
         crate::hash::hash_bytes(material.as_bytes())

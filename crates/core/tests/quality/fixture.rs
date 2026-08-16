@@ -31,6 +31,14 @@ pub fn skill(source: &Path, name: &str, body: &str) {
 
 #[allow(clippy::unwrap_used)]
 pub fn fixture() -> Fixture {
+    fixture_with_method("copy")
+}
+
+/// `method = "symlink"` installs read their content through the canonical
+/// tree — the path the gate hashes and the path the audit observes differ,
+/// which is exactly what the content hash must not care about.
+#[allow(clippy::unwrap_used)]
+pub fn fixture_with_method(method: &str) -> Fixture {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().to_path_buf();
     let env = Env::fake(&home, FakeOs::Linux);
@@ -52,7 +60,7 @@ pub fn fixture() -> Fixture {
     fs::write(
         project.join("vstack.toml"),
         format!(
-            "schema = 3\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"copy\"\n\n[skills.clean]\nsource = \"cat\"\n\n[skills.hostile]\nsource = \"cat\"\n",
+            "schema = 3\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"{method}\"\n\n[skills.clean]\nsource = \"cat\"\n\n[skills.hostile]\nsource = \"cat\"\n",
             source.display()
         ),
     )
