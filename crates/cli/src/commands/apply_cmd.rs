@@ -20,6 +20,7 @@ pub fn run(
     plan_only: bool,
     yes: bool,
     allow_unsafe: Vec<String>,
+    discard_edits: bool,
 ) -> CliResult {
     for scope in resolve_scopes(env, filter)? {
         // Plan from the manifest as it sits on disk — the same loader the
@@ -38,6 +39,7 @@ pub fn run(
             remove_orphans: true,
             removal_filter: None,
             allow_unsafe: allow_unsafe.clone(),
+            overwrite_edited: discard_edits,
             ..PlanOptions::default()
         };
         let report = plan_apply(env, &scope, &options)?;

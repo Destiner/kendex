@@ -29,6 +29,10 @@ pub struct Desired {
     /// remote — the item's own pin when it has one, the source resolution
     /// otherwise. The lock records it; the Updates page reads it back.
     pub source_commit: Option<String>,
+    /// The manifest records this item as a fork: its rebind from a remote
+    /// to the local source is the recorded outcome of forking, not a
+    /// provenance clash.
+    pub recorded_fork: bool,
     pub hash: String,
     pub upstream_skills: Option<Vec<String>>,
     /// Set when the artifact is not this kind's native form — the lock
@@ -338,6 +342,13 @@ pub(super) struct ItemCtx<'a> {
 impl ItemCtx<'_> {
     pub(super) fn reasons_for(&self, harness: HarnessId) -> BTreeSet<crate::lock::Reason> {
         self.reasons.get(&harness).cloned().unwrap_or_default()
+    }
+
+    pub(super) fn recorded_fork(&self, kind: ItemKind) -> bool {
+        self.manifest
+            .forks
+            .get(&kind)
+            .is_some_and(|forks| forks.contains_key(self.name))
     }
 }
 

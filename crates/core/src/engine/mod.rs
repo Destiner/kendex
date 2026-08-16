@@ -25,12 +25,16 @@ mod desired_mcp;
 mod desired_skill;
 mod desired_source;
 mod expansion;
+pub mod fork;
 mod gate;
 mod gemini;
+mod holds;
 mod item_plan;
 mod item_source;
 mod observed;
 pub mod ops;
+mod owned;
+mod plan_pass;
 mod removal;
 mod scope_writes;
 mod set_change;
@@ -39,9 +43,19 @@ mod tree_plan;
 mod unmanaged;
 
 pub use gate::{ItemSafety, allow_unsafe_flag};
-use item_plan::plan_item;
 pub use item_source::{ItemSource, item_source};
 pub use observed::observed_safety;
+
+/// Whether an installation's bytes on disk cannot be proven to be what
+/// apply last wrote — the "your edits are here" signal the Updates page
+/// blocks on. See `removal::edit_holds`.
+pub fn edited_on_disk(
+    env: &crate::env::Env,
+    scope: &crate::model::Scope,
+    entry: &crate::lock::LockEntry,
+) -> bool {
+    removal::edit_holds(env, scope, entry)
+}
 use scope_writes::{
     plan_config_edits, plan_lock_write, plan_schema_upgrade, plan_settings_seed, source_revisions,
 };
@@ -66,6 +80,17 @@ pub enum DriftState {
     Conflict,
 }
 
+/// Why an installation diverged, when the plan can tell. `LocalEdit` and
+/// `Both` are the causes that block writes: the user's bytes are on disk
+/// and only an explicit choice may take them.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum DriftCause {
+    UpstreamChanged,
+    LocalEdit,
+    Both,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DriftRow {
@@ -75,6 +100,8 @@ pub struct DriftRow {
     pub scope: Scope,
     pub state: DriftState,
     pub detail: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cause: Option<DriftCause>,
 }
 
 /// A per-item render or parse warning, with the fix when there is one —
@@ -130,6 +157,11 @@ pub struct PlanOptions {
     /// is recorded in the manifest by the same plan that installs it, bound
     /// to the content, rule set and findings that were reviewed.
     pub allow_unsafe: Vec<String>,
+    /// Overwrite installations the user edited by hand. Off, an edited
+    /// artifact becomes a conflict and no write touches it; this is the
+    /// explicit "discard my edits" everything destructive has to go
+    /// through.
+    pub overwrite_edited: bool,
 }
 
 /// Compute drift and the plan that would fix it, in one pass — the Audit
@@ -195,19 +227,18 @@ pub fn plan_scope(
         .flat_map(|emitted| emitted.paths.iter().cloned())
         .collect();
 
-    for item in &state.items {
-        let mut sink = item_plan::PlanSink {
-            drift: &mut drift,
-            ops: &mut ops,
-            config_edits: &mut config_edits,
-            new_lock: &mut new_lock,
-            written: &mut written,
-        };
-        if item_plan::hold_rev_conflict(item, scope, lock, &state.rev_conflicts, &mut sink) {
-            continue;
-        }
-        plan_item(item, scope, lock, &emitted_paths, &mut sink)?;
-    }
+    plan_pass::plan_items(
+        &state,
+        scope,
+        lock,
+        options,
+        &emitted_paths,
+        &mut drift,
+        &mut ops,
+        &mut config_edits,
+        &mut new_lock,
+        &mut written,
+    )?;
 
     plan_settings_seed(scope, &state, &mut ops, &mut drift)?;
 
@@ -217,7 +248,7 @@ pub fn plan_scope(
     let mut guard = removal::TrashGuard::new(&state.items);
     removal::stale_emitted(&state, lock, &mut guard, &mut ops)?;
 
-    let refused_keys = plan_refusals(
+    let refused_keys = plan_pass::plan_refusals(
         env,
         scope,
         lock,
@@ -263,55 +294,6 @@ pub fn plan_scope(
     };
     unmanaged_rows(env, scope, manifest, lock, &state.items, &mut report.drift);
     Ok(report)
-}
-
-/// A refusal is a conflict the user must resolve, and any previous, wider
-/// rendering comes off disk on the default path — leaving it live would
-/// keep exactly the access the refusal exists to prevent. Only what this
-/// installation alone holds comes off: the tree a refused tool shares with
-/// a tool that still installs stays exactly where it is.
-#[allow(clippy::too_many_arguments)]
-fn plan_refusals(
-    env: &Env,
-    scope: &Scope,
-    lock: &Lock,
-    state: &desired::DesiredState,
-    guard: &mut removal::TrashGuard,
-    drift: &mut Vec<DriftRow>,
-    ops: &mut Vec<PlannedOp>,
-    config_edits: &mut config_edits::ConfigEditPlan,
-) -> Result<BTreeSet<String>> {
-    let refused_keys: BTreeSet<String> = state
-        .refused
-        .iter()
-        .map(|r| crate::lock::entry_key(r.kind, &r.name, r.harness))
-        .collect();
-    for refusal in &state.refused {
-        let key = crate::lock::entry_key(refusal.kind, &refusal.name, refusal.harness);
-        let mut removals = Vec::new();
-        if let Some(entry) = lock.entries.get(&key) {
-            guard.extend(
-                &mut removals,
-                removal::removal_ops(env, scope, entry, config_edits)?,
-            );
-        }
-        drift.push(DriftRow {
-            kind: refusal.kind,
-            name: refusal.name.clone(),
-            harness: refusal.harness,
-            scope: scope.clone(),
-            state: DriftState::Conflict,
-            detail: match removals.is_empty() {
-                false => format!(
-                    "{} — the previous installation will be moved to the trash",
-                    refusal.reason
-                ),
-                true => refusal.reason.clone(),
-            },
-        });
-        ops.append(&mut removals);
-    }
-    Ok(refused_keys)
 }
 
 /// Read-only audit for a scope. A legacy or absent manifest still reports

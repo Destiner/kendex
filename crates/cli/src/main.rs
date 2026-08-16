@@ -36,6 +36,8 @@ enum Command {
         #[command(flatten)]
         flags: AddFlags,
     },
+    /// Keep an edited install as your own local package
+    Fork(commands::fork_cmd::ForkArgs),
     /// Hold an item at a version, or let it follow its source again
     Pin(commands::pin::PinArgs),
     /// The versions a package's source offers
@@ -58,19 +60,7 @@ enum Command {
         no_sweep: bool,
     },
     /// Regenerate every declared installation from its source
-    Refresh {
-        #[arg(short = 'g', long)]
-        global: bool,
-        /// project | global | all (default all)
-        #[arg(long)]
-        scope: Option<String>,
-        /// Per-item detail instead of the compact summary
-        #[arg(short = 'v', long)]
-        verbose: bool,
-        /// Accept changes to what is installed without asking
-        #[arg(short = 'y', long)]
-        yes: bool,
-    },
+    Refresh(commands::refresh::RefreshArgs),
     /// Check installs against the lock; non-zero exit on drift
     Verify {
         names: Vec<String>,
@@ -96,6 +86,9 @@ enum Command {
         /// the hash printed beside them — a bare name does not grant
         #[arg(long = "allow-unsafe")]
         allow_unsafe: Vec<String>,
+        /// Overwrite installations you edited by hand
+        #[arg(long)]
+        discard_edits: bool,
     },
     /// Record an observed item into the manifest (content moves to the
     /// local source)
@@ -223,6 +216,7 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
     };
     match command {
         Command::Add { source, flags } => commands::add::run(&env, flags.into_args(source))?,
+        Command::Fork(args) => commands::fork_cmd::run(&env, args)?,
         Command::Pin(args) => commands::pin::run(&env, args)?,
         Command::Versions(args) => commands::versions::run(&env, args)?,
         Command::Updates(args) => commands::updates_cmd::run(&env, args)?,
@@ -241,15 +235,7 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             };
             commands::remove::run(&env, names, filter, sweep)?;
         }
-        Command::Refresh {
-            global,
-            scope,
-            verbose,
-            yes,
-        } => {
-            let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::All)?;
-            commands::refresh::run(&env, filter, verbose, yes)?;
-        }
+        Command::Refresh(args) => commands::refresh::run_args(&env, args)?,
         Command::Verify {
             names,
             global,
@@ -264,9 +250,10 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             scope,
             yes,
             allow_unsafe,
+            discard_edits,
         } => {
             let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::Project)?;
-            commands::apply_cmd::run(&env, filter, plan, yes, allow_unsafe)?;
+            commands::apply_cmd::run(&env, filter, plan, yes, allow_unsafe, discard_edits)?;
         }
         Command::Adopt {
             kind,

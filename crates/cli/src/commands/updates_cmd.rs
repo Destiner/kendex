@@ -73,7 +73,7 @@ pub fn run(env: &Env, args: UpdatesArgs) -> CliResult {
         }
     }
     if apply {
-        return super::refresh::run(env, filter, false, yes);
+        return super::refresh::run(env, filter, false, yes, false);
     }
     let rows = vstack_core::package::updates::updates(env, &scope)?;
     let mut shown = 0;

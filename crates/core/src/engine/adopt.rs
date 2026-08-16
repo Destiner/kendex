@@ -157,7 +157,7 @@ fn capture_ops(
     Ok(ops)
 }
 
-fn read_tree(root: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {
+pub(super) fn read_tree(root: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {
     fn walk(dir: &Path, rel: &Path, files: &mut Vec<(PathBuf, Vec<u8>)>) -> Result<()> {
         for entry in fs::read_dir(dir)
             .map_err(|e| CoreError::io(dir, e))?

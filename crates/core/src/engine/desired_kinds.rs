@@ -32,6 +32,7 @@ pub(super) fn declared(
         source_name: ctx.decl.source.clone(),
         provenance: ctx.provenance.to_owned(),
         source_commit: ctx.source_commit.map(str::to_owned),
+        recorded_fork: ctx.recorded_fork(kind),
         hash: installation_hash(
             ctx.sealed,
             ctx.item_path,
@@ -248,6 +249,7 @@ pub(super) fn desired_plugins(
             source_name: "plugin".to_owned(),
             provenance: "marketplace".to_owned(),
             source_commit: None,
+            recorded_fork: false,
             hash: hash_bytes(format!("plugin:{key}:{}", decl.enabled).as_bytes()),
             upstream_skills: None,
             emitted: None,

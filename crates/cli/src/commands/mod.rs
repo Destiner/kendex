@@ -4,6 +4,7 @@ pub mod apply_cmd;
 pub mod check;
 pub mod check_catalog;
 pub mod engine_common;
+pub mod fork_cmd;
 pub mod import;
 pub mod init;
 pub mod list;

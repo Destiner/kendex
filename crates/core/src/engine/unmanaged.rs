@@ -53,6 +53,7 @@ pub(super) fn unmanaged_rows(
             scope: scope.clone(),
             state: DriftState::Unmanaged,
             detail: item.path.display().to_string(),
+            cause: None,
         });
     }
 }

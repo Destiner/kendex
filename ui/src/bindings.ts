@@ -180,7 +180,7 @@ export type AuditView = AuditView_Serialize | AuditView_Deserialize;
  */
 export type AuditView_Deserialize = {
 	scope: Scope,
-	drift: DriftRow[],
+	drift: DriftRow_Deserialize[],
 	plan: string[],
 	notes: string[],
 	warnings: ItemWarning_Deserialize[],
@@ -205,7 +205,7 @@ export type AuditView_Deserialize = {
  */
 export type AuditView_Serialize = {
 	scope: Scope,
-	drift: DriftRow[],
+	drift: DriftRow_Serialize[],
 	plan: string[],
 	notes: string[],
 	warnings: ItemWarning_Serialize[],
@@ -285,13 +285,33 @@ export type DimensionScore = {
 	scorePercent: number,
 };
 
-export type DriftRow = {
+/**
+ *  Why an installation diverged, when the plan can tell. `LocalEdit` and
+ *  `Both` are the causes that block writes: the user's bytes are on disk
+ *  and only an explicit choice may take them.
+ */
+export type DriftCause = "upstream-changed" | "local-edit" | "both";
+
+export type DriftRow = DriftRow_Serialize | DriftRow_Deserialize;
+
+export type DriftRow_Deserialize = {
 	kind: ItemKind,
 	name: string,
 	harness: HarnessId,
 	scope: Scope,
 	state: DriftState,
 	detail: string,
+	cause?: DriftCause | null,
+};
+
+export type DriftRow_Serialize = {
+	kind: ItemKind,
+	name: string,
+	harness: HarnessId,
+	scope: Scope,
+	state: DriftState,
+	detail: string,
+	cause?: DriftCause | null,
 };
 
 export type DriftState = 

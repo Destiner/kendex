@@ -1,134 +1,44 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use super::desired::{self, native_dir};
-use super::targets::{
-    HookFormat, HookTarget, disabled_name, hook_target, mcp_registry, plugin_settings,
-};
+use super::desired;
+use super::owned::{Owned, installed};
+use super::targets::disabled_name;
 use super::{DriftRow, DriftState, PlanOptions};
 use crate::apply::{Op, PlannedOp, Pre};
-use crate::configedit::ConfigEdit;
 use crate::env::Env;
 use crate::error::Result;
 use crate::lock::{Lock, LockEntry};
 use crate::manifest::Manifest;
 use crate::model::{ItemKind, Scope};
-use crate::render::agent::file_name;
 
-/// What one installation put on this machine: files it wrote, and the
-/// structured edit that takes its registration back out.
-fn installed(env: &Env, scope: &Scope, entry: &LockEntry) -> Owned {
-    let mut files: Vec<PathBuf> = Vec::new();
-    let mut edits: Vec<(PathBuf, ConfigEdit)> = Vec::new();
-    match entry.kind {
-        ItemKind::Agent => {
-            if let Some(dir) = native_dir(env, scope, entry.harness, ItemKind::Agent) {
-                files.push(dir.join(file_name(entry.harness, &entry.name)));
-            }
-        }
-        ItemKind::Skill => {
-            if let Some(dir) = native_dir(env, scope, entry.harness, ItemKind::Skill) {
-                files.push(dir.join(crate::harness::rendered_name(entry.harness, &entry.name)));
-            }
-            let canonical = super::desired::skill_canonical(env, scope, &entry.name);
-            if !files.contains(&canonical) {
-                files.push(canonical);
-            }
-        }
-        // A codex command was written as a skill tree, under a name the
-        // collision rules may have changed: the record of what landed
-        // beats deriving a path this install never took.
-        ItemKind::Command => match &entry.emitted {
-            Some(emitted) => files.extend(emitted.paths.iter().cloned()),
-            None => {
-                if let Some(dir) = native_dir(env, scope, entry.harness, ItemKind::Command) {
-                    files.push(dir.join(super::desired_command::command_file(
-                        entry.harness,
-                        &entry.name,
-                    )));
-                }
-            }
-        },
-        ItemKind::Hook => match hook_target(env, scope, entry.harness, &entry.name) {
-            Some(HookTarget::Script {
-                path,
-                command,
-                registry,
-                format,
-                ..
-            }) => {
-                files.push(path);
-                // The feature flag codex needed stays on: other hooks may
-                // still rely on it, and it enables nothing by itself.
-                edits.push((
-                    registry,
-                    match format {
-                        HookFormat::Nested => ConfigEdit::RemoveHook {
-                            event: None,
-                            command,
-                        },
-                        HookFormat::Copilot => ConfigEdit::RemoveCopilotHook {
-                            event: None,
-                            command,
-                        },
-                    },
-                ));
-            }
-            Some(HookTarget::Instruction {
-                path,
-                config,
-                reference,
-            }) => {
-                files.push(path);
-                edits.push((config, ConfigEdit::OpencodeRemoveInstruction { reference }));
-            }
-            Some(HookTarget::Rule { path }) => files.push(path),
-            None => {}
-        },
-        ItemKind::McpServer => {
-            if let Some(registry) = mcp_registry(env, scope, entry.harness) {
-                edits.push((
-                    registry,
-                    ConfigEdit::RemoveMcpServer {
-                        name: entry.name.clone(),
-                    },
-                ));
-            }
-            // Gemini's record of whether a server is on lives in a file of
-            // its own and would outlive the declaration it describes. That
-            // file is one for the whole machine, so only a global-scope
-            // removal takes an entry out of it: a project holds the project
-            // lock, and clearing the record there would switch a server on
-            // everywhere for a removal that was never meant to leave.
-            if entry.harness == crate::model::HarnessId::Gemini && matches!(scope, Scope::Global) {
-                edits.push((
-                    crate::harness::gemini::settings::mcp_enablement_file(env),
-                    ConfigEdit::SetGeminiMcpEnabled {
-                        name: entry.name.clone(),
-                        enabled: None,
-                    },
-                ));
-            }
-        }
-        ItemKind::Plugin => {
-            if let Some(settings) = plugin_settings(env, scope, entry.harness) {
-                edits.push((
-                    settings,
-                    ConfigEdit::SetPluginEnabled {
-                        key: entry.name.clone(),
-                        enabled: None,
-                    },
-                ));
-            }
-        }
-        ItemKind::PiExtension => {}
+/// Whether the user's hands are (or may be) on this installation's bytes.
+/// Automatic removals — refusals, sweeps, orphan cleanup nobody named —
+/// only take content they can prove is ours: every content path must hash
+/// to what apply last wrote. A record from before that hash existed cannot
+/// prove anything, so any content present holds. Explicitly asked-for
+/// removals are not gated here: the trash keeps what they take.
+pub(super) fn edit_holds(env: &Env, scope: &Scope, entry: &LockEntry) -> bool {
+    if !matches!(
+        entry.kind,
+        ItemKind::Skill | ItemKind::Agent | ItemKind::Command
+    ) {
+        return false;
     }
-    Owned { files, edits }
-}
-
-struct Owned {
-    files: Vec<PathBuf>,
-    edits: Vec<(PathBuf, ConfigEdit)>,
+    let Owned { files, .. } = installed(env, scope, entry);
+    let candidates: Vec<PathBuf> = files
+        .iter()
+        .flat_map(|path| [disabled_name(path), path.clone()])
+        .filter(|path| !path.is_symlink() && path.exists())
+        .collect();
+    let Some(rendered) = &entry.rendered_hash else {
+        return !candidates.is_empty();
+    };
+    candidates.iter().any(|path| {
+        crate::hash::hash_tree(path)
+            .map(|disk| &disk != rendered)
+            .unwrap_or(true)
+    })
 }
 
 /// A removal binds to what the preview showed, like every other mutation
@@ -252,11 +162,10 @@ pub(super) fn stale_emitted(
     ops: &mut Vec<PlannedOp>,
 ) -> Result<()> {
     for item in &state.items {
-        let Some(previous) = lock
-            .entries
-            .get(&item.key)
-            .and_then(|entry| entry.emitted.as_ref())
-        else {
+        let Some(entry) = lock.entries.get(&item.key) else {
+            continue;
+        };
+        let Some(previous) = entry.emitted.as_ref() else {
             continue;
         };
         let current = item.emitted.iter().flat_map(|e| e.paths.iter());
@@ -265,6 +174,18 @@ pub(super) fn stale_emitted(
                 continue;
             }
             if !path.exists() && !path.is_symlink() {
+                continue;
+            }
+            // Bytes that cannot be proven ours stay put — a re-shaped
+            // artifact must not cost the user an edit they made under the
+            // old shape.
+            if !path.is_symlink()
+                && entry.rendered_hash.as_ref().is_none_or(|rendered| {
+                    crate::hash::hash_tree(path)
+                        .map(|disk| &disk != rendered)
+                        .unwrap_or(true)
+                })
+            {
                 continue;
             }
             let planned = trash(
@@ -342,11 +263,28 @@ pub(super) fn orphans(
             } else {
                 "left over from an earlier setup; nothing needs it anymore".into()
             },
+            cause: None,
         });
         if !removable {
             if unneeded {
                 sweepable.push(super::SetChange::dropped(scope, entry));
             }
+            new_lock.entries.insert(key.clone(), entry.clone());
+            continue;
+        }
+        // An automatic removal (a sweep, an unfiltered orphan cleanup)
+        // never takes edited or unprovable bytes; only naming the item —
+        // or asking for edits to be discarded — does.
+        if !named && !options.overwrite_edited && edit_holds(env, scope, entry) {
+            drift.push(DriftRow {
+                kind: entry.kind,
+                name: entry.name.clone(),
+                harness: entry.harness,
+                scope: scope.clone(),
+                state: DriftState::Conflict,
+                detail: "no longer wanted, but its files were edited on disk — remove it by name to confirm".into(),
+                cause: Some(super::DriftCause::LocalEdit),
+            });
             new_lock.entries.insert(key.clone(), entry.clone());
             continue;
         }

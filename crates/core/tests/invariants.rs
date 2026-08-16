@@ -98,15 +98,42 @@ fn declare_apply_drift_clean_round_trips() {
     assert_eq!(drift_states(&f), vec![]);
 }
 #[test]
-fn invariant_1_generated_artifacts_always_regenerate() {
+fn invariant_1_generated_artifacts_regenerate_but_never_over_an_edit() {
     let f = fixture();
     apply_now(&f);
     fs::write(agent_file(&f), "hand edit").unwrap();
     fs::write(canonical_skill(&f).join("SKILL.md"), "tampered").unwrap();
 
-    let drift = drift_states(&f);
-    assert!(drift.iter().all(|(_, s)| *s == DriftState::Stale));
-    apply_now(&f);
+    // A hand-edited artifact is a conflict, not a casualty: the plan holds
+    // it and names the ways out. Nothing regenerates over the edit.
+    let report = audit(&f.env, &f.scope).unwrap();
+    assert!(
+        report
+            .drift
+            .iter()
+            .all(|row| row.state == DriftState::Conflict
+                && row.cause == Some(vstack_core::engine::DriftCause::LocalEdit)),
+        "{:?}",
+        report.drift
+    );
+    apply::execute(&f.env, &report.plan, None).unwrap();
+    assert_eq!(fs::read_to_string(agent_file(&f)).unwrap(), "hand edit");
+
+    // Discarding the edits is the explicit act that restores regeneration.
+    let report = vstack_core::engine::plan_scope(
+        &f.env,
+        &f.scope,
+        &manifest::load_for_mutation(&manifest::manifest_path(&f.env, &f.scope))
+            .unwrap()
+            .unwrap(),
+        &vstack_core::lock::load(&vstack_core::lock::lock_path(&f.env, &f.scope)).unwrap(),
+        &vstack_core::engine::PlanOptions {
+            overwrite_edited: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    apply::execute(&f.env, &report.plan, None).unwrap();
 
     assert!(
         fs::read_to_string(agent_file(&f))

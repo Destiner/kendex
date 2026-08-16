@@ -142,7 +142,11 @@ pub fn updates(env: &Env, scope: &Scope) -> Result<Vec<UpdateRow>> {
                         && &entry.name == name
                         && entry.repo == package.repo
                 }),
-                blocked_by_local_edit: false,
+                blocked_by_local_edit: lock
+                    .entries
+                    .values()
+                    .filter(|entry| entry.kind == kind && &entry.name == name)
+                    .any(|entry| crate::engine::edited_on_disk(env, scope, entry)),
                 forked: manifest
                     .forks
                     .get(&kind)

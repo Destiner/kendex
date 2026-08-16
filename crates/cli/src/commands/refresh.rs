@@ -1,4 +1,4 @@
-use vstack_core::engine::plan_refresh;
+use vstack_core::engine::{PlanOptions, plan_apply};
 use vstack_core::env::Env;
 use vstack_core::lock::{load as load_lock, lock_path};
 
@@ -11,7 +11,36 @@ use crate::scope::ScopeFilter;
 /// away. Regenerating is automatic; changing *what is installed* is shown
 /// first and needs an answer. Orphans nobody derived are left alone, as in
 /// v1: `remove` and `apply` clean those up.
-pub fn run(env: &Env, filter: ScopeFilter, verbose: bool, yes: bool) -> CliResult {
+#[derive(clap::Args)]
+pub struct RefreshArgs {
+    #[arg(short = 'g', long)]
+    global: bool,
+    /// project | global | all (default all)
+    #[arg(long)]
+    scope: Option<String>,
+    /// Per-item detail instead of the compact summary
+    #[arg(short = 'v', long)]
+    verbose: bool,
+    /// Accept changes to what is installed without asking
+    #[arg(short = 'y', long)]
+    yes: bool,
+    /// Overwrite installations you edited by hand
+    #[arg(long)]
+    discard_edits: bool,
+}
+
+pub fn run_args(env: &Env, args: RefreshArgs) -> CliResult {
+    let filter = ScopeFilter::resolve(args.scope.as_deref(), args.global, ScopeFilter::All)?;
+    run(env, filter, args.verbose, args.yes, args.discard_edits)
+}
+
+pub fn run(
+    env: &Env,
+    filter: ScopeFilter,
+    verbose: bool,
+    yes: bool,
+    discard_edits: bool,
+) -> CliResult {
     let mut refreshed_anything = false;
     let mut failures: Vec<String> = Vec::new();
 
@@ -29,7 +58,12 @@ pub fn run(env: &Env, filter: ScopeFilter, verbose: bool, yes: bool) -> CliResul
                 Err(error) => failures.push(error.to_string()),
             }
         }
-        let report = match plan_refresh(env, &scope) {
+        let options = PlanOptions {
+            sweep_unneeded: true,
+            overwrite_edited: discard_edits,
+            ..PlanOptions::default()
+        };
+        let report = match plan_apply(env, &scope, &options) {
             Ok(report) => report,
             Err(error) => {
                 failures.push(error.to_string());

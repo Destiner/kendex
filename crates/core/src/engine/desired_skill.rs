@@ -161,6 +161,7 @@ pub(super) fn desired_skill(ctx: &ItemCtx, state: &mut DesiredState) -> Result<(
                 source_name: ctx.decl.source.clone(),
                 provenance: ctx.provenance.to_owned(),
                 source_commit: ctx.source_commit.map(str::to_owned),
+                recorded_fork: ctx.recorded_fork(ItemKind::Skill),
                 hash: installation_hash(
                     ctx.sealed,
                     ctx.item_path,

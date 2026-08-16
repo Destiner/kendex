@@ -206,6 +206,7 @@ pub(super) fn plan_settings_seed(
             scope: scope.clone(),
             state: DriftState::Conflict,
             detail: format!("{} is not a regular file", path.display()),
+            cause: None,
         });
         return Ok(());
     }

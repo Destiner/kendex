@@ -22,36 +22,6 @@ pub(super) struct PlanSink<'a> {
     pub(super) written: &'a mut Written,
 }
 
-/// An item wanted at two revisions at once writes nothing: the conflict
-/// row says so, the existing install and its record stay exactly as they
-/// were, and the expansion's warning already names the fix. Returns true
-/// when the item was held back this way.
-pub(super) fn hold_rev_conflict(
-    item: &Desired,
-    scope: &Scope,
-    lock: &Lock,
-    conflicts: &BTreeSet<(crate::model::ItemKind, String)>,
-    sink: &mut PlanSink,
-) -> bool {
-    if !conflicts.contains(&(item.kind, item.name.clone())) {
-        return false;
-    }
-    sink.drift.push(DriftRow {
-        kind: item.kind,
-        name: item.name.clone(),
-        harness: item.harness,
-        scope: scope.clone(),
-        state: DriftState::Conflict,
-        detail: "wanted at two different revisions — nothing was changed".into(),
-    });
-    if let Some(entry) = lock.entries.get(&item.key) {
-        sink.new_lock
-            .entries
-            .insert(item.key.clone(), entry.clone());
-    }
-    true
-}
-
 /// `owned` holds every path an earlier install wrote under another kind's
 /// name: a codex command lands as a skill tree, and the skill that later
 /// claims that name is replacing our own output, not adopting a stranger's.
@@ -76,13 +46,17 @@ pub(super) fn plan_item(
         scope: scope.clone(),
         state,
         detail,
+        cause: None,
     };
     let existing = lock.entries.get(&item.key);
 
-    // Invariant 4: a recorded source is never silently rebound.
+    // Invariant 4: a recorded source is never silently rebound. The one
+    // sanctioned rebind is a recorded fork — remote to local, written into
+    // the manifest by the fork operation the user confirmed.
     if let Some(entry) = existing
         && entry.source_repo != item.provenance
         && entry.source_repo != "local"
+        && !(item.provenance == crate::manifest::LOCAL_SOURCE_NAME && item.recorded_fork)
     {
         drift.push(row(
             DriftState::Conflict,
