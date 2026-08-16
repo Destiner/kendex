@@ -136,7 +136,11 @@ pub fn list_bundles(env: &Env, scope: &Scope) -> Result<Vec<BundleRow>> {
     Ok(rows)
 }
 
-fn persist_and_plan(env: &Env, scope: &Scope, manifest: Manifest) -> Result<EngineReport> {
+pub(crate) fn persist_and_plan(
+    env: &Env,
+    scope: &Scope,
+    manifest: Manifest,
+) -> Result<EngineReport> {
     let lock = load_lock(&lock_path(env, scope))?;
     let mut report = plan_scope(env, scope, &manifest, &lock, &PlanOptions::default())?;
     let has_write = report
@@ -247,7 +251,7 @@ mod tests {
         fs::write(
             project.join("vstack.toml"),
             format!(
-                "schema = 2\n[sources.cat]\npath = \"{}\"\n[install]\nharnesses = [\"claude\"]\n[skills.gh]\nsource = \"cat\"\n",
+                "schema = 3\n[sources.cat]\npath = \"{}\"\n[install]\nharnesses = [\"claude\"]\n[skills.gh]\nsource = \"cat\"\n",
                 source.display()
             ),
         )

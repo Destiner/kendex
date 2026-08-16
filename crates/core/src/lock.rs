@@ -10,10 +10,13 @@ use crate::fs::{atomic_write, read_if_exists};
 use crate::manifest::Method;
 use crate::model::{HarnessId, ItemKind, Scope};
 
-/// Current lock version. Version 1 (v0.1) still loads — the shape is
-/// compatible and the next lock write records the current version. A lock
-/// newer than this build refuses to load.
-pub const LOCK_VERSION: u32 = 2;
+/// Current lock version. Versions 1 (v0.1) and 2 still load — the shapes
+/// are compatible and the next lock write records the current version. A
+/// lock newer than this build refuses to load. Version 3 added
+/// `source_commit` and `rendered_hash`; the bump is what stops an older
+/// build from reading the lock, dropping both on its next write, and
+/// erasing the record that tells an edit from an update.
+pub const LOCK_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
 pub struct Lock {
@@ -99,6 +102,18 @@ pub struct LockEntry {
     pub installed_at: String,
     /// Source bytes + the manifest sections that shaped the artifact.
     pub source_hash: String,
+    /// The source commit the bytes came from, for remotes. Cache, like the
+    /// rest of the lock: losing it costs the Updates page its "current
+    /// version" until the next apply records it again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_commit: Option<String>,
+    /// What the apply wrote to disk (file/tree artifacts only) — the anchor
+    /// that tells a later pass whether the disk moved because upstream did
+    /// or because the user edited it. Absent on pre-upgrade entries; the
+    /// next apply backfills it, and until then an ambiguous divergence is
+    /// reported as a conflict, never overwritten.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rendered_hash: Option<String>,
     pub enabled: bool,
     /// Agents only: the source's skill set at last sync, so upstream
     /// additions merge in while user removals stay durable — deterministic
@@ -267,6 +282,8 @@ mod tests {
                 method: Method::Symlink,
                 installed_at: crate::clock::timestamp(),
                 source_hash: "abc".into(),
+                source_commit: None,
+                rendered_hash: None,
                 enabled: true,
                 upstream_skills: None,
                 emitted: None,

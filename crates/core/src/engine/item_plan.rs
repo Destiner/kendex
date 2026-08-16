@@ -22,6 +22,36 @@ pub(super) struct PlanSink<'a> {
     pub(super) written: &'a mut Written,
 }
 
+/// An item wanted at two revisions at once writes nothing: the conflict
+/// row says so, the existing install and its record stay exactly as they
+/// were, and the expansion's warning already names the fix. Returns true
+/// when the item was held back this way.
+pub(super) fn hold_rev_conflict(
+    item: &Desired,
+    scope: &Scope,
+    lock: &Lock,
+    conflicts: &BTreeSet<(crate::model::ItemKind, String)>,
+    sink: &mut PlanSink,
+) -> bool {
+    if !conflicts.contains(&(item.kind, item.name.clone())) {
+        return false;
+    }
+    sink.drift.push(DriftRow {
+        kind: item.kind,
+        name: item.name.clone(),
+        harness: item.harness,
+        scope: scope.clone(),
+        state: DriftState::Conflict,
+        detail: "wanted at two different revisions — nothing was changed".into(),
+    });
+    if let Some(entry) = lock.entries.get(&item.key) {
+        sink.new_lock
+            .entries
+            .insert(item.key.clone(), entry.clone());
+    }
+    true
+}
+
 /// `owned` holds every path an earlier install wrote under another kind's
 /// name: a codex command lands as a skill tree, and the skill that later
 /// claims that name is replacing our own output, not adopting a stranger's.
@@ -107,6 +137,8 @@ pub(super) fn plan_item(
             method: item.method,
             installed_at,
             source_hash: item.hash.clone(),
+            source_commit: item.source_commit.clone(),
+            rendered_hash: rendered_hash(&item.artifact),
             enabled: item.enabled,
             upstream_skills: item.upstream_skills.clone(),
             emitted: item.emitted.clone(),
@@ -114,6 +146,19 @@ pub(super) fn plan_item(
         },
     );
     Ok(())
+}
+
+/// What this artifact leaves on disk, for edit detection later. Only file
+/// and tree artifacts have a meaningful disk identity; a registration's
+/// shared config file holds other people's keys, so hashing it would read
+/// every unrelated settings change as an edit of ours.
+fn rendered_hash(artifact: &Artifact) -> Option<String> {
+    match artifact {
+        Artifact::File { .. } | Artifact::Tree { .. } => {
+            Some(super::desired::artifact_disk_hash(artifact))
+        }
+        Artifact::Registration { .. } => None,
+    }
 }
 
 /// A hook the tool only reads is named as such wherever the plan is shown.

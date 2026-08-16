@@ -22,6 +22,7 @@ pub struct AddArgs {
     pub all: bool,
     pub clobber: bool,
     pub no_auto_skills: bool,
+    pub hold: bool,
 }
 
 fn split(values: &[String]) -> Vec<String> {
@@ -77,6 +78,7 @@ pub fn run(env: &Env, args: AddArgs) -> CliResult {
         no_auto_skills: args.no_auto_skills,
         optional: split(&args.optional),
         bundles,
+        hold: args.hold,
     };
     let report = match ops::add(env, &scope, &request) {
         Err(vstack_core::error::CoreError::SourcePending { .. }) => {

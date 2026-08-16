@@ -25,6 +25,10 @@ pub struct Desired {
     pub method: Method,
     pub source_name: String,
     pub provenance: String,
+    /// The source commit this item's bytes came from, when the source is a
+    /// remote — the item's own pin when it has one, the source resolution
+    /// otherwise. The lock records it; the Updates page reads it back.
+    pub source_commit: Option<String>,
     pub hash: String,
     pub upstream_skills: Option<Vec<String>>,
     /// Set when the artifact is not this kind's native form — the lock
@@ -92,6 +96,14 @@ pub struct DesiredState {
     /// nothing has altered it, which is worth doing once and wasteful to
     /// repeat for every item the source carries.
     pub sources: BTreeMap<String, SourceState>,
+    /// Resolutions for item-level pins, keyed `(source, rev)` — kept apart
+    /// from `sources` so the lock's per-source record never picks up a
+    /// commit only one pinned item reads.
+    pub pinned: BTreeMap<(String, String), SourceState>,
+    /// Items wanted at two different revisions at once. One filesystem
+    /// identity exists, so nothing is written for these: the plan reports
+    /// the conflict and leaves what is installed alone.
+    pub rev_conflicts: BTreeSet<(ItemKind, String)>,
 }
 
 impl DesiredState {
@@ -201,7 +213,7 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
     for kind in super::expansion::PLANNED_KINDS {
         for (name, planned) in expansion.of(kind) {
             let decl = &planned.decl;
-            let Some((root, provenance)) =
+            let Some((root, provenance, source_commit)) =
                 resolve_source(env, scope, name, decl, manifest, &mut state)?
             else {
                 continue;
@@ -248,6 +260,7 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
                 decl,
                 item_path: &item_path,
                 provenance: &provenance,
+                source_commit: source_commit.as_deref(),
                 harnesses,
                 reasons: &reasons,
             };
@@ -317,6 +330,7 @@ pub(super) struct ItemCtx<'a> {
     pub(super) decl: &'a ItemDecl,
     pub(super) item_path: &'a std::path::Path,
     pub(super) provenance: &'a str,
+    pub(super) source_commit: Option<&'a str>,
     pub(super) harnesses: Vec<HarnessId>,
     reasons: &'a BTreeMap<HarnessId, BTreeSet<crate::lock::Reason>>,
 }

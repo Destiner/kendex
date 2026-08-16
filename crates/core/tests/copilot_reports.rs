@@ -55,7 +55,7 @@ fn fixture(harnesses: &str, declarations: &str) -> Fixture {
     fs::write(
         project.join("vstack.toml"),
         format!(
-            "schema = 2\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [{harnesses}]\nmethod = \"symlink\"\n\n{declarations}",
+            "schema = 3\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [{harnesses}]\nmethod = \"symlink\"\n\n{declarations}",
             source.display()
         ),
     )

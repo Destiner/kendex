@@ -30,7 +30,7 @@ fn fixture(plugins: &str) -> Fixture {
     fs::create_dir_all(manifest.parent().unwrap()).unwrap();
     fs::write(
         &manifest,
-        format!("schema = 2\n\n[install]\nharnesses = [\"claude\", \"copilot\"]\n\n{plugins}"),
+        format!("schema = 3\n\n[install]\nharnesses = [\"claude\", \"copilot\"]\n\n{plugins}"),
     )
     .unwrap();
     Fixture { env, _tmp: tmp }

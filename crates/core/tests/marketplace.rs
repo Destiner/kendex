@@ -73,7 +73,7 @@ fn fixture(harnesses: &str, declarations: &str) -> Fixture {
         &project,
         "vstack.toml",
         &format!(
-            "schema = 2\n\n[sources.market]\npath = \"{}\"\n\n[sources.plain]\npath = \"{}\"\n\n[install]\nharnesses = [{harnesses}]\nmethod = \"symlink\"\n\n{declarations}",
+            "schema = 3\n\n[sources.market]\npath = \"{}\"\n\n[sources.plain]\npath = \"{}\"\n\n[install]\nharnesses = [{harnesses}]\nmethod = \"symlink\"\n\n{declarations}",
             market.display(),
             plain.display()
         ),

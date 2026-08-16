@@ -319,6 +319,9 @@ fn convert_lock(
                             .and_then(|h| h.as_str())
                             .unwrap_or("")
                     ),
+                    // v1 recorded neither; the first refresh fills both in.
+                    source_commit: None,
+                    rendered_hash: None,
                     enabled: true,
                     upstream_skills: None,
                     emitted: None,

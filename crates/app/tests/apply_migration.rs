@@ -79,7 +79,7 @@ fn apply_performs_the_upgrade_the_preview_promised() {
     let migrated = fs::read_to_string(&f.manifest_path).unwrap();
     assert_eq!(
         migrated,
-        original.replacen("schema = 1", "schema = 2", 1),
+        original.replacen("schema = 1", "schema = 3", 1),
         "the upgrade must change the schema line and nothing else"
     );
 

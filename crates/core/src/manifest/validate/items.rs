@@ -45,6 +45,20 @@ pub(super) fn validate_items(table: &Table, findings: &mut Vec<Finding>) {
         .and_then(Value::as_table)
         .map(|s| s.keys().cloned().collect())
         .unwrap_or_default();
+    let repo_sources: Vec<String> = table
+        .get("sources")
+        .and_then(Value::as_table)
+        .map(|sources| {
+            sources
+                .iter()
+                .filter(|(_, decl)| {
+                    decl.as_table()
+                        .is_some_and(|decl| decl.get("repo").is_some_and(|v| v.is_str()))
+                })
+                .map(|(name, _)| name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
     for &kind_table in ITEM_TABLES {
         let Some(items) = table.get(kind_table).and_then(Value::as_table) else {
             continue;
@@ -88,7 +102,7 @@ pub(super) fn validate_items(table: &Table, findings: &mut Vec<Finding>) {
             };
             match decl.get("source").and_then(Value::as_str) {
                 None => findings.push(Finding {
-                    location,
+                    location: location.clone(),
                     problem: "missing source".into(),
                     fix: "add source = \"<source-name>\" (or \"local\")".into(),
                 }),
@@ -97,7 +111,7 @@ pub(super) fn validate_items(table: &Table, findings: &mut Vec<Finding>) {
                         && !source_names.iter().any(|s| s == source)
                     {
                         findings.push(Finding {
-                            location,
+                            location: location.clone(),
                             problem: format!("references undeclared source '{source}'"),
                             fix: format!(
                                 "declare [sources.{source}] or change source to one of: {}",
@@ -109,6 +123,95 @@ pub(super) fn validate_items(table: &Table, findings: &mut Vec<Finding>) {
                             ),
                         });
                     }
+                }
+            }
+            validate_rev(kind_table, name, decl, &location, &repo_sources, findings);
+        }
+    }
+}
+
+/// An item's rev is a hold, and a hold that can move is not one: only the
+/// full commit id is immutable — a tag or branch here would re-resolve on
+/// refresh, the very drift holding is meant to prevent. And only a repo
+/// source has revisions to hold at.
+fn validate_rev(
+    kind_table: &str,
+    name: &str,
+    decl: &Table,
+    location: &str,
+    repo_sources: &[String],
+    findings: &mut Vec<Finding>,
+) {
+    let Some(rev) = decl.get("rev") else {
+        return;
+    };
+    if !rev.as_str().is_some_and(crate::remote::store::is_pin) {
+        findings.push(Finding {
+            location: location.to_owned(),
+            problem: "an item's rev must be a full commit id".into(),
+            fix: format!(
+                "run `vstack pin {} {name} <version>` to resolve a tag or branch to its commit",
+                kind_table.strip_suffix('s').unwrap_or(kind_table)
+            ),
+        });
+    }
+    if !decl
+        .get("source")
+        .and_then(Value::as_str)
+        .is_some_and(|source| repo_sources.iter().any(|s| s == source))
+    {
+        findings.push(Finding {
+            location: location.to_owned(),
+            problem: "only an item from a repo source has revisions".into(),
+            fix: "remove rev, or point this item's source at a repo".into(),
+        });
+    }
+}
+
+/// `[forks.<kind>.<name>]` records where each fork came from. User-editable
+/// TOML, so a malformed entry gets a finding, never a silent drop.
+pub(super) fn validate_forks(table: &Table, findings: &mut Vec<Finding>) {
+    let kinds: Vec<&str> = crate::model::ItemKind::ALL
+        .into_iter()
+        .map(crate::model::ItemKind::name)
+        .collect();
+    let Some(forks) = table.get("forks").and_then(Value::as_table) else {
+        return;
+    };
+    for (kind, entries) in forks {
+        if !kinds.contains(&kind.as_str()) {
+            findings.push(Finding {
+                location: format!("forks.{kind}"),
+                problem: format!("unknown kind '{kind}'"),
+                fix: format!("use one of: {}", kinds.join(", ")),
+            });
+            continue;
+        }
+        let Some(entries) = entries.as_table() else {
+            findings.push(Finding {
+                location: format!("forks.{kind}"),
+                problem: "forks are grouped by kind, then name".into(),
+                fix: format!("write [forks.{kind}.<name>] with source and forked-at"),
+            });
+            continue;
+        };
+        for (name, provenance) in entries {
+            let location = format!("forks.{kind}.{name}");
+            let Some(provenance) = provenance.as_table() else {
+                findings.push(Finding {
+                    location,
+                    problem: "a fork records where it came from".into(),
+                    fix: format!("write [forks.{kind}.{name}] with source and forked-at"),
+                });
+                continue;
+            };
+            for required in ["source", "forked-at"] {
+                if !provenance.get(required).is_some_and(|v| v.is_str()) {
+                    findings.push(Finding {
+                        location: location.clone(),
+                        problem: format!("missing {required}"),
+                        fix: format!("add {required} = \"…\""),
+                    });
                 }
             }
         }

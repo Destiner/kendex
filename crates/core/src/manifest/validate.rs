@@ -39,6 +39,7 @@ const TOP_LEVEL: &[&str] = &[
     "agent-frontmatter",
     "custom-hooks",
     "project-skills-dir",
+    "forks",
 ];
 
 /// What one `[sources.<name>]` table may hold. `rev` names the revision of
@@ -99,6 +100,7 @@ pub fn validate(table: &Table) -> Vec<Finding> {
     items::validate_items(table, &mut findings);
     items::validate_plugins(table, &mut findings);
     items::validate_dependency_choices(table, &mut findings);
+    items::validate_forks(table, &mut findings);
     validate_frontmatter(table, &mut findings);
     validate_hooks(table, &mut findings);
     findings

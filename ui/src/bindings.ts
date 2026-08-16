@@ -76,6 +76,11 @@ export const commands = {
 	"agent-frontmatter"?: { [key in string]: { [key in string]: FrontmatterOverrides_Serialize } },
 	"custom-hooks"?: CustomHook_Serialize[],
 	"project-skills-dir"?: string | null,
+	/**
+	 *  Forked items by kind and name — `[forks.skill.<name>]`. The name is
+	 *  the item's installed name, unchanged by forking.
+	 */
+	forks?: Partial<{ [key in ItemKind]: { [key in string]: ForkProvenance_Serialize } }>,
 } | null, string>(__TAURI_INVOKE("get_manifest", { scope })),
 	/**  Write an edited manifest and reconcile the scope to it. */
 	updateManifest: (scope: Scope, manifest: Manifest_Deserialize) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("update_manifest", { scope, manifest })),
@@ -343,6 +348,44 @@ export type Finding = {
 	remediation: string,
 };
 
+/**
+ *  Where a fork came from. A fork keeps the item's installed name — the
+ *  declaration just switches to the local source, so nothing that depends
+ *  on the name breaks — and this records what it replaced. Manifest, not
+ *  lock, because the package page keeps reading it after any cache loss.
+ */
+export type ForkProvenance = ForkProvenance_Serialize | ForkProvenance_Deserialize;
+
+/**
+ *  Where a fork came from. A fork keeps the item's installed name — the
+ *  declaration just switches to the local source, so nothing that depends
+ *  on the name breaks — and this records what it replaced. Manifest, not
+ *  lock, because the package page keeps reading it after any cache loss.
+ */
+export type ForkProvenance_Deserialize = {
+	/**  Declared source name the original installed from. */
+	source: string,
+	repo?: string | null,
+	/**  The source commit the edited install was based on, when known. */
+	commit?: string | null,
+	"forked-at": string,
+};
+
+/**
+ *  Where a fork came from. A fork keeps the item's installed name — the
+ *  declaration just switches to the local source, so nothing that depends
+ *  on the name breaks — and this records what it replaced. Manifest, not
+ *  lock, because the package page keeps reading it after any cache loss.
+ */
+export type ForkProvenance_Serialize = {
+	/**  Declared source name the original installed from. */
+	source: string,
+	repo?: string | null,
+	/**  The source commit the edited install was based on, when known. */
+	commit?: string | null,
+	"forked-at": string,
+};
+
 /**  Typed `[agent-frontmatter.<harness>.<agent>]` overrides — v1's field set. */
 export type FrontmatterOverrides = FrontmatterOverrides_Serialize | FrontmatterOverrides_Deserialize;
 
@@ -409,6 +452,14 @@ export type ItemDecl_Deserialize = {
 	source: string,
 	harnesses: HarnessId[] | null,
 	method: Method | null,
+	/**
+	 *  Which revision of the source this item reads, outranking the
+	 *  source-level `rev`. Same semantics: a full commit id pins, a tag or
+	 *  branch tracks. Present means the item holds here while the source
+	 *  moves — this is what "manual updates" is; absent means the item
+	 *  follows the source.
+	 */
+	rev?: string | null,
 	enabled?: boolean,
 };
 
@@ -417,6 +468,14 @@ export type ItemDecl_Serialize = {
 	source: string,
 	harnesses?: HarnessId[] | null,
 	method?: Method | null,
+	/**
+	 *  Which revision of the source this item reads, outranking the
+	 *  source-level `rev`. Same semantics: a full commit id pins, a tag or
+	 *  branch tracks. Present means the item holds here while the source
+	 *  moves — this is what "manual updates" is; absent means the item
+	 *  follows the source.
+	 */
+	rev?: string | null,
 	enabled: boolean,
 };
 
@@ -563,6 +622,11 @@ export type Manifest_Deserialize = {
 	"agent-frontmatter"?: { [key in string]: { [key in string]: FrontmatterOverrides_Deserialize } },
 	"custom-hooks"?: CustomHook_Deserialize[],
 	"project-skills-dir": string | null,
+	/**
+	 *  Forked items by kind and name — `[forks.skill.<name>]`. The name is
+	 *  the item's installed name, unchanged by forking.
+	 */
+	forks?: Partial<{ [key in ItemKind]: { [key in string]: ForkProvenance_Deserialize } }>,
 };
 
 export type Manifest_Serialize = {
@@ -614,6 +678,11 @@ export type Manifest_Serialize = {
 	"agent-frontmatter"?: { [key in string]: { [key in string]: FrontmatterOverrides_Serialize } },
 	"custom-hooks"?: CustomHook_Serialize[],
 	"project-skills-dir"?: string | null,
+	/**
+	 *  Forked items by kind and name — `[forks.skill.<name>]`. The name is
+	 *  the item's installed name, unchanged by forking.
+	 */
+	forks?: Partial<{ [key in ItemKind]: { [key in string]: ForkProvenance_Serialize } }>,
 };
 
 export type Method = "symlink" | "copy";

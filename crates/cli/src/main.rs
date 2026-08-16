@@ -36,6 +36,8 @@ enum Command {
         #[command(flatten)]
         flags: AddFlags,
     },
+    /// Hold an item at a version, or let it follow its source again
+    Pin(commands::pin::PinArgs),
     /// Remove installed items
     Remove {
         names: Vec<String>,
@@ -217,6 +219,7 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
     };
     match command {
         Command::Add { source, flags } => commands::add::run(&env, flags.into_args(source))?,
+        Command::Pin(args) => commands::pin::run(&env, args)?,
         Command::Remove {
             names,
             global,

@@ -13,7 +13,10 @@ pub use validate::{Finding, validate};
 /// Current manifest schema. Schema 1 (v0.1) still loads; the first apply
 /// upgrades it in place through the normal journaled plan. A schema newer
 /// than this build refuses to load — downgrades must never corrupt.
-pub const MANIFEST_SCHEMA: u32 = 2;
+/// Schema 3 added per-item `rev` and `[forks]`; an older build saving a
+/// schema-3 manifest would silently drop them, which is what the refusal
+/// protects.
+pub const MANIFEST_SCHEMA: u32 = 3;
 pub const OLDEST_READABLE_SCHEMA: u32 = 1;
 pub const DEFAULT_SOURCE_NAME: &str = "vstack";
 pub const DEFAULT_SOURCE_REPO: &str = "vanillagreencom/vstack";
@@ -68,6 +71,13 @@ pub struct ItemDecl {
     pub harnesses: Option<Vec<HarnessId>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub method: Option<Method>,
+    /// Which revision of the source this item reads, outranking the
+    /// source-level `rev`. Same semantics: a full commit id pins, a tag or
+    /// branch tracks. Present means the item holds here while the source
+    /// moves — this is what "manual updates" is; absent means the item
+    /// follows the source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rev: Option<String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
 }
@@ -78,6 +88,7 @@ impl ItemDecl {
             source: source.to_owned(),
             harnesses: None,
             method: None,
+            rev: None,
             enabled: true,
         }
     }
@@ -165,6 +176,23 @@ fn default_hook_agents() -> HookAgents {
     HookAgents::One("all".to_owned())
 }
 
+/// Where a fork came from. A fork keeps the item's installed name — the
+/// declaration just switches to the local source, so nothing that depends
+/// on the name breaks — and this records what it replaced. Manifest, not
+/// lock, because the package page keeps reading it after any cache loss.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub struct ForkProvenance {
+    /// Declared source name the original installed from.
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    /// The source commit the edited install was based on, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+    pub forked_at: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "kebab-case")]
 pub struct Manifest {
@@ -242,6 +270,10 @@ pub struct Manifest {
     pub custom_hooks: Vec<CustomHook>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_skills_dir: Option<String>,
+    /// Forked items by kind and name — `[forks.skill.<name>]`. The name is
+    /// the item's installed name, unchanged by forking.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub forks: BTreeMap<crate::model::ItemKind, BTreeMap<String, ForkProvenance>>,
 }
 
 impl Manifest {

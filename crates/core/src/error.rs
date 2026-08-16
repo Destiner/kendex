@@ -63,7 +63,13 @@ pub enum CoreError {
         requested: String,
     },
 
-    #[error("{target} is a foreign symlink (→ {points_to}) — conflict, not a clobber target")]
+    // Said as what a person would see if they looked: the name they clicked
+    // is a shortcut somebody else set up, and the files are somewhere else.
+    // "Foreign symlink, not a clobber target" is the same fact in words that
+    // only mean anything to whoever wrote the check.
+    #[error(
+        "{target} is a shortcut to {points_to}, not a folder of its own.          vstack only takes over files it can move, and moving this would          break whatever set the shortcut up."
+    )]
     ForeignSymlink { target: PathBuf, points_to: PathBuf },
 
     #[error("scope is busy: another apply holds {lock}")]
@@ -98,6 +104,24 @@ pub enum CoreError {
 
     #[error("'{name}' not found in source '{source_name}'")]
     ItemNotInSource { name: String, source_name: String },
+
+    #[error(
+        "source '{source_name}' is not a repository — only items from a repo source have revisions; remove the item's rev"
+    )]
+    ItemRevUnsupported { source_name: String },
+
+    #[error(
+        "no {} named '{name}' is declared in this scope — only declared items can be held at a version",
+        kind.name()
+    )]
+    NotDeclared { kind: ItemKind, name: String },
+
+    #[error("'{name}' does not exist in {repo} at {}", &commit[..commit.len().min(7)])]
+    ItemMissingAtRev {
+        name: String,
+        repo: String,
+        commit: String,
+    },
 
     #[error("no item from source '{source_name}' offers '{name}' as an optional dependency")]
     NoSuchOptional { name: String, source_name: String },

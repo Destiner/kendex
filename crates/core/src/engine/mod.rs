@@ -203,6 +203,9 @@ pub fn plan_scope(
             new_lock: &mut new_lock,
             written: &mut written,
         };
+        if item_plan::hold_rev_conflict(item, scope, lock, &state.rev_conflicts, &mut sink) {
+            continue;
+        }
         plan_item(item, scope, lock, &emitted_paths, &mut sink)?;
     }
 

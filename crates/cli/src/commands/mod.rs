@@ -7,6 +7,7 @@ pub mod engine_common;
 pub mod import;
 pub mod init;
 pub mod list;
+pub mod pin;
 pub mod project;
 pub mod refresh;
 pub mod remove;

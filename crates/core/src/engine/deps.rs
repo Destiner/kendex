@@ -87,13 +87,20 @@ pub(super) fn expand(
     while let Some(parent) = queue.pop_front() {
         // A declaration no tool here can hold installs nothing, so it needs
         // nothing either; the declaration itself reports that.
-        let Some(source) = expansion.source_of(ItemKind::Skill, &parent) else {
+        let Some(parent_decl) = expansion.decl_of(ItemKind::Skill, &parent) else {
             continue;
         };
+        let source = parent_decl.source.clone();
         let harnesses = expansion.harnesses(ItemKind::Skill, &parent);
         let mut found = Vec::new();
         let wanted = wanted_by(
-            &parent, &source, &harnesses, manifest, catalogs, state, &mut found,
+            &parent,
+            &parent_decl,
+            &harnesses,
+            manifest,
+            catalogs,
+            state,
+            &mut found,
         );
         findings.insert(parent.clone(), found);
         for (dep, harnesses) in wanted {
@@ -104,6 +111,10 @@ pub(super) fn expand(
                 // A derived installation takes the scope's own default
                 // method: its parent's is a choice about the parent.
                 method: None,
+                // The revision is not: a pinned parent read its dependency
+                // list from the pinned catalog, and the dependency's bytes
+                // must come from the same place.
+                rev: parent_decl.rev.clone(),
                 enabled: true,
             };
             let mut grew = false;
@@ -144,14 +155,15 @@ pub(super) fn expand(
 #[allow(clippy::too_many_arguments)]
 fn wanted_by(
     parent: &str,
-    source: &str,
+    parent_decl: &crate::manifest::ItemDecl,
     harnesses: &[HarnessId],
     manifest: &Manifest,
     catalogs: &mut Catalogs,
     state: &mut DesiredState,
     found: &mut Vec<ItemWarning>,
 ) -> Vec<(String, Vec<HarnessId>)> {
-    let Some((sealed, config)) = catalogs.get(source, state) else {
+    let source = parent_decl.source.as_str();
+    let Some((sealed, config)) = catalogs.get(source, parent_decl.rev.as_deref(), state) else {
         return Vec::new();
     };
     let Some(dir) = find_item(sealed, config, ItemKind::Skill, parent) else {

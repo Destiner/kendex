@@ -267,6 +267,7 @@ pub(super) fn desired_agent(
             method: Method::Copy,
             source_name: ctx.decl.source.clone(),
             provenance: ctx.provenance.to_owned(),
+            source_commit: ctx.source_commit.map(str::to_owned),
             hash: installation_hash(
                 ctx.sealed,
                 ctx.item_path,

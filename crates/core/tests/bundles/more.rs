@@ -104,7 +104,7 @@ fn a_marketplace_plugin_installs_as_a_bundle() {
         &f.project,
         "vstack.toml",
         &format!(
-            "schema = 2\n\n[sources.market]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[bundles.\"data-science\"]\nsource = \"market\"\n",
+            "schema = 3\n\n[sources.market]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[bundles.\"data-science\"]\nsource = \"market\"\n",
             market.display()
         ),
     );
@@ -166,6 +166,36 @@ fn a_member_the_catalog_lacks_is_a_finding_naming_it() {
     apply::execute(&f.env, &report.plan, None).unwrap();
     assert!(installed(&f, ItemKind::Skill, "dev"), "the set was blocked");
     assert!(!installed(&f, ItemKind::Skill, "deploy"));
+}
+
+/// A member whose name cannot be a file — here one a shell would expand
+/// once it sat inside a hook command — is not on offer, however real the
+/// file behind it is. A catalog is adversarial input.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_member_whose_name_a_shell_would_expand_is_refused() {
+    let f = fixture("[bundles.starter]\nsource = \"cat\"\n");
+    let hostile = "x$(id)";
+    write(
+        &f.source,
+        &format!("hooks/{hostile}.sh"),
+        "#!/usr/bin/env bash\n# ---\n# name: guard\n# event: PreToolUse\n# description: nope\n# ---\nexit 0\n",
+    );
+    catalog_bundles(
+        &f.source,
+        &format!("[bundles.starter]\nskills = [\"docs\"]\nhooks = [\"{hostile}\"]\n"),
+    );
+
+    let report = audit(&f.env, &f.scope).unwrap();
+    assert!(
+        report.warnings.iter().any(|w| w.name == hostile),
+        "the member is reported"
+    );
+    apply::execute(&f.env, &report.plan, None).unwrap();
+    assert!(installed(&f, ItemKind::Skill, "docs"));
+    assert!(!f.project.join(".claude/hooks").exists());
+    let settings = f.project.join(".claude/settings.json");
+    assert!(!settings.exists() || !fs::read_to_string(&settings).unwrap().contains("$(id)"));
 }
 
 /// A name the catalog offers no set under is reported rather than silently

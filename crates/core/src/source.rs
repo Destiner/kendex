@@ -115,13 +115,15 @@ pub fn resolve(env: &Env, scope: &Scope, name: &str, manifest: &Manifest) -> Res
         }
         // Last resort: the commit this scope last resolved to. A tag that
         // has since been deleted upstream, or a mirror that was cleaned
-        // away, still leaves the installed commit readable here.
-        if let Some(root) = last_resolved(env, scope, name, repo, decl) {
+        // away, still leaves the installed commit readable here — and the
+        // record knows which commit that is, so the answer carries it
+        // rather than letting a later lock write erase an honest one.
+        if let Some((root, commit)) = last_resolved(env, scope, name, repo, decl) {
             return Ok(SourceState::Ready(ResolvedSource {
                 name: name.to_owned(),
                 root,
                 provenance: repo.clone(),
-                commit: None,
+                commit: Some(commit),
             }));
         }
         return Ok(SourceState::Pending {
@@ -144,14 +146,65 @@ fn last_resolved(
     name: &str,
     repo: &str,
     decl: &SourceDecl,
-) -> Option<PathBuf> {
+) -> Option<(PathBuf, String)> {
     let lock = crate::lock::load(&crate::lock::lock_path(env, scope)).ok()?;
     let recorded = lock.sources.get(name)?;
     if recorded.repo != repo || recorded.rev != decl.rev {
         return None;
     }
     let key = crate::remote::store::repo_key(&crate::remote::clone_url(env, &recorded.repo));
-    crate::remote::store::published(env, &key, &recorded.commit)
+    let root = crate::remote::store::published(env, &key, &recorded.commit)?;
+    Some((root, recorded.commit.clone()))
+}
+
+/// Like [`resolve`], but honoring an item-level revision override: the
+/// item's `rev` outranks the source's. Only a repo source has revisions —
+/// a rev naming a path or local source is refused with the fix in hand.
+/// The lock's last-resolved fallback is deliberately skipped: it records
+/// what the *source declaration* produced, which says nothing about an
+/// item pinned somewhere else in history.
+pub fn resolve_at(
+    env: &Env,
+    scope: &Scope,
+    name: &str,
+    manifest: &Manifest,
+    rev: Option<&str>,
+) -> Result<SourceState> {
+    let Some(rev) = rev else {
+        return resolve(env, scope, name, manifest);
+    };
+    if name == LOCAL_SOURCE_NAME {
+        return Err(CoreError::ItemRevUnsupported {
+            source_name: name.to_owned(),
+        });
+    }
+    let Some(decl) = manifest.sources.get(name) else {
+        return Err(CoreError::UnknownSource {
+            name: name.to_owned(),
+        });
+    };
+    if !decl.enabled {
+        return Ok(SourceState::Disabled {
+            name: name.to_owned(),
+        });
+    }
+    let Some(repo) = &decl.repo else {
+        return Err(CoreError::ItemRevUnsupported {
+            source_name: name.to_owned(),
+        });
+    };
+    match crate::remote::cached(env, repo, Some(rev))? {
+        Some(resolution) => Ok(SourceState::Ready(ResolvedSource {
+            name: name.to_owned(),
+            root: resolution.root,
+            provenance: repo.clone(),
+            commit: Some(resolution.commit),
+        })),
+        None => Ok(SourceState::Pending {
+            name: name.to_owned(),
+            repo: repo.clone(),
+        }),
+    }
 }
 
 /// A source's ready root, or the error that explains why content is
@@ -267,6 +320,11 @@ pub fn find_item(
     kind: ItemKind,
     name: &str,
 ) -> Option<PathBuf> {
+    // A name that cannot be a file is not on offer, whoever asks — a bundle
+    // member or a dependency is not checked anywhere else.
+    if crate::names::item_problem(name).is_some() {
+        return None;
+    }
     if let Some(registry) = &config.marketplace {
         return catalog::find(sealed, registry, kind, name);
     }

@@ -49,6 +49,9 @@ pub struct AddFlags {
     /// Skip auto-install of skills referenced by selected agents
     #[arg(long)]
     no_auto_skills: bool,
+    /// Hold what this installs at today's version (manual updates)
+    #[arg(long)]
+    hold: bool,
 }
 
 impl AddFlags {
@@ -68,6 +71,7 @@ impl AddFlags {
             all: self.all,
             clobber: self.clobber,
             no_auto_skills: self.no_auto_skills,
+            hold: self.hold,
         }
     }
 }

@@ -40,7 +40,7 @@ fn fixture(harnesses: &str, declarations: &str) -> Fixture {
     fs::write(
         project.join("vstack.toml"),
         format!(
-            "schema = 2\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [{harnesses}]\nmethod = \"symlink\"\n\n{declarations}",
+            "schema = 3\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [{harnesses}]\nmethod = \"symlink\"\n\n{declarations}",
             source.display()
         ),
     )
@@ -148,7 +148,7 @@ fn a_command_installs_as_a_skill_at_global_scope_too() {
     fs::write(
         &manifest,
         format!(
-            "schema = 2\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"codex\"]\nmethod = \"symlink\"\n\n[commands.ship]\nsource = \"cat\"\n",
+            "schema = 3\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"codex\"]\nmethod = \"symlink\"\n\n[commands.ship]\nsource = \"cat\"\n",
             f.source.display()
         ),
     )

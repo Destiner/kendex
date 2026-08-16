@@ -32,7 +32,7 @@ fn fixture() -> tempfile::TempDir {
     let project = tmp.path().join("dev/app");
     write(
         &project.join("vstack.toml"),
-        "schema = 2\n\n[sources.cat]\npath = \"catalog\"\n\n[pi-extensions.pi-widgets]\nsource = \"cat\"\n",
+        "schema = 3\n\n[sources.cat]\npath = \"catalog\"\n\n[pi-extensions.pi-widgets]\nsource = \"cat\"\n",
     );
     let package = "{\n  \"name\": \"pi-widgets\",\n  \"version\": \"2.0.0\",\n  \"pi\": { \"extensions\": [\"index.js\"] }\n}\n";
     write(
@@ -164,7 +164,7 @@ fn a_legacy_named_package_at_the_other_scope_blocks_the_scoped_name() {
     let project = tmp.path().join("dev/app");
     write(
         &project.join("vstack.toml"),
-        "schema = 2\n\n[sources.cat]\npath = \"catalog\"\n\n[pi-extensions.\"@vanillagreen/pi-hooks\"]\nsource = \"cat\"\n",
+        "schema = 3\n\n[sources.cat]\npath = \"catalog\"\n\n[pi-extensions.\"@vanillagreen/pi-hooks\"]\nsource = \"cat\"\n",
     );
     write(
         &project.join("catalog/pi-extensions/@vanillagreen/pi-hooks/package.json"),

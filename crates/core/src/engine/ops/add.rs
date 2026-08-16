@@ -34,6 +34,11 @@ pub struct AddRequest {
     /// under. What each holds derives at plan time; the manifest records only
     /// that the set is installed.
     pub bundles: Vec<String>,
+    /// Hold every declaration this request writes at the commit the source
+    /// resolves to right now — "manual updates" from the first moment. A
+    /// hold on a source without revisions (a path, local) is refused before
+    /// anything is written.
+    pub hold: bool,
 }
 
 /// Declare items (and their auto-expanded skills), then plan the scope.
@@ -42,6 +47,7 @@ pub fn add(env: &Env, scope: &Scope, request: &AddRequest) -> Result<EngineRepor
     let mut manifest = manifest_for_mutation(env, scope)?;
     let source_name = ensure_source(&mut manifest, request.source.as_deref())?;
     let ready = source::require_ready(env, scope, &source_name, &manifest)?;
+    let hold_at = hold_commit(request, &source_name, &ready)?;
     let sealed = crate::source_read::SealedSource::open(&ready.root)?;
     let config = source_config(&sealed)?;
     let lock = crate::lock::load(&lock_path(env, scope))?;
@@ -103,26 +109,13 @@ pub fn add(env: &Env, scope: &Scope, request: &AddRequest) -> Result<EngineRepor
     }
 
     for bundle in sets {
-        let decl = manifest
-            .bundles
-            .entry(bundle.name.clone())
-            .or_insert_with(|| ItemDecl::from_source(&source_name));
-        decl.source = source_name.clone();
-        if let Some(harnesses) = &request.harnesses {
-            decl.harnesses = Some(harnesses.clone());
-        }
-        if request.copy {
-            decl.method = Some(Method::Copy);
-        }
-        // Asking for the set is asking for all of it: a member held back by
-        // an earlier removal comes with it, the same way asking for an item
-        // again outranks the removal that took it away.
-        for member in &bundle.members {
-            if let Some(held) = manifest.suppressed.get_mut(&member.kind) {
-                held.retain(|suppressed| suppressed != &member.name);
-            }
-        }
-        manifest.suppressed.retain(|_, held| !held.is_empty());
+        declare_bundle(
+            &mut manifest,
+            &bundle,
+            &source_name,
+            request,
+            hold_at.as_deref(),
+        );
     }
 
     for (kind, names) in [(ItemKind::Agent, agents), (ItemKind::Skill, skills)] {
@@ -136,6 +129,7 @@ pub fn add(env: &Env, scope: &Scope, request: &AddRequest) -> Result<EngineRepor
                 &name,
                 &source_name,
                 request,
+                hold_at.as_deref(),
             )?;
         }
     }
@@ -152,6 +146,56 @@ pub fn add(env: &Env, scope: &Scope, request: &AddRequest) -> Result<EngineRepor
     Ok(report)
 }
 
+/// Declare one curated set, carried the way the request asked. Asking for
+/// the set is asking for all of it: a member held back by an earlier
+/// removal comes with it, the same way asking for an item again outranks
+/// the removal that took it away.
+fn declare_bundle(
+    manifest: &mut Manifest,
+    bundle: &crate::source::CatalogBundle,
+    source_name: &str,
+    request: &AddRequest,
+    hold_at: Option<&str>,
+) {
+    let decl = manifest
+        .bundles
+        .entry(bundle.name.clone())
+        .or_insert_with(|| ItemDecl::from_source(source_name));
+    decl.source = source_name.to_owned();
+    if let Some(harnesses) = &request.harnesses {
+        decl.harnesses = Some(harnesses.clone());
+    }
+    if request.copy {
+        decl.method = Some(Method::Copy);
+    }
+    if let Some(commit) = hold_at {
+        decl.rev = Some(commit.to_owned());
+    }
+    for member in &bundle.members {
+        if let Some(held) = manifest.suppressed.get_mut(&member.kind) {
+            held.retain(|suppressed| suppressed != &member.name);
+        }
+    }
+    manifest.suppressed.retain(|_, held| !held.is_empty());
+}
+
+/// The commit a `--hold` request freezes its declarations at. Only a
+/// remote resolves to one; a hold on anything else is refused before the
+/// first declaration is written (invariant 11).
+fn hold_commit(
+    request: &AddRequest,
+    source_name: &str,
+    ready: &crate::source::ResolvedSource,
+) -> Result<Option<String>> {
+    match (request.hold, &ready.commit) {
+        (false, _) => Ok(None),
+        (true, Some(commit)) => Ok(Some(commit.clone())),
+        (true, None) => Err(CoreError::ItemRevUnsupported {
+            source_name: source_name.to_owned(),
+        }),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn declare(
     env: &Env,
@@ -162,6 +206,7 @@ fn declare(
     name: &str,
     source_name: &str,
     request: &AddRequest,
+    hold_at: Option<&str>,
 ) -> Result<()> {
     // Invariant 4: same-source redeclare is a no-op; a name already
     // installed from elsewhere is a hard error naming the original.
@@ -188,6 +233,9 @@ fn declare(
     }
     if request.copy {
         decl.method = Some(Method::Copy);
+    }
+    if let Some(commit) = hold_at {
+        decl.rev = Some(commit.to_owned());
     }
     // Asking for something back is the plainest possible statement that it
     // is wanted, so it outranks a removal recorded earlier.

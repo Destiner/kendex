@@ -257,7 +257,7 @@ fn import_migrates_v1_files_and_is_idempotent() {
         String::from_utf8_lossy(&output.stderr)
     );
     let manifest = fs::read_to_string(proj.join("vstack.toml")).unwrap();
-    assert!(manifest.contains("schema = 2"));
+    assert!(manifest.contains("schema = 3"));
     assert!(manifest.contains("[skills.gh]"));
     assert!(!manifest.contains("agent-colors"));
     let lock = fs::read_to_string(proj.join(".vstack-lock.json")).unwrap();

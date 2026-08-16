@@ -104,7 +104,7 @@ fn installable(
     catalogs: &mut Catalogs,
     state: &mut DesiredState,
 ) -> Vec<(ItemKind, String, ItemDecl, Vec<HarnessId>)> {
-    let Some((sealed, config)) = catalogs.get(&decl.source, state) else {
+    let Some((sealed, config)) = catalogs.get(&decl.source, decl.rev.as_deref(), state) else {
         return Vec::new();
     };
     let Ok(offered) = crate::source::bundles::find(sealed, config, name) else {
@@ -145,11 +145,13 @@ fn installable(
             continue;
         }
         // A member installs the way the bundle does: same source, same
-        // tools, same method, and off while the bundle is off.
+        // tools, same method, same held revision, and off while the bundle
+        // is off.
         let member_decl = ItemDecl {
             source: decl.source.clone(),
             harnesses: decl.harnesses.clone(),
             method: decl.method,
+            rev: decl.rev.clone(),
             enabled: decl.enabled,
         };
         let harnesses = target_harnesses(&member_decl, manifest, member.kind, scope);

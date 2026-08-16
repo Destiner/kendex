@@ -14,8 +14,10 @@ use crate::source_read::SealedSource;
 
 use super::desired::DesiredState;
 
-/// The source root and provenance to build an item from, or `None` with the
-/// note that says why this declaration produces nothing this pass.
+/// The source root, provenance, and commit to build an item from, or `None`
+/// with the note that says why this declaration produces nothing this pass.
+/// An item's own `rev` outranks the source's: a pinned declaration reads its
+/// pinned commit's tree while the source resolution moves on.
 pub(super) fn resolve_source(
     env: &Env,
     scope: &Scope,
@@ -23,20 +25,37 @@ pub(super) fn resolve_source(
     decl: &ItemDecl,
     manifest: &Manifest,
     state: &mut DesiredState,
-) -> Result<Option<(PathBuf, String)>> {
-    let resolution = match state.sources.get(&decl.source) {
-        Some(resolution) => resolution.clone(),
-        None => {
-            let resolution = source::resolve(env, scope, &decl.source, manifest)?;
-            state
-                .sources
-                .insert(decl.source.clone(), resolution.clone());
-            resolution
+) -> Result<Option<(PathBuf, String, Option<String>)>> {
+    let resolution = match decl.rev.as_deref() {
+        // Pinned reads cache per (source, rev): two items pinned to the
+        // same commit share one resolution, and neither disturbs the
+        // source-level entry the lock records.
+        Some(rev) => {
+            let key = (decl.source.clone(), rev.to_owned());
+            match state.pinned.get(&key) {
+                Some(resolution) => resolution.clone(),
+                None => {
+                    let resolution =
+                        source::resolve_at(env, scope, &decl.source, manifest, Some(rev))?;
+                    state.pinned.insert(key, resolution.clone());
+                    resolution
+                }
+            }
         }
+        None => match state.sources.get(&decl.source) {
+            Some(resolution) => resolution.clone(),
+            None => {
+                let resolution = source::resolve(env, scope, &decl.source, manifest)?;
+                state
+                    .sources
+                    .insert(decl.source.clone(), resolution.clone());
+                resolution
+            }
+        },
     };
     let notes = &mut state.notes;
     match resolution {
-        SourceState::Ready(ready) => Ok(Some((ready.root, ready.provenance))),
+        SourceState::Ready(ready) => Ok(Some((ready.root, ready.provenance, ready.commit))),
         // A disabled source deactivates its installations in place; they stay
         // declared and are not drift.
         SourceState::Disabled { .. } => {
