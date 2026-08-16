@@ -157,7 +157,7 @@ impl Expansion {
         self.rev_disagreements.dedup();
         for (kind, name, kept, refused) in &self.rev_disagreements {
             let show = |rev: &Option<String>| match rev {
-                Some(rev) => format!("revision {}", &rev[..rev.len().min(7)]),
+                Some(rev) => format!("revision {}", rev.chars().take(7).collect::<String>()),
                 None => "the source's own revision".to_owned(),
             };
             state.rev_conflicts.insert((*kind, name.clone()));

@@ -222,7 +222,7 @@ export const VIEW_CHANGES_LABEL = "View changes";
 export const DISCARD_EDITS_LABEL = "Discard edits…";
 export const DISCARD_EDITS_CONFIRM_TITLE = "Discard your edits?";
 export const DISCARD_EDITS_CONFIRM_BODY =
-  "The catalog's version replaces your changes. Your edited files go to the trash, not into thin air.";
+  "The catalog's version replaces your edits to this package, and your changes are gone. Keep them as your own copy instead if you're unsure.";
 export const DISCARD_EDITS_CONFIRM_LABEL = "Discard edits";
 export const FORK_ERROR_TITLE = "Couldn't keep the edits";
 export const forkedToastLabel = (name: string): string =>
@@ -239,3 +239,4 @@ export const FORKED_ATTENTION_DETAIL =
 export const installedAutoToastLabel = (name: string): string =>
   `Installed ${name} — it will keep itself up to date`;
 export const UPDATE_MANUALLY_ACTION = "Update manually instead";
+export const FOLLOW_SOURCE_TOAST = "Now updating automatically";

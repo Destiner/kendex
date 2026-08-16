@@ -38,6 +38,9 @@ struct Carried {
     by: String,
     /// The edge each set adds, against the tools that set installs on.
     edges: Vec<(Reason, Vec<HarnessId>)>,
+    /// Decls from other bundles that disagree on the held revision — added
+    /// alongside the winner so the rev-conflict check fires.
+    rivals: Vec<ItemDecl>,
 }
 
 pub(super) fn expand(
@@ -68,6 +71,7 @@ pub(super) fn expand(
                         decl: member_decl,
                         by: name.clone(),
                         edges: vec![edge],
+                        rivals: Vec::new(),
                     });
                 }
                 Entry::Occupied(mut slot) => {
@@ -77,16 +81,38 @@ pub(super) fn expand(
                     {
                         state.warnings.push(warning);
                     }
+                    // A member two bundles hold at different revisions is a
+                    // conflict, not a silent first-wins: record the second
+                    // decl so the rev-disagreement machinery raises it (one
+                    // filesystem identity cannot be both revisions).
+                    if held.decl.rev != member_decl.rev {
+                        held.rivals.push(member_decl.clone());
+                    }
                     held.decl.enabled |= member_decl.enabled;
                     held.edges.push(edge);
                 }
             }
         }
     }
-    for ((kind, name), Carried { decl, edges, .. }) in carried {
+    for (
+        (kind, name),
+        Carried {
+            decl,
+            edges,
+            rivals,
+            ..
+        },
+    ) in carried
+    {
         for (reason, harnesses) in edges {
-            for harness in harnesses {
-                expansion.add(kind, &name, &decl, harness, reason.clone());
+            for harness in &harnesses {
+                expansion.add(kind, &name, &decl, *harness, reason.clone());
+                // Feed each rival rev on the same tools: two decls at
+                // different revs for one item is what the conflict check
+                // looks for.
+                for rival in &rivals {
+                    expansion.add(kind, &name, rival, *harness, reason.clone());
+                }
             }
         }
     }

@@ -157,10 +157,11 @@ export const commands = {
 	packageFork: (scope: Scope, kind: ItemKind, name: string, harness: HarnessId) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("package_fork", { scope, kind, name, harness })),
 	forkRename: (scope: Scope, kind: ItemKind, oldName: string, newName: string) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("fork_rename", { scope, kind, oldName, newName })),
 	/**
-	 *  Apply a scope with the user's edits explicitly discarded — the one
-	 *  door back to "the catalog's version wins", and it only opens by name.
+	 *  Apply a scope with one package's edits discarded — the door back to
+	 *  "the catalog's version wins", scoped to the package the user named so
+	 *  a neighbour's edits are never taken along.
 	 */
-	applyDiscardEdits: (scope: Scope) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("apply_discard_edits", { scope })),
+	applyDiscardEdits: (scope: Scope, name: string) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("apply_discard_edits", { scope, name })),
 	packageFiles: (scope: Scope, kind: ItemKind, name: string) => typedError<PackageFile[], string>(__TAURI_INVOKE("package_files", { scope, kind, name })),
 	packageFile: (scope: Scope, kind: ItemKind, name: string, path: string) => typedError<ItemSource, string>(__TAURI_INVOKE("package_file", { scope, kind, name, path })),
 	packageReadme: (scope: Scope, kind: ItemKind, name: string) => typedError<{

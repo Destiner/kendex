@@ -3,6 +3,8 @@
 //! the two ways out are explicit: keep it as a fork, or discard the edits.
 #![cfg(unix)]
 
+mod forks;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -179,6 +181,50 @@ fn edited_and_moved_upstream_reads_as_both_and_discard_is_explicit() {
 
 #[test]
 #[allow(clippy::unwrap_used)]
+fn discarding_one_packages_edits_leaves_another_packages_edits_held() {
+    let w = world();
+    write_skill(&w.upstream, "gh", "Upstream gh.");
+    write_skill(&w.upstream, "lint", "Upstream lint.");
+    commit(&w.upstream, "one");
+    declare(
+        &w,
+        "[skills.gh]\nsource = \"cat\"\n\n[skills.lint]\nsource = \"cat\"\n",
+    );
+    sync_and_apply(&w);
+
+    let gh = w.home.join("app/.agents/skills/gh/SKILL.md");
+    let lint = w.home.join("app/.agents/skills/lint/SKILL.md");
+    fs::write(&gh, "my gh edit").unwrap();
+    fs::write(&lint, "my lint edit").unwrap();
+
+    // Discard gh only. lint's edit must survive untouched.
+    let manifest = manifest::load_for_mutation(&manifest::manifest_path(&w.env, &w.scope))
+        .unwrap()
+        .unwrap();
+    let lock = load_lock(&lock_path(&w.env, &w.scope)).unwrap();
+    let report = plan_scope(
+        &w.env,
+        &w.scope,
+        &manifest,
+        &lock,
+        &PlanOptions {
+            overwrite_edited_names: Some(vec!["gh".to_owned()]),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    apply::execute(&w.env, &report.plan, None).unwrap();
+
+    assert!(fs::read_to_string(&gh).unwrap().contains("Upstream gh."));
+    assert_eq!(
+        fs::read_to_string(&lint).unwrap(),
+        "my lint edit",
+        "discarding one package's edits took another's"
+    );
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
 fn a_hand_made_copy_of_the_desired_bytes_is_clean() {
     let w = world();
     write_skill(&w.upstream, "gh", "One.");
@@ -211,88 +257,58 @@ fn a_deleted_install_is_missing_not_an_edit() {
 
 #[test]
 #[allow(clippy::unwrap_used)]
-fn fork_keeps_the_name_pauses_updates_and_survives_refresh() {
+fn an_edit_made_while_disabled_survives_being_re_enabled() {
     let w = world();
     write_skill(&w.upstream, "gh", "Upstream.");
     commit(&w.upstream, "one");
-    declare(&w, "[skills.gh]\nsource = \"cat\"\n");
-    sync_and_apply(&w);
-
+    // Agents render to a File artifact with a `.disabled` sibling — the
+    // path that would otherwise be missed.
+    let dir = w.upstream.join("agents");
+    fs::create_dir_all(&dir).unwrap();
     fs::write(
-        skill_file(&w),
-        "---\nname: gh\ndescription: mine\n---\nMy fork.\n",
+        dir.join("rev.md"),
+        "---\nname: rev\ndescription: reviewer\n---\nReview carefully.\n",
     )
     .unwrap();
-    let plan = fork::fork(&w.env, &w.scope, ItemKind::Skill, "gh", HarnessId::Claude).unwrap();
-    apply::execute(&w.env, &plan, None).unwrap();
-    let report = audit(&w.env, &w.scope).unwrap();
-    apply::execute(&w.env, &report.plan, None).unwrap();
-
-    // The fork's bytes live in the local source and render under the name.
-    assert!(
-        fs::read_to_string(w.home.join("app/.vstack-local/skills/gh/SKILL.md"))
-            .unwrap()
-            .contains("My fork.")
-    );
-    assert!(
-        fs::read_to_string(skill_file(&w))
-            .unwrap()
-            .contains("My fork.")
-    );
-    let text = fs::read_to_string(manifest::manifest_path(&w.env, &w.scope)).unwrap();
-    assert!(text.contains("[forks.skill.gh]"), "{text}");
-    assert!(text.contains("source = \"local\""));
-
-    // Upstream keeps moving; the fork does not.
-    write_skill(&w.upstream, "gh", "Upstream v2.");
-    commit(&w.upstream, "two");
+    commit(&w.upstream, "agent");
+    declare(&w, "[agents.rev]\nsource = \"cat\"\n");
     sync_and_apply(&w);
-    assert!(
-        fs::read_to_string(skill_file(&w))
-            .unwrap()
-            .contains("My fork.")
-    );
-    assert!(audit(&w.env, &w.scope).unwrap().drift.is_empty());
 
-    // The updates projection knows it is a fork now, not an update.
-    let rows = vstack_core::package::updates::updates(&w.env, &w.scope).unwrap();
-    let gh = rows.iter().find(|row| row.name == "gh").unwrap();
-    assert!(gh.forked);
-    assert!(
-        !gh.update_available,
-        "a local fork has no remote versions to offer: {gh:?}"
-    );
-}
-
-#[test]
-#[allow(clippy::unwrap_used)]
-fn rename_fork_moves_the_declaration_and_refuses_depended_on_names() {
-    let w = world();
-    write_skill(&w.upstream, "gh", "Upstream.");
-    commit(&w.upstream, "one");
-    declare(&w, "[skills.gh]\nsource = \"cat\"\n");
-    sync_and_apply(&w);
+    // Turn it off, then edit the disabled file, then turn it back on.
+    let toggled = manifest::manifest_path(&w.env, &w.scope);
     fs::write(
-        skill_file(&w),
-        "---\nname: gh\ndescription: mine\n---\nMine.\n",
+        &toggled,
+        format!(
+            "schema = 3\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\nenabled = false\n"
+        ),
     )
     .unwrap();
-    let plan = fork::fork(&w.env, &w.scope, ItemKind::Skill, "gh", HarnessId::Claude).unwrap();
-    apply::execute(&w.env, &plan, None).unwrap();
     let report = audit(&w.env, &w.scope).unwrap();
     apply::execute(&w.env, &report.plan, None).unwrap();
+    let disabled = w.home.join("app/.claude/agents/rev.md.disabled");
+    assert!(disabled.is_file(), "disabled agent keeps its bytes");
+    fs::write(&disabled, "my edited disabled agent").unwrap();
 
-    let plan = fork::rename_fork(&w.env, &w.scope, ItemKind::Skill, "gh", "my-gh").unwrap();
-    apply::execute(&w.env, &plan, None).unwrap();
-    let text = fs::read_to_string(manifest::manifest_path(&w.env, &w.scope)).unwrap();
-    assert!(text.contains("[skills.my-gh]"), "{text}");
-    assert!(text.contains("[forks.skill.my-gh]"));
-    assert!(!text.contains("[skills.gh]"));
-    assert!(
-        w.home
-            .join("app/.vstack-local/skills/my-gh/SKILL.md")
-            .is_file()
+    fs::write(
+        &toggled,
+        format!(
+            "schema = 3\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\n"
+        ),
+    )
+    .unwrap();
+    let report = audit(&w.env, &w.scope).unwrap();
+    let row = report.drift.iter().find(|row| row.name == "rev").unwrap();
+    assert_eq!(
+        row.cause,
+        Some(DriftCause::LocalEdit),
+        "an edit made while off is still an edit: {row:?}"
     );
+    apply::execute(&w.env, &report.plan, None).unwrap();
+    let enabled = w.home.join("app/.claude/agents/rev.md");
+    let content = fs::read_to_string(&enabled)
+        .or_else(|_| fs::read_to_string(&disabled))
+        .unwrap();
+    assert_eq!(content, "my edited disabled agent");
 }
 
 #[test]

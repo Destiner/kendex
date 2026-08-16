@@ -41,8 +41,40 @@ pub fn fork(
         });
     };
     let edited = match kind {
-        ItemKind::Skill => skill_canonical(env, scope, name),
+        ItemKind::Skill => {
+            // The content is the canonical tree when several tools share it
+            // (symlink method); a copy-method install has no canonical
+            // tree and its bytes live at the harness-native directory.
+            let canonical = skill_canonical(env, scope, name);
+            if canonical.is_dir() {
+                canonical
+            } else {
+                let Some(dir) = native_dir(env, scope, harness, ItemKind::Skill) else {
+                    return Err(CoreError::ItemNotFound {
+                        kind,
+                        name: name.to_owned(),
+                        harness,
+                    });
+                };
+                dir.join(crate::harness::rendered_name(harness, name))
+            }
+        }
         ItemKind::Agent => {
+            // The local source stores an agent as `agents/<name>.md` in
+            // source form, so only a harness whose rendering is that same
+            // `.md`-with-frontmatter shape round-trips. A codex `.toml` or
+            // cursor `.mdc` rendering cannot be re-read as source — fork
+            // the `.md` copy of the same agent instead.
+            let file = crate::render::agent::file_name(harness, name);
+            if !file.ends_with(".md") || file.ends_with(".agent.md") {
+                return Err(CoreError::ItemNotInSource {
+                    name: name.to_owned(),
+                    source_name: format!(
+                        "{}'s copy of this agent is not in a forkable format — fork the Claude copy instead",
+                        harness.display_name()
+                    ),
+                });
+            }
             let Some(dir) = native_dir(env, scope, harness, ItemKind::Agent) else {
                 return Err(CoreError::ItemNotFound {
                     kind,
@@ -50,7 +82,7 @@ pub fn fork(
                     harness,
                 });
             };
-            existing_or_disabled(dir.join(crate::render::agent::file_name(harness, name)))
+            existing_or_disabled(dir.join(file))
         }
         other => {
             return Err(CoreError::ItemNotInSource {
@@ -59,6 +91,7 @@ pub fn fork(
             });
         }
     };
+    let edited = existing_or_disabled(edited);
     if edited.is_symlink() || !edited.exists() {
         return Err(CoreError::ItemNotFound {
             kind,

@@ -197,6 +197,13 @@ pub(super) fn validate_forks(table: &Table, findings: &mut Vec<Finding>) {
         };
         for (name, provenance) in entries {
             let location = format!("forks.{kind}.{name}");
+            if let Some(problem) = crate::names::item_problem(name) {
+                findings.push(Finding {
+                    location: location.clone(),
+                    problem,
+                    fix: "name the fork the way its item is named".into(),
+                });
+            }
             let Some(provenance) = provenance.as_table() else {
                 findings.push(Finding {
                     location,

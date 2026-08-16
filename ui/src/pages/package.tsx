@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
-import { commands, type Scope, type VersionRow } from "@/bindings";
+import type { Scope, VersionRow } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DiffView } from "@/components/diff/diff-view";
 import { FilePreview } from "@/components/package/file-preview";
@@ -9,16 +8,13 @@ import { PackageActions } from "@/components/package/package-actions";
 import { PackageSidebar } from "@/components/package/package-sidebar";
 import {
   type PackageView,
+  packageVersionActions,
   usePackageData,
   usePackageDiff,
 } from "@/components/package/use-package-data";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
-import {
-  FORKED_BADGE_LABEL,
-  updatedToastLabel,
-  VERSION_ERROR_TITLE,
-} from "@/lib/copy";
+import { FORKED_BADGE_LABEL } from "@/lib/copy";
 import { groupItems, groupScopes } from "@/lib/derive";
 import { kindIcon } from "@/lib/kind-icon";
 import { packageDisplayName } from "@/lib/labels";
@@ -27,7 +23,6 @@ import { cn } from "@/lib/utils";
 import { installedRow, latestRow, versionRowLabel } from "@/lib/versions";
 import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
-import { useProblemsStore } from "@/stores/problems";
 import { useScanStore } from "@/stores/scan";
 
 /** One package, full page: provenance left, the file or diff right. */
@@ -38,7 +33,6 @@ export function PackagePage() {
   const back = useNavStore((s) => s.back);
   const result = useScanStore((s) => s.result);
   const { busy, toggle, removeItem } = useAuditStore();
-  const showError = useProblemsStore((s) => s.showError);
 
   const [view, setView] = useState<PackageView>(() =>
     initialView
@@ -93,39 +87,13 @@ export function PackagePage() {
     for (const scope of groupScopes(group)) await act(scope);
   };
 
-  const switchTo = (row: VersionRow) => {
-    setSwitching(true);
-    void commands
-      .packageSetRev(ref.scope, ref.kind, ref.name, row.id)
-      .then((response) => {
-        setSwitching(false);
-        if (response.status === "error") {
-          showError({ title: VERSION_ERROR_TITLE, message: response.error });
-          return;
-        }
-        toast.success(
-          updatedToastLabel(`${displayName} to ${versionRowLabel(row)}`),
-        );
-        load();
-        void useScanStore.getState().refresh();
-        void useAuditStore.getState().refresh({ force: true });
-      });
-  };
-
-  const follow = () => {
-    setSwitching(true);
-    void commands
-      .packageSetRev(ref.scope, ref.kind, ref.name, null)
-      .then((response) => {
-        setSwitching(false);
-        if (response.status === "error") {
-          showError({ title: VERSION_ERROR_TITLE, message: response.error });
-          return;
-        }
-        load();
-        void useScanStore.getState().refresh();
-      });
-  };
+  const { switchTo, updateToLatest, follow } = packageVersionActions(
+    ref,
+    displayName,
+    meta?.rev != null,
+    setSwitching,
+    load,
+  );
 
   const compare = (row: VersionRow) =>
     installed &&
@@ -159,7 +127,7 @@ export function PackagePage() {
             primaryPath={primary.path}
             updateAvailable={updateAvailable}
             busy={busy || switching}
-            onUpdate={() => latest && switchTo(latest)}
+            onUpdate={() => latest && updateToLatest(latest)}
             onPreview={() => latest && compare(latest)}
             onRemove={() => setConfirmRemove(true)}
           />
@@ -241,7 +209,19 @@ export function PackagePage() {
             removeItem(scope, group.kind, group.name),
           ).then(() => {
             setConfirmRemove(false);
-            back();
+            // A failed removal shows its error and leaves the page up —
+            // the vanish-effect takes us back only once the package is
+            // actually gone from the scan.
+            if (
+              !useScanStore
+                .getState()
+                .result?.items.some(
+                  (item) =>
+                    item.kind === group.kind && item.name === group.name,
+                )
+            ) {
+              back();
+            }
           });
         }}
       />

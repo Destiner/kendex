@@ -61,6 +61,9 @@ fn shown_summary(raw: &str) -> String {
 /// history from `tip`. Tag names arrive through `%D` decorations so one
 /// invocation answers both "what changed" and "what is it called".
 pub fn subtree_log(mirror: &Path, tip: &str, rel: &Path) -> Vec<CommitRow> {
+    if !commit_only(tip) {
+        return Vec::new();
+    }
     let max = MAX_ROWS.to_string();
     let Some(text) = stdout_capped(Hardened::git_bare(
         mirror,
@@ -107,22 +110,12 @@ pub fn subtree_log(mirror: &Path, tip: &str, rel: &Path) -> Vec<CommitRow> {
         .collect()
 }
 
-/// Whether `rel` differs between two commits — the signal that an upstream
-/// move actually touched this package, rather than the repository around it.
-pub fn subtree_changed(mirror: &Path, old: &str, new: &str, rel: &Path) -> bool {
-    if old == new {
-        return false;
-    }
-    let output =
-        Hardened::git_bare(mirror, &["diff", "--quiet", old, new, "--", &literal(rel)]).run();
-    match output {
-        // Exit 1 means the paths differ; exit 0 means they do not. Any
-        // other outcome means the question could not be answered, and "no
-        // update" is the reading that nags nobody about content it cannot
-        // show.
-        Ok(output) => output.status.code() == Some(1),
-        Err(_) => false,
-    }
+/// Only a full commit id ever reaches git as a positional: anything else
+/// — and in particular anything starting with `-` — could be read as an
+/// option. Commit values arrive from lock files, which travel inside
+/// project repositories and are not trusted.
+fn commit_only(value: &str) -> bool {
+    crate::remote::store::is_pin(value)
 }
 
 /// The newest commit at-or-before `from` that changed `rel` — the content
@@ -130,6 +123,9 @@ pub fn subtree_changed(mirror: &Path, old: &str, new: &str, rel: &Path) -> bool 
 /// that merely sat near the package (it changed other files) is not itself
 /// on the package's timeline; this maps it onto the row that is.
 pub fn last_content_commit(mirror: &Path, from: &str, rel: &Path) -> Option<String> {
+    if !commit_only(from) {
+        return None;
+    }
     let text = stdout_capped(Hardened::git_bare(
         mirror,
         &[

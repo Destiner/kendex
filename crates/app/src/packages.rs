@@ -164,17 +164,25 @@ pub fn fork_rename(
     Ok(view(&env, &scope))
 }
 
-/// Apply a scope with the user's edits explicitly discarded — the one
-/// door back to "the catalog's version wins", and it only opens by name.
+/// Apply a scope with one package's edits discarded — the door back to
+/// "the catalog's version wins", scoped to the package the user named so
+/// a neighbour's edits are never taken along.
 #[tauri::command(async)]
 #[specta::specta]
-pub fn apply_discard_edits(scope: Scope) -> Result<AuditView, String> {
+pub fn apply_discard_edits(scope: Scope, name: String) -> Result<AuditView, String> {
     let env = env()?;
-    let report = engine::plan_apply(
+    let manifest = manifest::load_for_mutation(&manifest::manifest_path(&env, &scope))
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no manifest".to_owned())?;
+    let lock = vstack_core::lock::load(&vstack_core::lock::lock_path(&env, &scope))
+        .map_err(|e| e.to_string())?;
+    let report = vstack_core::engine::plan_scope(
         &env,
         &scope,
+        &manifest,
+        &lock,
         &engine::PlanOptions {
-            overwrite_edited: true,
+            overwrite_edited_names: Some(vec![name]),
             ..Default::default()
         },
     )

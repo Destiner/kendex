@@ -168,6 +168,11 @@ pub(crate) fn read_tree(root: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {
                 continue;
             };
             let rel = rel.join(name);
+            // A link is not content: following one would read whatever it
+            // points at into the capture under this tree's name.
+            if path.is_symlink() {
+                continue;
+            }
             if path.is_dir() {
                 walk(&path, &rel, files)?;
             } else {

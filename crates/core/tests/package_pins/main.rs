@@ -361,3 +361,23 @@ fn two_parents_pinning_different_revs_of_one_dependency_change_nothing() {
 }
 
 mod validate;
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn removing_a_plugin_by_kind_does_not_panic() {
+    let w = world();
+    write_skill(&w.upstream, "gh", "", "One.");
+    commit(&w.upstream, "one");
+    declare(&w, "[skills.gh]\nsource = \"cat\"\n");
+    sync_and_apply(&w);
+    // A kind-scoped plugin removal must route to the plugins table, never
+    // through declared_mut (which panics on Plugin).
+    let report = vstack_core::engine::ops::remove(
+        &w.env,
+        &w.scope,
+        &["anything".to_owned()],
+        Some(ItemKind::Plugin),
+        false,
+    );
+    assert!(report.is_ok(), "{report:?}");
+}

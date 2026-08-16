@@ -21,6 +21,7 @@ import {
   KEEP_AS_FORK_LABEL,
   VIEW_CHANGES_LABEL,
 } from "@/lib/copy";
+import { sameScope } from "@/lib/scope";
 import { useAuditStore } from "@/stores/audit";
 import { useProblemsStore } from "@/stores/problems";
 import { useScanStore } from "@/stores/scan";
@@ -102,15 +103,17 @@ export function ForkNotice({
         busy={busy}
         onConfirm={() => {
           setBusy(true);
-          void commands.applyDiscardEdits(scope).then(async (response) => {
-            setBusy(false);
-            setConfirmDiscard(false);
-            if (response.status === "error") {
-              showError({ title: FORK_ERROR_TITLE, message: response.error });
-              return;
-            }
-            await refreshAll();
-          });
+          void commands
+            .applyDiscardEdits(scope, name)
+            .then(async (response) => {
+              setBusy(false);
+              setConfirmDiscard(false);
+              if (response.status === "error") {
+                showError({ title: FORK_ERROR_TITLE, message: response.error });
+                return;
+              }
+              await refreshAll();
+            });
         }}
       />
     </div>
@@ -136,10 +139,13 @@ export function EditedNotice({
   onViewChanges: () => void;
   onResolved: () => void;
 }) {
-  const edited = useUpdatesStore((s) =>
-    s.rows.some(
-      (row) => row.kind === kind && row.name === name && row.blockedByLocalEdit,
-    ),
+  const rows = useUpdatesStore((s) => s.rows);
+  const edited = rows.some(
+    (row) =>
+      row.kind === kind &&
+      row.name === name &&
+      sameScope(row.scope, scope) &&
+      row.blockedByLocalEdit,
   );
   if (!edited || alreadyForked) return null;
   return (

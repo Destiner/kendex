@@ -6,6 +6,7 @@ import {
   UPDATED_ALL_TOAST,
   updatedToastLabel,
 } from "@/lib/copy";
+import { scopeKey } from "@/lib/scope";
 import { useAuditStore } from "./audit";
 import { useProblemsStore } from "./problems";
 import { useScanStore } from "./scan";
@@ -110,9 +111,14 @@ export const useUpdatesStore = create<UpdatesState>((set, get) => {
     updateAll: async () => {
       set({ busy: true });
       try {
+        // Edited packages are held by the engine and cannot be updated
+        // this way — they need the fork decision first, so they are left
+        // out of "update all" rather than silently surviving it.
+        const rows = visibleUpdates(get().rows).filter(
+          (row) => !row.blockedByLocalEdit,
+        );
         // Move every hold first, then one apply per scope brings the
         // followers current — never two applies for one scope.
-        const rows = visibleUpdates(get().rows);
         let ok = true;
         for (const row of rows.filter((row) => row.pinned)) {
           ok = (await apply(row)) && ok;
@@ -120,11 +126,14 @@ export const useUpdatesStore = create<UpdatesState>((set, get) => {
         const scopes = new Map(
           rows
             .filter((row) => !row.pinned)
-            .map((row) => [JSON.stringify(row.scope), row] as const),
+            .map((row) => [scopeKey(row.scope), row] as const),
         );
         for (const row of scopes.values()) {
-          ok =
-            (await commands.applyPlan(row.scope, false)).status === "ok" && ok;
+          const response = await commands.applyPlan(row.scope, false);
+          if (response.status === "error") {
+            showError(UPDATE_ERROR_TITLE, response.error);
+            ok = false;
+          }
         }
         if (ok) toast.success(UPDATED_ALL_TOAST);
         await reload();
@@ -136,13 +145,18 @@ export const useUpdatesStore = create<UpdatesState>((set, get) => {
     },
 
     setAutoUpdate: async (row, auto) => {
+      // Turning automatic OFF holds the package at what is installed now.
+      // With nothing installed to hold at, there is nothing to switch —
+      // never fall through to null, which means "follow" (the opposite).
+      const hold = row.current?.commit ?? null;
+      if (!auto && hold === null) return;
       set({ busy: true });
       try {
         const response = await commands.packageSetRev(
           row.scope,
           row.kind,
           row.name,
-          auto ? null : (row.current?.commit ?? null),
+          auto ? null : hold,
         );
         if (response.status === "error") {
           showError(UPDATE_ERROR_TITLE, response.error);

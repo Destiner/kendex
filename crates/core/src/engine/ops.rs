@@ -78,6 +78,13 @@ pub fn remove(
     let mut removing = names.to_vec();
     removing.extend(super::bundles::recorded_members(&lock, &bundles));
     for name in names {
+        // Plugin has no declared-items table — it lives in `plugins` and
+        // is removed there, never through `declared_mut` (which panics on
+        // it). A bare-name removal reaches both.
+        if matches!(kind, Some(ItemKind::Plugin)) {
+            manifest.plugins.remove(name);
+            continue;
+        }
         let kinds: Vec<ItemKind> = match kind {
             Some(kind) => vec![kind],
             None => DECLARED_KINDS.to_vec(),

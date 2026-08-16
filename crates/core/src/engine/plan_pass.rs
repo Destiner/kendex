@@ -21,6 +21,7 @@ use super::{
 /// writes nothing unless the caller asked for edits to be discarded.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn plan_items(
+    env: &Env,
     state: &desired::DesiredState,
     scope: &Scope,
     lock: &Lock,
@@ -43,7 +44,12 @@ pub(super) fn plan_items(
         if holds::hold_rev_conflict(item, scope, lock, &state.rev_conflicts, &mut sink) {
             continue;
         }
-        if !options.overwrite_edited && holds::hold_local_edit(item, scope, lock, &mut sink) {
+        let discard = options.overwrite_edited
+            || options
+                .overwrite_edited_names
+                .as_ref()
+                .is_some_and(|names| names.contains(&item.name));
+        if !discard && holds::hold_local_edit(env, item, scope, lock, &mut sink) {
             continue;
         }
         plan_item(item, scope, lock, emitted_paths, &mut sink)?;

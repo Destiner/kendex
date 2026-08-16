@@ -131,7 +131,14 @@ fn rendered_hash(artifact: &Artifact) -> Option<String> {
         Artifact::File { .. } | Artifact::Tree { .. } => {
             Some(super::desired::artifact_disk_hash(artifact))
         }
-        Artifact::Registration { .. } => None,
+        // A hook's backing script is a file vstack alone writes, so it can
+        // be anchored like any other. A registration with no script edits
+        // only shared config, which holds other people's keys — nothing to
+        // anchor there.
+        Artifact::Registration {
+            script: Some(_), ..
+        } => Some(super::desired::artifact_disk_hash(artifact)),
+        Artifact::Registration { script: None, .. } => None,
     }
 }
 

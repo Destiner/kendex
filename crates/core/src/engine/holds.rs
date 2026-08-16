@@ -4,9 +4,12 @@
 
 use std::collections::BTreeSet;
 
+use std::path::PathBuf;
+
 use super::desired::{Artifact, Desired};
 use super::item_plan::PlanSink;
 use super::{DriftCause, DriftRow, DriftState};
+use crate::env::Env;
 use crate::lock::Lock;
 use crate::model::Scope;
 
@@ -45,16 +48,56 @@ pub(super) fn hold_rev_conflict(
 /// is nothing comparable (absent, a symlink where content should be, a
 /// registration, unreadable). `None` never blocks: the paths that need a
 /// human already produce conflicts of their own.
+///
+/// A toggled-off installation keeps its content under the `.disabled`
+/// sibling, so enabling it plans against a path that does not exist yet;
+/// the sibling is checked too, or an edit made while the item was off
+/// would be overwritten the moment it came back on.
 fn observed_artifact_hash(artifact: &Artifact) -> Option<String> {
+    let here = |p: &std::path::Path| {
+        (!p.is_symlink() && p.exists())
+            .then(|| crate::hash::hash_tree(p).ok())
+            .flatten()
+    };
     let path = match artifact {
         Artifact::File { path, .. } => path,
         Artifact::Tree { canonical, .. } => canonical,
-        Artifact::Registration { .. } => return None,
+        // Only the backing script is ours to compare; the shared config a
+        // registration also edits holds other people's keys.
+        Artifact::Registration {
+            script: Some((path, _)),
+            ..
+        } => return here(path),
+        Artifact::Registration { script: None, .. } => return None,
     };
-    if path.is_symlink() || !path.exists() {
-        return None;
+    here(path).or_else(|| here(&disabled_sibling(path)))
+}
+
+/// The `.disabled` counterpart of a path — the toggled name a disabled
+/// installation keeps its bytes under.
+fn disabled_sibling(path: &std::path::Path) -> std::path::PathBuf {
+    let text = path.display().to_string();
+    match text.strip_suffix(".disabled") {
+        Some(base) => std::path::PathBuf::from(base),
+        None => std::path::PathBuf::from(format!("{text}.disabled")),
     }
-    crate::hash::hash_tree(path).ok()
+}
+
+/// Whether any lock entry that writes to one of `here` currently renders
+/// to `disk` — the "these bytes are a render we made at this spot" test,
+/// keyed by physical path so a same-hash coincidence elsewhere never
+/// counts.
+fn wrote_here(env: &Env, scope: &Scope, lock: &Lock, here: &[PathBuf], disk: &str) -> bool {
+    lock.entries.values().any(|entry| {
+        let Some(rendered) = &entry.rendered_hash else {
+            return false;
+        };
+        if rendered != disk {
+            return false;
+        }
+        let owned = super::owned::installed(env, scope, entry);
+        owned.files.iter().any(|path| here.contains(path))
+    })
 }
 
 /// The user's hands were on this installation: hold it. An edited artifact
@@ -71,6 +114,7 @@ fn observed_artifact_hash(artifact: &Artifact) -> Option<String> {
 /// answer is that the two cannot be told apart, which is a conflict, never
 /// an overwrite.
 pub(super) fn hold_local_edit(
+    env: &Env,
     item: &Desired,
     scope: &Scope,
     lock: &Lock,
@@ -86,16 +130,14 @@ pub(super) fn hold_local_edit(
     if disk == wanted {
         return false;
     }
-    // Bytes some apply provably wrote are never an edit — whichever entry
-    // wrote them. Trees change hands between passes (a command's tree taken
-    // over by a skill, a per-tool variant collapsing onto the shared one),
-    // and the lock as a whole knows every render that ever landed.
-    if lock
-        .entries
-        .values()
-        .filter_map(|entry| entry.rendered_hash.as_ref())
-        .any(|rendered| *rendered == disk)
-    {
+    // Bytes some apply provably wrote *at this location* are never an
+    // edit: per-tool variants share and collapse trees, and a command
+    // taking its name back reuses the tree a skill left there. Matched by
+    // physical path, not just by hash — a different package that merely
+    // happens to hash the same must still hold, or one package's edit
+    // could ride out on another's upstream change.
+    let here = super::desired::artifact_paths(&item.artifact);
+    if wrote_here(env, scope, lock, &here, &disk) {
         return false;
     }
     let hash_moved = entry.source_hash != item.hash;

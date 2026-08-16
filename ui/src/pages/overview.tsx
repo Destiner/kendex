@@ -34,9 +34,8 @@ export function OverviewPage() {
   );
   const setPage = useNavStore((s) => s.setPage);
   const goToPackage = useNavStore((s) => s.goToPackage);
-  const editedPackages = useUpdatesStore((s) =>
-    s.rows.filter((row) => row.blockedByLocalEdit),
-  );
+  const updateRows = useUpdatesStore((s) => s.rows);
+  const editedPackages = updateRows.filter((row) => row.blockedByLocalEdit);
   const goToTools = useNavStore((s) => s.goToTools);
   const goToLibrary = useNavStore((s) => s.goToLibrary);
 

@@ -181,8 +181,9 @@ fn installed_commit(lock: &crate::lock::Lock, kind: ItemKind, name: &str) -> Opt
     lock.entries
         .values()
         .filter(|entry| entry.kind == kind && entry.name == name)
-        .filter_map(|entry| entry.source_commit.clone())
-        .next_back()
+        .filter(|entry| entry.source_commit.is_some())
+        .max_by(|a, b| a.installed_at.cmp(&b.installed_at))
+        .and_then(|entry| entry.source_commit.clone())
 }
 
 /// A version selector as a commit id: whatever the repository can name —

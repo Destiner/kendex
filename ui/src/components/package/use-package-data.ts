@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
   commands,
   type HarnessId,
@@ -7,8 +8,16 @@ import {
   type PackageMeta_Serialize,
   type VersionRow,
 } from "@/bindings";
+import {
+  FOLLOW_SOURCE_TOAST,
+  updatedToastLabel,
+  VERSION_ERROR_TITLE,
+} from "@/lib/copy";
+import { versionRowLabel } from "@/lib/versions";
+import { useAuditStore } from "@/stores/audit";
 import type { PackageRef } from "@/stores/nav";
 import { useProblemsStore } from "@/stores/problems";
+import { useScanStore } from "@/stores/scan";
 
 export type PackageView =
   | { mode: "files"; file: string | null }
@@ -90,4 +99,64 @@ export function usePackageDiff(
   }, [ref, view, harness, showError]);
 
   return diff;
+}
+
+/** The version-changing actions for one package, each applying the whole
+ *  scope and refreshing the app's derived state after. `setBusy` drives
+ *  the page's spinner; `reload` refetches the package's own data. */
+export function packageVersionActions(
+  ref: PackageRef,
+  displayName: string,
+  held: boolean,
+  setBusy: (busy: boolean) => void,
+  reload: () => void,
+) {
+  const showError = (message: string) =>
+    useProblemsStore
+      .getState()
+      .showError({ title: VERSION_ERROR_TITLE, message });
+  const afterChange = () => {
+    reload();
+    void useScanStore.getState().refresh();
+    void useAuditStore.getState().refresh({ force: true });
+  };
+  const run = (
+    call: Promise<{ status: "ok" } | { status: "error"; error: string }>,
+    toastMessage: string,
+  ) => {
+    setBusy(true);
+    void call.then((response) => {
+      setBusy(false);
+      if (response.status === "error") {
+        showError(response.error);
+        return;
+      }
+      toast.success(toastMessage);
+      afterChange();
+    });
+  };
+
+  const switchTo = (row: VersionRow) =>
+    run(
+      commands.packageSetRev(ref.scope, ref.kind, ref.name, row.id),
+      updatedToastLabel(`${displayName} to ${versionRowLabel(row)}`),
+    );
+
+  // A held package moves its hold to the latest; a follower is brought
+  // current by applying its scope — Update never silently pins a follower.
+  const updateToLatest = (latest: VersionRow) =>
+    held
+      ? switchTo(latest)
+      : run(
+          commands.applyPlan(ref.scope, false),
+          updatedToastLabel(displayName),
+        );
+
+  const follow = () =>
+    run(
+      commands.packageSetRev(ref.scope, ref.kind, ref.name, null),
+      FOLLOW_SOURCE_TOAST,
+    );
+
+  return { switchTo, updateToLatest, follow };
 }

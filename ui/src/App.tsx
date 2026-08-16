@@ -68,6 +68,10 @@ export default function App() {
   useAppearance();
   useScanTriggers();
   const page = useNavStore((s) => s.page);
+  const packageRef = useNavStore((s) => s.packageRef);
+  const packageKey = packageRef
+    ? `${packageRef.kind}:${packageRef.name}:${packageRef.scope.scope === "global" ? "global" : packageRef.scope.root}`
+    : "none";
   const appearance = useSettingsStore(
     (s) => s.settings?.appearance ?? "system",
   );
@@ -107,7 +111,7 @@ export default function App() {
             <div className="flex-1 overflow-y-auto">
               {page === "home" && <OverviewPage />}
               {page === "library" && <LibraryPage />}
-              {page === "package" && <PackagePage />}
+              {page === "package" && <PackagePage key={packageKey} />}
               {page === "updates" && <UpdatesPage />}
               {page === "tools" && <ToolsProjectsPage />}
               {page === "review" && <ReviewPage />}

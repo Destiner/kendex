@@ -268,6 +268,33 @@ fn ignoring_updates_is_a_settings_write_and_rows_stay_visible() {
 
 #[test]
 #[allow(clippy::unwrap_used)]
+fn a_hostile_source_commit_never_reaches_git_as_an_option() {
+    let w = world();
+    write_skill(&w.upstream, "gh", "One.");
+    commit(&w.upstream, "one");
+    declare(&w, "", "[skills.gh]\nsource = \"cat\"\n");
+    sync_and_apply(&w);
+
+    // A lock is a project file: a hostile repo can ship one whose
+    // source_commit is a git option, not a commit. It must never be
+    // handed to git as a positional — `--output=<path>` would clobber
+    // that path. The updates/versions projections must simply not answer
+    // for that entry, and write nothing outside the scope.
+    let lock_path = vstack_core::lock::lock_path(&w.env, &w.scope);
+    let mut lock = vstack_core::lock::load(&lock_path).unwrap();
+    let marker = w.home.join("PWNED");
+    for entry in lock.entries.values_mut() {
+        entry.source_commit = Some(format!("--output={}", marker.display()));
+    }
+    vstack_core::lock::save(&lock_path, &lock).unwrap();
+
+    let _ = package::versions(&w.env, &w.scope, ItemKind::Skill, "gh");
+    let _ = updates::updates(&w.env, &w.scope);
+    assert!(!marker.exists(), "a lock value reached git as an option");
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
 fn a_pinned_source_discovers_new_versions_after_fetch_all() {
     let w = world();
     write_skill(&w.upstream, "gh", "One.");
