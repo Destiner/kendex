@@ -171,6 +171,7 @@ export const packageHandlers: Record<string, Handler> = {
     return view(scope);
   },
   fork_rename: ({ scope }: { scope: Scope }) => view(scope),
+  apply_discard_edits: ({ scope }: { scope: Scope }) => view(scope),
   package_files: () => [
     { path: "README.md", size: README.length, isReadme: true },
     { path: "SKILL.md", size: SKILL_BODY.length, isReadme: false },

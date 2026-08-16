@@ -256,9 +256,11 @@ fn fork_keeps_the_name_pauses_updates_and_survives_refresh() {
 
     // The updates projection knows it is a fork now, not an update.
     let rows = vstack_core::package::updates::updates(&w.env, &w.scope).unwrap();
+    let gh = rows.iter().find(|row| row.name == "gh").unwrap();
+    assert!(gh.forked);
     assert!(
-        rows.iter().all(|row| row.name != "gh"),
-        "a local fork has no remote versions to offer: {rows:?}"
+        !gh.update_available,
+        "a local fork has no remote versions to offer: {gh:?}"
     );
 }
 

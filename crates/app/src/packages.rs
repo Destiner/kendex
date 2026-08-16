@@ -164,6 +164,25 @@ pub fn fork_rename(
     Ok(view(&env, &scope))
 }
 
+/// Apply a scope with the user's edits explicitly discarded — the one
+/// door back to "the catalog's version wins", and it only opens by name.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn apply_discard_edits(scope: Scope) -> Result<AuditView, String> {
+    let env = env()?;
+    let report = engine::plan_apply(
+        &env,
+        &scope,
+        &engine::PlanOptions {
+            overwrite_edited: true,
+            ..Default::default()
+        },
+    )
+    .map_err(|e| e.to_string())?;
+    apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
+    Ok(view(&env, &scope))
+}
+
 #[tauri::command(async)]
 #[specta::specta]
 pub fn package_files(

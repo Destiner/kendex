@@ -8,6 +8,8 @@ import { Section } from "@/components/section";
 import { StatTile } from "@/components/stat-tile";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  FORKED_ATTENTION_DETAIL,
+  forkedAttentionTitle,
   HOME_SUBTITLE,
   RECENTLY_CHANGED_HELP,
   REVIEW_ACTION_LABEL,
@@ -20,6 +22,7 @@ import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 import { useSettingsStore } from "@/stores/settings";
+import { useUpdatesStore } from "@/stores/updates";
 
 const RECENT_ACTIVITY_LIMIT = 6;
 
@@ -30,6 +33,10 @@ export function OverviewPage() {
     (s) => s.settings?.projects?.length ?? 0,
   );
   const setPage = useNavStore((s) => s.setPage);
+  const goToPackage = useNavStore((s) => s.goToPackage);
+  const editedPackages = useUpdatesStore((s) =>
+    s.rows.filter((row) => row.blockedByLocalEdit),
+  );
   const goToTools = useNavStore((s) => s.goToTools);
   const goToLibrary = useNavStore((s) => s.goToLibrary);
 
@@ -63,6 +70,27 @@ export function OverviewPage() {
   const missing = result.missingProjects;
 
   const rows: AttentionRow[] = [];
+  if (editedPackages.length > 0) {
+    const first = editedPackages[0];
+    rows.push({
+      key: "edited",
+      tone: "warning",
+      title: forkedAttentionTitle(editedPackages.length),
+      detail: FORKED_ATTENTION_DETAIL,
+      action:
+        editedPackages.length === 1 && first
+          ? {
+              label: `Open ${first.name}`,
+              onClick: () =>
+                goToPackage({
+                  kind: first.kind,
+                  name: first.name,
+                  scope: first.scope,
+                }),
+            }
+          : { label: "Open Library", onClick: () => setPage("library") },
+    });
+  }
   if (blocked > 0) {
     rows.push({
       key: "safety",

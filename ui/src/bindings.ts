@@ -156,6 +156,11 @@ export const commands = {
 	/**  Keep an edited install as a local fork, then render it in place. */
 	packageFork: (scope: Scope, kind: ItemKind, name: string, harness: HarnessId) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("package_fork", { scope, kind, name, harness })),
 	forkRename: (scope: Scope, kind: ItemKind, oldName: string, newName: string) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("fork_rename", { scope, kind, oldName, newName })),
+	/**
+	 *  Apply a scope with the user's edits explicitly discarded — the one
+	 *  door back to "the catalog's version wins", and it only opens by name.
+	 */
+	applyDiscardEdits: (scope: Scope) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("apply_discard_edits", { scope })),
 	packageFiles: (scope: Scope, kind: ItemKind, name: string) => typedError<PackageFile[], string>(__TAURI_INVOKE("package_files", { scope, kind, name })),
 	packageFile: (scope: Scope, kind: ItemKind, name: string, path: string) => typedError<ItemSource, string>(__TAURI_INVOKE("package_file", { scope, kind, name, path })),
 	packageReadme: (scope: Scope, kind: ItemKind, name: string) => typedError<{

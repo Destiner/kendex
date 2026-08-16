@@ -48,6 +48,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         packages::package_diff,
         packages::package_fork,
         packages::fork_rename,
+        packages::apply_discard_edits,
         packages::package_files,
         packages::package_file,
         packages::package_readme,

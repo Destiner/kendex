@@ -4,6 +4,7 @@ import { commands, type Scope, type VersionRow } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DiffView } from "@/components/diff/diff-view";
 import { FilePreview } from "@/components/package/file-preview";
+import { EditedNotice } from "@/components/package/fork-notice";
 import { PackageActions } from "@/components/package/package-actions";
 import { PackageSidebar } from "@/components/package/package-sidebar";
 import {
@@ -29,8 +30,7 @@ import { useNavStore } from "@/stores/nav";
 import { useProblemsStore } from "@/stores/problems";
 import { useScanStore } from "@/stores/scan";
 
-/** One package, full page: identity and provenance on the left, the file
- *  being read (or the diff being considered) on the right. */
+/** One package, full page: provenance left, the file or diff right. */
 export function PackagePage() {
   const ref = useNavStore((s) => s.packageRef);
   const initialView = useNavStore((s) => s.packageView);
@@ -53,7 +53,6 @@ export function PackagePage() {
   );
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [switching, setSwitching] = useState(false);
-
   useEffect(() => {
     if (initialView) clearPackageView();
   }, [initialView, clearPackageView]);
@@ -73,8 +72,8 @@ export function PackagePage() {
     group?.installations[0]?.harness ?? null,
   );
 
-  // The scan no longer knows this package (removed, renamed): nothing to
-  // show, so leave the way the user came.
+  // The scan no longer knows this package (removed, renamed): leave the
+  // way the user came.
   useEffect(() => {
     if (ref && result && !group) back();
   }, [ref, result, group, back]);
@@ -128,8 +127,8 @@ export function PackagePage() {
       });
   };
 
-  const compare = (row: VersionRow) => {
-    if (!installed) return;
+  const compare = (row: VersionRow) =>
+    installed &&
     setView({
       mode: "diff",
       from: installed.id,
@@ -137,7 +136,6 @@ export function PackagePage() {
       fromLabel: versionRowLabel(installed),
       toLabel: versionRowLabel(row),
     });
-  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -169,6 +167,24 @@ export function PackagePage() {
       />
       <div className={cn("min-h-0 flex-1 overflow-y-auto", PAGE_GUTTER)}>
         <div className={cn("pb-8", WIDE_CONTENT_WIDTH)}>
+          <EditedNotice
+            scope={ref.scope}
+            kind={ref.kind}
+            name={ref.name}
+            harness={primary.harness}
+            alreadyForked={meta?.fork != null}
+            onViewChanges={() => {
+              if (!installed) return;
+              setView({
+                mode: "diff",
+                from: installed.id,
+                to: "installed",
+                fromLabel: versionRowLabel(installed),
+                toLabel: "your edits",
+              });
+            }}
+            onResolved={load}
+          />
           {view.mode === "diff" ? (
             diff ? (
               <DiffView

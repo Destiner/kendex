@@ -89,9 +89,18 @@ pub fn updates(env: &Env, scope: &Scope) -> Result<Vec<UpdateRow>> {
     let mut rows = Vec::new();
     for kind in ItemKind::ALL {
         for name in manifest.declared(kind).keys() {
+            let forked = manifest
+                .forks
+                .get(&kind)
+                .is_some_and(|forks| forks.contains_key(name));
             let Ok(package) = crate::package::package_ref(env, scope, &manifest, kind, name) else {
                 // Path and local sources have no versions; a pending remote
-                // has no mirror to ask. Neither is an update row.
+                // has no mirror to ask. Neither is an update row — except a
+                // fork, which the Library still needs to know about: it
+                // rides along with no versions and no update.
+                if forked {
+                    rows.push(fork_row(scope, kind, name, &manifest));
+                }
                 continue;
             };
             let log = history::subtree_log(&package.mirror, &package.tip, &package.subtree);
@@ -147,10 +156,7 @@ pub fn updates(env: &Env, scope: &Scope) -> Result<Vec<UpdateRow>> {
                     .values()
                     .filter(|entry| entry.kind == kind && &entry.name == name)
                     .any(|entry| crate::engine::edited_on_disk(env, scope, entry)),
-                forked: manifest
-                    .forks
-                    .get(&kind)
-                    .is_some_and(|forks| forks.contains_key(name)),
+                forked,
                 repo: package.repo,
                 current,
                 latest,
@@ -160,6 +166,35 @@ pub fn updates(env: &Env, scope: &Scope) -> Result<Vec<UpdateRow>> {
         }
     }
     Ok(rows)
+}
+
+/// A fork's row: no versions, no update — the Library still needs to
+/// know it is a fork.
+fn fork_row(
+    scope: &Scope,
+    kind: ItemKind,
+    name: &str,
+    manifest: &crate::manifest::Manifest,
+) -> UpdateRow {
+    UpdateRow {
+        scope: scope.clone(),
+        kind,
+        name: name.to_owned(),
+        source: manifest
+            .declared(kind)
+            .get(name)
+            .map(|decl| decl.source.clone())
+            .unwrap_or_default(),
+        repo: String::new(),
+        current: None,
+        latest: None,
+        update_available: false,
+        pinned: false,
+        ignored: false,
+        blocked_by_local_edit: false,
+        forked: true,
+        mixed: false,
+    }
 }
 
 /// Switch one package's update notifications off or on. A settings write
