@@ -178,26 +178,36 @@ fn edited_items(
     manifest: &crate::manifest::Manifest,
     lock: &crate::lock::Lock,
 ) -> std::collections::BTreeSet<(ItemKind, String)> {
-    let Ok(report) = crate::engine::plan_scope(
+    match crate::engine::plan_scope(
         env,
         scope,
         manifest,
         lock,
         &crate::engine::PlanOptions::default(),
-    ) else {
-        return std::collections::BTreeSet::new();
-    };
-    report
-        .drift
-        .into_iter()
-        .filter(|row| {
-            matches!(
-                row.cause,
-                Some(crate::engine::DriftCause::LocalEdit | crate::engine::DriftCause::Both)
-            )
-        })
-        .map(|row| (row.kind, row.name))
-        .collect()
+    ) {
+        Ok(report) => report
+            .drift
+            .into_iter()
+            .filter(|row| {
+                matches!(
+                    row.cause,
+                    Some(crate::engine::DriftCause::LocalEdit | crate::engine::DriftCause::Both)
+                )
+            })
+            .map(|row| (row.kind, row.name))
+            .collect(),
+        // A plan the scope cannot produce (a broken manifest, an
+        // unreadable source) must not fail open — reporting nothing edited
+        // is exactly when edit detection could not run. Fall back to the
+        // conservative per-entry hold, which holds whatever it cannot prove
+        // is clean.
+        Err(_) => lock
+            .entries
+            .values()
+            .filter(|entry| crate::engine::edit_holds(env, scope, entry))
+            .map(|entry| (entry.kind, entry.name.clone()))
+            .collect(),
+    }
 }
 
 /// A fork's row: no versions, no update — the Library still needs to

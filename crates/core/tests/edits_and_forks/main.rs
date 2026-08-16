@@ -291,6 +291,32 @@ fn discarding_a_skills_edits_leaves_a_same_named_agents_edits_held() {
 
 #[test]
 #[allow(clippy::unwrap_used)]
+fn updates_survives_a_source_that_cannot_resolve() {
+    let w = world();
+    write_skill(&w.upstream, "gh", "Upstream.");
+    commit(&w.upstream, "one");
+    declare(&w, "[skills.gh]\nsource = \"cat\"\n");
+    sync_and_apply(&w);
+    fs::write(w.home.join("app/.agents/skills/gh/SKILL.md"), "my edit").unwrap();
+
+    // Repoint the source at a repo that cannot resolve: the updates
+    // projection (which now runs a plan to find edits) must not panic, and
+    // must return rather than fail open on a plan it cannot produce.
+    let path = manifest::manifest_path(&w.env, &w.scope);
+    fs::write(
+        &path,
+        "schema = 3\n\n[sources.cat]\nrepo = \"owner/gone\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.gh]\nsource = \"cat\"\n",
+    )
+    .unwrap();
+    let rows = vstack_core::package::updates::updates(&w.env, &w.scope);
+    assert!(
+        rows.is_ok(),
+        "updates must survive an unresolvable source: {rows:?}"
+    );
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
 fn a_deleted_install_is_missing_not_an_edit() {
     let w = world();
     write_skill(&w.upstream, "gh", "One.");

@@ -125,14 +125,14 @@ fn forking_a_codex_agent_is_refused_with_the_fix_named() {
 
 #[test]
 #[allow(clippy::unwrap_used)]
-fn forking_a_skill_with_a_symlink_refuses_rather_than_dropping_it() {
+fn forking_a_skill_with_a_symlink_inside_refuses_rather_than_dropping_it() {
     let w = world();
     write_skill(&w.upstream, "gh", "One.");
     commit(&w.upstream, "one");
     declare(&w, "[skills.gh]\nsource = \"cat\"\n");
     sync_and_apply(&w);
 
-    // Plant a symlink inside the canonical tree, then edit it into a fork.
+    // A link planted inside the tree is refused, not silently dropped.
     let canonical = w.home.join("app/.agents/skills/gh");
     std::os::unix::fs::symlink("/etc/hostname", canonical.join("link")).unwrap();
     fs::write(
@@ -147,4 +147,46 @@ fn forking_a_skill_with_a_symlink_refuses_rather_than_dropping_it() {
         matches!(error, vstack_core::error::CoreError::ForeignSymlink { .. }),
         "a symlink in the tree is refused, never silently dropped: {error}"
     );
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn forking_a_skill_whose_native_link_was_repointed_reads_the_managed_tree() {
+    let w = world();
+    write_skill(&w.upstream, "gh", "Real content.");
+    commit(&w.upstream, "one");
+    declare(&w, "[skills.gh]\nsource = \"cat\"\n");
+    sync_and_apply(&w);
+
+    // Repoint the native link at a foreign directory. fork must resolve to
+    // the managed canonical tree, never read or trash the foreign target.
+    let native = w.home.join("app/.claude/skills/gh");
+    let foreign = w.home.join("foreign");
+    fs::create_dir_all(&foreign).unwrap();
+    fs::write(foreign.join("secret.md"), "not part of the package").unwrap();
+    let canonical = w.home.join("app/.agents/skills/gh");
+    fs::write(
+        canonical.join("SKILL.md"),
+        "---\nname: gh\ndescription: mine\n---\nMine.\n",
+    )
+    .unwrap();
+    fs::remove_file(&native).unwrap();
+    std::os::unix::fs::symlink(&foreign, &native).unwrap();
+
+    let plan =
+        vstack_core::engine::fork::fork(&w.env, &w.scope, ItemKind::Skill, "gh", HarnessId::Claude)
+            .unwrap();
+    // The captured content is the canonical tree, and nothing trashes the
+    // foreign directory.
+    let descriptions: Vec<&str> = plan.ops.iter().map(|op| op.description.as_str()).collect();
+    let debug = format!("{:?}", plan.ops);
+    assert!(
+        !debug.contains("foreign"),
+        "the foreign target must never be captured or trashed: {debug}"
+    );
+    assert!(
+        descriptions.iter().any(|d| d.contains("fork")),
+        "{descriptions:?}"
+    );
+    assert!(foreign.join("secret.md").is_file());
 }

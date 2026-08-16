@@ -67,7 +67,12 @@ export const useUpdatesStore = create<UpdatesState>((set, get) => {
 
   const reload = async () => {
     const response = await commands.updatesOverview();
+    // A failed reload marks the data stale (loaded = false) rather than
+    // leaving the last-good rows trusted — the package page gates the
+    // Update button on `loaded`, and acting on rows we could not refresh
+    // is exactly the fail-open this closes.
     if (response.status === "ok") set({ rows: response.data, loaded: true });
+    else set({ loaded: false });
   };
 
   return {
@@ -87,6 +92,7 @@ export const useUpdatesStore = create<UpdatesState>((set, get) => {
         if (response.status === "ok") {
           set({ rows: response.data, loaded: true });
         } else {
+          set({ loaded: false });
           showError(UPDATE_ERROR_TITLE, response.error);
         }
       } finally {
