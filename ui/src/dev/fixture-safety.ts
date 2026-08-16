@@ -235,3 +235,15 @@ export function acmeSafety(): ItemSafety[] {
     metricsRelaySafety(),
   ];
 }
+
+// The plan-time refusals: the same blocked items as the observed list (the
+// next apply would rewrite them and the gate stops it again), so the demo
+// shows the accept action on each blocked row.
+export function acmeHeldBack(): ItemSafety[] {
+  return [
+    scraperSafety(),
+    visualQaSafety("codex"),
+    visualQaSafety("pi"),
+    logUploaderSafety(),
+  ];
+}

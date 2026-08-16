@@ -1,6 +1,7 @@
 import type { Finding, ItemSafety } from "@/bindings";
 import { Badge } from "@/components/ui/badge";
-import { cleanSummaryLead, morePlacesLabel } from "@/lib/copy";
+import { morePlacesLabel } from "@/lib/copy";
+import { cleanSummaryLead } from "@/lib/copy-safety";
 import { abbreviateHome } from "@/lib/drift-merge";
 import { groupSkipped } from "@/lib/group-findings";
 import {

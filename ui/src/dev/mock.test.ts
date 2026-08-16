@@ -53,6 +53,7 @@ describe("mock bridge", () => {
     const after = (await mockInvoke("apply_plan", {
       scope: acme,
       removeOrphans: false,
+      allowUnsafe: [],
     })) as AuditView;
     expect(after.plan).toEqual([]);
     expect(after.drift.map((r) => r.state).sort()).toEqual([

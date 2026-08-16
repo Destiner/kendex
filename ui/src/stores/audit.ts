@@ -22,7 +22,11 @@ interface AuditState {
   /** Unix ms of the last audit that came back clean; null until one has. */
   auditedAt: number | null;
   refresh: (opts?: { force?: boolean }) => Promise<void>;
-  applyPlan: (scope: Scope, removeOrphans: boolean) => Promise<void>;
+  applyPlan: (
+    scope: Scope,
+    removeOrphans: boolean,
+    allowUnsafe?: string[],
+  ) => Promise<void>;
   adopt: (
     scope: Scope,
     kind: ItemKind,
@@ -131,8 +135,8 @@ export const useAuditStore = create<AuditState>((set, get) => {
       }
     },
 
-    applyPlan: (scope, removeOrphans) =>
-      run(() => commands.applyPlan(scope, removeOrphans), {
+    applyPlan: (scope, removeOrphans, allowUnsafe = []) =>
+      run(() => commands.applyPlan(scope, removeOrphans, allowUnsafe), {
         title: "Couldn't apply these changes",
         steps: [
           "Nothing was changed — try again",

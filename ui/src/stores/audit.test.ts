@@ -32,6 +32,7 @@ const emptyView: AuditView = {
   notes: [],
   warnings: [],
   safety: [],
+  heldBack: [],
 };
 
 describe("audit store refresh", () => {
@@ -178,6 +179,52 @@ describe("audit store run() actions", () => {
 
     await useAuditStore.getState().applyPlan(globalScope, false);
 
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+});
+
+describe("applyPlan", () => {
+  beforeEach(() => {
+    useAuditStore.setState({
+      views: [emptyView],
+      auditing: false,
+      error: null,
+      busy: false,
+      auditedAt: null,
+      backgroundFailureAnnounced: false,
+    });
+    vi.clearAllMocks();
+  });
+
+  it("passes the accepted-findings tokens through to the backend", async () => {
+    vi.mocked(commands.applyPlan).mockResolvedValue({
+      status: "ok",
+      data: emptyView,
+    });
+
+    await useAuditStore
+      .getState()
+      .applyPlan(globalScope, false, ["scraper@a1b2c3d4e5f6"]);
+
+    expect(commands.applyPlan).toHaveBeenCalledWith(globalScope, false, [
+      "scraper@a1b2c3d4e5f6",
+    ]);
+  });
+
+  it("a rejected acceptance surfaces as an error, never a silent success", async () => {
+    vi.mocked(commands.applyPlan).mockResolvedValue({
+      status: "error",
+      error: "'scraper' changed since its findings were read",
+    });
+
+    await useAuditStore
+      .getState()
+      .applyPlan(globalScope, false, ["scraper@a1b2c3d4e5f6"]);
+
+    expect(useProblemsStore.getState().dialog.open).toBe(true);
+    expect(useProblemsStore.getState().dialog.message).toContain(
+      "changed since",
+    );
     expect(toast.success).not.toHaveBeenCalled();
   });
 });

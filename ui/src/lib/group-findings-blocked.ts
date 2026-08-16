@@ -65,6 +65,62 @@ export interface BlockedGroup {
 // harness it was seen on. A name that means something different per
 // harness — same skill name, different files, different findings — stays
 // separate, since collapsing it would hide a real difference.
+const itemKey = (row: ItemSafety) => `${row.kind}::${row.name}`;
+const rowKey = (row: ItemSafety) => `${row.kind}::${row.name}::${row.harness}`;
+
+export interface HeldBackMerge {
+  /** What the panel renders: every observed blocked row, plus the
+   *  plan-time refusals with no on-disk counterpart (a fresh install the
+   *  gate stopped before it reached disk). */
+  display: ItemSafety[];
+  /** Plan-time held-back rows by `kind::name` — present exactly when the
+   *  next apply wants to write this item, which is when accepting can do
+   *  anything. A purely observed row is unmanaged; its path is adoption. */
+  plannedByItem: Map<string, ItemSafety[]>;
+  /** Row identities (`kind::name::harness`) that exist on disk. */
+  onDisk: Set<string>;
+}
+
+// The two lists describe different bytes: `observed` is what a tool would
+// load right now, `heldBack` is what the plan would write and refuses to.
+// The panel shows the union — a fresh blocked install has no observed row
+// at all — and the accept action draws its hash from the plan-time side,
+// because that is the hash the gate checks (`granted()` in engine/gate.rs).
+export function mergeHeldBack(
+  observed: ItemSafety[],
+  heldBack: ItemSafety[],
+): HeldBackMerge {
+  const onDisk = new Set(observed.map(rowKey));
+  const plannedByItem = new Map<string, ItemSafety[]>();
+  for (const row of heldBack) {
+    const rows = plannedByItem.get(itemKey(row)) ?? [];
+    rows.push(row);
+    plannedByItem.set(itemKey(row), rows);
+  }
+  const display = [
+    ...observed,
+    ...heldBack.filter((row) => !onDisk.has(rowKey(row))),
+  ];
+  return { display, plannedByItem, onDisk };
+}
+
+/** How much of the content hash a token carries — mirrors SHOWN_HASH in
+ *  engine/gate.rs; a shorter prefix grants nothing. */
+const TOKEN_HASH_CHARS = 12;
+
+// One token per distinct content: a skill shared by three tools is one
+// hash and one decision, while divergent per-tool variants each need
+// their own — a single token would silently accept only part of the group.
+export function acceptTokens(planned: ItemSafety[]): string[] {
+  return [
+    ...new Set(
+      planned.map(
+        (row) => `${row.name}@${row.contentHash.slice(0, TOKEN_HASH_CHARS)}`,
+      ),
+    ),
+  ];
+}
+
 export function groupBlocked(blocked: ItemSafety[]): BlockedGroup[] {
   const ordered: BlockedGroup[] = [];
   const byKey = new Map<string, BlockedGroup>();
@@ -88,4 +144,23 @@ export function groupBlocked(blocked: ItemSafety[]): BlockedGroup[] {
     group.rows.push(row);
   }
   return ordered;
+}
+
+// One held-back rule reuses the warn list's finding anatomy exactly — same
+// severity lane, same order, same wording — so the two lists read as one
+// system rather than two dialects of the same information.
+export function ruleGroupAsFinding(group: RuleGroup): Finding {
+  return {
+    rule: group.rule,
+    severity: group.severity,
+    location: group.locations[0] ?? "",
+    message: group.message,
+    remediation: group.remediation,
+  };
+}
+
+export function leadRuleGroup(groups: RuleGroup[]): RuleGroup {
+  return groups.reduce((lead, group) =>
+    SEVERITY_RANK[group.severity] > SEVERITY_RANK[lead.severity] ? group : lead,
+  );
 }

@@ -26,6 +26,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         audit::adopt_item,
         audit::toggle_item,
         audit::remove_item,
+        audit::list_safety_overrides,
+        audit::revoke_safety_override,
         editor::get_manifest,
         editor::update_manifest,
         editor::editor_inventory,

@@ -57,7 +57,7 @@ export const useUpdatesStore = create<UpdatesState>((set, get) => {
             row.name,
             row.latest.commit,
           )
-        : await commands.applyPlan(row.scope, false);
+        : await commands.applyPlan(row.scope, false, []);
     if (response.status === "error") {
       showError(UPDATE_ERROR_TITLE, response.error);
       return false;
@@ -135,7 +135,7 @@ export const useUpdatesStore = create<UpdatesState>((set, get) => {
             .map((row) => [scopeKey(row.scope), row] as const),
         );
         for (const row of scopes.values()) {
-          const response = await commands.applyPlan(row.scope, false);
+          const response = await commands.applyPlan(row.scope, false, []);
           if (response.status === "error") {
             showError(UPDATE_ERROR_TITLE, response.error);
             ok = false;

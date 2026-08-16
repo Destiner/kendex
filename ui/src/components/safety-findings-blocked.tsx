@@ -1,16 +1,28 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import type { Finding, ItemSafety } from "@/bindings";
+import type { ItemSafety } from "@/bindings";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FindingLine } from "@/components/safety-findings";
 import { StatusDot } from "@/components/status-dot";
 import { Badge } from "@/components/ui/badge";
-import { BLOCKED_SECTION_EXPLAINER, BLOCKED_SECTION_TITLE } from "@/lib/copy";
-import { findingHeadline } from "@/lib/finding-headlines";
-import { SEVERITY_RANK } from "@/lib/group-findings";
+import { Button } from "@/components/ui/button";
 import {
+  ACCEPT_BLOCKED_CONFIRM,
+  ACCEPT_BLOCKED_LABEL,
+  ACCEPT_BLOCKED_TITLE,
+  acceptBlockedBody,
+  BLOCKED_SECTION_EXPLAINER,
+  BLOCKED_SECTION_TITLE,
+  HELD_BACK_NOT_ON_DISK_NOTE,
+} from "@/lib/copy-safety";
+import { findingHeadline } from "@/lib/finding-headlines";
+import {
+  acceptTokens,
   type BlockedGroup,
   groupBlocked,
-  type RuleGroup,
+  leadRuleGroup,
+  mergeHeldBack,
+  ruleGroupAsFinding,
 } from "@/lib/group-findings-blocked";
 import {
   hookDisplayName,
@@ -27,21 +39,29 @@ import {
 function BlockedRowNotes({
   row,
   harnessPrefix,
+  onDisk,
 }: {
   row: ItemSafety;
   harnessPrefix: string;
+  onDisk: boolean;
 }) {
   return (
     <>
+      {!onDisk ? (
+        <p className="text-xs text-muted-foreground">
+          {harnessPrefix}
+          {HELD_BACK_NOT_ON_DISK_NOTE}
+        </p>
+      ) : null}
       {row.override.state === "stale" ? (
         <p className="text-xs text-muted-foreground">
-          {harnessPrefix}You accepted this before, but {row.override.why}.
+          {harnessPrefix}This was accepted before, but {row.override.why}.
         </p>
       ) : null}
       {row.override.state === "active" ? (
         <p className="text-xs text-muted-foreground">
-          {harnessPrefix}You read these findings and accepted them, so this
-          stays installed.
+          {harnessPrefix}These findings were read and accepted, so this stays
+          installed.
         </p>
       ) : null}
       {row.skipped.length > 0 ? (
@@ -55,36 +75,39 @@ function BlockedRowNotes({
   );
 }
 
-// One held-back rule reuses the warn list's finding anatomy exactly — same
-// severity lane, same order, same wording — so the two lists read as one
-// system rather than two dialects of the same information.
-function ruleGroupAsFinding(group: RuleGroup): Finding {
-  return {
-    rule: group.rule,
-    severity: group.severity,
-    location: group.locations[0] ?? "",
-    message: group.message,
-    remediation: group.remediation,
-  };
-}
-
-function leadRuleGroup(groups: RuleGroup[]): RuleGroup {
-  return groups.reduce((lead, group) =>
-    SEVERITY_RANK[group.severity] > SEVERITY_RANK[lead.severity] ? group : lead,
-  );
-}
-
 // One disclosure row per grouped held-back entry — same anatomy as
 // FindingRow in safety-findings-affected.tsx: a dot, a headline, a scope
 // chip, a chevron. Held back is always the loudest verdict there is, so the
 // dot stays critical regardless of whether a row inside was later accepted;
 // that nuance is said in prose once the row opens, not in the dot's color.
-function BlockedGroupRow({ group }: { group: BlockedGroup }) {
+function BlockedGroupRow({
+  group,
+  planned,
+  onDisk,
+  busy,
+  projectScope,
+  onAccept,
+}: {
+  group: BlockedGroup;
+  /** Plan-time held-back rows for this item; empty when the next apply
+   *  would not write it (an unmanaged item — accepting can do nothing). */
+  planned: ItemSafety[];
+  onDisk: Set<string>;
+  busy: boolean;
+  projectScope: boolean;
+  onAccept: (tokens: string[]) => void;
+}) {
   const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const lead = leadRuleGroup(group.findingGroups);
   const extraCount = group.findingGroups.length - 1;
   const name = group.kind === "hook" ? hookDisplayName(group.name) : group.name;
   const harnesses = [...new Set(group.rows.map((row) => row.harness))];
+  // Only rows the gate has not already cleared want accepting — a group
+  // can hold an accepted (active) row beside a still-blocked sibling.
+  const tokens = acceptTokens(
+    planned.filter((row) => row.override.state !== "active"),
+  );
 
   return (
     <div>
@@ -118,6 +141,7 @@ function BlockedGroupRow({ group }: { group: BlockedGroup }) {
             <BlockedRowNotes
               key={row.harness}
               row={row}
+              onDisk={onDisk.has(`${row.kind}::${row.name}::${row.harness}`)}
               harnessPrefix={
                 harnesses.length > 1 ? `${toolName(row.harness)}: ` : ""
               }
@@ -130,8 +154,32 @@ function BlockedGroupRow({ group }: { group: BlockedGroup }) {
               locations={ruleGroup.locations}
             />
           ))}
+          {tokens.length > 0 ? (
+            <div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => setConfirming(true)}
+              >
+                {ACCEPT_BLOCKED_LABEL}
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={ACCEPT_BLOCKED_TITLE}
+        description={acceptBlockedBody(projectScope)}
+        confirmLabel={ACCEPT_BLOCKED_CONFIRM}
+        busy={busy}
+        onConfirm={() => {
+          onAccept(tokens);
+          setConfirming(false);
+        }}
+      />
     </div>
   );
 }
@@ -140,8 +188,24 @@ function BlockedGroupRow({ group }: { group: BlockedGroup }) {
 // loudest thing on the card no matter what else is going on. Rows sharing a
 // skill's files across harnesses, or a rule repeating across locations, are
 // merged before rendering — see groupBlocked in group-findings-blocked.ts.
-export function BlockedFindings({ rows }: { rows: ItemSafety[] }) {
-  const groups = groupBlocked(rows);
+// `rows` is what is on disk; `heldBack` is what the plan refuses to write —
+// the union renders, and the accept action exists exactly where a plan-time
+// row carries the hash the gate checks.
+export function BlockedFindings({
+  rows,
+  heldBack,
+  busy,
+  projectScope,
+  onAccept,
+}: {
+  rows: ItemSafety[];
+  heldBack: ItemSafety[];
+  busy: boolean;
+  projectScope: boolean;
+  onAccept: (tokens: string[]) => void;
+}) {
+  const { display, plannedByItem, onDisk } = mergeHeldBack(rows, heldBack);
+  const groups = groupBlocked(display);
   if (groups.length === 0) return null;
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-critical/30 bg-critical/5 p-3">
@@ -160,6 +224,11 @@ export function BlockedFindings({ rows }: { rows: ItemSafety[] }) {
               .map((row) => `${row.kind}:${row.name}:${row.harness}`)
               .join("|")}
             group={group}
+            planned={plannedByItem.get(`${group.kind}::${group.name}`) ?? []}
+            onDisk={onDisk}
+            busy={busy}
+            projectScope={projectScope}
+            onAccept={onAccept}
           />
         ))}
       </div>

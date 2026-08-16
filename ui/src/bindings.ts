@@ -23,10 +23,12 @@ export const commands = {
 	 */
 	reportRoute: (scope: Scope, name: string, kind: "agent" | "skill" | "hook" | "command" | "mcp-server" | "plugin" | "pi-extension" | null) => typedError<ReportRouteView, string>(__TAURI_INVOKE("report_route", { scope, name, kind })),
 	auditAll: () => typedError<AuditView_Serialize[], string>(__TAURI_INVOKE("audit_all")),
-	applyPlan: (scope: Scope, removeOrphans: boolean) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("apply_plan", { scope, removeOrphans })),
+	applyPlan: (scope: Scope, removeOrphans: boolean, allowUnsafe: string[]) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("apply_plan", { scope, removeOrphans, allowUnsafe })),
 	adoptItem: (scope: Scope, kind: ItemKind, name: string, harness: HarnessId) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("adopt_item", { scope, kind, name, harness })),
 	toggleItem: (scope: Scope, kind: ItemKind, name: string, enabled: boolean) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("toggle_item", { scope, kind, name, enabled })),
 	removeItem: (scope: Scope, kind: ItemKind, name: string) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("remove_item", { scope, kind, name })),
+	listSafetyOverrides: () => typedError<AcceptedOverride[], string>(__TAURI_INVOKE("list_safety_overrides")),
+	revokeSafetyOverride: (scope: Scope, key: string) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("revoke_safety_override", { scope, key })),
 	getManifest: (scope: Scope) => typedError<{
 	schema: number,
 	sources?: { [key in string]: SourceDecl_Serialize },
@@ -176,6 +178,23 @@ export const commands = {
 };
 
 /* Types */
+/**
+ *  One recorded acceptance, as the Settings page lists it. `key` is the
+ *  manifest's own spelling and is what revoke takes back, so even an entry
+ *  a hand edit mangled can still be withdrawn; the typed fields are parsed
+ *  from it for display and are absent where the key does not parse.
+ */
+export type AcceptedOverride = {
+	scope: Scope,
+	key: string,
+	kind: ItemKind | null,
+	name: string,
+	harness: HarnessId | null,
+	grantedAt: string,
+	/**  How many findings the acceptance covered. */
+	findings: number,
+};
+
 export type AntiPattern = {
 	flag: string,
 	detail: string,
@@ -229,6 +248,13 @@ export type AuditView_Deserialize = {
 	 */
 	safety: ItemSafety[],
 	/**
+	 *  Installations the plan would write but the safety gate holds back.
+	 *  Kept apart from `safety` (which scores what is on disk) because the
+	 *  two describe different bytes: an accept has to name the hash of what
+	 *  apply would write, and only these rows carry it.
+	 */
+	heldBack: ItemSafety[],
+	/**
 	 *  Set when this one scope couldn't be read at all — a corrupt or
 	 *  future-version lock or manifest. Carried as data so one scope's
 	 *  failure never blanks every other scope's audit (drift/plan/notes/
@@ -253,6 +279,13 @@ export type AuditView_Serialize = {
 	 *  install back, and quality, which only ever informs.
 	 */
 	safety: ItemSafety[],
+	/**
+	 *  Installations the plan would write but the safety gate holds back.
+	 *  Kept apart from `safety` (which scores what is on disk) because the
+	 *  two describe different bytes: an accept has to name the hash of what
+	 *  apply would write, and only these rows carry it.
+	 */
+	heldBack: ItemSafety[],
 	/**
 	 *  Set when this one scope couldn't be read at all — a corrupt or
 	 *  future-version lock or manifest. Carried as data so one scope's

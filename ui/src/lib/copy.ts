@@ -11,28 +11,11 @@ export const morePlacesLabel = (count: number): string =>
   `and ${count} more place${count === 1 ? "" : "s"}`;
 export const AFFECTS_LABEL = "Affects";
 
-// "Safety" section label's same-line count and the clean-summary lead.
-export const safetyGroupCountLabel = (count: number): string =>
-  `${count} thing${count === 1 ? "" : "s"} worth a look`;
-export const cleanSummaryLead = (total: number): string =>
-  `${total} other thing${total === 1 ? "" : "s"} checked — nothing to report`;
-
-export const SAFETY_HELP =
-  "Strict catches more but sometimes flags things that are actually fine. Lenient trusts more, and only stops the riskiest items.";
-
 // Review & apply page copy: what the page is, and what "managing" an item
 // buys you — said once here so "Start managing" doesn't need to explain
 // itself on every row.
 export const REVIEW_SUBTITLE =
   "What vstack would change, and what it found while looking. Nothing is written until you apply.";
-// This list scores what is on disk right now, not what a plan would write —
-// so every row here is a thing the tools will load the next time they start.
-// "Held back" describes what vstack refuses to do with it, and must never be
-// read as "this isn't on your machine".
-export const BLOCKED_SECTION_TITLE = "Serious problems found";
-export const BLOCKED_SECTION_EXPLAINER =
-  "These are on your machine now and your tools will load them. vstack won't install or update them until you've read the findings.";
-
 // Says what you get, not what the app calls the state you'd be leaving.
 export const UNMANAGED_SECTION_EXPLAINER =
   "Things already on your machine that vstack didn't put there. Hand one over and it gets kept up to date, safety-checked, and copied to every tool you use.";

@@ -13,6 +13,7 @@ function view(overrides: Partial<AuditView>): AuditView {
     notes: [],
     warnings: [],
     safety: [],
+    heldBack: [],
     error: null,
     ...overrides,
   };

@@ -8,6 +8,37 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- A held-back item can now be accepted from the app. Every serious
+  problem the safety check finds shows on the Review & apply page —
+  including an install it stopped before anything reached your machine —
+  and each one carries **Accept and install**: read the findings, accept
+  them, and the item installs in the same step. The acceptance is written
+  into that project's own `vstack.toml`, so on a shared repository the
+  whole team inherits the decision, and it covers exactly the content
+  that was read — any change to the file brings the block back. An
+  acceptance that no longer matches (the content changed after you read
+  it) stops the whole apply out loud rather than quietly installing
+  everything else. Settings lists every recorded acceptance with a
+  **Withdraw** button; the CLI mirrors it as `vstack accepted
+  [--revoke]`.
+- Taking over a skill that several tools share through links now works.
+  When tools read one folder through symlinks, **Start managing** shows
+  which folder that is and every tool reading it, then moves the
+  folder's content into vstack's keeping (the original goes to the
+  trash, recoverable) and points every tool at vstack's copy — the
+  sharing survives, with updates and safety checks now applied. A link
+  at anything that is not a skill folder, or at vstack's own files, is
+  still refused, and a folder that changes between preview and apply
+  stops the whole operation.
+- The tools now wear their real logos — Anthropic's, OpenAI's, Cursor's,
+  OpenCode's, Pi's, Gemini's and GitHub Copilot's own marks, from each
+  vendor's own site, in the same per-tool colour the rest of the app
+  uses. A tool that isn't installed shows its mark greyed. Sources and
+  the exact edits are recorded beside the files.
+- A `tags:` line in an agent's frontmatter now survives into every
+  rendering whose format allows it, so a managed agent keeps saying what
+  it is for on every tool.
+
 - Everything you install is now read before it lands, and again after.
   Two separate scores come out of it, and they are never mixed together.
   The safety score answers "could this hurt me" — content that tells the
@@ -430,6 +461,13 @@ changes carry a **Breaking** call-out with their migration note inline.
   requires a `provider/model` form. Migration: refresh regenerates.
 
 ### Fixed
+
+- An accepted skill installed as a shared link no longer reads as
+  "changed since it was reviewed" the moment it lands: the safety
+  check's idea of content identity no longer depends on which path the
+  same bytes were read through, or on how much of a very large skill the
+  audit sampled.
+
 
 - A project carrying files from vstack v1 (or a corrupted vstack
   file) no longer breaks the Review & apply page with a raw error.

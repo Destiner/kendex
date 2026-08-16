@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Finding, ItemSafety } from "@/bindings";
-import { groupBlocked, groupFindingsByRule } from "./group-findings-blocked";
+import {
+  acceptTokens,
+  groupBlocked,
+  groupFindingsByRule,
+  mergeHeldBack,
+} from "./group-findings-blocked";
 
 const RULE_FINDING: Finding = {
   rule: "dangerous-commands",
@@ -114,5 +119,49 @@ describe("groupBlocked", () => {
     const a = row({ name: "visual-qa" });
     const b = row({ name: "other-skill" });
     expect(groupBlocked([a, b])).toHaveLength(2);
+  });
+});
+
+describe("mergeHeldBack", () => {
+  it("adds a fresh refusal the observed list cannot carry", () => {
+    const fresh = row({ name: "brand-new" });
+    const { display, plannedByItem, onDisk } = mergeHeldBack([], [fresh]);
+    expect(display).toEqual([fresh]);
+    expect(plannedByItem.get("skill::brand-new")).toEqual([fresh]);
+    expect(onDisk.size).toBe(0);
+  });
+
+  it("does not render one item twice when it is both observed and planned", () => {
+    const observed = row({ contentHash: "on-disk" });
+    const planned = row({ contentHash: "would-write" });
+    const { display, plannedByItem, onDisk } = mergeHeldBack(
+      [observed],
+      [planned],
+    );
+    expect(display).toEqual([observed]);
+    expect(plannedByItem.get("skill::visual-qa")).toEqual([planned]);
+    expect(onDisk.has("skill::visual-qa::codex")).toBe(true);
+  });
+
+  it("an unmanaged blocked item has no planned rows, so no accept action", () => {
+    const { plannedByItem } = mergeHeldBack([row({})], []);
+    expect(plannedByItem.size).toBe(0);
+  });
+});
+
+describe("acceptTokens", () => {
+  it("sends one token per distinct content, not per harness", () => {
+    const codex = row({ harness: "codex", contentHash: "aaaaaaaaaaaa9999" });
+    const pi = row({ harness: "pi", contentHash: "aaaaaaaaaaaa9999" });
+    expect(acceptTokens([codex, pi])).toEqual(["visual-qa@aaaaaaaaaaaa"]);
+  });
+
+  it("divergent variants each get their own token", () => {
+    const codex = row({ harness: "codex", contentHash: "aaaaaaaaaaaa0000" });
+    const pi = row({ harness: "pi", contentHash: "bbbbbbbbbbbb0000" });
+    expect(acceptTokens([codex, pi])).toEqual([
+      "visual-qa@aaaaaaaaaaaa",
+      "visual-qa@bbbbbbbbbbbb",
+    ]);
   });
 });

@@ -92,6 +92,7 @@ describe("updates store", () => {
         notes: [],
         warnings: [],
         safety: [],
+        heldBack: [],
       },
     });
     vi.mocked(commands.updatesOverview).mockResolvedValue({
@@ -125,6 +126,7 @@ describe("updates store", () => {
         notes: [],
         warnings: [],
         safety: [],
+        heldBack: [],
       },
     });
     vi.mocked(commands.updatesOverview).mockResolvedValue({
@@ -139,7 +141,11 @@ describe("updates store", () => {
 
     await useUpdatesStore.getState().updateOne(row({}));
 
-    expect(commands.applyPlan).toHaveBeenCalledWith({ scope: "global" }, false);
+    expect(commands.applyPlan).toHaveBeenCalledWith(
+      { scope: "global" },
+      false,
+      [],
+    );
     expect(commands.packageSetRev).not.toHaveBeenCalled();
   });
 });

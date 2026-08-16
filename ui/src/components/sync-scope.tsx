@@ -15,11 +15,12 @@ import { UnmanagedItems } from "@/components/unmanaged-items";
 import {
   APPLY_BUTTON_LABEL,
   NOTHING_TO_DO_HERE,
-  safetyGroupCountLabel,
   scopeSummaryLabel,
 } from "@/lib/copy";
+import { safetyGroupCountLabel } from "@/lib/copy-safety";
 import { mergeDriftRows } from "@/lib/drift-merge";
 import { partitionSafety } from "@/lib/group-findings";
+import { mergeHeldBack } from "@/lib/group-findings-blocked";
 import { scopeName, scopePath } from "@/lib/labels";
 
 /**
@@ -39,7 +40,7 @@ export function SyncScopeCard({
 }: {
   view: AuditView;
   busy: boolean;
-  onApply: (removeOrphans: boolean) => void;
+  onApply: (removeOrphans: boolean, allowUnsafe?: string[]) => void;
   onAdopt: (
     kind: DriftRow["kind"],
     name: string,
@@ -58,6 +59,9 @@ export function SyncScopeCard({
     view.drift.filter((row) => row.state === "orphaned"),
   );
   const { blocked, warn, clean } = partitionSafety(view.safety);
+  // The panel counts what it renders: on-disk blocked rows plus the
+  // plan-time refusals that never reached disk (view.heldBack).
+  const blockedCount = mergeHeldBack(blocked, view.heldBack).display.length;
   const warnGroupCount = safetyGroupCount(warn);
   // With nothing else to fix, removing left-behind items is the only
   // change on offer — defaulting the checkbox on keeps it reachable.
@@ -66,11 +70,11 @@ export function SyncScopeCard({
   const canApply = view.plan.length > 0 || orphans.length > 0;
   const summary = scopeSummaryLabel({
     changes: changes.length,
-    blocked: blocked.length,
+    blocked: blockedCount,
     concerns: warnGroupCount,
     unmanaged: unmanaged.length,
   });
-  const [open, setOpen] = useState(blocked.length > 0 || canApply);
+  const [open, setOpen] = useState(blockedCount > 0 || canApply);
   const path = scopePath(view.scope);
 
   return (
@@ -120,7 +124,13 @@ export function SyncScopeCard({
           not-managed items are pure housekeeping. */}
       {open ? (
         <div className="flex flex-col gap-6 border-t px-4 py-4">
-          <BlockedFindings rows={blocked} />
+          <BlockedFindings
+            rows={blocked}
+            heldBack={view.heldBack}
+            busy={busy}
+            projectScope={view.scope.scope === "project"}
+            onAccept={(tokens) => onApply(false, tokens)}
+          />
           <ScopeChanges changes={changes} />
           <ScopeNotes notes={view.notes} warnings={view.warnings} />
           {warn.length > 0 || clean.length > 0 ? (

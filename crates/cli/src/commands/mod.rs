@@ -1,3 +1,4 @@
+pub mod accepted_cmd;
 pub mod add;
 pub mod adopt;
 pub mod apply_cmd;

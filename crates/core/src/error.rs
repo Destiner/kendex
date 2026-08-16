@@ -138,6 +138,9 @@ pub enum CoreError {
     #[error("pi package {name}: {message}")]
     PiPackage { name: String, message: String },
 
+    #[error("no accepted findings recorded under '{key}' in this scope")]
+    OverrideNotFound { key: String },
+
     #[error("no {} named '{name}' found for {} in this scope", kind.name(), harness.name())]
     ItemNotFound {
         kind: ItemKind,

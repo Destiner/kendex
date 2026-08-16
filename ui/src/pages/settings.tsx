@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Appearance, HarnessId } from "@/bindings";
 import { commands } from "@/bindings";
+import { AcceptedOverrides } from "@/components/accepted-overrides";
 import { PageHeader } from "@/components/page-header";
 import { Section, SettingRow } from "@/components/section";
 import { ToolOverrideRow } from "@/components/tools/tool-override-row";
@@ -11,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SAFETY_HELP } from "@/lib/copy";
+import { SAFETY_HELP } from "@/lib/copy-safety";
 import { SETTINGS_SUBTITLE } from "@/lib/labels";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
 import { cn } from "@/lib/utils";
@@ -121,6 +122,8 @@ export function SettingsPage() {
               </Select>
             </SettingRow>
           </Section>
+
+          <AcceptedOverrides />
 
           <Section
             title="Projects"

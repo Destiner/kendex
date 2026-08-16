@@ -148,7 +148,7 @@ export function packageVersionActions(
     held
       ? switchTo(latest)
       : run(
-          commands.applyPlan(ref.scope, false),
+          commands.applyPlan(ref.scope, false, []),
           updatedToastLabel(displayName),
         );
 

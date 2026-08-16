@@ -66,8 +66,8 @@ export function ReviewPage() {
                   key={scopeLabel(view.scope)}
                   view={view}
                   busy={busy}
-                  onApply={(removeOrphans) =>
-                    void applyPlan(view.scope, removeOrphans)
+                  onApply={(removeOrphans, allowUnsafe) =>
+                    void applyPlan(view.scope, removeOrphans, allowUnsafe)
                   }
                   onAdopt={(kind, name, harness, opts) =>
                     void adopt(view.scope, kind, name, harness, opts)

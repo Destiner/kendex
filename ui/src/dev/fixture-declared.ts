@@ -5,7 +5,12 @@ import type {
   Manifest_Serialize,
   SourceRow,
 } from "@/bindings";
-import { acmeSafety, personalDrift, personalSafety } from "./fixture-safety";
+import {
+  acmeHeldBack,
+  acmeSafety,
+  personalDrift,
+  personalSafety,
+} from "./fixture-safety";
 import { ACME, API, GLOBAL, proj } from "./fixture-scopes";
 
 export function views(): AuditView[] {
@@ -18,6 +23,7 @@ export function views(): AuditView[] {
       notes: [],
       warnings: [],
       safety: personalSafety(),
+      heldBack: [],
     },
     {
       scope: acme,
@@ -63,6 +69,7 @@ export function views(): AuditView[] {
       notes: [],
       warnings: [],
       safety: acmeSafety(),
+      heldBack: acmeHeldBack(),
     },
     {
       scope: proj(API),
@@ -71,6 +78,7 @@ export function views(): AuditView[] {
       notes: [],
       warnings: [],
       safety: [],
+      heldBack: [],
       // Demoes the "scope couldn't be read" path: the review card and
       // Problems page both need a real error to render, not just an empty
       // clean scope, or the modal/footer/page have nothing to show.
