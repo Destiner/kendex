@@ -175,10 +175,12 @@ export const PAGE_LABELS: Record<Page, string> = {
   home: "Home",
   review: "Review & apply",
   library: "Library",
+  updates: "Updates",
   tools: "Tools & Projects",
   customize: "Customize",
   settings: "Settings",
   problems: "Problems",
+  package: "Package",
 };
 
 const LIBRARY_TAB_LABELS: Record<LibraryTab, string> = {
@@ -196,6 +198,8 @@ export function breadcrumbLabel(nav: {
   page: Page;
   libraryTab: LibraryTab;
   toolsTab: ToolsTab;
+  /** The open package's display name, when the page is a package. */
+  packageName?: string | null;
 }): string {
   if (nav.page === "library") {
     return `${PAGE_LABELS.library} / ${LIBRARY_TAB_LABELS[nav.libraryTab]}`;
@@ -203,7 +207,18 @@ export function breadcrumbLabel(nav: {
   if (nav.page === "tools") {
     return `${PAGE_LABELS.tools} / ${TOOLS_TAB_LABELS[nav.toolsTab]}`;
   }
+  if (nav.page === "package" && nav.packageName) {
+    return `${PAGE_LABELS.library} / ${nav.packageName}`;
+  }
   return PAGE_LABELS[nav.page];
+}
+
+/** How a package's name reads to a person — hooks carry display names. */
+export function packageDisplayName(ref: {
+  kind: ItemKind;
+  name: string;
+}): string {
+  return ref.kind === "hook" ? hookDisplayName(ref.name) : ref.name;
 }
 
 // Settings page copy, kept here so the wording is reviewed in one place.

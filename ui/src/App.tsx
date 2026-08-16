@@ -9,6 +9,7 @@ import { WindowControls } from "@/components/window-controls";
 import { CustomizePage } from "@/pages/customize";
 import { LibraryPage } from "@/pages/library";
 import { OverviewPage } from "@/pages/overview";
+import { PackagePage } from "@/pages/package";
 import { ProblemsPage } from "@/pages/problems";
 import { ReviewPage } from "@/pages/review";
 import { SettingsPage } from "@/pages/settings";
@@ -99,6 +100,7 @@ export default function App() {
             <div className="flex-1 overflow-y-auto">
               {page === "home" && <OverviewPage />}
               {page === "library" && <LibraryPage />}
+              {page === "package" && <PackagePage />}
               {page === "tools" && <ToolsProjectsPage />}
               {page === "review" && <ReviewPage />}
               {page === "customize" && <CustomizePage />}

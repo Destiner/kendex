@@ -9,8 +9,48 @@ describe("nav store", () => {
       libraryTab: "installed",
       toolsTab: "tools",
       libraryFilter: null,
+      packageRef: null,
+      packageView: null,
       history: [],
     });
+  });
+
+  const GH = {
+    kind: "skill" as const,
+    name: "gh",
+    scope: { scope: "global" as const },
+  };
+
+  it("opens a package, remembers it through back, and clears on a direct pick", () => {
+    useNavStore.getState().goToLibrary();
+    useNavStore.getState().goToPackage(GH);
+
+    let state = useNavStore.getState();
+    expect(state.page).toBe("package");
+    expect(state.packageRef).toEqual(GH);
+
+    state.back();
+    state = useNavStore.getState();
+    expect(state.page).toBe("library");
+    expect(state.packageRef).toBeNull();
+
+    useNavStore.getState().goToPackage(GH);
+    useNavStore.getState().setPage("home");
+    expect(useNavStore.getState().packageRef).toBeNull();
+    expect(useNavStore.getState().history).toEqual([]);
+  });
+
+  it("carries an initial diff view to the package page, consumed once", () => {
+    useNavStore
+      .getState()
+      .goToPackage(GH, { mode: "diff", from: "aaa", to: "bbb" });
+    expect(useNavStore.getState().packageView).toEqual({
+      mode: "diff",
+      from: "aaa",
+      to: "bbb",
+    });
+    useNavStore.getState().clearPackageView();
+    expect(useNavStore.getState().packageView).toBeNull();
   });
 
   it("hands off a tool + kind filter to Library and clears it on request", () => {
@@ -44,7 +84,12 @@ describe("nav store", () => {
     useNavStore.getState().goToLibrary();
 
     expect(useNavStore.getState().history).toEqual([
-      { page: "home", libraryTab: "installed", toolsTab: "tools" },
+      {
+        page: "home",
+        libraryTab: "installed",
+        toolsTab: "tools",
+        packageRef: null,
+      },
     ]);
   });
 
@@ -95,7 +140,12 @@ describe("nav store", () => {
     const state = useNavStore.getState();
     expect(state.page).toBe("review");
     expect(state.history).toEqual([
-      { page: "home", libraryTab: "installed", toolsTab: "tools" },
+      {
+        page: "home",
+        libraryTab: "installed",
+        toolsTab: "tools",
+        packageRef: null,
+      },
     ]);
   });
 

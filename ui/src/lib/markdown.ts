@@ -34,11 +34,11 @@ renderer.use({
       const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
       return `<a href="${escapeHtml(safe)}"${titleAttr} rel="noopener noreferrer">${text}</a>`;
     },
-    image({ href, title, text }: Tokens.Image): string {
-      const safe = safeHref(href);
-      if (!safe) return escapeHtml(text);
-      const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
-      return `<img src="${escapeHtml(safe)}" alt="${escapeHtml(text)}"${titleAttr}>`;
+    // An image is a network request to wherever its URL points, made the
+    // moment the preview renders — a readme's author gets to watch who
+    // opened it. No image loads; the alt text stands in.
+    image({ text }: Tokens.Image): string {
+      return `<span class="md-image">${escapeHtml(text || "image")}</span>`;
     },
     // `text` here is the fence's raw, unescaped source — exactly what
     // highlightCode expects. highlight.js tokenizes it as plain text and

@@ -8,16 +8,13 @@ import { groupScopes, type ItemGroup } from "@/lib/derive";
 import { kindIcon } from "@/lib/kind-icon";
 import { hookDisplayName, kindLabel, scopeName } from "@/lib/labels";
 import { relativeTime } from "@/lib/relative-time";
-import { cn } from "@/lib/utils";
 
 export function InstalledRow({
   group,
-  selected,
-  onSelect,
+  onOpen,
 }: {
   group: ItemGroup;
-  selected: boolean;
-  onSelect: () => void;
+  onOpen: () => void;
 }) {
   const Icon = kindIcon(group.kind);
   const displayName =
@@ -30,10 +27,7 @@ export function InstalledRow({
     .join(", ");
 
   return (
-    <TableRow
-      onClick={onSelect}
-      className={cn("cursor-pointer", selected && "bg-muted/60")}
-    >
+    <TableRow onClick={onOpen} className="cursor-pointer">
       <TableCell className="max-w-[22rem] font-medium">
         <span className="flex items-start gap-2">
           <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />

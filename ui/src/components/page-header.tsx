@@ -8,7 +8,7 @@ export function PageHeader({
   action,
   wide = false,
 }: {
-  title: string;
+  title: ReactNode;
   subtitle?: string;
   action?: ReactNode;
   /** Line the header up with a page that runs full-width, not to the reading cap. */

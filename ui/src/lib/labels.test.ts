@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { DriftRow } from "@/bindings";
 import { findingHeadline } from "@/lib/finding-headlines";
 import {
+  breadcrumbLabel,
   driftDetail,
   hookDisplayName,
   kindLabel,
+  packageDisplayName,
   SEVERITY_BADGES,
   STATE_BADGES,
   STATE_LABELS,
@@ -117,5 +119,19 @@ describe("labels", () => {
     expect(skipReasonShort("some new engine sentence")).toBe(
       "can't be fully checked here yet",
     );
+  });
+});
+
+describe("breadcrumbLabel for a package", () => {
+  it("reads Library / <name>, with hooks by display name", () => {
+    expect(
+      breadcrumbLabel({
+        page: "package",
+        libraryTab: "installed",
+        toolsTab: "tools",
+        packageName: packageDisplayName({ kind: "skill", name: "gh" }),
+      }),
+    ).toBe("Library / gh");
+    expect(packageDisplayName({ kind: "hook", name: "block-rm" })).not.toBe("");
   });
 });

@@ -170,3 +170,66 @@ export const pendingChangesLabel = (count: number): string =>
   count === 1 ? "1 change ready" : `${count} changes ready`;
 export const heldBackFooterLabel = (count: number): string =>
   count === 1 ? "1 serious problem" : `${count} serious problems`;
+
+// Package page: files, versions, and the diff between them.
+export const PACKAGE_FILES_TITLE = "Files";
+export const PACKAGE_VERSION_TITLE = "Version";
+export const README_TAG = "readme";
+export const SHOWN_BY_DEFAULT_NOTE = "Shown when the package opens";
+export const UPDATE_LABEL = "Update";
+export const PREVIEW_CHANGES_LABEL = "Preview changes";
+export const SWITCH_VERSION_LABEL = "Switch to this version";
+export const COMPARE_WITH_INSTALLED_LABEL = "Compare with installed";
+export const FOLLOW_SOURCE_LABEL = "Resume automatic updates";
+export const INSTALLED_VERSION_TAG = "installed";
+export const HELD_VERSION_TAG = "held here";
+export const NO_VERSIONS_NOTE =
+  "No version history yet — refresh the source to fetch it.";
+export const BACK_TO_FILES_LABEL = "Back to files";
+export const DIFF_TRUNCATED_NOTE =
+  "This comparison is long; only the first part is shown.";
+export const VERSION_ERROR_TITLE = "Couldn't switch versions";
+
+// Updates page.
+export const UPDATES_SUBTITLE =
+  "Newer versions of what you have installed. Packages set to update automatically come current when you apply changes.";
+export const UPDATES_EMPTY = "Everything is on its latest version.";
+export const UPDATE_ALL_LABEL = "Update all";
+export const CHECK_FOR_UPDATES_LABEL = "Check for updates";
+export const AUTO_UPDATE_LABEL = "Update automatically";
+export const IGNORE_UPDATES_LABEL = "Stop notifying…";
+export const ignoreConfirmTitle = (name: string): string =>
+  `Stop notifying about ${name}?`;
+export const IGNORE_CONFIRM_BODY =
+  "It stays installed and can still be updated from its own page — it just leaves this list and the badge.";
+export const IGNORE_CONFIRM_LABEL = "Stop notifying";
+export const NOTIFY_AGAIN_LABEL = "Notify again";
+export const hiddenUpdatesLabel = (count: number): string =>
+  count === 1 ? "1 hidden update" : `${count} hidden updates`;
+export const PINNED_UPDATE_TAG = "Held";
+export const EDITED_UPDATE_TAG = "Edited by you";
+export const UPDATE_ERROR_TITLE = "Couldn't update";
+export const updatedToastLabel = (name: string): string => `Updated ${name}`;
+export const UPDATED_ALL_TOAST = "Everything is up to date";
+
+// Fork: what happens when the app finds files you edited by hand.
+export const FORKED_BADGE_LABEL = "Forked";
+export const FORK_NOTICE_TITLE = "You've changed this package's files";
+export const FORK_NOTICE_DETAIL =
+  "Updates are paused so your edits stay. Keep it as your own copy, see what changed, or discard the edits and go back to the catalog's version.";
+export const KEEP_AS_FORK_LABEL = "Keep as my own";
+export const VIEW_CHANGES_LABEL = "View changes";
+export const DISCARD_EDITS_LABEL = "Discard edits…";
+export const DISCARD_EDITS_CONFIRM_TITLE = "Discard your edits?";
+export const DISCARD_EDITS_CONFIRM_BODY =
+  "The catalog's version replaces your changes. Your edited files go to the trash, not into thin air.";
+export const DISCARD_EDITS_CONFIRM_LABEL = "Discard edits";
+export const FORK_ERROR_TITLE = "Couldn't keep the edits";
+export const forkedToastLabel = (name: string): string =>
+  `${name} is yours now — updates are paused`;
+export const forkedAttentionTitle = (count: number): string =>
+  count === 1
+    ? "You've edited an installed package"
+    : `You've edited ${count} installed packages`;
+export const FORKED_ATTENTION_DETAIL =
+  "Your changes are safe — nothing will overwrite them. Decide whether to keep each as your own copy.";

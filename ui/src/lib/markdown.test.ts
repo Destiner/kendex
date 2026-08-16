@@ -44,7 +44,7 @@ describe("renderMarkdown", () => {
 
   it("falls back to escaped, unhighlighted text when nothing registered matches", () => {
     const html = renderMarkdown(
-      "```rust\nlorem ipsum dolor sit amet consectetur\n```",
+      "```cobol\nlorem ipsum dolor sit amet consectetur\n```",
     );
     expect(html).toContain("lorem ipsum dolor sit amet consectetur");
     expect(html).toContain('class="hljs"');

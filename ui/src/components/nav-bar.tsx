@@ -1,7 +1,7 @@
 import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BACK_LABEL } from "@/lib/copy";
-import { breadcrumbLabel } from "@/lib/labels";
+import { breadcrumbLabel, packageDisplayName } from "@/lib/labels";
 import { useNavStore } from "@/stores/nav";
 
 // A quiet strip above the page content — only worth showing at all once a
@@ -12,6 +12,7 @@ export function NavBar() {
   const page = useNavStore((s) => s.page);
   const libraryTab = useNavStore((s) => s.libraryTab);
   const toolsTab = useNavStore((s) => s.toolsTab);
+  const packageRef = useNavStore((s) => s.packageRef);
   const hasHistory = useNavStore((s) => s.history.length > 0);
   const back = useNavStore((s) => s.back);
 
@@ -28,7 +29,14 @@ export function NavBar() {
       >
         <ChevronLeft className="size-3.5" />
       </Button>
-      <span>{breadcrumbLabel({ page, libraryTab, toolsTab })}</span>
+      <span>
+        {breadcrumbLabel({
+          page,
+          libraryTab,
+          toolsTab,
+          packageName: packageRef ? packageDisplayName(packageRef) : null,
+        })}
+      </span>
     </div>
   );
 }

@@ -1,0 +1,105 @@
+import { ExternalLink } from "lucide-react";
+import { commands, type ItemKind, type Scope } from "@/bindings";
+import { ReportDialog } from "@/components/report-dialog";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  EDITOR_ERROR_STEPS,
+  EDITOR_ERROR_TITLE,
+  FILE_BROWSER_ERROR_TITLE,
+  OPEN_IN_EDITOR_LABEL,
+  OPEN_IN_FILE_BROWSER_LABEL,
+  OPEN_IN_LABEL,
+  PREVIEW_CHANGES_LABEL,
+  UPDATE_LABEL,
+} from "@/lib/copy";
+import { editorOpenPath } from "@/lib/editor-path";
+import { useProblemsStore } from "@/stores/problems";
+
+/** The package page's header actions: update when a newer version exists,
+ *  the open-in menu, remove, and report. */
+export function PackageActions({
+  scope,
+  kind,
+  name,
+  primaryPath,
+  updateAvailable,
+  busy,
+  onUpdate,
+  onPreview,
+  onRemove,
+}: {
+  scope: Scope;
+  kind: ItemKind;
+  name: string;
+  primaryPath: string;
+  updateAvailable: boolean;
+  busy: boolean;
+  onUpdate: () => void;
+  onPreview: () => void;
+  onRemove: () => void;
+}) {
+  const showError = useProblemsStore((s) => s.showError);
+
+  const openInFileBrowser = () => {
+    void commands.revealPath(primaryPath).then((response) => {
+      if (response.status === "error") {
+        showError({ title: FILE_BROWSER_ERROR_TITLE, message: response.error });
+      }
+    });
+  };
+
+  const openInEditor = () => {
+    void commands.openInEditor(editorOpenPath(primaryPath)).then((response) => {
+      if (response.status === "error") {
+        showError({
+          title: EDITOR_ERROR_TITLE,
+          message: response.error,
+          steps: EDITOR_ERROR_STEPS,
+        });
+      }
+    });
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {updateAvailable ? (
+        <>
+          <Button size="sm" disabled={busy} onClick={onUpdate}>
+            {UPDATE_LABEL}
+          </Button>
+          <Button size="sm" variant="outline" onClick={onPreview}>
+            {PREVIEW_CHANGES_LABEL}
+          </Button>
+        </>
+      ) : null}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button size="sm" variant="outline">
+              <ExternalLink className="size-4" />
+              {OPEN_IN_LABEL}
+            </Button>
+          }
+        />
+        <DropdownMenuContent>
+          <DropdownMenuItem onClick={openInFileBrowser}>
+            {OPEN_IN_FILE_BROWSER_LABEL}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={openInEditor}>
+            {OPEN_IN_EDITOR_LABEL}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Button size="sm" variant="outline" disabled={busy} onClick={onRemove}>
+        Remove…
+      </Button>
+      <ReportDialog scope={scope} name={name} kind={kind} />
+    </div>
+  );
+}

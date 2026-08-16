@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { ItemKind, Tag } from "@/bindings";
-import { ItemDetail } from "@/components/item-detail";
 import { InstalledRow } from "@/components/library/installed-row";
 import { LibraryFilters } from "@/components/library/library-filters";
 import { Button } from "@/components/ui/button";
@@ -13,46 +12,60 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TAGS_ROW_LABEL } from "@/lib/copy";
-import {
-  filterItems,
-  groupItems,
-  type Location,
-  projectScopes,
-} from "@/lib/derive";
+import { filterItems, groupItems, projectScopes } from "@/lib/derive";
 import { PAGE_GUTTER, WIDE_CONTENT_WIDTH } from "@/lib/layout";
 import { cn } from "@/lib/utils";
+import { useLibraryViewStore } from "@/stores/library-view";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 
-/** "Installed": everything on this machine, filterable, with a detail pane. */
+/** "Installed": everything on this machine, filterable. A row opens the
+ *  package's own page; the filters and scroll position live in a store so
+ *  coming back from that page lands exactly where the table was left. */
 export function InstalledView() {
   const result = useScanStore((s) => s.result);
   const scope = useNavStore((s) => s.scope);
   const goToLibrary = useNavStore((s) => s.goToLibrary);
+  const goToPackage = useNavStore((s) => s.goToPackage);
   const clearLibraryFilter = useNavStore((s) => s.clearLibraryFilter);
-  const [kind, setKind] = useState<string>(
-    () => useNavStore.getState().libraryFilter?.kind ?? "any",
-  );
-  const [harness, setHarness] = useState<string>(
-    () => useNavStore.getState().libraryFilter?.tool ?? "any",
-  );
-  // Page-local, alongside kind/harness — narrows within whatever the
-  // sidebar's global scope already shows, rather than replacing it.
-  // Empty set is "All".
-  const [tag, setTag] = useState<string>("any");
-  const [locations, setLocations] = useState<Set<Location>>(() => new Set());
+  const {
+    kind,
+    harness,
+    tag,
+    locations,
+    setKind,
+    setHarness,
+    setTag,
+    setLocations,
+    setScrollTop,
+    clearFilters: clearViewFilters,
+  } = useLibraryViewStore();
   // The search box lives in the sidebar, one for the whole app.
   const search = useNavStore((s) => s.search);
   const setSearch = useNavStore((s) => s.setSearch);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const projects = result ? projectScopes(result) : [];
+  const scroller = useRef<HTMLDivElement | null>(null);
 
   // The filter is a one-time handoff from wherever the link was clicked
-  // (Tools, Projects); once applied, further tab visits start from "any"
-  // again rather than reapplying a stale filter.
+  // (Tools, Projects); once applied, further tab visits start from the
+  // stored view again rather than reapplying a stale filter.
   useEffect(() => {
+    const handoff = useNavStore.getState().libraryFilter;
+    if (handoff) {
+      setKind(handoff.kind ?? "any");
+      setHarness(handoff.tool ?? "any");
+    }
     clearLibraryFilter();
-  }, [clearLibraryFilter]);
+  }, [clearLibraryFilter, setKind, setHarness]);
+
+  // Restore where the table was scrolled to when it last unmounted, and
+  // record it again on the way out.
+  useEffect(() => {
+    const node = scroller.current;
+    if (!node) return;
+    node.scrollTop = useLibraryViewStore.getState().scrollTop;
+    return () => setScrollTop(node.scrollTop);
+  }, [setScrollTop]);
 
   const groups = useMemo(() => {
     if (!result) return [];
@@ -67,14 +80,10 @@ export function InstalledView() {
     return groupItems(filtered);
   }, [result, scope, locations, kind, harness, tag, search]);
 
-  const selected = groups.find((g) => g.key === selectedKey) ?? null;
   const hasAnyItems = (result?.items.length ?? 0) > 0;
 
   const clearFilters = () => {
-    setKind("any");
-    setHarness("any");
-    setTag("any");
-    setLocations(new Set());
+    clearViewFilters();
     setSearch("");
   };
 
@@ -92,35 +101,10 @@ export function InstalledView() {
         projects={projects}
       />
       <div className={cn("flex min-h-0 flex-1 flex-col", PAGE_GUTTER)}>
-        {/* The flyout floats above this pane rather than sharing the row
-            with it, so the table keeps its full width — and its columns
-            stop truncating — whether or not a row is selected. Where the
-            window is wide enough to spare it, the table shifts clear of the
-            open panel instead of hiding under it. */}
-        <div
-          className={cn(
-            "flex min-h-0 flex-1 transition-[padding] duration-200 ease-out",
-            WIDE_CONTENT_WIDTH,
-            selected && "xl:pr-[min(30rem,85vw)]",
-          )}
-        >
-          {/* Frozen while the panel is open: the table is behind a
-              click-catcher anyway, and an overlay scrollbar draws in a layer
-              of its own that would otherwise linger on top of the panel
-              until the compositor fades it out. Reserve the scrollbar's lane
-              either way so nothing shifts — it otherwise paints over the
-              last column's text on hover. */}
+        <div className={cn("flex min-h-0 flex-1", WIDE_CONTENT_WIDTH)}>
           <div
-            className={cn(
-              "min-w-0 flex-1 pr-2 [scrollbar-gutter:stable]",
-              // Sideways scrolling stays while the panel is open, on a bar
-              // that is always drawn rather than an overlay that fades:
-              // with the panel covering the right of the table, that bar is
-              // the only way back to the columns underneath it.
-              selected
-                ? "overflow-x-scroll overflow-y-hidden [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar]:bg-transparent"
-                : "overflow-y-auto",
-            )}
+            ref={scroller}
+            className="min-w-0 flex-1 overflow-y-auto pr-2 [scrollbar-gutter:stable]"
           >
             <Table>
               <TableHeader>
@@ -135,18 +119,23 @@ export function InstalledView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {groups.map((group) => (
-                  <InstalledRow
-                    key={group.key}
-                    group={group}
-                    selected={group.key === selectedKey}
-                    onSelect={() =>
-                      setSelectedKey(
-                        group.key === selectedKey ? null : group.key,
-                      )
-                    }
-                  />
-                ))}
+                {groups.map((group) => {
+                  const primary = group.installations[0];
+                  return (
+                    <InstalledRow
+                      key={group.key}
+                      group={group}
+                      onOpen={() => {
+                        if (!primary) return;
+                        goToPackage({
+                          kind: group.kind,
+                          name: group.name,
+                          scope: primary.scope,
+                        });
+                      }}
+                    />
+                  );
+                })}
                 {groups.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="py-10">
@@ -191,7 +180,6 @@ export function InstalledView() {
             </Table>
           </div>
         </div>
-        <ItemDetail group={selected} onClose={() => setSelectedKey(null)} />
       </div>
     </div>
   );

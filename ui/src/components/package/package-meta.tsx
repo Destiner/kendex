@@ -1,5 +1,9 @@
 import type { ReactNode } from "react";
-import type { HarnessId, ObservedItem } from "@/bindings";
+import type {
+  HarnessId,
+  ObservedItem,
+  PackageMeta_Serialize,
+} from "@/bindings";
 import { SectionHeading } from "@/components/section";
 import { TagBadges } from "@/components/tag-badge";
 import { ToolBadge } from "@/components/tool-badge";
@@ -8,6 +12,7 @@ import { TAGS_ROW_LABEL } from "@/lib/copy";
 import type { ItemGroup } from "@/lib/derive";
 import { kindLabel, scopeName } from "@/lib/labels";
 import { relativeTime } from "@/lib/relative-time";
+import { versionLabel } from "@/lib/versions";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -18,22 +23,18 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-// The engine only ever fills origin with "local" (this project's own
-// manifest) or a catalog's repo slug — anything else means it has no
-// provenance to report at all.
-function provenanceLabel(origin: string | null): string | null {
-  if (!origin) return null;
-  return origin === "local" ? "Managed from this project" : `From ${origin}`;
-}
-
-export function ItemDetailMeta({
+/** The Details block of the package page: what the scan observed plus the
+ *  provenance the manifest and catalog record. Rows render only when they
+ *  have something to say. */
+export function PackageMetaBlock({
   group,
   primary,
+  meta,
 }: {
   group: ItemGroup;
   primary: ObservedItem;
+  meta: PackageMeta_Serialize | null;
 }) {
-  const provenance = provenanceLabel(primary.origin);
   return (
     <div className="space-y-2.5">
       <SectionHeading>Details</SectionHeading>
@@ -55,22 +56,30 @@ export function ItemDetailMeta({
           </span>
         </Row>
         <Row label="Scope">{scopeName(primary.scope)}</Row>
+        {meta?.current ? (
+          <Row label="Version">{versionLabel(meta.current)}</Row>
+        ) : null}
+        {meta?.repo ? (
+          <Row label="Source">
+            <span className="break-all">{meta.repo}</span>
+          </Row>
+        ) : primary.origin === "local" ? (
+          <Row label="Source">Managed from this machine</Row>
+        ) : null}
+        {meta?.catalog?.author ? (
+          <Row label="Author">{meta.catalog.author}</Row>
+        ) : null}
+        {meta?.catalog?.license ? (
+          <Row label="License">{meta.catalog.license}</Row>
+        ) : null}
         <Row label="Path">
           <span className="break-all font-mono text-xs">{primary.path}</span>
         </Row>
-        {primary.fileState.state === "symlink" && !primary.fileState.broken ? (
-          <Row label="Linked">
-            <span className="break-all font-mono text-xs">
-              {primary.fileState.target}
-            </span>
-          </Row>
-        ) : null}
         {group.modifiedAt != null ? (
           <Row label="Updated">
             {relativeTime(group.modifiedAt * 1000, Date.now())}
           </Row>
         ) : null}
-        {provenance ? <Row label="Source">{provenance}</Row> : null}
       </dl>
       {primary.fileState.state === "symlink" && primary.fileState.broken ? (
         <p className="text-xs text-destructive">The link is broken.</p>

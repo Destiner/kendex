@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { HarnessId, ItemKind } from "@/bindings";
+import type { HarnessId, ItemKind, Scope } from "@/bindings";
 import type { ScopeSelection } from "@/lib/derive";
 
 export type Page =
@@ -9,10 +9,14 @@ export type Page =
   | "tools"
   | "customize"
   | "settings"
+  | "updates"
   // Reached only from the status footer's problems segment or a review
   // card's "See all problems" — not in the sidebar, since it isn't a place
   // you'd navigate to when nothing is wrong.
-  | "problems";
+  | "problems"
+  // Reached only by opening a package from a list — which package is open
+  // lives in `packageRef`, so the page is never a sidebar destination.
+  | "package";
 
 /** Which half of the Library page is showing. */
 export type LibraryTab = "installed" | "add";
@@ -26,11 +30,29 @@ export interface LibraryFilter {
   kind?: ItemKind;
 }
 
+/** The package a package page is showing — everything a backend query
+ * needs to address it. */
+export interface PackageRef {
+  kind: ItemKind;
+  name: string;
+  scope: Scope;
+}
+
+/** What the package page should open showing, when not its files — e.g.
+ * "Preview" on the Updates page lands straight on the diff. Consumed once
+ * by the page on mount, then cleared. */
+export interface PackageView {
+  mode: "diff";
+  from: string;
+  to: string;
+}
+
 /** Where the back button returns to: a page plus its tab state at push time. */
 export interface HistoryEntry {
   page: Page;
   libraryTab: LibraryTab;
   toolsTab: ToolsTab;
+  packageRef: PackageRef | null;
 }
 
 // Small and fixed so a long session of cross-page hops never grows the
@@ -47,6 +69,10 @@ interface NavState {
   toolsTab: ToolsTab;
   /** Consumed once by Installed on mount, then cleared. */
   libraryFilter: LibraryFilter | null;
+  /** Which package the package page shows; null anywhere else. */
+  packageRef: PackageRef | null;
+  /** Consumed once by the package page on mount, then cleared. */
+  packageView: PackageView | null;
   history: HistoryEntry[];
   setPage: (page: Page) => void;
   setScope: (scope: ScopeSelection) => void;
@@ -57,7 +83,9 @@ interface NavState {
    * footer) — pushes history like the other goTo* helpers so back and the
    * breadcrumb work, without needing per-tab state of its own. */
   goTo: (page: Page) => void;
+  goToPackage: (ref: PackageRef, view?: PackageView) => void;
   clearLibraryFilter: () => void;
+  clearPackageView: () => void;
   back: () => void;
 }
 
@@ -68,11 +96,14 @@ export const useNavStore = create<NavState>((set) => ({
   libraryTab: "installed",
   toolsTab: "tools",
   libraryFilter: null,
+  packageRef: null,
+  packageView: null,
   history: [],
   // A direct page pick starts a fresh navigation context — an old back
   // trail pointing at a page the user deliberately left is a bug, not a
   // shortcut, and a stale filter from before the jump shouldn't resurface.
-  setPage: (page) => set({ page, history: [], libraryFilter: null }),
+  setPage: (page) =>
+    set({ page, history: [], libraryFilter: null, packageRef: null }),
   setScope: (scope) => set({ scope }),
   // Typing anywhere in the app means "find me this thing", and the only
   // page that can answer is the Library — so the first keystroke takes you
@@ -106,7 +137,15 @@ export const useNavStore = create<NavState>((set) => ({
       page,
       history: pushHistory(state, page),
     })),
+  goToPackage: (ref, view) =>
+    set((state) => ({
+      page: "package",
+      packageRef: ref,
+      packageView: view ?? null,
+      history: pushHistory(state, "package"),
+    })),
   clearLibraryFilter: () => set({ libraryFilter: null }),
+  clearPackageView: () => set({ packageView: null }),
   back: () =>
     set((state) => {
       const prior = state.history.at(-1);
@@ -114,6 +153,7 @@ export const useNavStore = create<NavState>((set) => ({
       return {
         ...prior,
         libraryFilter: null,
+        packageView: null,
         history: state.history.slice(0, -1),
       };
     }),
@@ -127,6 +167,7 @@ function pushHistory(state: NavState, destination: Page): HistoryEntry[] {
     page: state.page,
     libraryTab: state.libraryTab,
     toolsTab: state.toolsTab,
+    packageRef: state.packageRef,
   };
   return [...state.history, entry].slice(-HISTORY_CAP);
 }
