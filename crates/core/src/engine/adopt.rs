@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::adopt_shared::{SharedTarget, shared_capture_ops, shared_target};
 use super::desired::native_dir;
 use super::ops::manifest_for_mutation;
 use crate::apply::{Op, Plan, PlannedOp, Pre};
@@ -16,8 +17,12 @@ use crate::source::local_source_root;
 /// trash. A follow-up apply renders the managed replacement.
 ///
 /// State machine: target-has-files → merge into declaration;
-/// target-is-foreign-symlink → conflict, never clobber; broken symlink →
-/// nothing to adopt, the follow-up apply recreates from declaration.
+/// live symlink → adopt the *target's* content when it passes the shared-
+/// target boundary (a skill folder the user linked several tools at), and
+/// take every sibling link with it so the follow-up apply can restore the
+/// sharing with vstack's copy as canonical; anything else a link points at
+/// stays a conflict, never a clobber target; broken symlink → nothing to
+/// adopt, the follow-up apply recreates from declaration.
 pub fn adopt(
     env: &Env,
     scope: &Scope,
@@ -37,21 +42,6 @@ pub fn adopt(
         _ => dir.join(name),
     };
 
-    // Broken link: content is gone; declaring is all adoption can do. The
-    // link itself is cleared by a planned op — planning never touches disk,
-    // so a plan that is never applied (or fails) leaves the world as it was.
-    let mut broken_link: Option<Pre> = None;
-    if original.is_symlink() {
-        let points_to = fs::read_link(&original).map_err(|e| CoreError::io(&original, e))?;
-        if original.exists() {
-            return Err(CoreError::ForeignSymlink {
-                target: original,
-                points_to,
-            });
-        }
-        broken_link = Some(Pre::SymlinkTo { target: points_to });
-    }
-
     let local_root = local_source_root(env, scope);
     let local_item = match kind {
         ItemKind::Skill => local_root.join("skills").join(name),
@@ -63,16 +53,51 @@ pub fn adopt(
             });
         }
     };
-    let mut ops = capture_ops(kind, name, original, &local_item, broken_link)?;
 
-    let harness_is_default = manifest.install.harnesses.contains(&harness);
+    // Broken link: content is gone; declaring is all adoption can do. The
+    // link itself is cleared by a planned op — planning never touches disk,
+    // so a plan that is never applied (or fails) leaves the world as it was.
+    let mut broken_link: Option<Pre> = None;
+    let mut shared: Option<SharedTarget> = None;
+    if original.is_symlink() {
+        let points_to = fs::read_link(&original).map_err(|e| CoreError::io(&original, e))?;
+        if original.exists() {
+            shared = Some(shared_target(
+                env,
+                scope,
+                kind,
+                name,
+                &original,
+                points_to,
+                &local_item,
+            )?);
+        } else {
+            broken_link = Some(Pre::SymlinkTo { target: points_to });
+        }
+    }
+
+    let mut ops = match &shared {
+        Some(shared) => shared_capture_ops(name, shared, &local_item)?,
+        None => capture_ops(kind, name, original, &local_item, broken_link)?,
+    };
+
+    // A shared folder is declared for every tool that was reading it, not
+    // only the one the user clicked — dropping the others is exactly the
+    // broken sharing this path exists to avoid.
+    let wanted: Vec<HarnessId> = match &shared {
+        Some(shared) => shared.harnesses.clone(),
+        None => vec![harness],
+    };
+    let defaults_cover = wanted
+        .iter()
+        .all(|h| manifest.install.harnesses.contains(h));
     let decl = manifest
         .declared_mut(kind)
         .entry(name.to_owned())
         .or_insert_with(|| ItemDecl::from_source(LOCAL_SOURCE_NAME));
     decl.source = LOCAL_SOURCE_NAME.to_owned();
-    if decl.harnesses.is_none() && !harness_is_default {
-        decl.harnesses = Some(vec![harness]);
+    if decl.harnesses.is_none() && !defaults_cover {
+        decl.harnesses = Some(wanted);
     }
 
     let manifest_path = manifest::manifest_path(env, scope);
@@ -157,8 +182,19 @@ fn capture_ops(
     Ok(ops)
 }
 
+/// Far beyond any real skill, but a hard stop before a link at a huge
+/// folder turns a capture into a memory problem. Fail-loud: the error
+/// names the file that broke the budget.
+pub(super) const MAX_CAPTURE_FILES: usize = 2000;
+pub(super) const MAX_CAPTURE_BYTES: u64 = 100 * 1024 * 1024;
+
 pub(crate) fn read_tree(root: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {
-    fn walk(dir: &Path, rel: &Path, files: &mut Vec<(PathBuf, Vec<u8>)>) -> Result<()> {
+    fn walk(
+        dir: &Path,
+        rel: &Path,
+        files: &mut Vec<(PathBuf, Vec<u8>)>,
+        bytes: &mut u64,
+    ) -> Result<()> {
         for entry in fs::read_dir(dir).map_err(|e| CoreError::io(dir, e))? {
             // A per-entry read error is not silently skipped: dropping it
             // would capture an incomplete tree and then trash the
@@ -180,15 +216,36 @@ pub(crate) fn read_tree(root: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {
                 });
             }
             if path.is_dir() {
-                walk(&path, &rel, files)?;
-            } else {
-                files.push((rel, fs::read(&path).map_err(|e| CoreError::io(&path, e))?));
+                walk(&path, &rel, files, bytes)?;
+                continue;
             }
+            // A FIFO would block the read forever and a device is not
+            // content; capturing arbitrary user folders means saying so
+            // instead of hanging.
+            let meta = fs::symlink_metadata(&path).map_err(|e| CoreError::io(&path, e))?;
+            if !meta.is_file() {
+                return Err(CoreError::io(
+                    &path,
+                    std::io::Error::other("not a regular file — adopt captures plain files only"),
+                ));
+            }
+            *bytes += meta.len();
+            if files.len() >= MAX_CAPTURE_FILES || *bytes > MAX_CAPTURE_BYTES {
+                return Err(CoreError::io(
+                    &path,
+                    std::io::Error::other(format!(
+                        "this folder is bigger than adopt will capture (over {MAX_CAPTURE_FILES} files or {} MB)",
+                        MAX_CAPTURE_BYTES / (1024 * 1024)
+                    )),
+                ));
+            }
+            files.push((rel, fs::read(&path).map_err(|e| CoreError::io(&path, e))?));
         }
         Ok(())
     }
     let mut files = Vec::new();
-    walk(root, Path::new(""), &mut files)?;
+    let mut bytes = 0;
+    walk(root, Path::new(""), &mut files, &mut bytes)?;
     Ok(files)
 }
 

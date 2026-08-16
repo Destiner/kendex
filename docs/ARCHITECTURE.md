@@ -73,7 +73,14 @@ lives in one capability table read by core and UI.
    app changes nothing.
 6. Never touch the unowned: unmanaged files are reported, never deleted;
    foreign symlinks are conflicts, not clobber targets; adoption merges
-   content, never loses it. Ownership is what vstack wrote, read from the
+   content, never loses it. The one sanctioned exception is a link the
+   user explicitly adopts: when it resolves to a real skill folder outside
+   vstack's own trees, adopt captures that folder's content, trashes the
+   folder (bound to the exact bytes captured) and every sibling link that
+   read it, and the follow-up apply restores the sharing from vstack's
+   copy — a link at anything else stays a conflict, and the confirm names
+   the folder and every tool reading it, because links vstack cannot see
+   will break. Ownership is what vstack wrote, read from the
    lock — including the paths an installation recorded writing under
    another kind's name. A position we put something at is ours to replace
    or clear, whichever entry holds it now; deriving ownership from the
