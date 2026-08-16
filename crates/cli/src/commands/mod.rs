@@ -15,7 +15,9 @@ pub mod report;
 pub mod source_cmd;
 pub mod update;
 pub mod update_pi;
+pub mod updates_cmd;
 pub mod verify;
+pub mod versions;
 
 use std::io::Write;
 use std::path::PathBuf;

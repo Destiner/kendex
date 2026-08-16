@@ -4,6 +4,7 @@ use crate::env::Env;
 use crate::error::{CoreError, Result};
 use crate::manifest::Manifest;
 
+pub mod history;
 pub mod store;
 
 /// `owner/repo` → clone URL. Full URLs pass through untouched;
@@ -158,6 +159,40 @@ fn legacy_resolution(env: &Env, repo: &str) -> Option<Resolution> {
             "{repo}: reading the pre-2.0 cache; the next refresh replaces it"
         )),
     })
+}
+
+/// Fetch every enabled remote source's mirror, pins included. `sync`
+/// deliberately skips the network for a cached pin — that is what makes a
+/// pinned install work offline — so update discovery needs its own fetch:
+/// a repository someone pinned still grows new versions worth knowing
+/// about. Failures degrade to warnings; discovery is never worth failing
+/// a scope over.
+pub fn fetch_all(env: &Env, manifest: &Manifest) -> Vec<String> {
+    let mut warnings = Vec::new();
+    for decl in manifest.sources.values() {
+        if !decl.enabled {
+            continue;
+        }
+        let Some(repo) = &decl.repo else {
+            continue;
+        };
+        let url = clone_url(env, repo);
+        let key = store::repo_key(&url);
+        let mirror = store::mirror_dir(env, &key);
+        let guard = match store::lock_repo(env, &key) {
+            Ok(guard) => guard,
+            Err(error) => {
+                warnings.push(format!("{repo}: not checked ({error})"));
+                continue;
+            }
+        };
+        if let Err(error) = store::ensure_mirror(&mirror, &url).and_then(|()| store::fetch(&mirror))
+        {
+            warnings.push(format!("{repo}: not checked ({error})"));
+        }
+        drop(guard);
+    }
+    warnings
 }
 
 /// Resolve every enabled remote source a manifest declares. Failures on

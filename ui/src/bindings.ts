@@ -158,6 +158,12 @@ export type AppSettings = {
 	 *  it is measured against is not being measured.
 	 */
 	safety?: Thresholds,
+	/**
+	 *  Packages whose update notifications are off. Here rather than in a
+	 *  manifest for the same reason as `safety`: a notification preference
+	 *  committed to a shared repository would silence a whole team.
+	 */
+	"ignored-updates"?: IgnoredUpdate[],
 };
 
 export type Appearance = "system" | "light" | "dark";
@@ -438,6 +444,19 @@ export type HarnessId = "claude" | "codex" | "opencode" | "cursor" | "pi" | "gem
 export type HookAgents = 
 /**  `"all"`, a role name, or a single agent name. */
 string | string[];
+
+/**
+ *  A package whose update notifications are switched off, by everything
+ *  that identifies it: an ignore for one project's `gh` skill from one
+ *  repository must not silence another project's unrelated `gh`.
+ */
+export type IgnoredUpdate = {
+	/**  `"global"` or the project root path. */
+	scope: string,
+	kind: ItemKind,
+	name: string,
+	repo: string,
+};
 
 export type InstallDefaults = {
 	harnesses?: HarnessId[],

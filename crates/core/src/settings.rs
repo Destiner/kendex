@@ -26,6 +26,11 @@ pub struct AppSettings {
     /// it is measured against is not being measured.
     #[serde(default)]
     pub safety: crate::quality::Thresholds,
+    /// Packages whose update notifications are off. Here rather than in a
+    /// manifest for the same reason as `safety`: a notification preference
+    /// committed to a shared repository would silence a whole team.
+    #[serde(default)]
+    pub ignored_updates: Vec<crate::package::updates::IgnoredUpdate>,
 }
 
 impl Default for AppSettings {
@@ -36,6 +41,7 @@ impl Default for AppSettings {
             harness_roots: BTreeMap::new(),
             appearance: Appearance::System,
             safety: crate::quality::Thresholds::default(),
+            ignored_updates: Vec::new(),
         }
     }
 }

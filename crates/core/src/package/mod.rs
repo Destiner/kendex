@@ -3,11 +3,185 @@
 //! manifest holds the choice (`ItemDecl.rev`), the mirror holds the history,
 //! and everything here is a projection over the two.
 
+use std::path::{Path, PathBuf};
+
+use serde::Serialize;
+use specta::Type;
+
 use crate::engine::EngineReport;
 use crate::env::Env;
 use crate::error::{CoreError, Result};
+use crate::manifest::Manifest;
 use crate::model::{ItemKind, Scope};
+use crate::remote::history;
 use crate::source_read::SealedSource;
+
+pub mod updates;
+
+/// One declared package bound to its repository coordinates: where its
+/// mirror lives and which directory inside the tree is the package.
+pub(crate) struct PackageRef {
+    pub repo: String,
+    pub mirror: PathBuf,
+    pub source_name: String,
+    /// The item's directory (or file) relative to the checkout root, taken
+    /// from the source's tracked tip so the timeline follows the package
+    /// where it lives now.
+    pub subtree: PathBuf,
+    /// The commit the source's own selector names right now.
+    pub tip: String,
+}
+
+/// Bind a declared item to its repository. The tip comes from the source's
+/// selector, never the item's hold — a held package's timeline must still
+/// show what it is being held back from.
+pub(crate) fn package_ref(
+    env: &Env,
+    scope: &Scope,
+    manifest: &Manifest,
+    kind: ItemKind,
+    name: &str,
+) -> Result<PackageRef> {
+    let Some(decl) = manifest.declared(kind).get(name) else {
+        return Err(CoreError::NotDeclared {
+            kind,
+            name: name.to_owned(),
+        });
+    };
+    let source_name = decl.source.clone();
+    let Some(repo) = manifest
+        .sources
+        .get(&source_name)
+        .and_then(|s| s.repo.clone())
+    else {
+        return Err(CoreError::ItemRevUnsupported {
+            source_name: source_name.clone(),
+        });
+    };
+    let key = crate::remote::store::repo_key(&crate::remote::clone_url(env, &repo));
+    let mirror = crate::remote::store::mirror_dir(env, &key);
+    let selector = manifest
+        .sources
+        .get(&source_name)
+        .and_then(|s| s.rev.clone())
+        .unwrap_or_else(|| "HEAD".to_owned());
+    // A tracking selector's tip is what it names right now. A pinned
+    // source still gets a timeline rooted at the repository's own head:
+    // the pin says what installs, not what exists, and an updates page
+    // that cannot see past a pin would never have anything to say about
+    // one.
+    let tip = match crate::remote::store::is_pin(&selector) {
+        true => crate::remote::store::resolve_ref(&mirror, "HEAD").unwrap_or(selector),
+        false => crate::remote::store::resolve_ref(&mirror, &selector).ok_or_else(|| {
+            CoreError::SourcePending {
+                name: source_name.clone(),
+            }
+        })?,
+    };
+    let root = match crate::remote::store::published(env, &key, &tip) {
+        Some(root) => root,
+        None => {
+            let _guard = crate::remote::store::lock_repo(env, &key)?;
+            crate::remote::store::publish(env, &key, &mirror, &tip)?
+        }
+    };
+    let sealed = SealedSource::open(&root)?;
+    let config = crate::source::source_config(&sealed)?;
+    // The tip may no longer offer the item (moved, deleted); the effective
+    // revision the declaration reads is the fallback that keeps the page
+    // and the diff working for what is actually installed.
+    let item_path = crate::source::find_item(&sealed, &config, kind, name).or_else(|| {
+        let state =
+            crate::source::resolve_at(env, scope, &source_name, manifest, decl.rev.as_deref())
+                .ok()?;
+        let crate::source::SourceState::Ready(ready) = state else {
+            return None;
+        };
+        let sealed = SealedSource::open(&ready.root).ok()?;
+        let config = crate::source::source_config(&sealed).ok()?;
+        crate::source::find_item(&sealed, &config, kind, name)
+            .and_then(|path| path.strip_prefix(&ready.root).ok().map(Path::to_path_buf))
+            .map(|rel| root.join(rel))
+    });
+    let Some(item_path) = item_path else {
+        return Err(CoreError::ItemNotInSource {
+            name: name.to_owned(),
+            source_name,
+        });
+    };
+    let subtree = item_path
+        .strip_prefix(&root)
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|_| item_path.clone());
+    Ok(PackageRef {
+        repo,
+        mirror,
+        source_name,
+        subtree,
+        tip,
+    })
+}
+
+/// One version of a package: a commit that changed its files, wearing any
+/// tag names that point at it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct VersionRow {
+    /// Full commit id.
+    pub id: String,
+    /// The release name, when a tag points at this commit.
+    pub label: Option<String>,
+    /// ISO-8601 committer date.
+    pub date: String,
+    pub summary: String,
+    /// This is the content revision the installed package holds.
+    pub installed: bool,
+    pub newer_than_installed: bool,
+}
+
+/// The package's timeline, newest first: every commit that changed its
+/// files up to the source's tracked tip. Tags decorate the timeline, they
+/// never replace it — a repository's tags may live far from this package.
+/// The installed marker lands on the newest content commit at-or-before
+/// the locked source commit, because an installed commit that changed
+/// other files is not itself on this package's timeline.
+pub fn versions(env: &Env, scope: &Scope, kind: ItemKind, name: &str) -> Result<Vec<VersionRow>> {
+    let manifest = crate::engine::ops::manifest_for_mutation(env, scope)?;
+    let package = package_ref(env, scope, &manifest, kind, name)?;
+    let log = history::subtree_log(&package.mirror, &package.tip, &package.subtree);
+    let lock = crate::lock::load(&crate::lock::lock_path(env, scope))?;
+    let installed_commit = installed_commit(&lock, kind, name).and_then(|commit| {
+        history::last_content_commit(&package.mirror, &commit, &package.subtree)
+    });
+    let installed_at = log
+        .iter()
+        .position(|row| Some(&row.commit) == installed_commit.as_ref());
+    Ok(log
+        .into_iter()
+        .enumerate()
+        .map(|(index, row)| VersionRow {
+            installed: Some(index) == installed_at,
+            newer_than_installed: installed_at.is_some_and(|installed| index < installed),
+            id: row.commit,
+            label: row.tags.first().cloned(),
+            date: row.date,
+            summary: row.summary,
+        })
+        .collect())
+}
+
+/// The source commit this package's installations were produced from —
+/// `None` when no harness has it installed yet or the lock predates the
+/// record. Installations that disagree (mid-apply, or a partial refresh)
+/// answer with the newest record's value, and the updates projection flags
+/// the disagreement separately.
+fn installed_commit(lock: &crate::lock::Lock, kind: ItemKind, name: &str) -> Option<String> {
+    lock.entries
+        .values()
+        .filter(|entry| entry.kind == kind && entry.name == name)
+        .filter_map(|entry| entry.source_commit.clone())
+        .next_back()
+}
 
 /// Hold an item at a version, or let it follow its source again.
 ///

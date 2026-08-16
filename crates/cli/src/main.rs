@@ -38,6 +38,10 @@ enum Command {
     },
     /// Hold an item at a version, or let it follow its source again
     Pin(commands::pin::PinArgs),
+    /// The versions a package's source offers
+    Versions(commands::versions::VersionsArgs),
+    /// Which packages have newer versions, and per-package notification
+    Updates(commands::updates_cmd::UpdatesArgs),
     /// Remove installed items
     Remove {
         names: Vec<String>,
@@ -220,6 +224,8 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
     match command {
         Command::Add { source, flags } => commands::add::run(&env, flags.into_args(source))?,
         Command::Pin(args) => commands::pin::run(&env, args)?,
+        Command::Versions(args) => commands::versions::run(&env, args)?,
+        Command::Updates(args) => commands::updates_cmd::run(&env, args)?,
         Command::Remove {
             names,
             global,
