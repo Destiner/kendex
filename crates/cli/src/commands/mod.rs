@@ -14,6 +14,7 @@ pub mod project;
 pub mod refresh;
 pub mod remove;
 pub mod report;
+pub mod show;
 pub mod source_cmd;
 pub mod update;
 pub mod update_pi;

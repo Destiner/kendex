@@ -16,6 +16,7 @@ use crate::model::{ItemKind, Scope};
 use crate::remote::history;
 use crate::source_read::SealedSource;
 
+pub mod detail;
 pub mod diff;
 pub mod updates;
 

@@ -58,7 +58,7 @@ fn primary_file(item: &ObservedItem) -> PathBuf {
     }
 }
 
-fn read_capped(path: &Path) -> Result<ItemSource> {
+pub(crate) fn read_capped(path: &Path) -> Result<ItemSource> {
     let bytes = std::fs::read(path).map_err(|e| CoreError::io(path, e))?;
     let taken = char_boundary(&bytes, bytes.len().min(MAX_SOURCE_BYTES));
     Ok(ItemSource {
