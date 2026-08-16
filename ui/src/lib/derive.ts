@@ -5,6 +5,7 @@ import type {
   ObservedItem,
   ScanResult,
   Scope,
+  Tag,
 } from "@/bindings";
 
 export type ScopeSelection = "all" | "global" | { project: string };
@@ -46,6 +47,7 @@ export interface ItemFilter {
   locations?: ReadonlySet<Location>;
   kind?: ItemKind;
   harness?: string;
+  tag?: Tag;
   search?: string;
 }
 
@@ -60,6 +62,7 @@ export function filterItems(
       return false;
     if (filter.kind && item.kind !== filter.kind) return false;
     if (filter.harness && item.harness !== filter.harness) return false;
+    if (filter.tag && !item.tags.includes(filter.tag)) return false;
     if (needle) {
       const haystack = `${item.name} ${item.description ?? ""}`.toLowerCase();
       if (!haystack.includes(needle)) return false;
@@ -76,6 +79,9 @@ export interface ItemGroup {
   description: string | null;
   installations: ObservedItem[];
   harnesses: string[];
+  /** Every tag any installation of this item carries, deduped. One item can
+   *  be installed from copies that disagree; the union is what it is for. */
+  tags: Tag[];
   /** True when several harnesses read the same physical artifact. */
   shared: boolean;
   /** Most recent installation mtime, or null when none of them have one. */
@@ -95,6 +101,7 @@ export function groupItems(items: ObservedItem[]): ItemGroup[] {
         description: item.description,
         installations: [],
         harnesses: [],
+        tags: [],
         shared: false,
         modifiedAt: null,
       };
@@ -104,13 +111,23 @@ export function groupItems(items: ObservedItem[]): ItemGroup[] {
     group.description ??= item.description;
     if (!group.harnesses.includes(item.harness))
       group.harnesses.push(item.harness);
+    for (const tag of item.tags) {
+      if (!group.tags.includes(tag)) group.tags.push(tag);
+    }
   }
   for (const group of groups.values()) {
+    // Where the bytes actually are, not where the tool looks for them: two
+    // tools linking to one shared folder are sharing a file, even though
+    // each has a path of its own pointing at it.
     const byPath = new Map<string, Set<string>>();
     for (const install of group.installations) {
-      const set = byPath.get(install.path) ?? new Set();
+      const real =
+        install.fileState.state === "symlink" && !install.fileState.broken
+          ? install.fileState.target
+          : install.path;
+      const set = byPath.get(real) ?? new Set();
       set.add(install.harness);
-      byPath.set(install.path, set);
+      byPath.set(real, set);
     }
     group.shared = [...byPath.values()].some((harnesses) => harnesses.size > 1);
     const times = group.installations

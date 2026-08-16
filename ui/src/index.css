@@ -16,7 +16,7 @@
   --secondary: oklch(0.97 0.003 260);
   --secondary-foreground: oklch(0.205 0.005 260);
   --muted: oklch(0.97 0.003 260);
-  --muted-foreground: oklch(0.5 0.01 260);
+  --muted-foreground: oklch(0.52 0.01 260);
   --accent: oklch(0.97 0.003 260);
   --accent-foreground: oklch(0.205 0.005 260);
   --destructive: oklch(0.55 0.2 25);
@@ -28,7 +28,7 @@
   --warning: oklch(0.6 0.13 70);
   --critical: oklch(0.55 0.2 25);
   --info: oklch(0.5 0.19 255);
-  --sidebar: oklch(1 0 0);
+  --sidebar: oklch(0.975 0.003 260);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.5 0.19 255);
   --sidebar-primary-foreground: oklch(1 0 0);
@@ -46,21 +46,33 @@
   --code-attr: oklch(0.55 0.15 340);
   --code-type: oklch(0.5 0.13 190);
   --code-comment: oklch(0.55 0.02 260);
+  /* One hue per coding tool, spaced evenly around the wheel so no two read
+     as the same colour at a glance, and landing near each tool's own brand
+     where that was possible. Colour in this app means "which tool" and
+     nothing else — item kinds are told apart by their icon, so a row never
+     asks you to decode two colour languages at once. */
+  --tool-claude: oklch(0.55 0.16 45);
+  --tool-copilot: oklch(0.52 0.14 96);
+  --tool-codex: oklch(0.52 0.13 147);
+  --tool-cursor: oklch(0.52 0.13 198);
+  --tool-gemini: oklch(0.53 0.16 249);
+  --tool-opencode: oklch(0.53 0.16 300);
+  --tool-pi: oklch(0.55 0.16 351);
 }
 
 .dark {
-  --background: oklch(0.13 0.005 260);
+  --background: oklch(0.155 0.005 260);
   --foreground: oklch(0.97 0 0);
-  --card: oklch(0.16 0.005 260);
+  --card: oklch(0.185 0.005 260);
   --card-foreground: oklch(0.97 0 0);
-  --popover: oklch(0.16 0.005 260);
+  --popover: oklch(0.185 0.005 260);
   --popover-foreground: oklch(0.97 0 0);
   --primary: oklch(0.55 0.18 255);
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.21 0.006 260);
   --secondary-foreground: oklch(0.97 0 0);
   --muted: oklch(0.21 0.006 260);
-  --muted-foreground: oklch(0.65 0.01 260);
+  --muted-foreground: oklch(0.56 0.012 260);
   --accent: oklch(0.21 0.006 260);
   --accent-foreground: oklch(0.97 0 0);
   --destructive: oklch(0.62 0.19 25);
@@ -72,7 +84,7 @@
   --warning: oklch(0.75 0.15 75);
   --critical: oklch(0.62 0.19 25);
   --info: oklch(0.62 0.16 255);
-  --sidebar: oklch(0.13 0.005 260);
+  --sidebar: oklch(0.115 0.005 260);
   --sidebar-foreground: oklch(0.97 0 0);
   --sidebar-primary: oklch(0.55 0.18 255);
   --sidebar-primary-foreground: oklch(1 0 0);
@@ -87,6 +99,13 @@
   --code-attr: oklch(0.72 0.14 340);
   --code-type: oklch(0.7 0.12 190);
   --code-comment: oklch(0.6 0.02 260);
+  --tool-claude: oklch(0.76 0.13 45);
+  --tool-copilot: oklch(0.76 0.12 96);
+  --tool-codex: oklch(0.76 0.11 147);
+  --tool-cursor: oklch(0.76 0.11 198);
+  --tool-gemini: oklch(0.74 0.13 249);
+  --tool-opencode: oklch(0.74 0.13 300);
+  --tool-pi: oklch(0.76 0.13 351);
 }
 
 @theme inline {
@@ -125,6 +144,13 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-tool-claude: var(--tool-claude);
+  --color-tool-codex: var(--tool-codex);
+  --color-tool-opencode: var(--tool-opencode);
+  --color-tool-cursor: var(--tool-cursor);
+  --color-tool-pi: var(--tool-pi);
+  --color-tool-gemini: var(--tool-gemini);
+  --color-tool-copilot: var(--tool-copilot);
 }
 
 @layer base {
@@ -133,6 +159,15 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  /* Preflight resets buttons to the default arrow, which makes every
+     control in the app look inert on hover. Anything clickable says so. */
+  :where(button, [role="button"], a[href], label[for], summary):not(
+    :disabled,
+    [aria-disabled="true"],
+    [data-disabled]
+  ) {
+    cursor: pointer;
   }
 }
 
@@ -182,17 +217,31 @@
   .prose-preview strong {
     @apply font-semibold;
   }
+  /* Inline code reads as a literal — a file name, a command — so it takes a
+     tint of its own rather than sitting in the same grey as the sentence
+     around it, the way an editor would colour it. */
   .prose-preview code {
     @apply rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em];
+    color: var(--code-attr);
   }
   .prose-preview pre {
     @apply my-3 overflow-x-auto rounded-lg border bg-muted/30 p-3;
   }
   .prose-preview pre code {
     @apply bg-transparent p-0 text-[0.8em];
+    color: inherit;
   }
+  /* A quote in one of these files is almost always a callout — "never edit
+     this directly" — so it gets an accent rail and a wash instead of the
+     same grey as body text it is trying to interrupt. */
   .prose-preview blockquote {
-    @apply my-3 border-l-2 border-muted-foreground/30 pl-3 text-muted-foreground;
+    @apply my-3 rounded-r border-l-2 border-info/50 bg-info/5 py-2 pr-2 pl-3;
+  }
+  .prose-preview blockquote :where(p):first-child {
+    @apply mt-0;
+  }
+  .prose-preview blockquote :where(p):last-child {
+    @apply mb-0;
   }
   .prose-preview hr {
     @apply my-5 border-border;

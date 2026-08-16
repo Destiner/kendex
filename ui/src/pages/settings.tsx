@@ -1,11 +1,9 @@
 import { useEffect, useState } from "react";
 import type { Appearance, HarnessId } from "@/bindings";
 import { commands } from "@/bindings";
-import { SectionLabel } from "@/components/card-section";
 import { PageHeader } from "@/components/page-header";
+import { Section, SettingRow } from "@/components/section";
 import { ToolOverrideRow } from "@/components/tools/tool-override-row";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -13,7 +11,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SAFETY_HELP, SETTINGS_SUBTITLE } from "@/lib/labels";
+import { SAFETY_HELP } from "@/lib/copy";
+import { SETTINGS_SUBTITLE } from "@/lib/labels";
+import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
+import { cn } from "@/lib/utils";
 import { useSettingsStore } from "@/stores/settings";
 
 const ALL_HARNESSES: HarnessId[] = [
@@ -66,120 +67,107 @@ export function SettingsPage() {
 
   const safety = settings?.safety ?? SAFETY_LEVELS.balanced;
   const level = safetyLevelOf(safety["warn-below"], safety["block-below"]);
+  const projects = settings?.projects ?? [];
 
   return (
     <div>
       <PageHeader title="Settings" subtitle={SETTINGS_SUBTITLE} />
-      <div className="p-8">
-        <div className="mx-auto w-full max-w-5xl space-y-4">
-          <Card className="gap-3 py-4">
-            <CardHeader className="gap-1">
-              <SectionLabel>Appearance</SectionLabel>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
-                <Label>Theme</Label>
-                <Select
-                  value={settings?.appearance ?? "system"}
-                  onValueChange={(value) =>
-                    void setAppearance(value as Appearance)
-                  }
-                >
-                  <SelectTrigger className="w-36">
-                    <SelectValue>
-                      {(value: Appearance) => THEME_LABELS[value]}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="system">System</SelectItem>
-                    <SelectItem value="light">Light</SelectItem>
-                    <SelectItem value="dark">Dark</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
+      <div className={PAGE_BODY}>
+        <div className={cn("flex flex-col gap-10", CONTENT_WIDTH)}>
+          <Section title="Appearance">
+            <SettingRow
+              label="Theme"
+              description="Follows your system by default."
+            >
+              <Select
+                value={settings?.appearance ?? "system"}
+                onValueChange={(value) =>
+                  void setAppearance(value as Appearance)
+                }
+              >
+                <SelectTrigger className="w-40">
+                  <SelectValue>
+                    {(value: Appearance) => THEME_LABELS[value]}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="system">System</SelectItem>
+                  <SelectItem value="light">Light</SelectItem>
+                  <SelectItem value="dark">Dark</SelectItem>
+                </SelectContent>
+              </Select>
+            </SettingRow>
+          </Section>
 
-          <Card className="gap-3 py-4">
-            <CardHeader className="gap-1">
-              <SectionLabel>Safety check</SectionLabel>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
-                <div className="pr-4">
-                  <Label>How cautious</Label>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {SAFETY_HELP}
-                  </p>
-                </div>
-                <Select
-                  value={level === "custom" ? "balanced" : level}
-                  onValueChange={(value) => {
-                    const t = SAFETY_LEVELS[value as SafetyLevel];
-                    void setSafety(t["warn-below"], t["block-below"]);
-                  }}
-                >
-                  <SelectTrigger className="w-36 shrink-0">
-                    <SelectValue>
-                      {(value: SafetyLevel) => SAFETY_LABELS[value]}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="strict">Strict</SelectItem>
-                    <SelectItem value="balanced">Balanced</SelectItem>
-                    <SelectItem value="lenient">Lenient</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
+          <Section title="Safety check">
+            <SettingRow label="How cautious" description={SAFETY_HELP}>
+              <Select
+                value={level === "custom" ? "balanced" : level}
+                onValueChange={(value) => {
+                  const t = SAFETY_LEVELS[value as SafetyLevel];
+                  void setSafety(t["warn-below"], t["block-below"]);
+                }}
+              >
+                <SelectTrigger className="w-40">
+                  <SelectValue>
+                    {(value: SafetyLevel) => SAFETY_LABELS[value]}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="strict">Strict</SelectItem>
+                  <SelectItem value="balanced">Balanced</SelectItem>
+                  <SelectItem value="lenient">Lenient</SelectItem>
+                </SelectContent>
+              </Select>
+            </SettingRow>
+          </Section>
 
-          <Card className="gap-3 py-4">
-            <CardHeader className="gap-1">
-              <SectionLabel>Projects</SectionLabel>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {(settings?.projects ?? []).length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No projects yet.
-                </p>
-              ) : (
-                settings?.projects?.map((p) => (
-                  <div key={p}>
-                    <span className="text-sm font-medium text-foreground">
-                      {p.split("/").pop()}
-                    </span>
-                    <p className="truncate font-mono text-xs text-muted-foreground">
-                      {p}
-                    </p>
-                  </div>
-                ))
-              )}
-              <p className="text-xs text-muted-foreground">
-                Add or remove projects on the Tools & Projects page.
+          <Section
+            title="Projects"
+            description="Add or remove projects on the Tools & Projects page."
+          >
+            {projects.length === 0 ? (
+              <p className="py-3.5 text-sm text-muted-foreground">
+                No projects yet.
               </p>
-            </CardContent>
-          </Card>
-
-          <Card className="gap-3 py-4">
-            <CardHeader className="gap-1">
-              <SectionLabel>Tool folder overrides</SectionLabel>
-            </CardHeader>
-            <CardContent className="divide-y">
-              {ALL_HARNESSES.map((id) => (
-                <ToolOverrideRow
-                  key={id}
-                  id={id}
-                  override={settings?.["harness-roots"]?.[id] ?? ""}
-                  onSave={(root) => void setHarnessRoot(id, root)}
+            ) : (
+              projects.map((path) => (
+                <SettingRow
+                  key={path}
+                  label={path.split("/").pop()}
+                  description={<span className="font-mono">{path}</span>}
                 />
-              ))}
-            </CardContent>
-          </Card>
+              ))
+            )}
+          </Section>
 
-          {version ? (
-            <p className="text-xs text-muted-foreground">vstack · {version}</p>
-          ) : null}
+          <Section
+            title="Tool folders"
+            description="Where each tool keeps its files. Set one only if you've moved a tool somewhere other than its usual place."
+          >
+            {ALL_HARNESSES.map((id) => (
+              <ToolOverrideRow
+                key={id}
+                id={id}
+                override={settings?.["harness-roots"]?.[id] ?? ""}
+                onSave={(root) => void setHarnessRoot(id, root)}
+              />
+            ))}
+          </Section>
+
+          <Section title="About">
+            <SettingRow
+              label={
+                <span className="flex items-baseline gap-2">
+                  Version
+                  <span className="font-mono text-xs font-normal text-muted-foreground">
+                    {version ?? "…"}
+                  </span>
+                </span>
+              }
+              description="vstack keeps your AI coding tools in sync."
+            />
+          </Section>
         </div>
       </div>
     </div>

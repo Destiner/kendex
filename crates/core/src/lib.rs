@@ -28,3 +28,4 @@ pub mod settings_seed;
 pub mod source;
 pub mod source_ops;
 pub mod source_read;
+pub mod tags;

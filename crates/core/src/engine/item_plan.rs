@@ -284,6 +284,23 @@ fn plan_registration(
     let Artifact::Registration { script, edits } = &item.artifact else {
         return Ok(Planned::Clean);
     };
+    // Every edit is checked before anything is planned: a settings file
+    // vstack cannot read back — comments in a JSON, a torn edit — blocks
+    // this one registration whole, script included, not the whole scope.
+    let mut pending = Vec::new();
+    for (path, edit) in edits {
+        let current = crate::fs::read_if_exists(path)?.unwrap_or_default();
+        match edit.apply(&current) {
+            Ok(updated) if updated == current => {}
+            Ok(_) => pending.push((path, edit)),
+            Err(message) => {
+                return Ok(Planned::Conflict(format!(
+                    "{} could not be edited: {message}",
+                    path.display()
+                )));
+            }
+        }
+    }
     let mut planned = match script {
         Some((path, bytes)) => plan_written_file(item, path, bytes, locked, ops)?,
         None => Planned::Clean,
@@ -291,17 +308,7 @@ fn plan_registration(
     if matches!(planned, Planned::Conflict(_)) {
         return Ok(planned);
     }
-    for (path, edit) in edits {
-        let current = crate::fs::read_if_exists(path)?.unwrap_or_default();
-        let updated =
-            edit.apply(&current)
-                .map_err(|message| crate::error::CoreError::ConfigEdit {
-                    path: path.clone(),
-                    message,
-                })?;
-        if updated == current {
-            continue;
-        }
+    for (path, edit) in pending {
         config_edits.push(
             path.clone(),
             format!("register {}", item.name),

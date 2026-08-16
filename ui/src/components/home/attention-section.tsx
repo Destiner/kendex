@@ -2,7 +2,7 @@ import { CheckCircle2 } from "lucide-react";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ALL_CAUGHT_UP_DETAIL, ALL_CAUGHT_UP_TITLE } from "@/lib/labels";
+import { ALL_CAUGHT_UP_DETAIL, ALL_CAUGHT_UP_TITLE } from "@/lib/copy";
 
 export interface AttentionRow {
   key: string;

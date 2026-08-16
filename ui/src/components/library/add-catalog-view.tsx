@@ -1,12 +1,20 @@
 import { Plus, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Scope } from "@/bindings";
-import { SectionLabel } from "@/components/card-section";
 import { CatalogScopeGroup } from "@/components/catalog-scope";
 import { AddCatalogDialog } from "@/components/library/add-catalog-dialog";
 import { BundleGallery } from "@/components/library/bundle-gallery";
+import { SectionHeading } from "@/components/section";
 import { Button } from "@/components/ui/button";
+import {
+  BUNDLES_HELP,
+  CATALOGS_HELP,
+  NO_BUNDLES_YET,
+  NO_CATALOGS_YET,
+} from "@/lib/copy";
 import { scopeLabel } from "@/lib/derive";
+import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
+import { cn } from "@/lib/utils";
 import { sameScope } from "@/stores/audit";
 import { useSettingsStore } from "@/stores/settings";
 import { useSourcesStore } from "@/stores/sources";
@@ -38,9 +46,10 @@ export function AddCatalogView() {
     ...projects.map((root): Scope => ({ scope: "project", root })),
   ];
   const hasBundles = bundles.length > 0;
+  const hasCatalogs = rows.length > 0;
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6 p-8">
+    <div className={cn("space-y-6", CONTENT_WIDTH, PAGE_BODY)}>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {warnings.map((w) => (
         <p key={w} className="text-sm text-muted-foreground">
@@ -49,15 +58,14 @@ export function AddCatalogView() {
       ))}
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <SectionLabel>Bundles</SectionLabel>
-            <p className="text-sm text-muted-foreground">
-              Curated sets from your catalogs — install everything in one go.
-            </p>
+            <SectionHeading>Bundles</SectionHeading>
+            <p className="text-sm text-muted-foreground">{BUNDLES_HELP}</p>
           </div>
           <Button
             variant="outline"
+            className="shrink-0"
             disabled={busy}
             onClick={() => void refreshRemotes()}
           >
@@ -77,30 +85,34 @@ export function AddCatalogView() {
             />
           ))
         ) : (
-          <p className="text-sm text-muted-foreground">
-            No bundles yet — add a catalog below to see what it offers.
-          </p>
+          <p className="text-sm text-muted-foreground">{NO_BUNDLES_YET}</p>
         )}
       </section>
 
       <section className="space-y-3 border-t pt-6">
-        <div className="flex items-center justify-between gap-3">
-          <SectionLabel>Catalogs</SectionLabel>
-          <Button onClick={() => setAddOpen(true)}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <SectionHeading>Catalogs</SectionHeading>
+            <p className="text-sm text-muted-foreground">{CATALOGS_HELP}</p>
+          </div>
+          <Button className="shrink-0" onClick={() => setAddOpen(true)}>
             <Plus className="size-4" /> Add a catalog
           </Button>
         </div>
-        {scopes.map((scope) => (
-          <CatalogScopeGroup
-            key={scopeLabel(scope)}
-            scope={scope}
-            rows={rows.filter((row) => sameScope(row.scope, scope))}
-            busy={busy}
-            onToggle={(name, enabled) => void toggle(scope, name, enabled)}
-            onRemove={(name) => void remove(scope, name)}
-            onAddFocus={() => setAddOpen(true)}
-          />
-        ))}
+        {hasCatalogs ? (
+          scopes.map((scope) => (
+            <CatalogScopeGroup
+              key={scopeLabel(scope)}
+              scope={scope}
+              rows={rows.filter((row) => sameScope(row.scope, scope))}
+              busy={busy}
+              onToggle={(name, enabled) => void toggle(scope, name, enabled)}
+              onRemove={(name) => void remove(scope, name)}
+            />
+          ))
+        ) : (
+          <p className="text-sm text-muted-foreground">{NO_CATALOGS_YET}</p>
+        )}
       </section>
 
       <AddCatalogDialog

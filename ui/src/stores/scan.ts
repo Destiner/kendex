@@ -25,21 +25,26 @@ export const useScanStore = create<ScanState>((set, get) => ({
   refresh: async (opts) => {
     if (get().scanning) return;
     set({ scanning: true });
-    const response = await commands.scanMachine();
-    if (response.status === "ok") {
-      set({
-        result: response.data,
-        scanning: false,
-        error: null,
-        lastScanAt: Date.now(),
-        backgroundFailureAnnounced: false,
-      });
-    } else {
-      set({ scanning: false, error: response.error });
-      if (opts?.announce || !get().backgroundFailureAnnounced) {
-        toast.error(response.error);
-        set({ backgroundFailureAnnounced: true });
+    // The flag comes down however the call ends: a rejected call that left
+    // it up would skip every later scan for the session.
+    try {
+      const response = await commands.scanMachine();
+      if (response.status === "ok") {
+        set({
+          result: response.data,
+          error: null,
+          lastScanAt: Date.now(),
+          backgroundFailureAnnounced: false,
+        });
+      } else {
+        set({ error: response.error });
+        if (opts?.announce || !get().backgroundFailureAnnounced) {
+          toast.error(response.error);
+          set({ backgroundFailureAnnounced: true });
+        }
       }
+    } finally {
+      set({ scanning: false });
     }
   },
 }));

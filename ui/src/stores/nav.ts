@@ -40,6 +40,9 @@ const HISTORY_CAP = 20;
 interface NavState {
   page: Page;
   scope: ScopeSelection;
+  /** What the sidebar's search box holds — the Library's filter, kept here
+   * so searching from anywhere lands you in the Library already filtered. */
+  search: string;
   libraryTab: LibraryTab;
   toolsTab: ToolsTab;
   /** Consumed once by Installed on mount, then cleared. */
@@ -47,6 +50,7 @@ interface NavState {
   history: HistoryEntry[];
   setPage: (page: Page) => void;
   setScope: (scope: ScopeSelection) => void;
+  setSearch: (search: string) => void;
   goToLibrary: (opts?: { tab?: LibraryTab } & LibraryFilter) => void;
   goToTools: (tab: ToolsTab) => void;
   /** A cross-page link from chrome that's always on screen (e.g. the status
@@ -60,6 +64,7 @@ interface NavState {
 export const useNavStore = create<NavState>((set) => ({
   page: "home",
   scope: "all",
+  search: "",
   libraryTab: "installed",
   toolsTab: "tools",
   libraryFilter: null,
@@ -69,6 +74,20 @@ export const useNavStore = create<NavState>((set) => ({
   // shortcut, and a stale filter from before the jump shouldn't resurface.
   setPage: (page) => set({ page, history: [], libraryFilter: null }),
   setScope: (scope) => set({ scope }),
+  // Typing anywhere in the app means "find me this thing", and the only
+  // page that can answer is the Library — so the first keystroke takes you
+  // there rather than filtering a list you cannot see.
+  setSearch: (search) =>
+    set((state) =>
+      search && state.page !== "library"
+        ? {
+            search,
+            page: "library",
+            libraryTab: "installed",
+            history: pushHistory(state, "library"),
+          }
+        : { search },
+    ),
   goToLibrary: ({ tab = "installed", tool, kind } = {}) =>
     set((state) => ({
       page: "library",

@@ -1,19 +1,19 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import type { Finding, ItemSafety } from "@/bindings";
+import type { ItemSafety } from "@/bindings";
 import { FindingLine } from "@/components/safety-findings";
 import { StatusDot } from "@/components/status-dot";
 import { Badge } from "@/components/ui/badge";
+import { FEWER_ITEMS_LABEL } from "@/lib/copy";
 import { findingHeadline } from "@/lib/finding-headlines";
 import {
-  type AffectedSetGroup,
+  type ConcernGroup,
+  concernDetails,
   type FindingItem,
-  groupByAffectedSet,
+  groupByConcern,
   groupFindings,
-  SEVERITY_RANK,
 } from "@/lib/group-findings";
 import {
-  FEWER_ITEMS_LABEL,
   hookDisplayName,
   kindLabel,
   moreItemsLabel,
@@ -33,94 +33,81 @@ function affectedLabel(items: FindingItem[], location: string): string {
 
 // The scope chip on a collapsed row: a single item is named directly since
 // there's nothing to count, otherwise it's the count and kind — the row's
-// headline already carries the finding, so the chip stays terse.
-function scopeChipLabel(group: AffectedSetGroup): string {
-  if (group.items.length === 1) {
-    const only = group.items[0];
+// headline already carries the finding, so the chip stays terse. Items of
+// mixed kinds fall back to a bare count rather than picking a winner.
+function scopeChipLabel(items: FindingItem[]): string {
+  if (items.length === 1) {
+    const only = items[0];
     return only.kind === "hook" ? hookDisplayName(only.name) : only.name;
   }
-  return `${group.items.length} ${kindLabel(group.items[0].kind, group.items.length).toLowerCase()}`;
+  const kinds = new Set(items.map((item) => item.kind));
+  if (kinds.size > 1) return `${items.length} items`;
+  return `${items.length} ${kindLabel(items[0].kind, items.length).toLowerCase()}`;
 }
 
-// A set-group can carry findings of mixed severity (e.g. a critical and a
-// low finding on the same 21 plugins) — the collapsed row leads with
-// whichever is most serious, since that's the one worth surfacing.
-function leadFinding(findings: Finding[]): Finding {
-  return findings.reduce((lead, f) =>
-    SEVERITY_RANK[f.severity] > SEVERITY_RANK[lead.severity] ? f : lead,
-  );
-}
+const COLLAPSE_THRESHOLD = 6;
 
-const COLLAPSE_THRESHOLD = 4;
-
-// Collapsed by default: a finding affecting a real plugin set (20+) prints
-// a wall of mono identifiers nobody reads end to end. The first handful
-// establishes what's affected; the rest is a click away.
-function AffectedList({ group }: { group: AffectedSetGroup }) {
+// The names of what this concern touched — a plugin called
+// `chrome@openai-bundled` is what a person recognises, where the directory
+// it happens to live in is not. Past a handful the rest are a click away,
+// because a real plugin set (20+) prints a wall nobody reads to the end.
+function AffectedList({ concern }: { concern: ConcernGroup }) {
   const [expanded, setExpanded] = useState(false);
-  const items = group.items;
+  const items = concern.items;
   const visible = expanded ? items : items.slice(0, COLLAPSE_THRESHOLD);
   const hiddenCount = items.length - visible.length;
   const canCollapse = items.length > COLLAPSE_THRESHOLD;
   return (
-    <p className="text-muted-foreground">
-      Affects {items.length} {affectedLabel(items, group.findings[0].location)}:{" "}
-      <span className="inline-flex flex-wrap gap-x-1">
-        {visible.map((item, i) => (
-          <span
+    <div className="flex flex-col gap-1.5 text-[13px]">
+      <p className="font-medium text-foreground/70">
+        Affects {items.length}{" "}
+        {affectedLabel(items, concern.findings[0].location)}
+      </p>
+      <div className="flex flex-wrap gap-1">
+        {visible.map((item) => (
+          <Badge
             key={`${item.harness}:${item.kind}:${item.name}`}
-            className="inline-block break-all font-mono"
+            variant="outline"
+            className="max-w-full truncate font-normal"
           >
-            {item.name}
-            {i < visible.length - 1 ? "," : ""}
-          </span>
+            {item.kind === "hook" ? hookDisplayName(item.name) : item.name}
+          </Badge>
         ))}
-      </span>
-      {canCollapse ? (
-        <button
-          type="button"
-          onClick={() => setExpanded((e) => !e)}
-          className="ml-1 inline-flex items-center gap-0.5 align-middle text-foreground hover:underline"
-        >
-          {expanded ? (
-            <ChevronDown className="size-3" />
-          ) : (
-            <ChevronRight className="size-3" />
-          )}
-          {expanded ? FEWER_ITEMS_LABEL : moreItemsLabel(hiddenCount)}
-        </button>
-      ) : null}
-    </p>
+        {canCollapse ? (
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            className="inline-flex items-center gap-0.5 px-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
+          >
+            {expanded ? FEWER_ITEMS_LABEL : moreItemsLabel(hiddenCount)}
+          </button>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
-// One disclosure row per affected-set group: collapsed to a single
-// plain-English line so the stack reads like a checklist, not a wall of
-// engine text. Opening it reveals every finding that hit this set, in full.
-function FindingRow({ group }: { group: AffectedSetGroup }) {
+// One disclosure row per concern: collapsed to a single plain-English line
+// so the stack reads like a checklist, not a wall of engine text. Opening
+// it says what it means, what to do, and what it touched — in that order,
+// once each.
+function ConcernRow({ concern }: { concern: ConcernGroup }) {
   const [open, setOpen] = useState(false);
-  const lead = leadFinding(group.findings);
-  const extraCount = group.findings.length - 1;
+  const details = concernDetails(concern);
 
   return (
     <div>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full cursor-pointer items-center gap-2 px-3 py-2.5 text-left"
+        className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2.5 text-left hover:bg-muted/40"
       >
-        <StatusDot tone={SEVERITY_DOT_TONE[lead.severity]} />
+        <StatusDot tone={SEVERITY_DOT_TONE[concern.severity]} />
         <span className="min-w-0 flex-1 truncate text-sm font-medium">
-          {findingHeadline(lead.rule, lead.message)}
-          {extraCount > 0 ? (
-            <span className="font-normal text-muted-foreground">
-              {" "}
-              {moreItemsLabel(extraCount)}
-            </span>
-          ) : null}
+          {findingHeadline(concern.rule, details[0].finding.message)}
         </span>
         <Badge variant="outline" className="shrink-0 font-normal">
-          {scopeChipLabel(group)}
+          {scopeChipLabel(concern.items)}
         </Badge>
         {open ? (
           <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
@@ -129,14 +116,15 @@ function FindingRow({ group }: { group: AffectedSetGroup }) {
         )}
       </button>
       {open ? (
-        <div className="space-y-2 pb-3 pl-7 pr-3">
-          {group.findings.map((finding) => (
+        <div className="flex flex-col gap-4 border-t bg-muted/20 px-3 py-3.5">
+          {details.map((detail) => (
             <FindingLine
-              key={`${finding.rule}:${finding.location}:${finding.message}`}
-              finding={finding}
+              key={detail.finding.message}
+              finding={detail.finding}
+              locations={detail.locations}
             />
           ))}
-          <AffectedList group={group} />
+          <AffectedList concern={concern} />
         </div>
       ) : null}
     </div>
@@ -147,21 +135,16 @@ function FindingRow({ group }: { group: AffectedSetGroup }) {
 // section header's same-line count, computed here rather than in
 // group-findings.ts since it's a display concern, not grouping logic.
 export function safetyGroupCount(rows: ItemSafety[]): number {
-  return groupByAffectedSet(groupFindings(rows)).length;
+  return groupByConcern(groupFindings(rows)).length;
 }
 
 export function SafetyWarnings({ rows }: { rows: ItemSafety[] }) {
-  const affectedGroups = groupByAffectedSet(groupFindings(rows));
-  if (affectedGroups.length === 0) return null;
+  const concerns = groupByConcern(groupFindings(rows));
+  if (concerns.length === 0) return null;
   return (
-    <div className="divide-y divide-border rounded-lg border">
-      {affectedGroups.map((group) => (
-        <FindingRow
-          key={group.items
-            .map((i) => `${i.harness}:${i.kind}:${i.name}`)
-            .join("|")}
-          group={group}
-        />
+    <div className="divide-y divide-border overflow-hidden rounded-lg border">
+      {concerns.map((concern) => (
+        <ConcernRow key={concern.rule} concern={concern} />
       ))}
     </div>
   );

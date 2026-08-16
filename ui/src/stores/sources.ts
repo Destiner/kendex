@@ -29,13 +29,18 @@ export const useSourcesStore = create<SourcesState>((set) => {
     >,
   ) => {
     set({ busy: true });
-    const response = await action();
+    let response: Awaited<ReturnType<typeof action>>;
+    try {
+      response = await action();
+    } finally {
+      set({ busy: false });
+    }
     if (response.status === "ok") {
-      set({ rows: response.data, busy: false, error: null });
+      set({ rows: response.data, error: null });
       await useScanStore.getState().refresh();
       await useAuditStore.getState().refresh();
     } else {
-      set({ busy: false, error: response.error });
+      set({ error: response.error });
     }
   };
 
@@ -74,26 +79,35 @@ export const useSourcesStore = create<SourcesState>((set) => {
 
     installBundle: async (scope, source, name) => {
       set({ busy: true });
-      const response = await commands.bundleInstall(scope, source, name);
+      let response: Awaited<ReturnType<typeof commands.bundleInstall>>;
+      try {
+        response = await commands.bundleInstall(scope, source, name);
+      } finally {
+        set({ busy: false });
+      }
       if (response.status === "ok") {
-        set({ bundles: response.data, busy: false, error: null });
+        set({ bundles: response.data, error: null });
         await useScanStore.getState().refresh();
         await useAuditStore.getState().refresh();
       } else {
-        set({ busy: false, error: response.error });
+        set({ error: response.error });
       }
     },
 
     refreshRemotes: async () => {
       set({ busy: true });
-      const response = await commands.sourcesRefresh();
-      if (response.status === "ok") {
-        set({ warnings: response.data, busy: false, error: null });
-        const fresh = await commands.sourcesOverview();
-        if (fresh.status === "ok") set({ rows: fresh.data });
-        await loadBundles();
-      } else {
-        set({ busy: false, error: response.error });
+      try {
+        const response = await commands.sourcesRefresh();
+        if (response.status === "ok") {
+          set({ warnings: response.data, error: null });
+          const fresh = await commands.sourcesOverview();
+          if (fresh.status === "ok") set({ rows: fresh.data });
+          await loadBundles();
+        } else {
+          set({ error: response.error });
+        }
+      } finally {
+        set({ busy: false });
       }
     },
   };

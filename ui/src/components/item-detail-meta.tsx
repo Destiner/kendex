@@ -1,9 +1,12 @@
 import type { ReactNode } from "react";
 import type { HarnessId, ObservedItem } from "@/bindings";
-import { SectionLabel } from "@/components/card-section";
+import { SectionHeading } from "@/components/section";
+import { TagBadges } from "@/components/tag-badge";
+import { ToolBadge } from "@/components/tool-badge";
 import { Badge } from "@/components/ui/badge";
+import { TAGS_ROW_LABEL } from "@/lib/copy";
 import type { ItemGroup } from "@/lib/derive";
-import { kindLabel, scopeName, toolName } from "@/lib/labels";
+import { kindLabel, scopeName } from "@/lib/labels";
 import { relativeTime } from "@/lib/relative-time";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -33,15 +36,18 @@ export function ItemDetailMeta({
   const provenance = provenanceLabel(primary.origin);
   return (
     <div className="space-y-2.5">
-      <SectionLabel>Details</SectionLabel>
+      <SectionHeading>Details</SectionHeading>
       <dl className="space-y-2">
         <Row label="Type">{kindLabel(group.kind)}</Row>
+        {group.tags.length > 0 ? (
+          <Row label={TAGS_ROW_LABEL}>
+            <TagBadges tags={group.tags} />
+          </Row>
+        ) : null}
         <Row label="Tools">
           <span className="flex flex-wrap gap-1">
             {group.harnesses.map((h) => (
-              <Badge key={h} variant="outline">
-                {toolName(h as HarnessId)}
-              </Badge>
+              <ToolBadge key={h} harness={h as HarnessId} />
             ))}
             {group.shared ? (
               <Badge variant="secondary">Shared files</Badge>

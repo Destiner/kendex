@@ -66,7 +66,11 @@ lives in one capability table read by core and UI.
    lock — including the paths an installation recorded writing under
    another kind's name. A position we put something at is ours to replace
    or clear, whichever entry holds it now; deriving ownership from the
-   lock key alone calls our own output a stranger's.
+   lock key alone calls our own output a stranger's. A link the user put
+   at a shared config file or a manifest (dotfiles) is not foreign: the
+   edit goes through it, link kept, and a precondition binds to the bytes
+   reachable there — whether a link may sit at a position is decided at
+   plan time, never by the write.
 7. Applies are transactional: preconditions revalidate against observed
    hashes immediately before mutation; pre-images are journaled first; any
    failure rolls back and interrupted applies recover on next launch.
@@ -106,6 +110,23 @@ lives in one capability table read by core and UI.
     refresh at files outside its cache. An unhardened invocation is not
     constructible — the raw-`Command` pattern is guard-banned, because
     a per-call-site discipline reliably misses call sites.
+14. An item is scored on its own bytes and nothing else. Where one
+    surface lists many items — a plugin cache, a settings file — the
+    scanner records where each item's files actually live, so a
+    neighbour's contents can never land in this item's findings.
+    Repeated work within a pass is cached on exactly what decides the
+    outcome (kind, path, name); no rule reads the harness, which is what
+    lets one file installed for several tools be scored once.
+
+15. An item says what it is for in its own header, from a closed
+    vocabulary (`core/tags.rs`). Kind says what a thing *is*; a tag says
+    what job it helps with, and that is the only axis — mixing it with
+    subject matter or shape gives a filter that answers three questions
+    at once and none of them well. Tags are never inferred from a name:
+    an untagged item is untagged. A word that is not in the vocabulary is
+    reported as a scan warning naming the real one, because the common
+    case is a near-miss (`tests` for `testing`) that would otherwise look
+    like a tag and do nothing.
 
 ## Decisions
 
@@ -114,6 +135,32 @@ lives in one capability table read by core and UI.
 - Vercel-inspired design language: monochrome, high contrast, minimal
   chrome. Light/dark/system only — no themes. Every color, space, and
   radius flows through design tokens (guard bans raw hex in UI code).
+- Hue carries exactly one meaning: **which tool** an item belongs to
+  (`--tool-*`, one per harness). Status keeps the semantic tokens it
+  always had, and item kinds are told apart by icon — so no surface ever
+  asks a reader to decode two colour languages at once.
+- Four type steps, and no page invents a fifth: page title (24
+  semibold), section title (15 semibold, full contrast), row label (14
+  medium), description (13 muted). `components/section.tsx` owns all
+  four. A heading always outranks what it introduces — the old 11px
+  uppercase grey label put a group's name below its own contents in the
+  visual order.
+- Space groups things; boxes are for objects. A settings or detail
+  surface is `Section` + `SettingRow`, never a stack of cards. A `Card`
+  means a discrete thing a person acts on as a unit — a bundle, a
+  problem, an error.
+- Three surface planes, back to front: sidebar, page, card. Every page
+  draws its width and gutters from `lib/layout.ts` — two widths only, a
+  reading measure and full-width for data-dense tables — so header,
+  filters and body cannot drift out of alignment.
+- One search box, in the sidebar, holding the Library's filter. Typing
+  anywhere takes you to the Library rather than filtering a list that
+  isn't on screen.
+- Commands that touch disk, git, or a subprocess are declared
+  `#[tauri::command(async)]`. On Linux a synchronous command runs on the
+  GTK main loop, so seconds of work reads to the window manager as a
+  hung application. Only window operations, which must run on that
+  thread, stay synchronous.
 - No database: manifests, locks, and native dirs are the state; scans are
   in-memory views (startup, focus, watch); app prefs in one settings file.
 - GUI + CLI are equal thin shells over `crates/core`; every core operation

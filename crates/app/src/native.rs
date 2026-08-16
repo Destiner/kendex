@@ -26,7 +26,7 @@ pub async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String
 /// Shows `path` in the system file browser. Only ever reveals a path that
 /// is actually there — the plain-word error is the fix, not a stack trace
 /// from the OS call that would have failed instead.
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn reveal_path(path: String) -> Result<(), String> {
     if !Path::new(&path).exists() {
@@ -61,6 +61,26 @@ fn is_executable(path: &Path) -> bool {
     }
 }
 
+/// The file names a bare command may resolve to: the name itself, and on
+/// Windows the name under each `PATHEXT` extension — `code` is installed
+/// as `code.cmd`, and a lookup by the bare name alone finds nothing.
+fn spellings(candidate: &str, pathext: Option<&str>) -> Vec<String> {
+    let mut names = vec![candidate.to_owned()];
+    names.extend(
+        pathext
+            .unwrap_or_default()
+            .split(';')
+            .filter(|ext| !ext.is_empty())
+            .map(|ext| format!("{candidate}{}", ext.to_ascii_lowercase())),
+    );
+    names
+}
+
+fn pathext() -> Option<String> {
+    cfg!(windows)
+        .then(|| std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_owned()))
+}
+
 /// Resolves the first candidate that exists and is executable. A candidate
 /// given as an absolute path is checked directly; a bare name is walked
 /// across `path_var` the way a shell resolves PATH, so tests can fabricate
@@ -75,9 +95,11 @@ fn resolve_editor_at(path_var: &str, editor_override: Option<&str>) -> Option<Pa
             continue;
         }
         for dir in std::env::split_paths(path_var) {
-            let full = dir.join(candidate);
-            if is_executable(&full) {
-                return Some(full);
+            for name in spellings(candidate, pathext().as_deref()) {
+                let full = dir.join(name);
+                if is_executable(&full) {
+                    return Some(full);
+                }
             }
         }
     }
@@ -90,7 +112,7 @@ fn resolve_editor_at(path_var: &str, editor_override: Option<&str>) -> Option<Pa
 /// and a timeout, but this is an app-shell concern with a different shape
 /// — no shell, nothing to capture, and no timeout, because the editor is
 /// the user's own long-lived GUI app and is meant to outlive us.
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn open_in_editor(path: String) -> Result<(), String> {
     if !Path::new(&path).exists() {
@@ -171,6 +193,15 @@ mod tests {
 
         let found = resolve_editor_at("", Some(hx.to_str().unwrap())).unwrap();
         assert_eq!(found, hx);
+    }
+
+    #[test]
+    fn windows_spellings_carry_each_pathext_extension() {
+        assert_eq!(
+            spellings("code", Some(".COM;.EXE;;.CMD")),
+            ["code", "code.com", "code.exe", "code.cmd"]
+        );
+        assert_eq!(spellings("code", None), ["code"]);
     }
 
     #[cfg(unix)]

@@ -1,17 +1,27 @@
 import type { ReactNode } from "react";
+import { CONTENT_WIDTH, PAGE_GUTTER, WIDE_CONTENT_WIDTH } from "@/lib/layout";
+import { cn } from "@/lib/utils";
 
 export function PageHeader({
   title,
   subtitle,
   action,
+  wide = false,
 }: {
   title: string;
   subtitle?: string;
   action?: ReactNode;
+  /** Line the header up with a page that runs full-width, not to the reading cap. */
+  wide?: boolean;
 }) {
   return (
-    <header className="px-8 pt-8 pb-6">
-      <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4">
+    <header className={cn("pt-8 pb-6", PAGE_GUTTER)}>
+      <div
+        className={cn(
+          "flex items-center justify-between gap-4",
+          wide ? WIDE_CONTENT_WIDTH : CONTENT_WIDTH,
+        )}
+      >
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
           {subtitle ? (

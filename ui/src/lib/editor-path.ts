@@ -3,5 +3,6 @@
 // out of the workspace, so the Editor action opens the containing folder
 // instead. Every other kind's path is already the right thing to open.
 export function editorOpenPath(path: string): string {
-  return path.endsWith("/SKILL.md") ? path.slice(0, -"/SKILL.md".length) : path;
+  const match = /[\\/]SKILL\.md$/.exec(path);
+  return match ? path.slice(0, match.index) : path;
 }

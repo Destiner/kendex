@@ -1,6 +1,4 @@
-import type { RefObject } from "react";
-import type { HarnessId, ItemKind } from "@/bindings";
-import { Input } from "@/components/ui/input";
+import type { HarnessId, ItemKind, Tag } from "@/bindings";
 import {
   Select,
   SelectContent,
@@ -9,7 +7,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { Location } from "@/lib/derive";
-import { kindLabel, scopeName, toolName } from "@/lib/labels";
+import { kindLabel, scopeName, TAG_LABELS, toolName } from "@/lib/labels";
+import { PAGE_GUTTER, WIDE_CONTENT_WIDTH } from "@/lib/layout";
 import { cn } from "@/lib/utils";
 
 const KINDS: ItemKind[] = [
@@ -21,6 +20,9 @@ const KINDS: ItemKind[] = [
   "plugin",
   "pi-extension",
 ];
+// Derived, not written out again: a tag missing from the filter is a tag
+// nobody can find, and nothing would have caught a hand-kept list drifting.
+const TAGS = Object.keys(TAG_LABELS) as Tag[];
 const HARNESSES: HarnessId[] = [
   "claude",
   "codex",
@@ -32,24 +34,22 @@ const HARNESSES: HarnessId[] = [
 ];
 
 export function LibraryFilters({
-  searchRef,
-  search,
-  onSearchChange,
   kind,
   onKindChange,
   harness,
   onHarnessChange,
+  tag,
+  onTagChange,
   locations,
   onLocationsChange,
   projects,
 }: {
-  searchRef: RefObject<HTMLInputElement | null>;
-  search: string;
-  onSearchChange: (value: string) => void;
   kind: string;
   onKindChange: (value: string) => void;
   harness: string;
   onHarnessChange: (value: string) => void;
+  tag: string;
+  onTagChange: (value: string) => void;
   /** Empty set is "All" — the pills are a multi-select on top of it. */
   locations: ReadonlySet<Location>;
   onLocationsChange: (locations: Set<Location>) => void;
@@ -64,25 +64,13 @@ export function LibraryFilters({
   };
 
   return (
-    <div className="border-b px-8 py-3">
+    <div className={cn("border-b py-3", PAGE_GUTTER)}>
       {/* Narrower windows (900px, the density check point) can't fit search
           plus three pickers at full width — this scrolls sideways instead
           of squeezing the search box down to unreadable, à la the table's
           own overflow wrapper. */}
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-2">
+      <div className={cn("flex flex-col gap-3", WIDE_CONTENT_WIDTH)}>
         <div className="flex gap-2 overflow-x-auto">
-          <div className="relative w-56 shrink-0">
-            <Input
-              ref={searchRef}
-              placeholder="Search by name…"
-              value={search}
-              onChange={(e) => onSearchChange(e.target.value)}
-              className="pr-8"
-            />
-            <kbd className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-              /
-            </kbd>
-          </div>
           <Select
             value={kind}
             onValueChange={(value) => onKindChange(value ?? kind)}
@@ -101,6 +89,26 @@ export function LibraryFilters({
               {KINDS.map((k) => (
                 <SelectItem key={k} value={k}>
                   {kindLabel(k, 2)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={tag}
+            onValueChange={(value) => onTagChange(value ?? tag)}
+          >
+            <SelectTrigger className="w-40 shrink-0">
+              <SelectValue>
+                {(value: string) =>
+                  value === "any" ? "All tags" : TAG_LABELS[value as Tag]
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="any">All tags</SelectItem>
+              {TAGS.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {TAG_LABELS[t]}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -173,9 +181,12 @@ function LocationPill({
       onClick={onClick}
       className={cn(
         "inline-flex h-6 shrink-0 items-center rounded-full border px-2.5 text-xs font-medium transition-colors",
+        // Selection is the loudest thing about the pill: a fill only a
+        // shade lighter than the page, against an outlined neighbour, reads
+        // backwards.
         selected
-          ? "border-transparent bg-secondary text-foreground"
-          : "border-input text-muted-foreground hover:text-foreground",
+          ? "border-transparent bg-primary/20 text-primary"
+          : "border-border text-muted-foreground hover:border-input hover:text-foreground",
       )}
     >
       {label}

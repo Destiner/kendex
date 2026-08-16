@@ -165,6 +165,10 @@ pub struct ObservedItem {
     /// Best-effort provenance: git origin URL of the content's real location.
     pub origin: Option<String>,
     pub description: Option<String>,
+    /// What this item says it is for. Empty when it says nothing — a tag is
+    /// something an author writes down, never something inferred from a
+    /// name, because a wrong guess is worse than no answer.
+    pub tags: Vec<crate::tags::Tag>,
     /// Unix seconds the primary file last changed, as `u32` because specta
     /// refuses to export a 64-bit int (precision loss crossing the IPC
     /// boundary) — good until year 2106. `None` where the item has no

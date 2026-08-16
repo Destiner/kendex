@@ -108,7 +108,7 @@ pub(super) fn remove_package(path: &Path, name: &str) -> Result<bool> {
         return Ok(false);
     }
     if packages.is_empty() {
-        object.remove("packages");
+        object.shift_remove("packages");
     }
     write(path, &settings)?;
     Ok(true)

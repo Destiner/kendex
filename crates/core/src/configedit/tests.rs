@@ -88,3 +88,24 @@ fn marker_blocks_upsert_and_strip_cleanly() {
     assert_eq!(once, twice);
     assert_eq!(remove_marker_block(&once, "pi-hooks"), base);
 }
+
+/// Another tool wrote keys after ours and a handler after ours: a re-apply
+/// touches neither position, and removing a key never reorders the rest.
+#[test]
+fn hook_upsert_refreshes_in_place_and_removal_keeps_key_order() {
+    let file = "{\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"Bash\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"bash guard.sh\",\n            \"timeout\": 10\n          },\n          {\n            \"type\": \"command\",\n            \"command\": \"theirs\"\n          }\n        ]\n      }\n    ]\n  },\n  \"model\": \"opus\",\n  \"mcpServers\": {\n    \"gh\": {}\n  },\n  \"alwaysThinkingEnabled\": true\n}\n";
+    let edit = ConfigEdit::UpsertHook {
+        event: "PreToolUse".into(),
+        matcher: Some("Bash".into()),
+        command: "bash guard.sh".into(),
+        timeout: Some(10),
+    };
+    assert_eq!(edit.apply(file).unwrap(), file);
+
+    let removed = ConfigEdit::RemoveMcpServer { name: "gh".into() }
+        .apply(file)
+        .unwrap();
+    let value: Value = serde_json::from_str(&removed).unwrap();
+    let keys: Vec<&String> = value.as_object().unwrap().keys().collect();
+    assert_eq!(keys, ["hooks", "model", "alwaysThinkingEnabled"]);
+}

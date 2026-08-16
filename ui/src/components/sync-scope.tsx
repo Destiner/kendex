@@ -1,32 +1,36 @@
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { AuditView, DriftRow } from "@/bindings";
-import { SectionLabel } from "@/components/card-section";
-import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ApplyDialog } from "@/components/apply-dialog";
 import { SafetyCleanSummary } from "@/components/safety-findings";
 import {
   SafetyWarnings,
   safetyGroupCount,
 } from "@/components/safety-findings-affected";
 import { BlockedFindings } from "@/components/safety-findings-blocked";
-import { Badge } from "@/components/ui/badge";
+import { ScopeChanges, ScopeNotes } from "@/components/scope-details";
+import { Section } from "@/components/section";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { UnmanagedItems } from "@/components/unmanaged-items";
-import { mergeDriftRows, mergedDetail } from "@/lib/drift-merge";
-import { groupWarnings, partitionSafety } from "@/lib/group-findings";
 import {
-  driftDetail,
-  kindLabel,
-  STATE_BADGES,
-  STATE_LABELS,
+  APPLY_BUTTON_LABEL,
+  NOTHING_TO_DO_HERE,
   safetyGroupCountLabel,
-  scopeName,
-  scopePath,
-  toolName,
-} from "@/lib/labels";
+  scopeSummaryLabel,
+} from "@/lib/copy";
+import { mergeDriftRows } from "@/lib/drift-merge";
+import { partitionSafety } from "@/lib/group-findings";
+import { scopeName, scopePath } from "@/lib/labels";
 
+/**
+ * One project (or Personal), as its own panel.
+ *
+ * A machine with six projects used to be six full pages stacked end to end
+ * with nothing but whitespace between them. Each is a container of its own
+ * now, headed by what it needs and the button that does it, and a project
+ * with nothing urgent starts closed — the header still says what's inside,
+ * so nothing is hidden, it just isn't all shouting at once.
+ */
 export function SyncScopeCard({
   view,
   busy,
@@ -43,7 +47,7 @@ export function SyncScopeCard({
     opts?: { silent?: boolean },
   ) => void;
 }) {
-  const [reviewOpen, setReviewOpen] = useState(false);
+  const [applyOpen, setApplyOpen] = useState(false);
   const changes = mergeDriftRows(
     view.drift.filter((row) => row.state !== "unmanaged"),
   );
@@ -59,161 +63,95 @@ export function SyncScopeCard({
   // change on offer — defaulting the checkbox on keeps it reachable.
   const orphansOnly = orphans.length > 0 && view.plan.length === 0;
   const [removeOrphans, setRemoveOrphans] = useState(orphansOnly);
+  const canApply = view.plan.length > 0 || orphans.length > 0;
+  const summary = scopeSummaryLabel({
+    changes: changes.length,
+    blocked: blocked.length,
+    concerns: warnGroupCount,
+    unmanaged: unmanaged.length,
+  });
+  const [open, setOpen] = useState(blocked.length > 0 || canApply);
   const path = scopePath(view.scope);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-start gap-3 text-base">
-          <div className="min-w-0">
-            <span className="break-all">{scopeName(view.scope)}</span>
-            {path ? (
-              <p className="truncate font-mono text-xs font-normal text-muted-foreground">
-                {path}
-              </p>
-            ) : null}
-          </div>
-          {view.plan.length > 0 || orphans.length > 0 ? (
-            <Button
-              size="sm"
-              className="ml-auto shrink-0"
-              disabled={busy}
-              onClick={() => {
-                if (orphansOnly) setRemoveOrphans(true);
-                setReviewOpen(true);
-              }}
-            >
-              Review changes…
-            </Button>
-          ) : null}
-        </CardTitle>
-      </CardHeader>
-      {/* Sections read top to bottom in order of urgency: held-back items
-          can't be worked around, so they lead; changes are what applying
-          this card does; safety warnings install anyway but deserve a
-          look; not-managed items are pure housekeeping; an all-clear
-          summary, if that's all there is, is the quietest thing here. */}
-      <CardContent className="space-y-6">
-        <BlockedFindings rows={blocked} />
-        {changes.length > 0 ? (
-          <div className="space-y-1.5">
-            <SectionLabel>Changes</SectionLabel>
-            <div className="divide-y divide-border">
-              {changes.map((group) => {
-                const detail = mergedDetail(
-                  group.installations.map(driftDetail),
-                );
-                const tools = group.installations
-                  .map((row) => toolName(row.harness))
-                  .join(", ");
-                return (
-                  <div
-                    key={`${group.kind}:${group.name}:${group.state}`}
-                    className="flex flex-wrap items-center gap-2 py-2.5 first:pt-0 last:pb-0"
-                  >
-                    <span className="text-sm font-medium">{group.name}</span>
-                    <Badge variant={STATE_BADGES[group.state]}>
-                      {STATE_LABELS[group.state]}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {kindLabel(group.kind)} · {tools}
-                    </span>
-                    {detail ? (
-                      <span className="text-xs text-muted-foreground">
-                        {detail}
-                      </span>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-        {view.notes.map((note) => (
-          <p key={note} className="text-xs text-muted-foreground">
-            {note}
-          </p>
-        ))}
-        {groupWarnings(view.warnings).map((group) => (
-          <p
-            key={`${group.message}-${group.remediation ?? ""}`}
-            className="text-xs text-muted-foreground"
-          >
-            <span className="break-all font-mono">
-              {group.items.map((item) => item.name).join(", ")}
+    <section className="overflow-hidden rounded-xl border bg-card">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left"
+        >
+          {open ? (
+            <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+          )}
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-sm font-semibold">
+              {scopeName(view.scope)}
             </span>
-            : {group.message}
-            {group.remediation ? ` — fix: ${group.remediation}` : ""}
-          </p>
-        ))}
-        {warn.length > 0 || clean.length > 0 ? (
-          <div className="space-y-1.5">
-            <SectionLabel>
-              Safety
-              {warnGroupCount > 0 ? (
-                <span className="ml-1.5 font-normal normal-case tracking-normal text-muted-foreground">
-                  · {safetyGroupCountLabel(warnGroupCount)}
-                </span>
-              ) : null}
-            </SectionLabel>
-            <SafetyWarnings rows={warn} />
-            <SafetyCleanSummary rows={clean} />
-          </div>
+            <span className="truncate text-[13px] text-muted-foreground">
+              {summary ?? NOTHING_TO_DO_HERE}
+            </span>
+          </span>
+        </button>
+        {path ? (
+          <span className="hidden min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground lg:block">
+            {path}
+          </span>
         ) : null}
-        <UnmanagedItems rows={unmanaged} busy={busy} onAdopt={onAdopt} />
-      </CardContent>
-      <ConfirmDialog
-        open={reviewOpen}
-        onOpenChange={setReviewOpen}
-        title="Apply these changes?"
-        description="vstack will update the files it manages. Nothing else is touched."
-        confirmLabel="Apply changes"
-        busy={busy}
-        onConfirm={() => {
-          onApply(removeOrphans);
-          setReviewOpen(false);
-        }}
-      >
-        <div className="space-y-3">
-          <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border bg-muted/40 p-3">
-            {view.plan.map((line) => (
-              <p
-                key={line}
-                className="break-words text-xs text-muted-foreground"
-              >
-                {line}
-              </p>
-            ))}
-            {removeOrphans
-              ? orphans.map((group) => (
-                  <p
-                    key={`rm:${group.kind}:${group.name}:${group.state}`}
-                    className="break-words text-xs text-muted-foreground"
-                  >
-                    Remove {kindLabel(group.kind).toLowerCase()} {group.name} —
-                    left behind
-                  </p>
-                ))
-              : null}
-          </div>
-          {orphans.length > 0 ? (
-            <div className="flex items-center gap-2 text-sm">
-              <Checkbox
-                id="remove-orphans"
-                checked={removeOrphans}
-                onCheckedChange={(checked) =>
-                  setRemoveOrphans(checked === true)
-                }
-              />
-              <Label htmlFor="remove-orphans" className="font-normal">
-                {orphansOnly
-                  ? "Remove items that were left behind"
-                  : "Also remove items that were left behind"}
-              </Label>
-            </div>
+        {canApply ? (
+          <Button
+            size="sm"
+            className="shrink-0"
+            disabled={busy}
+            onClick={() => {
+              if (orphansOnly) setRemoveOrphans(true);
+              setApplyOpen(true);
+            }}
+          >
+            {APPLY_BUTTON_LABEL}
+          </Button>
+        ) : null}
+      </div>
+      {/* Sections read top to bottom in order of urgency: serious findings
+          can't be worked around, so they lead; changes are what applying
+          does; safety warnings install anyway but deserve a look;
+          not-managed items are pure housekeeping. */}
+      {open ? (
+        <div className="flex flex-col gap-6 border-t px-4 py-4">
+          <BlockedFindings rows={blocked} />
+          <ScopeChanges changes={changes} />
+          <ScopeNotes notes={view.notes} warnings={view.warnings} />
+          {warn.length > 0 || clean.length > 0 ? (
+            <Section
+              title="Safety"
+              description={
+                warnGroupCount > 0
+                  ? safetyGroupCountLabel(warnGroupCount)
+                  : undefined
+              }
+            >
+              <SafetyWarnings rows={warn} />
+              <SafetyCleanSummary rows={clean} />
+            </Section>
           ) : null}
+          <UnmanagedItems rows={unmanaged} busy={busy} onAdopt={onAdopt} />
         </div>
-      </ConfirmDialog>
-    </Card>
+      ) : null}
+      <ApplyDialog
+        open={applyOpen}
+        onOpenChange={setApplyOpen}
+        view={view}
+        orphans={orphans}
+        busy={busy}
+        removeOrphans={removeOrphans}
+        onRemoveOrphansChange={setRemoveOrphans}
+        onApply={() => {
+          onApply(removeOrphans);
+          setApplyOpen(false);
+        }}
+      />
+    </section>
   );
 }

@@ -41,6 +41,7 @@ describe("audit store refresh", () => {
       auditing: false,
       error: null,
       busy: false,
+      auditedAt: null,
       backgroundFailureAnnounced: false,
     });
     vi.clearAllMocks();
@@ -75,9 +76,27 @@ describe("audit store refresh", () => {
       status: "error",
       error: "boom again",
     });
-    await useAuditStore.getState().refresh();
+    await useAuditStore.getState().refresh({ force: true });
 
     expect(toast.error).toHaveBeenCalledTimes(2);
+  });
+
+  it("reuses a recent audit instead of re-running it on every visit", async () => {
+    vi.mocked(commands.auditAll).mockResolvedValue({ status: "ok", data: [] });
+
+    await useAuditStore.getState().refresh();
+    await useAuditStore.getState().refresh();
+
+    expect(commands.auditAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-runs an audit the caller asks for by name", async () => {
+    vi.mocked(commands.auditAll).mockResolvedValue({ status: "ok", data: [] });
+
+    await useAuditStore.getState().refresh();
+    await useAuditStore.getState().refresh({ force: true });
+
+    expect(commands.auditAll).toHaveBeenCalledTimes(2);
   });
 
   it("does not toast on a successful audit", async () => {
@@ -99,6 +118,7 @@ describe("audit store run() actions", () => {
       auditing: false,
       error: null,
       busy: false,
+      auditedAt: null,
       backgroundFailureAnnounced: false,
     });
     useProblemsStore.setState({

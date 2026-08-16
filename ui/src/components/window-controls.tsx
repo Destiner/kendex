@@ -1,7 +1,7 @@
 import { Minus, Square, X } from "lucide-react";
 import { commands } from "@/bindings";
 import { Button } from "@/components/ui/button";
-import { WINDOW_CONTROL_LABELS } from "@/lib/labels";
+import { WINDOW_CONTROL_LABELS } from "@/lib/copy";
 import { cn } from "@/lib/utils";
 
 // Floats over the content pane's top-right corner, above the drag strip

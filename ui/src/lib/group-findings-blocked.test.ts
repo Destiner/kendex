@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Finding, ItemSafety } from "@/bindings";
-import {
-  groupBlocked,
-  groupFindingsByRule,
-  relativeLocations,
-} from "./group-findings-blocked";
+import { groupBlocked, groupFindingsByRule } from "./group-findings-blocked";
 
 const RULE_FINDING: Finding = {
   rule: "dangerous-commands",
@@ -70,47 +66,6 @@ describe("groupFindingsByRule", () => {
       { ...RULE_FINDING, severity: "low" },
     ];
     expect(groupFindingsByRule(findings)[0].severity).toBe("critical");
-  });
-});
-
-describe("relativeLocations", () => {
-  it("strips the longest shared directory across several locations", () => {
-    const locations = [
-      "/home/dana/skills/visual-qa/evals/grade.py:848",
-      "/home/dana/skills/visual-qa/evals/grade.py:950",
-      "/home/dana/skills/visual-qa/process.py:89",
-      "/home/dana/skills/visual-qa/process.py:111",
-    ];
-    const { prefix, relative } = relativeLocations(locations);
-    expect(prefix).toBe("/home/dana/skills/visual-qa/");
-    expect(relative).toEqual([
-      "evals/grade.py:848",
-      "evals/grade.py:950",
-      "process.py:89",
-      "process.py:111",
-    ]);
-  });
-
-  it("never cuts a shared prefix off mid-filename", () => {
-    const locations = [
-      "/home/dana/skills/x/SKILL.md:12",
-      "/home/dana/skills/x/SKILL2.md:20",
-    ];
-    const { prefix, relative } = relativeLocations(locations);
-    expect(prefix).toBe("/home/dana/skills/x/");
-    expect(relative).toEqual(["SKILL.md:12", "SKILL2.md:20"]);
-  });
-
-  it("survives a single location without stripping anything useful to compare against", () => {
-    const { prefix, relative } = relativeLocations([
-      "/home/dana/skills/x/SKILL.md:12",
-    ]);
-    expect(prefix).toBe("");
-    expect(relative).toEqual(["/home/dana/skills/x/SKILL.md:12"]);
-  });
-
-  it("survives an empty list", () => {
-    expect(relativeLocations([])).toEqual({ prefix: "", relative: [] });
   });
 });
 

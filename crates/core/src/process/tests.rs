@@ -28,6 +28,11 @@ fn git_runs_without_redirecting_environment_and_without_prompts() {
             .to_string_lossy()
             .ends_with("-oBatchMode=yes")
     );
+    let args: Vec<_> = hardened.command.get_args().collect();
+    assert_eq!(
+        &args[..2],
+        [OsStr::new("-c"), OsStr::new("protocol.ext.allow=never")]
+    );
 }
 
 /// A user whose catalog needs a specific key sets `GIT_SSH_COMMAND`.

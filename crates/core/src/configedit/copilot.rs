@@ -20,7 +20,6 @@ pub(super) fn upsert_copilot_hook(
     command: &str,
     timeout: Option<u32>,
 ) -> Result<(), String> {
-    remove_copilot_hook(root, Some(event), command);
     root.insert("version".into(), json!(COPILOT_HOOK_VERSION));
     let entries = ensure_object(root, "hooks")?
         .entry(event)
@@ -34,7 +33,15 @@ pub(super) fn upsert_copilot_hook(
     if let Some(timeout) = timeout {
         entry["timeoutSec"] = json!(timeout);
     }
-    entries.push(entry);
+    // Refreshed where it already stands, so a re-apply moves nothing.
+    let ours = |candidate: &Value| candidate.get("bash").and_then(Value::as_str) == Some(command);
+    let first = entries.iter().position(ours);
+    let mut kept = false;
+    entries.retain(|candidate| !ours(candidate) || !std::mem::replace(&mut kept, true));
+    match first {
+        Some(index) => entries[index] = entry,
+        None => entries.push(entry),
+    }
     Ok(())
 }
 
@@ -57,12 +64,12 @@ pub(super) fn remove_copilot_hook(
         if let Some(entries) = events.get_mut(&name).and_then(Value::as_array_mut) {
             entries.retain(|entry| entry.get("bash").and_then(Value::as_str) != Some(command));
             if entries.is_empty() {
-                events.remove(&name);
+                events.shift_remove(&name);
             }
         }
     }
     if events.is_empty() {
-        root.remove("hooks");
+        root.shift_remove("hooks");
     }
 }
 

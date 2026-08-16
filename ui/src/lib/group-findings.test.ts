@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Finding, ItemSafety, ItemWarning } from "@/bindings";
 import {
-  groupByAffectedSet,
+  concernDetails,
+  groupByConcern,
   groupFindings,
   groupSkipped,
   groupWarnings,
@@ -86,46 +87,88 @@ describe("groupFindings", () => {
   });
 });
 
-describe("groupByAffectedSet", () => {
-  it("merges two findings that hit the identical set of items into one group", () => {
-    const rows = ["a", "b", "c"].map((name) => row({ name, findings: [] }));
+describe("groupByConcern", () => {
+  it("collapses one rule firing in several places into a single concern", () => {
     const groups = groupFindings([
-      { ...rows[0], findings: [FINDING] },
-      { ...rows[1], findings: [FINDING] },
-      { ...rows[2], findings: [FINDING] },
+      row({ name: "a", findings: [FINDING] }),
+      row({ name: "b", findings: [{ ...FINDING, location: "other.json:3" }] }),
+      row({ name: "c", findings: [{ ...FINDING, location: "third.json:9" }] }),
     ]);
-    // Simulate a second, distinct finding hitting the same three items.
-    const secondFinding: Finding = { ...FINDING, rule: "no-manifest" };
-    const groups2 = groupFindings([
-      { ...rows[0], findings: [secondFinding] },
-      { ...rows[1], findings: [secondFinding] },
-      { ...rows[2], findings: [secondFinding] },
-    ]);
-    const merged = groupByAffectedSet([...groups, ...groups2]);
-    expect(merged).toHaveLength(1);
-    expect(merged[0].findings).toHaveLength(2);
-    expect(merged[0].items.map((i) => i.name)).toEqual(["a", "b", "c"]);
+    expect(groups).toHaveLength(3);
+    const concerns = groupByConcern(groups);
+    expect(concerns).toHaveLength(1);
+    expect(concerns[0].findings).toHaveLength(3);
+    expect(concerns[0].items.map((i) => i.name)).toEqual(["a", "b", "c"]);
   });
 
-  it("keeps findings apart when their affected item-sets differ", () => {
-    const abc = groupFindings(
-      ["a", "b", "c"].map((name) => row({ name, findings: [FINDING] })),
+  it("counts an item once when the same rule hits it from two findings", () => {
+    const concerns = groupByConcern(
+      groupFindings([
+        row({
+          name: "a",
+          findings: [FINDING, { ...FINDING, location: "other.json:3" }],
+        }),
+      ]),
     );
-    const otherFinding: Finding = { ...FINDING, rule: "no-manifest" };
-    const ab = groupFindings(
-      ["a", "b"].map((name) => row({ name, findings: [otherFinding] })),
-    );
-    const merged = groupByAffectedSet([...abc, ...ab]);
-    expect(merged).toHaveLength(2);
+    expect(concerns[0].items).toHaveLength(1);
   });
 
-  it("preserves the order affected-set groups were first seen in", () => {
-    const first = groupFindings([row({ name: "solo1", findings: [FINDING] })]);
-    const second = groupFindings([
-      row({ name: "solo2", findings: [{ ...FINDING, rule: "other-rule" }] }),
-    ]);
-    const merged = groupByAffectedSet([...first, ...second]);
-    expect(merged.map((g) => g.items[0].name)).toEqual(["solo1", "solo2"]);
+  it("keeps different rules apart and leads with the most serious", () => {
+    const concerns = groupByConcern(
+      groupFindings([
+        row({ name: "a", findings: [{ ...FINDING, severity: "low" }] }),
+        row({
+          name: "b",
+          findings: [{ ...FINDING, rule: "rce", severity: "critical" }],
+        }),
+      ]),
+    );
+    expect(concerns.map((c) => c.rule)).toEqual(["rce", "dangerous-commands"]);
+  });
+
+  it("takes a concern's severity from its most serious finding", () => {
+    const concerns = groupByConcern(
+      groupFindings([
+        row({ name: "a", findings: [{ ...FINDING, severity: "low" }] }),
+        row({
+          name: "b",
+          findings: [
+            { ...FINDING, severity: "critical", location: "other.json:3" },
+          ],
+        }),
+      ]),
+    );
+    expect(concerns[0].severity).toBe("critical");
+  });
+});
+
+describe("concernDetails", () => {
+  it("says one repeated message once and lists every place it fired", () => {
+    const concern = groupByConcern(
+      groupFindings([
+        row({ name: "a", findings: [FINDING] }),
+        row({
+          name: "b",
+          findings: [{ ...FINDING, location: "other.json:3" }],
+        }),
+      ]),
+    )[0];
+    const details = concernDetails(concern);
+    expect(details).toHaveLength(1);
+    expect(details[0].locations).toEqual(["settings.json:17", "other.json:3"]);
+  });
+
+  it("keeps genuinely different messages under the same rule apart", () => {
+    const concern = groupByConcern(
+      groupFindings([
+        row({ name: "a", findings: [FINDING] }),
+        row({
+          name: "b",
+          findings: [{ ...FINDING, message: "`dd` overwrites a disk" }],
+        }),
+      ]),
+    )[0];
+    expect(concernDetails(concern)).toHaveLength(2);
   });
 });
 

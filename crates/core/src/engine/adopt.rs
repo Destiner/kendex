@@ -118,16 +118,29 @@ fn capture_ops(
         }
         return Ok(ops);
     }
+    // A copy the local source already holds is not overwritten in place:
+    // it goes to the trash first, where it can be got back.
+    if local_item.exists() {
+        ops.push(PlannedOp {
+            description: format!("trash the local source's earlier copy of {name}"),
+            op: Op::Trash {
+                path: local_item.to_path_buf(),
+                pre: Pre::HashIs {
+                    hash: crate::hash::hash_tree(local_item)?,
+                },
+            },
+        });
+    }
     let capture = match kind {
         ItemKind::Skill => Op::WriteTree {
             root: local_item.to_path_buf(),
             files: read_tree(&original)?,
-            pre: Pre::Any,
+            pre: Pre::Absent,
         },
         _ => Op::WriteFile {
             path: local_item.to_path_buf(),
             bytes: fs::read(&original).map_err(|e| CoreError::io(&original, e))?,
-            pre: Pre::Any,
+            pre: Pre::Absent,
         },
     };
     ops.push(PlannedOp {
@@ -210,6 +223,35 @@ mod tests {
         assert!(rendered.contains("My content."));
         let after = audit(&env, &scope).unwrap();
         assert_eq!(after.drift, vec![]);
+    }
+
+    /// The local source already had a copy: it is trashed, never overwritten
+    /// in place, so nothing adoption replaces is gone for good.
+    #[test]
+    fn an_earlier_local_copy_goes_to_the_trash_not_under_the_new_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env = Env::fake(tmp.path(), FakeOs::Linux);
+        let project = tmp.path().join("app");
+        let scope = Scope::Project {
+            root: project.clone(),
+        };
+        let earlier = project.join(".vstack-local/skills/handmade");
+        fs::create_dir_all(&earlier).unwrap();
+        fs::write(earlier.join("SKILL.md"), "earlier").unwrap();
+        fs::write(earlier.join("notes.md"), "kept only here").unwrap();
+        fs::create_dir_all(project.join(".claude/skills/handmade")).unwrap();
+        fs::write(project.join(".claude/skills/handmade/SKILL.md"), "observed").unwrap();
+
+        let plan = adopt(&env, &scope, ItemKind::Skill, "handmade", HarnessId::Claude).unwrap();
+        crate::apply::execute(&env, &plan, None).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(earlier.join("SKILL.md")).unwrap(),
+            "observed"
+        );
+        assert!(!earlier.join("notes.md").exists());
+        let trashed: Vec<_> = fs::read_dir(env.trash_dir()).unwrap().flatten().collect();
+        assert!(trashed.iter().any(|e| e.path().join("notes.md").is_file()));
     }
 
     #[test]

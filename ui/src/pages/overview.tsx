@@ -1,14 +1,21 @@
-import { SectionLabel } from "@/components/card-section";
 import {
   type AttentionRow,
   AttentionSection,
 } from "@/components/home/attention-section";
 import { RecentActivity } from "@/components/home/recent-activity";
 import { PageHeader } from "@/components/page-header";
+import { Section } from "@/components/section";
 import { StatTile } from "@/components/stat-tile";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  HOME_SUBTITLE,
+  RECENTLY_CHANGED_HELP,
+  REVIEW_ACTION_LABEL,
+} from "@/lib/copy";
 import { groupItems, heldBackCount, recentItems } from "@/lib/derive";
-import { HOME_SUBTITLE, toolName } from "@/lib/labels";
+import { toolName } from "@/lib/labels";
+import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
+import { cn } from "@/lib/utils";
 import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
@@ -30,8 +37,8 @@ export function OverviewPage() {
     return (
       <div>
         <PageHeader title="Home" subtitle={HOME_SUBTITLE} />
-        <div className="p-8">
-          <div className="mx-auto w-full max-w-5xl space-y-6">
+        <div className={PAGE_BODY}>
+          <div className={cn("space-y-6", CONTENT_WIDTH)}>
             <div className="space-y-3">
               <Skeleton className="h-16 w-full rounded-lg" />
               <Skeleton className="h-16 w-full rounded-lg" />
@@ -62,10 +69,11 @@ export function OverviewPage() {
       tone: "critical",
       title:
         blocked === 1
-          ? "1 install held back for safety"
-          : `${blocked} installs held back for safety`,
-      detail: "Findings need a look before these can install.",
-      action: { label: "Review findings", onClick: () => setPage("review") },
+          ? "1 serious problem found"
+          : `${blocked} serious problems found`,
+      detail:
+        "They're on your machine now. Read what was found before vstack installs or updates them.",
+      action: { label: REVIEW_ACTION_LABEL, onClick: () => setPage("review") },
     });
   }
   if (actionableCount > 0) {
@@ -76,8 +84,8 @@ export function OverviewPage() {
         actionableCount === 1
           ? "1 change ready to apply"
           : `${actionableCount} changes ready to apply`,
-      detail: "Review them before anything touches your files.",
-      action: { label: "Review changes", onClick: () => setPage("review") },
+      detail: "Nothing is written until you apply them.",
+      action: { label: REVIEW_ACTION_LABEL, onClick: () => setPage("review") },
     });
   }
   if (unmanagedCount > 0) {
@@ -88,9 +96,8 @@ export function OverviewPage() {
         unmanagedCount === 1
           ? "1 item isn't managed yet"
           : `${unmanagedCount} items aren't managed yet`,
-      detail:
-        "Found on this computer — manage them to keep them updated and checked.",
-      action: { label: "Have a look", onClick: () => setPage("review") },
+      detail: "Already on your machine, but vstack didn't put them there.",
+      action: { label: REVIEW_ACTION_LABEL, onClick: () => setPage("review") },
     });
   }
   if (missing.length > 0) {
@@ -129,20 +136,17 @@ export function OverviewPage() {
   return (
     <div>
       <PageHeader title="Home" subtitle={HOME_SUBTITLE} />
-      <div className="p-8">
-        <div className="mx-auto w-full max-w-5xl space-y-6">
-          <div className="space-y-3">
-            <SectionLabel>Needs attention</SectionLabel>
+      <div className={PAGE_BODY}>
+        <div className={cn("flex flex-col gap-10", CONTENT_WIDTH)}>
+          <Section title="Needs attention">
             <AttentionSection rows={rows} />
-          </div>
+          </Section>
 
-          <div className="space-y-3">
-            <SectionLabel>Recent activity</SectionLabel>
+          <Section title="Recently changed" description={RECENTLY_CHANGED_HELP}>
             <RecentActivity groups={recent} />
-          </div>
+          </Section>
 
-          <div className="space-y-3">
-            <SectionLabel>At a glance</SectionLabel>
+          <Section title="At a glance">
             <div className="grid grid-cols-3 gap-3">
               <StatTile
                 label="Tools"
@@ -161,7 +165,7 @@ export function OverviewPage() {
                 onClick={() => goToTools("projects")}
               />
             </div>
-          </div>
+          </Section>
         </div>
       </div>
     </div>

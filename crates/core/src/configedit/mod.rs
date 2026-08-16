@@ -2,8 +2,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 mod copilot;
+mod text;
 
 use copilot::{remove_copilot_hook, upsert_copilot_hook};
+use text::codex_enable_hooks;
+pub use text::{remove_marker_block, upsert_marker_block};
 
 /// A deterministic, idempotent structured edit. Applied to the file's
 /// current text at execute time; a file is in sync exactly when
@@ -169,7 +172,7 @@ impl ConfigEdit {
                 if let Some(list) = object.get_mut("instructions").and_then(Value::as_array_mut) {
                     list.retain(|v| v.as_str() != Some(reference));
                     if list.is_empty() {
-                        object.remove("instructions");
+                        object.shift_remove("instructions");
                     }
                 }
                 Ok(())
@@ -183,9 +186,9 @@ impl ConfigEdit {
 /// an empty object left behind is a key the user never wrote.
 fn remove_from_map(object: &mut Map<String, Value>, key: &str, entry: &str) {
     if let Some(map) = object.get_mut(key).and_then(Value::as_object_mut) {
-        map.remove(entry);
+        map.shift_remove(entry);
         if map.is_empty() {
-            object.remove(key);
+            object.shift_remove(key);
         }
     }
 }
@@ -241,7 +244,7 @@ fn set_gemini_mcp_enabled(
             ensure_object(root, name)?.insert("enabled".into(), Value::Bool(enabled));
         }
         None => {
-            root.remove(name);
+            root.shift_remove(name);
         }
     }
     Ok(())
@@ -254,39 +257,57 @@ fn upsert_hook(
     command: &str,
     timeout: Option<u32>,
 ) -> Result<(), String> {
-    remove_hook(root, event, command);
-    let hooks = ensure_object(root, "hooks")?;
-    let groups = hooks
-        .entry(event)
-        .or_insert_with(|| json!([]))
-        .as_array_mut()
-        .ok_or("hook event is not an array")?;
     let mut handler = json!({"type": "command", "command": command});
     if let Some(timeout) = timeout {
         handler["timeout"] = json!(timeout);
     }
-    let group = groups.iter_mut().find(|g| {
-        g.get("matcher").and_then(Value::as_str) == matcher
-            || (matcher.is_none() && g.get("matcher").is_none())
-    });
-    match group {
-        Some(group) => {
-            let handlers = group
-                .as_object_mut()
-                .and_then(|g| g.get_mut("hooks"))
-                .and_then(Value::as_array_mut)
-                .ok_or("hook group has no handler array")?;
-            handlers.push(handler);
+    let ours = |h: &Value| h.get("command").and_then(Value::as_str) == Some(command);
+    let groups = ensure_object(root, "hooks")?
+        .entry(event)
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+        .ok_or("hook event is not an array")?;
+    // Refreshed where it already stands — the file is another tool's too,
+    // and a handler that moves on every apply reads as drift there. Copies
+    // in other groups go.
+    let mut placed = false;
+    for group in groups.iter_mut() {
+        let wanted = group.get("matcher").and_then(Value::as_str) == matcher;
+        let Some(handlers) = group.get_mut("hooks").and_then(Value::as_array_mut) else {
+            continue;
+        };
+        for h in handlers.iter_mut().filter(|h| ours(h)) {
+            *h = match wanted && !placed {
+                true => handler.clone(),
+                false => Value::Null,
+            };
+            placed |= wanted;
         }
-        None => {
-            let mut group = Map::new();
-            if let Some(matcher) = matcher {
-                group.insert("matcher".into(), Value::String(matcher.to_owned()));
+        handlers.retain(|h| !h.is_null());
+    }
+    if !placed {
+        let group = groups
+            .iter_mut()
+            .find(|g| g.get("matcher").and_then(Value::as_str) == matcher)
+            .and_then(|g| g.get_mut("hooks"))
+            .and_then(Value::as_array_mut);
+        match group {
+            Some(handlers) => handlers.push(handler),
+            None => {
+                let mut group = Map::new();
+                if let Some(matcher) = matcher {
+                    group.insert("matcher".into(), Value::String(matcher.to_owned()));
+                }
+                group.insert("hooks".into(), Value::Array(vec![handler]));
+                groups.push(Value::Object(group));
             }
-            group.insert("hooks".into(), Value::Array(vec![handler]));
-            groups.push(Value::Object(group));
         }
     }
+    groups.retain(|g| {
+        g.get("hooks")
+            .and_then(Value::as_array)
+            .is_none_or(|handlers| !handlers.is_empty())
+    });
     Ok(())
 }
 
@@ -307,73 +328,11 @@ fn remove_hook(root: &mut Map<String, Value>, event: &str, command: &str) {
                 .is_none_or(|handlers| !handlers.is_empty())
         });
         if groups.is_empty() {
-            events.remove(event);
+            events.shift_remove(event);
         }
     }
     if events.is_empty() {
-        root.remove("hooks");
-    }
-}
-
-/// Preserves comments and ordering: appends to an existing `[features]`
-/// section or adds one at the end. Deprecated `codex_hooks` keys migrate.
-fn codex_enable_hooks(current: &str) -> String {
-    if current
-        .lines()
-        .any(|line| line.trim() == "hooks = true" || line.trim().starts_with("hooks=true"))
-    {
-        return current.replace("codex_hooks", "hooks");
-    }
-    let text = current.replace("codex_hooks", "hooks");
-    let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
-    if let Some(position) = lines.iter().position(|l| l.trim() == "[features]") {
-        lines.insert(position + 1, "hooks = true".to_owned());
-    } else {
-        if !lines.is_empty() && !lines.last().is_some_and(|l| l.is_empty()) {
-            lines.push(String::new());
-        }
-        lines.push("[features]".to_owned());
-        lines.push("hooks = true".to_owned());
-    }
-    let mut out = lines.join("\n");
-    out.push('\n');
-    out
-}
-
-fn marker_bounds(name: &str) -> (String, String) {
-    (
-        format!("<!-- vstack:append-system {name} begin -->"),
-        format!("<!-- vstack:append-system {name} end -->"),
-    )
-}
-
-pub fn upsert_marker_block(current: &str, name: &str, block: &str) -> String {
-    let stripped = remove_marker_block(current, name);
-    let (begin, end) = marker_bounds(name);
-    let base = stripped.trim_end();
-    if base.is_empty() {
-        format!("{begin}\n{block}\n{end}\n")
-    } else {
-        format!("{base}\n\n{begin}\n{block}\n{end}\n")
-    }
-}
-
-pub fn remove_marker_block(current: &str, name: &str) -> String {
-    let (begin, end) = marker_bounds(name);
-    let Some(start) = current.find(&begin) else {
-        return current.to_owned();
-    };
-    let Some(stop) = current[start..].find(&end) else {
-        // Unterminated markers are user damage; leave them untouched.
-        return current.to_owned();
-    };
-    let before = current[..start].trim_end_matches('\n');
-    let after = current[start + stop + end.len()..].trim_start_matches('\n');
-    match (before.is_empty(), after.is_empty()) {
-        (true, true) => String::new(),
-        (true, false) => after.to_owned(),
-        (false, true) => format!("{before}\n"),
-        (false, false) => format!("{before}\n\n{after}"),
+        root.shift_remove("hooks");
     }
 }
 

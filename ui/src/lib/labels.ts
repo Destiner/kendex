@@ -7,6 +7,7 @@ import type {
   ItemKind,
   Scope,
   Severity,
+  Tag,
   Verdict,
 } from "@/bindings";
 import type { LibraryTab, Page, ToolsTab } from "@/stores/nav";
@@ -36,12 +37,36 @@ const KIND_LABELS: Record<ItemKind, { one: string; many: string }> = {
 export const kindLabel = (kind: ItemKind, count = 1): string =>
   count === 1 ? KIND_LABELS[kind].one : KIND_LABELS[kind].many;
 
+// What each tag is called on screen. The written form is lower-case (it is
+// what an author types into a file); the label is what a reader sees.
+export const TAG_LABELS: Record<Tag, string> = {
+  review: "Review",
+  testing: "Testing",
+  docs: "Docs",
+  research: "Research",
+  planning: "Planning",
+  refactoring: "Refactoring",
+  debugging: "Debugging",
+  security: "Security",
+  performance: "Performance",
+  git: "Git",
+  release: "Release",
+  data: "Data",
+  ui: "UI",
+  integration: "Integration",
+  automation: "Automation",
+};
+export const ALL_TAGS_FILTER_LABEL = "All tags";
+
+// What a pending change would do, from the reader's side. "Orphaned" is the
+// planner's word for an installed thing nothing declares any more; what a
+// person needs to know is that nothing asks for it.
 export const STATE_LABELS: Record<DriftState, string> = {
-  missing: "not installed",
-  stale: "out of date",
-  orphaned: "left behind",
+  missing: "will be installed",
+  stale: "will be updated",
+  orphaned: "nothing asks for it",
   unmanaged: "not managed yet",
-  conflict: "needs attention",
+  conflict: "needs a decision",
 };
 
 // How serious a safety finding is, said without security jargon.
@@ -146,14 +171,6 @@ export function skipReasonShort(reason: string): string {
 // Affected-item disclosure copy — collapsed so a finding on 21 plugins isn't a wall of text.
 export const moreItemsLabel = (hiddenCount: number): string =>
   `+${hiddenCount} more`;
-export const FEWER_ITEMS_LABEL = "Show less";
-
-// "Safety" section label's same-line count and the clean-summary lead.
-export const safetyGroupCountLabel = (count: number): string =>
-  `${count} thing${count === 1 ? "" : "s"} worth a look`;
-export const cleanSummaryLead = (total: number): string =>
-  `${total} more item${total === 1 ? "" : "s"} checked, nothing found`;
-
 export const PAGE_LABELS: Record<Page, string> = {
   home: "Home",
   review: "Review & apply",
@@ -191,51 +208,3 @@ export function breadcrumbLabel(nav: {
 
 // Settings page copy, kept here so the wording is reviewed in one place.
 export const SETTINGS_SUBTITLE = "How vstack looks and behaves on this machine";
-export const SAFETY_HELP =
-  "Strict catches more but sometimes flags things that are actually fine. Lenient trusts more, and only stops the riskiest items.";
-
-// Review & apply page copy: what the page is, and what "managing" an item
-// buys you — said once here so "Start managing" doesn't need to explain
-// itself on every row.
-export const REVIEW_SUBTITLE =
-  "Changes vstack wants to make, and things it found — nothing touches your files until you apply.";
-export const UNMANAGED_SECTION_EXPLAINER =
-  "vstack keeps managed items updated, checked for safety, and synced across tools.";
-export const adoptedToastLabel = (name: string): string =>
-  `Now managing ${name}`;
-
-// Home page copy: attention keeps its own subtitle since it's the lead;
-// the other two sections are self-explanatory under their SectionLabel.
-export const HOME_SUBTITLE = "What needs your attention, and what changed";
-export const ALL_CAUGHT_UP_TITLE = "You're all caught up.";
-export const ALL_CAUGHT_UP_DETAIL =
-  "Everything matches what you've chosen to install.";
-export const RECENT_ACTIVITY_EMPTY = "Nothing has changed on this machine yet.";
-
-// Library flyout's open-actions menu.
-export const OPEN_IN_LABEL = "Open in…";
-export const OPEN_IN_FILE_BROWSER_LABEL = "File browser";
-export const OPEN_IN_EDITOR_LABEL = "Editor";
-export const EDITOR_ERROR_TITLE = "Couldn't open the editor";
-export const EDITOR_ERROR_STEPS = [
-  "Install VSCodium, VS Code, Cursor, Zed, or Sublime — or set VSTACK_EDITOR",
-];
-export const FILE_BROWSER_ERROR_TITLE = "Couldn't open the file browser";
-
-export const BACK_LABEL = "Back";
-export const WINDOW_CONTROL_LABELS = {
-  minimize: "Minimize",
-  maximize: "Maximize",
-  close: "Close",
-} as const;
-
-// The status footer's left side: what the last scan is telling you.
-export const SCANNING_LABEL = "Scanning…";
-export const scanStatusLabel = (scannedAgo: string | null): string =>
-  scannedAgo ? `Up to date · scanned ${scannedAgo}` : "Up to date";
-
-// The status footer's right side: quiet counts that link to Review & apply.
-export const pendingChangesLabel = (count: number): string =>
-  count === 1 ? "1 pending change" : `${count} pending changes`;
-export const heldBackFooterLabel = (count: number): string =>
-  count === 1 ? "1 held back" : `${count} held back`;

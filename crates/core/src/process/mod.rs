@@ -26,6 +26,12 @@ use crate::error::{CoreError, Result};
 /// call surfaces as an error instead of a frozen window.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// What a person waiting on a button will sit through. A refresh they asked
+/// for and are watching is a different promise from a clone running behind
+/// them: two minutes of nothing reads as broken, so an interactive call
+/// gives up early and says so while the window is still theirs.
+pub const INTERACTIVE_TIMEOUT: Duration = Duration::from_secs(30);
+
 const POLL: Duration = Duration::from_millis(10);
 
 /// How long a timed-out process tree gets to end on its own before it is
@@ -173,7 +179,19 @@ impl Hardened {
     }
 
     fn git_command(args: Vec<OsString>, cwd: Option<&Path>) -> Hardened {
-        let mut hardened = Hardened::new("git", args);
+        // The `ext::` transport runs a shell command named in the URL. A
+        // manifest's `repo` string is what reaches `git clone`, so it is
+        // shut on the command line, where a gitconfig cannot reopen it.
+        let mut hardened = Hardened::new(
+            "git",
+            [
+                OsString::from("-c"),
+                OsString::from("protocol.ext.allow=never"),
+            ]
+            .into_iter()
+            .chain(args)
+            .collect(),
+        );
         for variable in GIT_REDIRECTS {
             hardened.command.env_remove(variable);
         }

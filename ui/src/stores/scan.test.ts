@@ -137,4 +137,12 @@ describe("scan store", () => {
 
     expect(toast.error).toHaveBeenCalledTimes(2);
   });
+
+  it("lowers the scanning flag when the call itself rejects", async () => {
+    vi.mocked(commands.scanMachine).mockRejectedValue(new Error("ipc down"));
+
+    await expect(useScanStore.getState().refresh()).rejects.toThrow("ipc down");
+
+    expect(useScanStore.getState().scanning).toBe(false);
+  });
 });

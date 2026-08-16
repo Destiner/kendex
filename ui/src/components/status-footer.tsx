@@ -1,14 +1,14 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { StatusDot } from "@/components/status-dot";
-import { heldBackCount } from "@/lib/derive";
-import { problemsFooterLabel } from "@/lib/error-copy";
 import {
   heldBackFooterLabel,
   pendingChangesLabel,
   SCANNING_LABEL,
   scanStatusLabel,
-} from "@/lib/labels";
+} from "@/lib/copy";
+import { heldBackCount } from "@/lib/derive";
+import { problemsFooterLabel } from "@/lib/error-copy";
 import { relativeTime } from "@/lib/relative-time";
 import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";

@@ -13,6 +13,8 @@ use vstack_core::engine::{audit, ops};
 use vstack_core::env::{Env, FakeOs};
 use vstack_core::model::Scope;
 
+mod config_files;
+
 const GUARD_HOOK: &str = "#!/usr/bin/env bash\n# ---\n# name: guard\n# event: PreToolUse\n# matcher: Bash\n# description: block dangerous commands\n# timeout: 10\n# harnesses: [claude-code]\n# ---\nexit 0\n";
 
 /// No `harnesses` line: this one goes everywhere hooks are supported.
@@ -24,17 +26,17 @@ const DONE_HOOK: &str = "#!/usr/bin/env bash\n# ---\n# name: done\n# event: Task
 const GH_MCP: &str =
     "command = \"gh-mcp\"\nargs = [\"--stdio\"]\n\n[env]\nGITHUB_TOKEN = \"$GH_TOKEN\"\n";
 
-struct Fixture {
+pub struct Fixture {
     _tmp: tempfile::TempDir,
-    env: Env,
-    scope: Scope,
-    project: PathBuf,
+    pub env: Env,
+    pub scope: Scope,
+    pub project: PathBuf,
 }
 
 /// A claude-only project whose catalog carries a hook and an MCP server;
 /// `declarations` is appended to the manifest verbatim.
 #[allow(clippy::unwrap_used)]
-fn fixture(declarations: &str) -> Fixture {
+pub fn fixture(declarations: &str) -> Fixture {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().to_path_buf();
     let env = Env::fake(&home, FakeOs::Linux);
@@ -71,7 +73,7 @@ fn fixture(declarations: &str) -> Fixture {
 }
 
 #[allow(clippy::unwrap_used)]
-fn apply_now(f: &Fixture) {
+pub fn apply_now(f: &Fixture) {
     let report = audit(&f.env, &f.scope).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
 }
@@ -83,16 +85,16 @@ fn toggle(f: &Fixture, name: &str, enabled: bool) {
 }
 
 #[allow(clippy::unwrap_used)]
-fn json(path: &Path) -> Value {
+pub fn json(path: &Path) -> Value {
     serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
 }
 
 #[allow(clippy::unwrap_used)]
-fn is_clean(f: &Fixture) -> bool {
+pub fn is_clean(f: &Fixture) -> bool {
     audit(&f.env, &f.scope).unwrap().drift.is_empty()
 }
 
-fn settings(f: &Fixture) -> PathBuf {
+pub fn settings(f: &Fixture) -> PathBuf {
     f.project.join(".claude/settings.json")
 }
 

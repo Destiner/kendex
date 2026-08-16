@@ -47,28 +47,6 @@ export function groupFindingsByRule(findings: Finding[]): RuleGroup[] {
 // Every location in a rule-group's list tends to share a long directory
 // prefix (the skill's own folder) — printing it on each line just makes the
 // list harder to scan. This strips the longest shared prefix once, trimmed
-// back to a directory boundary so a filename never gets cut in half.
-export function relativeLocations(locations: string[]): {
-  prefix: string;
-  relative: string[];
-} {
-  if (locations.length <= 1) {
-    return { prefix: "", relative: [...locations] };
-  }
-  let prefix = locations[0];
-  for (const location of locations.slice(1)) {
-    let i = 0;
-    while (i < prefix.length && prefix[i] === location[i]) i++;
-    prefix = prefix.slice(0, i);
-    if (prefix === "") break;
-  }
-  const lastSlash = prefix.lastIndexOf("/");
-  prefix = lastSlash >= 0 ? prefix.slice(0, lastSlash + 1) : "";
-  return {
-    prefix,
-    relative: locations.map((location) => location.slice(prefix.length)),
-  };
-}
 
 export interface BlockedGroup {
   kind: ItemKind;

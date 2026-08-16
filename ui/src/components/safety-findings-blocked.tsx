@@ -1,24 +1,21 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import type { ItemSafety } from "@/bindings";
-import { SectionLabel } from "@/components/card-section";
+import type { Finding, ItemSafety } from "@/bindings";
+import { FindingLine } from "@/components/safety-findings";
 import { StatusDot } from "@/components/status-dot";
 import { Badge } from "@/components/ui/badge";
+import { BLOCKED_SECTION_EXPLAINER, BLOCKED_SECTION_TITLE } from "@/lib/copy";
 import { findingHeadline } from "@/lib/finding-headlines";
 import { SEVERITY_RANK } from "@/lib/group-findings";
 import {
   type BlockedGroup,
   groupBlocked,
   type RuleGroup,
-  relativeLocations,
 } from "@/lib/group-findings-blocked";
 import {
-  FEWER_ITEMS_LABEL,
   hookDisplayName,
   kindLabel,
   moreItemsLabel,
-  SEVERITY_BADGES,
-  SEVERITY_LABELS,
   toolName,
 } from "@/lib/labels";
 
@@ -58,64 +55,17 @@ function BlockedRowNotes({
   );
 }
 
-const LOCATION_COLLAPSE_THRESHOLD = 6;
-
-// The locations a rule-group hit, with their shared directory printed once
-// on its own quiet line instead of on every entry — a rule firing at four
-// call sites in the same skill folder otherwise repeats that folder's path
-// four times before the reader reaches the part that differs.
-function LocationList({ locations }: { locations: string[] }) {
-  const [expanded, setExpanded] = useState(false);
-  const { prefix, relative } = relativeLocations(locations);
-  const visible = expanded
-    ? relative
-    : relative.slice(0, LOCATION_COLLAPSE_THRESHOLD);
-  const hiddenCount = relative.length - visible.length;
-  const canCollapse = relative.length > LOCATION_COLLAPSE_THRESHOLD;
-  return (
-    <div className="space-y-0.5">
-      {prefix ? (
-        <p className="break-all font-mono text-muted-foreground/60">{prefix}</p>
-      ) : null}
-      <p className="break-words font-mono text-muted-foreground">
-        {visible.join(", ")}
-        {canCollapse ? (
-          <button
-            type="button"
-            onClick={() => setExpanded((e) => !e)}
-            className="ml-1 text-foreground hover:underline"
-          >
-            {expanded ? FEWER_ITEMS_LABEL : moreItemsLabel(hiddenCount)}
-          </button>
-        ) : null}
-      </p>
-    </div>
-  );
-}
-
-// One rule's message and fix, printed once, with every location it hit
-// listed beneath — the badge-column-then-content grid matches FindingLine
-// in safety-findings.tsx so the expanded held-back row and the warn list
-// read as one system.
-function RuleGroupLine({ group }: { group: RuleGroup }) {
-  return (
-    <div className="flex items-start gap-2 text-xs">
-      <Badge
-        variant={SEVERITY_BADGES[group.severity]}
-        className="mt-0.5 shrink-0"
-      >
-        {SEVERITY_LABELS[group.severity]}
-      </Badge>
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <p className="break-words text-muted-foreground">{group.message}</p>
-        <p className="break-words text-muted-foreground/70">
-          <span className="text-muted-foreground/50">↳ Fix: </span>
-          {group.remediation}
-        </p>
-        <LocationList locations={group.locations} />
-      </div>
-    </div>
-  );
+// One held-back rule reuses the warn list's finding anatomy exactly — same
+// severity lane, same order, same wording — so the two lists read as one
+// system rather than two dialects of the same information.
+function ruleGroupAsFinding(group: RuleGroup): Finding {
+  return {
+    rule: group.rule,
+    severity: group.severity,
+    location: group.locations[0] ?? "",
+    message: group.message,
+    remediation: group.remediation,
+  };
 }
 
 function leadRuleGroup(groups: RuleGroup[]): RuleGroup {
@@ -141,7 +91,7 @@ function BlockedGroupRow({ group }: { group: BlockedGroup }) {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full cursor-pointer items-center gap-2 px-3 py-2.5 text-left"
+        className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2.5 text-left hover:bg-critical/5"
       >
         <StatusDot tone="critical" />
         <span className="min-w-0 flex-1 truncate text-sm font-medium">
@@ -163,7 +113,7 @@ function BlockedGroupRow({ group }: { group: BlockedGroup }) {
         )}
       </button>
       {open ? (
-        <div className="space-y-2 pb-3 pl-7 pr-3">
+        <div className="flex flex-col gap-3 border-t border-critical/20 px-3 py-3.5">
           {group.rows.map((row) => (
             <BlockedRowNotes
               key={row.harness}
@@ -174,9 +124,10 @@ function BlockedGroupRow({ group }: { group: BlockedGroup }) {
             />
           ))}
           {group.findingGroups.map((ruleGroup) => (
-            <RuleGroupLine
+            <FindingLine
               key={`${ruleGroup.rule}:${ruleGroup.message}`}
-              group={ruleGroup}
+              finding={ruleGroupAsFinding(ruleGroup)}
+              locations={ruleGroup.locations}
             />
           ))}
         </div>
@@ -193,8 +144,15 @@ export function BlockedFindings({ rows }: { rows: ItemSafety[] }) {
   const groups = groupBlocked(rows);
   if (groups.length === 0) return null;
   return (
-    <div className="space-y-3 rounded-lg border border-critical/30 bg-critical/5 p-3">
-      <SectionLabel className="text-critical">Held back</SectionLabel>
+    <div className="flex flex-col gap-2 rounded-lg border border-critical/30 bg-critical/5 p-3">
+      <div className="flex flex-col gap-1">
+        <h3 className="text-[13px] font-semibold text-critical">
+          {BLOCKED_SECTION_TITLE}
+        </h3>
+        <p className="text-[13px] text-muted-foreground">
+          {BLOCKED_SECTION_EXPLAINER}
+        </p>
+      </div>
       <div className="divide-y divide-critical/20 rounded-md border border-critical/20 bg-background/40">
         {groups.map((group) => (
           <BlockedGroupRow

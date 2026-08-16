@@ -8,16 +8,29 @@ use crate::error::{CoreError, Result};
 use crate::manifest::Manifest;
 use crate::model::{HarnessId, ItemKind};
 
+/// Deeper than any rendered tree goes; a link that loops back into its own
+/// tree hits this instead of the stack limit.
+const MAX_DEPTH: usize = 32;
+
 /// SHA-256 over a file's bytes, or over a directory tree as sorted
 /// relative-path + content pairs. Symlinks hash their resolved content.
+/// Anything that is neither file nor directory (a pipe, a device) is an
+/// error, not a read that never returns — the caller reports it uncompared.
 pub fn hash_tree(path: &Path) -> Result<String> {
     let mut hasher = Sha256::new();
-    hash_into(&mut hasher, path, Path::new(""))?;
+    hash_into(&mut hasher, path, Path::new(""), 0)?;
     Ok(hex(&hasher.finalize()))
 }
 
-fn hash_into(hasher: &mut Sha256, path: &Path, rel: &Path) -> Result<()> {
-    if path.is_dir() {
+fn hash_into(hasher: &mut Sha256, path: &Path, rel: &Path, depth: usize) -> Result<()> {
+    let refuse = |why: &str| CoreError::io(path, std::io::Error::other(why.to_owned()));
+    if depth > MAX_DEPTH {
+        return Err(refuse(
+            "nested too deep — a link pointing back into its own tree?",
+        ));
+    }
+    let meta = fs::metadata(path).map_err(|e| CoreError::io(path, e))?;
+    if meta.is_dir() {
         let mut entries: Vec<_> = fs::read_dir(path)
             .map_err(|e| CoreError::io(path, e))?
             .flatten()
@@ -28,14 +41,16 @@ fn hash_into(hasher: &mut Sha256, path: &Path, rel: &Path) -> Result<()> {
             let Some(name) = entry.file_name() else {
                 continue;
             };
-            hash_into(hasher, &entry, &rel.join(name))?;
+            hash_into(hasher, &entry, &rel.join(name), depth + 1)?;
         }
-    } else {
+    } else if meta.is_file() {
         let bytes = fs::read(path).map_err(|e| CoreError::io(path, e))?;
         hasher.update(rel.to_string_lossy().as_bytes());
         hasher.update([0]);
         hasher.update(&bytes);
         hasher.update([0]);
+    } else {
+        return Err(refuse("not a regular file or directory"));
     }
     Ok(())
 }
@@ -159,6 +174,17 @@ fn hex(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::manifest::MANIFEST_SCHEMA;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_looping_into_its_own_tree_is_an_error_not_a_crash() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("skill");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("SKILL.md"), "hello").unwrap();
+        std::os::unix::fs::symlink(&root, root.join("loop")).unwrap();
+        assert!(hash_tree(&root).is_err());
+    }
 
     #[test]
     fn tree_hash_is_content_and_layout_sensitive() {

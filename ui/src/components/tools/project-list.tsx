@@ -8,6 +8,8 @@ import { ScopeCard } from "@/components/tools/scope-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { countByKind } from "@/lib/derive";
+import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
+import { cn } from "@/lib/utils";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 import { useSettingsStore } from "@/stores/settings";
@@ -77,8 +79,8 @@ export function ProjectList() {
   const projects = settings?.projects ?? [];
 
   return (
-    <div className="p-8">
-      <div className="mx-auto w-full max-w-5xl space-y-4">
+    <div className={PAGE_BODY}>
+      <div className={cn("flex flex-col gap-10", CONTENT_WIDTH)}>
         <ScopeCard
           title="Personal"
           subtitle="Just for you — works in every project on this computer"
@@ -90,11 +92,11 @@ export function ProjectList() {
         />
 
         {projects.length === 0 ? (
-          <div className="rounded-lg border px-4 py-6 text-center text-sm text-muted-foreground">
+          <p className="py-3.5 text-sm text-muted-foreground">
             No projects yet — add one below to manage its tools.
-          </div>
+          </p>
         ) : (
-          <div className="divide-y rounded-lg border px-4">
+          <div className="flex flex-col">
             {projects.map((root) => {
               const items =
                 result?.items.filter(

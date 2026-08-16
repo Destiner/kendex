@@ -147,6 +147,7 @@ fn an_observed_mcp_server_is_read_from_the_config_that_holds_it() {
         enabled: None,
         origin: None,
         description: None,
+        tags: Vec::new(),
         modified_at: None,
     });
     let result = audit(input);
@@ -179,6 +180,7 @@ fn an_mcp_server_with_no_readable_entry_reports_its_rules_as_skipped() {
         enabled: None,
         origin: None,
         description: None,
+        tags: Vec::new(),
         modified_at: None,
     });
     let result = audit(input);

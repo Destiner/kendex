@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { type Draft, setProjectSkillsDir } from "@/lib/editor-draft";
+import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
+import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor";
 import { useSettingsStore } from "@/stores/settings";
 
@@ -52,8 +54,8 @@ export function CustomizePage() {
         title="Customize"
         subtitle="Every customization here — edited in one place, not by hand"
       />
-      <div className="flex-1 p-8">
-        <div className="mx-auto w-full max-w-5xl space-y-6">
+      <div className={cn("flex-1", PAGE_BODY)}>
+        <div className={cn("space-y-6", CONTENT_WIDTH)}>
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">Editing</span>
             <Select

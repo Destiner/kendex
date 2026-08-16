@@ -39,7 +39,12 @@ export function ReportDialog({
 
   return (
     <>
-      <Button size="sm" variant="ghost" onClick={() => void show()}>
+      <Button
+        size="sm"
+        variant="link"
+        className="px-0"
+        onClick={() => void show()}
+      >
         Report a problem…
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>

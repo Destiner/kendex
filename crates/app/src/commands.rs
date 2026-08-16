@@ -17,7 +17,7 @@ pub fn app_version() -> String {
     env!("CARGO_PKG_VERSION").to_owned()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn scan_machine() -> Result<ScanResult, String> {
     let env = env()?;
@@ -25,7 +25,7 @@ pub fn scan_machine() -> Result<ScanResult, String> {
     Ok(scan::scan(&env, &app_settings))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn get_settings() -> Result<AppSettings, String> {
     settings::load(&env()?).map_err(|e| e.to_string())
@@ -39,7 +39,7 @@ fn update_settings_at(env: &Env, mut settings: AppSettings) -> Result<AppSetting
     Ok(settings)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn update_settings(settings: AppSettings) -> Result<AppSettings, String> {
     update_settings_at(&env()?, settings)
@@ -50,13 +50,13 @@ fn register_project_at(env: &Env, path: &str) -> Result<AppSettings, String> {
     settings::register_project(env, &expanded).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn register_project(path: String) -> Result<AppSettings, String> {
     register_project_at(&env()?, &path)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn unregister_project(path: String) -> Result<AppSettings, String> {
     settings::unregister_project(&env()?, path.as_ref()).map_err(|e| e.to_string())
@@ -71,7 +71,7 @@ fn discover_projects_at(env: &Env, root: &str) -> Result<Vec<String>, String> {
         .collect())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn discover_projects(root: String) -> Result<Vec<String>, String> {
     discover_projects_at(&env()?, &root)
@@ -126,7 +126,7 @@ fn urlencode(text: &str) -> String {
 
 /// Where a problem report about this item belongs: the vstack upstream
 /// (with a prefilled issue link) or the user's own repo.
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn report_route(
     scope: vstack_core::model::Scope,

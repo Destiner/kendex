@@ -1,35 +1,60 @@
 import type { Finding, ItemSafety } from "@/bindings";
 import { Badge } from "@/components/ui/badge";
+import { cleanSummaryLead, morePlacesLabel } from "@/lib/copy";
+import { abbreviateHome } from "@/lib/drift-merge";
 import { groupSkipped } from "@/lib/group-findings";
 import {
-  cleanSummaryLead,
   kindLabel,
   SEVERITY_BADGES,
   SEVERITY_LABELS,
   skipReasonShort,
 } from "@/lib/labels";
 
-// The badge anchors a fixed-width column so every finding's message lines
-// up regardless of severity label length; the fix line sits visually
-// quieter than the message so a scan of the stack reads problem, then
-// remedy, without the two competing for attention.
-export function FindingLine({ finding }: { finding: Finding }) {
+/**
+ * One finding, read top to bottom as: how bad, what it is, what to do,
+ * where.
+ *
+ * The severity chip sits in a lane of its own rather than inline, because
+ * "Serious" and "Worth a look" are different widths and an inline chip
+ * starts every message at a different left edge — a column of text that
+ * never lines up is the thing that makes a list of these unreadable.
+ *
+ * One place is named in full. The rest are counted, not listed: a rule that
+ * fired in twenty files printed twenty paths, and nobody reads the
+ * nineteenth. The items themselves are named under the finding, which is
+ * the identification a person actually wants.
+ */
+export function FindingLine({
+  finding,
+  locations = [finding.location],
+}: {
+  finding: Finding;
+  locations?: string[];
+}) {
   return (
-    <div className="flex items-start gap-2 text-xs">
-      <Badge
-        variant={SEVERITY_BADGES[finding.severity]}
-        className="mt-0.5 shrink-0"
-      >
-        {SEVERITY_LABELS[finding.severity]}
-      </Badge>
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <p className="break-words text-muted-foreground">{finding.message}</p>
-        <p className="break-all font-mono text-muted-foreground">
-          {finding.location}
-        </p>
-        <p className="break-words text-muted-foreground/70">
-          <span className="text-muted-foreground/50">↳ Fix: </span>
+    <div className="flex items-start gap-3 text-[13px]">
+      <div className="w-[5.5rem] shrink-0 pt-0.5">
+        <Badge variant={SEVERITY_BADGES[finding.severity]}>
+          {SEVERITY_LABELS[finding.severity]}
+        </Badge>
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <p className="break-words">{finding.message}</p>
+        <p className="break-words text-muted-foreground">
+          <span className="font-medium text-foreground/70">To fix: </span>
           {finding.remediation}
+        </p>
+        <p
+          className="truncate font-mono text-xs text-muted-foreground/80"
+          title={locations.join("\n")}
+        >
+          {abbreviateHome(locations[0])}
+          {locations.length > 1 ? (
+            <span className="font-sans">
+              {" "}
+              {morePlacesLabel(locations.length - 1)}
+            </span>
+          ) : null}
         </p>
       </div>
     </div>
@@ -51,6 +76,8 @@ export function SafetyCleanSummary({ rows }: { rows: ItemSafety[] }) {
     }),
   ];
   return (
-    <p className="text-xs text-muted-foreground">{clauses.join(" · ")}.</p>
+    <p className="pt-2 text-[13px] text-muted-foreground">
+      {clauses.join(" · ")}.
+    </p>
   );
 }

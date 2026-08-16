@@ -2,13 +2,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+use super::metadata;
 use crate::model::FileState;
 
 pub struct FoundFile {
     pub name: String,
     pub path: PathBuf,
     pub enabled: bool,
-    pub description: Option<String>,
+    /// What the item says it is for, and anything it wrote where a tag
+    /// belonged that is not one.
+    pub meta: metadata::Metadata,
     pub modified_at: Option<u32>,
 }
 
@@ -27,7 +30,16 @@ pub fn mtime_unix(path: &Path) -> Option<u32> {
 
 pub fn state_of(path: &Path) -> FileState {
     if path.is_symlink() {
-        let target = fs::read_link(path).unwrap_or_default();
+        // Resolved, not as written. Two tools that link to one shared folder
+        // spell the link differently (`../../.agents/...` from one place,
+        // `../../../.agents/...` from another) — compared as written they
+        // look like two unrelated items, and the app would offer to take
+        // over each of them separately. Resolved, they are visibly one
+        // thing in two places. A broken link has nothing to resolve, so it
+        // keeps the text it was given, which is what names the problem.
+        let target = fs::canonicalize(path)
+            .or_else(|_| fs::read_link(path))
+            .unwrap_or_default();
         FileState::Symlink {
             broken: !path.exists(),
             target,
@@ -77,13 +89,13 @@ fn collect_files(
             Some(ns) => format!("{ns}/{stem}"),
             None => stem.to_owned(),
         };
-        let description = read_description(&path);
+        let meta = metadata::read(&path);
         let modified_at = mtime_unix(&path);
         found.push(FoundFile {
             name,
             path,
             enabled,
-            description,
+            meta,
             modified_at,
         });
     }
@@ -128,9 +140,10 @@ pub fn scan_subdirs(dir: &Path, marker: &str) -> Vec<FoundFile> {
         } else {
             continue;
         };
+        let meta = metadata::read(&marker_path);
         found.push(FoundFile {
             name: name.to_owned(),
-            description: read_description(&marker_path),
+            meta,
             modified_at: mtime_unix(&marker_path),
             path,
             enabled,
@@ -154,48 +167,6 @@ pub fn scan_documents(dir: &Path, ext: &str) -> Vec<PathBuf> {
         .collect();
     found.sort();
     found
-}
-
-const DESCRIPTION_PROBE_BYTES: usize = 4096;
-
-/// Best-effort `description` from YAML frontmatter (md/mdc) or a top-level
-/// TOML `description` key — enough for list views, not a full parser.
-fn read_description(path: &Path) -> Option<String> {
-    let ext = path.extension()?.to_str()?;
-    let text = read_head(path)?;
-    match ext {
-        "md" | "mdc" => frontmatter_description(&text),
-        "toml" => toml_description(&text),
-        _ => None,
-    }
-}
-
-fn read_head(path: &Path) -> Option<String> {
-    let bytes = fs::read(path).ok()?;
-    let head = &bytes[..bytes.len().min(DESCRIPTION_PROBE_BYTES)];
-    Some(String::from_utf8_lossy(head).into_owned())
-}
-
-fn frontmatter_description(text: &str) -> Option<String> {
-    let body = text.strip_prefix("---")?;
-    let end = body.find("\n---")?;
-    for line in body[..end].lines() {
-        if let Some(value) = line.strip_prefix("description:") {
-            let value = value.trim().trim_matches('"').trim_matches('\'');
-            if !value.is_empty() {
-                return Some(value.to_owned());
-            }
-        }
-    }
-    None
-}
-
-fn toml_description(text: &str) -> Option<String> {
-    let value: toml::Table = text.parse().ok()?;
-    value
-        .get("description")
-        .and_then(|d| d.as_str())
-        .map(str::to_owned)
 }
 
 #[cfg(test)]
@@ -248,16 +219,7 @@ mod tests {
         let found = scan_subdirs(tmp.path(), "SKILL.md");
         let names: Vec<_> = found.iter().map(|f| (f.name.as_str(), f.enabled)).collect();
         assert_eq!(names, [("off", false), ("real", true)]);
-        assert_eq!(found[1].description.as_deref(), Some("x"));
+        assert_eq!(found[1].meta.description.as_deref(), Some("x"));
         assert!(found[1].modified_at.is_some());
-    }
-
-    #[test]
-    fn frontmatter_description_handles_quotes_and_absence() {
-        assert_eq!(
-            frontmatter_description("---\ndescription: \"hi there\"\n---\nbody"),
-            Some("hi there".to_owned())
-        );
-        assert_eq!(frontmatter_description("no frontmatter"), None);
     }
 }

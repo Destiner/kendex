@@ -186,8 +186,14 @@ pub fn ensure_mirror(mirror: &Path, url: &str) -> Result<()> {
 /// Update every ref, following tags that moved upstream — a mirror's
 /// refspec is forced, so a moved tag lands here and is previewed like any
 /// other upstream change.
+///
+/// This is the one somebody sits and waits for: the mirror already exists,
+/// so an update is a small transfer, and a link that cannot manage it in
+/// half a minute is a link to report rather than keep waiting on. The first
+/// clone keeps the long timeout — that one really can be slow.
 pub fn fetch(mirror: &Path) -> Result<()> {
-    run(Hardened::git_bare(mirror, &["fetch", "--prune", "--quiet"]))
+    run(Hardened::git_bare(mirror, &["fetch", "--prune", "--quiet"])
+        .timeout(crate::process::INTERACTIVE_TIMEOUT))
 }
 
 /// The commit a selector names right now, read from the mirror alone.

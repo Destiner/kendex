@@ -3,8 +3,10 @@ import { useEffect } from "react";
 import { PageHeader } from "@/components/page-header";
 import { ScopeErrorCard } from "@/components/scope-error-card";
 import { SyncScopeCard } from "@/components/sync-scope";
+import { REVIEW_SUBTITLE } from "@/lib/copy";
 import { scopeLabel } from "@/lib/derive";
-import { REVIEW_SUBTITLE } from "@/lib/labels";
+import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
+import { cn } from "@/lib/utils";
 import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
 
@@ -35,8 +37,8 @@ export function ReviewPage() {
   return (
     <div>
       <PageHeader title="Review & apply" subtitle={REVIEW_SUBTITLE} />
-      <div className="p-8">
-        <div className="mx-auto w-full max-w-5xl space-y-4">
+      <div className={PAGE_BODY}>
+        <div className={cn("flex flex-col gap-12", CONTENT_WIDTH)}>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           {auditing && views.length === 0 ? (
             <p className="text-sm text-muted-foreground">

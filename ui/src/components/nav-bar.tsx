@@ -1,6 +1,7 @@
 import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { BACK_LABEL, breadcrumbLabel } from "@/lib/labels";
+import { BACK_LABEL } from "@/lib/copy";
+import { breadcrumbLabel } from "@/lib/labels";
 import { useNavStore } from "@/stores/nav";
 
 // A quiet strip above the page content — only worth showing at all once a

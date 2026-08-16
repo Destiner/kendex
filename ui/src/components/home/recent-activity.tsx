@@ -1,17 +1,14 @@
 import type { HarnessId } from "@/bindings";
+import { RECENT_ACTIVITY_EMPTY } from "@/lib/copy";
 import type { RecentGroup } from "@/lib/derive";
 import { kindIcon } from "@/lib/kind-icon";
-import {
-  hookDisplayName,
-  kindLabel,
-  RECENT_ACTIVITY_EMPTY,
-  toolName,
-} from "@/lib/labels";
+import { hookDisplayName, kindLabel, toolName } from "@/lib/labels";
 import { relativeTime } from "@/lib/relative-time";
 import { useNavStore } from "@/stores/nav";
 
-/** What changed on this machine lately — the one thing Home can say that
- *  the status footer's freshness/pending counts don't. */
+/** The last things to change on this machine. "Activity" said nothing about
+ *  what happened; this is a file's own timestamp, so what it can honestly
+ *  report is that the file changed, and when. */
 export function RecentActivity({ groups }: { groups: RecentGroup[] }) {
   const goToLibrary = useNavStore((s) => s.goToLibrary);
 
@@ -22,7 +19,7 @@ export function RecentActivity({ groups }: { groups: RecentGroup[] }) {
   }
 
   return (
-    <div className="divide-y rounded-lg border px-4">
+    <div className="flex flex-col">
       {groups.map((group) => {
         const Icon = kindIcon(group.kind);
         const name =
@@ -34,7 +31,7 @@ export function RecentActivity({ groups }: { groups: RecentGroup[] }) {
           <button
             key={group.key}
             type="button"
-            className="-mx-4 flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent"
+            className="-mx-2 flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent"
             onClick={() => goToLibrary({ kind: group.kind })}
           >
             <Icon className="size-4 shrink-0 text-muted-foreground" />
@@ -42,7 +39,7 @@ export function RecentActivity({ groups }: { groups: RecentGroup[] }) {
             <span className="hidden shrink-0 truncate text-xs text-muted-foreground sm:inline">
               {kindLabel(group.kind)} · {tools}
             </span>
-            <span className="w-16 shrink-0 text-right text-xs text-muted-foreground">
+            <span className="shrink-0 text-xs text-muted-foreground">
               {relativeTime(group.modifiedAt * 1000, Date.now())}
             </span>
           </button>

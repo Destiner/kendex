@@ -77,7 +77,7 @@ pub(super) fn hook_target(
             };
             let path = dir.join(format!("{name}.sh"));
             let command = match scope {
-                Scope::Global => format!("bash {}", path.display()),
+                Scope::Global => format!("bash \"{}\"", path.display()),
                 Scope::Project { .. } => {
                     format!("bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/{name}.sh\"")
                 }
@@ -97,7 +97,7 @@ pub(super) fn hook_target(
             };
             let path = root.join("hooks").join(format!("{name}.sh"));
             let command = match scope {
-                Scope::Global => format!("bash {}", path.display()),
+                Scope::Global => format!("bash \"{}\"", path.display()),
                 Scope::Project { .. } => {
                     format!("bash \"$(git rev-parse --show-toplevel)/.codex/hooks/{name}.sh\"")
                 }
@@ -147,7 +147,7 @@ pub(super) fn hook_target(
             };
             let path = root.join("hooks").join(format!("{name}.sh"));
             let command = match scope {
-                Scope::Global => format!("bash {}", path.display()),
+                Scope::Global => format!("bash \"{}\"", path.display()),
                 // Gemini documents no project-directory variable, so the
                 // path resolves through the repo root itself.
                 Scope::Project { .. } => {
@@ -178,7 +178,7 @@ fn copilot_hook(env: &Env, scope: &Scope, name: &str) -> HookTarget {
             let dir = adapter(HarnessId::Copilot)
                 .default_global_root(env)
                 .join("hooks");
-            let command = format!("bash {}", dir.join(format!("{name}.sh")).display());
+            let command = format!("bash \"{}\"", dir.join(format!("{name}.sh")).display());
             (dir, command)
         }
         Scope::Project { root } => (
@@ -280,7 +280,7 @@ mod tests {
         else {
             panic!("claude hooks are script targets");
         };
-        assert_eq!(command, "bash /h/.claude/hooks/guard.sh");
+        assert_eq!(command, "bash \"/h/.claude/hooks/guard.sh\"");
     }
 
     #[test]
@@ -377,7 +377,7 @@ mod tests {
         else {
             panic!("copilot hooks are script targets");
         };
-        assert_eq!(command, "bash /h/.copilot/hooks/audit.sh");
+        assert_eq!(command, "bash \"/h/.copilot/hooks/audit.sh\"");
         assert_eq!(registry, PathBuf::from("/h/.copilot/hooks/audit.json"));
     }
 }

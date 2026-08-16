@@ -639,6 +639,12 @@ export type ObservedItem = {
 	origin: string | null,
 	description: string | null,
 	/**
+	 *  What this item says it is for. Empty when it says nothing — a tag is
+	 *  something an author writes down, never something inferred from a
+	 *  name, because a wrong guess is worse than no answer.
+	 */
+	tags: Tag[],
+	/**
 	 *  Unix seconds the primary file last changed, as `u32` because specta
 	 *  refuses to export a 64-bit int (precision loss crossing the IPC
 	 *  boundary) — good until year 2106. `None` where the item has no
@@ -819,6 +825,39 @@ export type SourceRow = {
 	head: string | null,
 	declaredItems: string[],
 };
+
+/**  The job an item helps with. */
+export type Tag = 
+/**  Reading code and saying what is wrong with it. */
+"review" | 
+/**  Writing, running, or reasoning about tests. */
+"testing" | 
+/**  Documentation, references, and explaining things in prose. */
+"docs" | 
+/**  Finding things out — sources, prior art, evidence. */
+"research" | 
+/**  Deciding what to build and in what order. */
+"planning" | 
+/**  Reshaping code that already works. */
+"refactoring" | 
+/**  Working out why something is broken. */
+"debugging" | 
+/**  Safety, secrets, permissions, and untrusted input. */
+"security" | 
+/**  Speed, memory, and the cost of running something. */
+"performance" | 
+/**  Version control — branches, history, worktrees, pull requests. */
+"git" | 
+/**  Compiling, packaging, versioning, and shipping a release. */
+"release" | 
+/**  Databases, schemas, migrations, and analysis. */
+"data" | 
+/**  Interfaces: layout, styling, design systems, accessibility. */
+"ui" | 
+/**  Talking to other services — APIs, webhooks, third-party tools. */
+"integration" | 
+/**  Driving other tools and agents, and the workflows that chain them. */
+"automation";
 
 /**
  *  Where warning starts and where installing stops. Configured in app

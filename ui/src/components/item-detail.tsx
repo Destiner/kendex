@@ -1,11 +1,11 @@
 import { ExternalLink, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { commands } from "@/bindings";
-import { SectionLabel } from "@/components/card-section";
+import { commands, type Scope } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ItemDetailMeta } from "@/components/item-detail-meta";
 import { ItemPreview } from "@/components/library/item-preview";
 import { ReportDialog } from "@/components/report-dialog";
+import { SectionHeading, SettingRow } from "@/components/section";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -13,18 +13,21 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { ItemGroup } from "@/lib/derive";
-import { editorOpenPath } from "@/lib/editor-path";
-import { kindIcon } from "@/lib/kind-icon";
+import { Switch } from "@/components/ui/switch";
 import {
   EDITOR_ERROR_STEPS,
   EDITOR_ERROR_TITLE,
+  ENABLED_HELP,
+  ENABLED_LABEL,
   FILE_BROWSER_ERROR_TITLE,
-  hookDisplayName,
   OPEN_IN_EDITOR_LABEL,
   OPEN_IN_FILE_BROWSER_LABEL,
   OPEN_IN_LABEL,
-} from "@/lib/labels";
+} from "@/lib/copy";
+import { groupScopes, type ItemGroup } from "@/lib/derive";
+import { editorOpenPath } from "@/lib/editor-path";
+import { kindIcon } from "@/lib/kind-icon";
+import { hookDisplayName } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 import { useAuditStore } from "@/stores/audit";
 import { useProblemsStore } from "@/stores/problems";
@@ -69,6 +72,11 @@ export function ItemDetail({
   // installation, so the first one stands in for the item as a whole.
   const primary = shown.installations[0];
   if (!primary) return null;
+  // The row can span several locations ("N locations"); the buttons here
+  // speak for the item as a whole, so they act in every one of them.
+  const inEveryScope = async (act: (scope: Scope) => Promise<void>) => {
+    for (const scope of groupScopes(shown)) await act(scope);
+  };
 
   const Icon = kindIcon(shown.kind);
   const displayName =
@@ -113,14 +121,14 @@ export function ItemDetail({
       ) : null}
       <aside
         className={cn(
-          "fixed top-0 right-0 bottom-7 z-[19] flex w-[min(30rem,85vw)] flex-col overflow-y-auto border-l bg-background shadow-lg transition-[transform,opacity] duration-200 ease-out",
+          "fixed top-0 right-0 bottom-7 z-[19] flex w-[min(30rem,85vw)] flex-col overflow-y-auto border-l bg-background pt-8 shadow-lg transition-[transform,opacity] duration-200 ease-out",
           open
             ? "translate-x-0 opacity-100"
             : "pointer-events-none translate-x-full opacity-0",
         )}
         inert={!open}
       >
-        <div className="flex items-start justify-between gap-2 p-6 pb-3">
+        <div className="flex items-start justify-between gap-2 px-6 pt-4 pb-3">
           <div className="flex min-w-0 items-center gap-2">
             <Icon className="size-5 shrink-0 text-muted-foreground" />
             <h2 className="truncate font-semibold">{displayName}</h2>
@@ -142,19 +150,27 @@ export function ItemDetail({
 
           <ItemDetailMeta group={shown} primary={primary} />
 
-          <div className="flex flex-wrap gap-2">
-            {managed ? (
-              <Button
-                size="sm"
-                variant="outline"
+          {managed ? (
+            <SettingRow
+              label={ENABLED_LABEL}
+              description={ENABLED_HELP}
+              htmlFor="item-enabled"
+              className="border-y py-3"
+            >
+              <Switch
+                id="item-enabled"
+                checked={!anyDisabled}
                 disabled={busy}
-                onClick={() =>
-                  void toggle(primary.scope, shown.name, anyDisabled)
+                onCheckedChange={() =>
+                  void inEveryScope((scope) =>
+                    toggle(scope, shown.name, anyDisabled),
+                  )
                 }
-              >
-                {anyDisabled ? "Turn on" : "Turn off"}
-              </Button>
-            ) : null}
+              />
+            </SettingRow>
+          ) : null}
+
+          <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
               variant="outline"
@@ -189,7 +205,7 @@ export function ItemDetail({
           </div>
 
           <div className="space-y-2.5">
-            <SectionLabel>Content</SectionLabel>
+            <SectionHeading>Content</SectionHeading>
             <ItemPreview
               scope={primary.scope}
               kind={shown.kind}
@@ -207,8 +223,8 @@ export function ItemDetail({
           destructive
           busy={busy}
           onConfirm={() => {
-            void removeItem(primary.scope, shown.name).then(() =>
-              setConfirmOpen(false),
+            void inEveryScope((scope) => removeItem(scope, shown.name)).then(
+              () => setConfirmOpen(false),
             );
           }}
         />

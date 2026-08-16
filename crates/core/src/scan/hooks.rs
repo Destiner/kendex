@@ -34,6 +34,7 @@ pub fn read(path: &Path) -> Result<Vec<RawEntry>, String> {
                     name: format!("{event}:{matcher}:{}", command_stem(command)),
                     enabled: None,
                     description: Some(command.to_owned()),
+                    source_path: None,
                 });
             }
         }

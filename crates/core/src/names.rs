@@ -41,6 +41,15 @@ pub fn segment_problem(segment: &str) -> Option<String> {
             shown(segment)
         ));
     }
+    // Hook names are quoted into the shell command a harness runs; `$` and
+    // backticks expand inside double quotes, and one rule for every kind is
+    // simpler than one kind exempted.
+    if let Some(bad) = segment.chars().find(|c| "$`".contains(*c)) {
+        return Some(format!(
+            "`{}` holds `{bad}`, which a shell would expand",
+            shown(segment)
+        ));
+    }
     if segment.ends_with('.') || segment.ends_with(' ') {
         return Some(format!(
             "`{}` ends in a dot or a space, which Windows silently drops",
@@ -149,6 +158,8 @@ mod tests {
             "trailing.",
             "-flag",
             "back\\slash",
+            "x$(id)",
+            "a`id`b",
         ] {
             assert!(item_problem(name).is_some(), "{name} should be refused");
         }

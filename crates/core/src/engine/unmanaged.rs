@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use crate::env::Env;
@@ -17,7 +17,15 @@ pub(super) fn unmanaged_rows(
     desired: &[Desired],
     drift: &mut Vec<DriftRow>,
 ) {
-    let scan = crate::scan::scan_scopes(env, &BTreeMap::new(), std::slice::from_ref(scope));
+    // A tool the user has pointed at a non-default folder keeps its items
+    // there; scanning the defaults would report that whole folder as
+    // nothing at all rather than as items waiting to be managed. Read here
+    // rather than passed in: where to look is this scan's own question, and
+    // the settings file is a few hundred bytes.
+    let harness_roots = crate::settings::load(env)
+        .map(|settings| settings.harness_roots)
+        .unwrap_or_default();
+    let scan = crate::scan::scan_scopes(env, &harness_roots, std::slice::from_ref(scope));
     let known: BTreeSet<String> = desired
         .iter()
         .map(|d| d.key.clone())

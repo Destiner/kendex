@@ -26,22 +26,21 @@ export const useEditorStore = create<EditorState>((set, get) => {
   const load = async () => {
     const { scope } = get();
     set({ loading: true });
-    const [manifest, inventory] = await Promise.all([
-      commands.getManifest(scope),
-      commands.editorInventory(scope),
-    ]);
+    let manifest: Awaited<ReturnType<typeof commands.getManifest>>;
+    let inventory: Awaited<ReturnType<typeof commands.editorInventory>>;
+    try {
+      [manifest, inventory] = await Promise.all([
+        commands.getManifest(scope),
+        commands.editorInventory(scope),
+      ]);
+    } finally {
+      set({ loading: false });
+    }
     if (manifest.status === "error") {
-      set({
-        loading: false,
-        draft: null,
-        absent: false,
-        dirty: false,
-        error: manifest.error,
-      });
+      set({ draft: null, absent: false, dirty: false, error: manifest.error });
       return;
     }
     set({
-      loading: false,
       draft: manifest.data ? toDraft(manifest.data) : null,
       absent: manifest.data === null,
       inventory: inventory.status === "ok" ? inventory.data : get().inventory,
@@ -53,12 +52,17 @@ export const useEditorStore = create<EditorState>((set, get) => {
   const write = async (draft: Draft) => {
     const { scope } = get();
     set({ saving: true });
-    const response = await commands.updateManifest(scope, draft);
+    let response: Awaited<ReturnType<typeof commands.updateManifest>>;
+    try {
+      response = await commands.updateManifest(scope, draft);
+    } finally {
+      set({ saving: false });
+    }
     if (response.status === "error") {
-      set({ saving: false, error: response.error });
+      set({ error: response.error });
       return;
     }
-    set({ saving: false, error: null });
+    set({ error: null });
     await load();
     await useAuditStore.getState().refresh();
     await useScanStore.getState().refresh();

@@ -44,7 +44,7 @@ function useScanTriggers() {
   useEffect(() => {
     void load()
       .then(() => refresh())
-      .then(auditRefresh);
+      .then(() => auditRefresh());
     let last = Date.now();
     const onFocus = () => {
       if (Date.now() - last < FOCUS_RESCAN_DEBOUNCE_MS) return;

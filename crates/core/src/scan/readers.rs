@@ -50,6 +50,7 @@ fn mcp_object(servers: Option<&serde_json::Value>) -> Vec<RawEntry> {
             name: name.clone(),
             enabled: None,
             description: mcp_summary(entry),
+            source_path: None,
         })
         .collect()
 }
@@ -130,6 +131,7 @@ fn mcp_toml(path: &Path) -> Result<Vec<RawEntry>, String> {
                 .or_else(|| entry.get("url"))
                 .and_then(|v| v.as_str())
                 .map(str::to_owned),
+            source_path: None,
         })
         .collect())
 }
@@ -150,6 +152,7 @@ fn opencode_mcp(path: &Path) -> Result<Vec<RawEntry>, String> {
                     .unwrap_or(true),
             ),
             description: mcp_summary(entry),
+            source_path: None,
         })
         .collect())
 }
@@ -166,6 +169,7 @@ fn opencode_plugin_refs(path: &Path) -> Result<Vec<RawEntry>, String> {
             name: spec.to_owned(),
             enabled: None,
             description: Some("npm plugin ref".to_owned()),
+            source_path: None,
         })
         .collect())
 }
@@ -188,6 +192,7 @@ fn pi_packages(path: &Path) -> Result<Vec<RawEntry>, String> {
             name: pi_package_name(&spec),
             enabled: None,
             description: Some(spec),
+            source_path: None,
         })
         .collect())
 }

@@ -8,6 +8,12 @@ describe("editorOpenPath", () => {
     );
   });
 
+  it("strips it behind a Windows separator too", () => {
+    expect(editorOpenPath("C:\\Users\\u\\.claude\\skills\\foo\\SKILL.md")).toBe(
+      "C:\\Users\\u\\.claude\\skills\\foo",
+    );
+  });
+
   it("leaves non-skill paths unchanged", () => {
     expect(editorOpenPath("/home/user/.claude/hooks/pre-commit.sh")).toBe(
       "/home/user/.claude/hooks/pre-commit.sh",

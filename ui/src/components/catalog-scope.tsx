@@ -2,9 +2,9 @@ import { GitBranch } from "lucide-react";
 import { useState } from "react";
 import type { Scope, SourceRow } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { scopeName, scopePath } from "@/lib/labels";
 
@@ -14,49 +14,33 @@ export function CatalogScopeGroup({
   busy,
   onToggle,
   onRemove,
-  onAddFocus,
 }: {
   scope: Scope;
   rows: SourceRow[];
   busy: boolean;
   onToggle: (name: string, enabled: boolean) => void;
   onRemove: (name: string) => void;
-  onAddFocus: () => void;
 }) {
+  // A scope with no catalogs used to get a card, a heading and an "Add a
+  // catalog" button of its own — three of those stacked under one that
+  // already said the same thing. An empty scope has nothing to show, so it
+  // shows nothing; the section above says it once.
+  if (rows.length === 0) return null;
   const path = scopePath(scope);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">
-          <span className="break-all">{scopeName(scope)}</span>
-          {path ? (
-            <p className="truncate font-mono text-xs font-normal text-muted-foreground">
-              {path}
-            </p>
-          ) : null}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {rows.length === 0 ? (
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm text-muted-foreground">No catalogs yet.</p>
-            <Button variant="outline" size="sm" onClick={onAddFocus}>
-              Add a catalog
-            </Button>
-          </div>
-        ) : (
-          rows.map((row) => (
-            <CatalogRow
-              key={row.name}
-              row={row}
-              busy={busy}
-              onToggle={(enabled) => onToggle(row.name, enabled)}
-              onRemove={() => onRemove(row.name)}
-            />
-          ))
-        )}
-      </CardContent>
-    </Card>
+    <Section title={scopeName(scope)} description={path ?? undefined}>
+      <div className="flex flex-col gap-3">
+        {rows.map((row) => (
+          <CatalogRow
+            key={row.name}
+            row={row}
+            busy={busy}
+            onToggle={(enabled) => onToggle(row.name, enabled)}
+            onRemove={() => onRemove(row.name)}
+          />
+        ))}
+      </div>
+    </Section>
   );
 }
 
@@ -108,7 +92,7 @@ function CatalogRow({
           onCheckedChange={(checked) => onToggle(checked)}
         />
         <Button
-          variant="ghost"
+          variant="outline"
           size="sm"
           disabled={busy || stillInUse}
           title={

@@ -75,32 +75,75 @@ export function groupFindings(rows: ItemSafety[]): FindingGroup[] {
   return [...groups.values()];
 }
 
-export interface AffectedSetGroup {
+export interface ConcernGroup {
+  rule: string;
+  /** The most serious severity any of this rule's findings carried. */
+  severity: Severity;
   items: FindingItem[];
   findings: FindingGroup[];
 }
 
-// Two rules can both fire on the exact same items — Codex records every
-// bundled plugin in one registry file, so "untracked repository" and "no
-// manifest" both land on all of them. Rendered as two FindingGroups, that
-// prints the same affected-item wall twice. This merges any FindingGroups
-// whose affected item-set is identical, so the wall renders once with every
-// finding that hit it stacked above.
-export function groupByAffectedSet(groups: FindingGroup[]): AffectedSetGroup[] {
-  const ordered: AffectedSetGroup[] = [];
-  const bySetKey = new Map<string, AffectedSetGroup>();
+// One rule firing in four places is one concern to a person, not four —
+// "downloads and runs code from the internet" said once, with everything it
+// touched behind it, beats the same sentence stacked four times. Concerns
+// come back worst-first so the list reads in order of what to look at.
+export function groupByConcern(groups: FindingGroup[]): ConcernGroup[] {
+  const ordered: ConcernGroup[] = [];
+  const byRule = new Map<string, ConcernGroup>();
+  const seenItems = new Map<string, Set<string>>();
   for (const group of groups) {
-    const key = group.items
-      .map((item) => `${item.kind}:${item.name}:${item.harness}`)
-      .sort()
-      .join("|");
-    let affectedSetGroup = bySetKey.get(key);
-    if (!affectedSetGroup) {
-      affectedSetGroup = { items: group.items, findings: [] };
-      bySetKey.set(key, affectedSetGroup);
-      ordered.push(affectedSetGroup);
+    let concern = byRule.get(group.rule);
+    if (!concern) {
+      concern = {
+        rule: group.rule,
+        severity: group.severity,
+        items: [],
+        findings: [],
+      };
+      byRule.set(group.rule, concern);
+      seenItems.set(group.rule, new Set());
+      ordered.push(concern);
     }
-    affectedSetGroup.findings.push(group);
+    concern.findings.push(group);
+    if (SEVERITY_RANK[group.severity] > SEVERITY_RANK[concern.severity]) {
+      concern.severity = group.severity;
+    }
+    const seen = seenItems.get(group.rule);
+    if (!seen) throw new Error(`no item set for concern ${group.rule}`);
+    for (const item of group.items) {
+      const key = `${item.kind}:${item.name}:${item.harness}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      concern.items.push(item);
+    }
+  }
+  return ordered.sort(
+    (a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity],
+  );
+}
+
+/** Distinct message+fix pairs within a concern, each with every place it fired. */
+export interface ConcernDetail {
+  finding: Finding;
+  locations: string[];
+}
+
+// The same rule usually emits the same sentence everywhere it fires, so the
+// expansion shows that sentence once and lists the places under it.
+export function concernDetails(concern: ConcernGroup): ConcernDetail[] {
+  const ordered: ConcernDetail[] = [];
+  const byMessage = new Map<string, ConcernDetail>();
+  for (const finding of concern.findings) {
+    const key = `${finding.message}::${finding.remediation}`;
+    let detail = byMessage.get(key);
+    if (!detail) {
+      detail = { finding, locations: [] };
+      byMessage.set(key, detail);
+      ordered.push(detail);
+    }
+    if (!detail.locations.includes(finding.location)) {
+      detail.locations.push(finding.location);
+    }
   }
   return ordered;
 }

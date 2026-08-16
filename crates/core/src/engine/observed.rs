@@ -26,13 +26,13 @@ pub fn observed_safety(env: &Env, scope: &Scope) -> Result<Vec<ItemSafety>> {
         ManifestFile::Current(manifest) => manifest.safety_overrides,
         _ => BTreeMap::new(),
     };
+    let mut cache = crate::quality::observe::AuditCache::default();
     Ok(scan
         .items
         .iter()
         .map(|item| {
-            let input = crate::quality::observe::input_for(item);
-            let content_hash = gate::content_hash(&input);
-            let result = crate::quality::audit(input);
+            let (content_hash, result) =
+                crate::quality::observe::audit_observed(&mut cache, item, gate::content_hash);
             let (verdict, reasons) =
                 crate::quality::verdict(&result.findings, &result.safety, settings.safety);
             let recorded =

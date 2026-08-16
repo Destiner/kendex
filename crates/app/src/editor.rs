@@ -26,7 +26,7 @@ pub struct EditorInventory {
     pub harnesses: Vec<HarnessId>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn get_manifest(scope: Scope) -> Result<Option<Manifest>, String> {
     let env = env()?;
@@ -63,7 +63,7 @@ fn on_first_creation(mut manifest: Manifest, seed: Manifest) -> Manifest {
 }
 
 /// Write an edited manifest and reconcile the scope to it.
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn update_manifest(scope: Scope, manifest: Manifest) -> Result<AuditView, String> {
     let env = env()?;
@@ -101,7 +101,7 @@ pub fn update_manifest(scope: Scope, manifest: Manifest) -> Result<AuditView, St
     Ok(view(&env, &scope))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn editor_inventory(scope: Scope) -> Result<EditorInventory, String> {
     let env = env()?;
@@ -151,7 +151,7 @@ pub fn editor_inventory(scope: Scope) -> Result<EditorInventory, String> {
 /// The primary file behind one installed item, for the Library preview
 /// pane — SKILL.md for a skill, the document itself for everything else
 /// that has its own file.
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn item_source(
     scope: Scope,

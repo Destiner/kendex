@@ -21,7 +21,7 @@ fn all_scopes(env: &Env) -> Result<Vec<Scope>, String> {
 }
 
 /// Every declared source in every scope — the Sources page's one query.
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn sources_overview() -> Result<Vec<SourceRow>, String> {
     let env = env()?;
@@ -40,7 +40,7 @@ fn run_and_list(
     sources_overview()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn source_add(scope: Scope, name: String, reference: String) -> Result<Vec<SourceRow>, String> {
     let env = env()?;
@@ -49,7 +49,7 @@ pub fn source_add(scope: Scope, name: String, reference: String) -> Result<Vec<S
     run_and_list(&env, report)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn source_remove(scope: Scope, name: String) -> Result<Vec<SourceRow>, String> {
     let env = env()?;
@@ -57,7 +57,7 @@ pub fn source_remove(scope: Scope, name: String) -> Result<Vec<SourceRow>, Strin
     run_and_list(&env, report)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn source_toggle(scope: Scope, name: String, enabled: bool) -> Result<Vec<SourceRow>, String> {
     let env = env()?;
@@ -68,7 +68,7 @@ pub fn source_toggle(scope: Scope, name: String, enabled: bool) -> Result<Vec<So
 
 /// Every curated set every catalog offers, across every scope — what the
 /// Catalogs page lists under each source.
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn bundles_overview() -> Result<Vec<BundleRow>, String> {
     let env = env()?;
@@ -81,7 +81,7 @@ pub fn bundles_overview() -> Result<Vec<BundleRow>, String> {
 
 /// Install a set whole. Its members derive from the catalog, so this declares
 /// one name and applies the plan that follows from it.
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn bundle_install(
     scope: Scope,
@@ -102,7 +102,7 @@ pub fn bundle_install(
 
 /// Re-resolve every enabled remote across every scope. Returns warnings
 /// (offline caches keep serving); hard failures surface as the error.
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn sources_refresh() -> Result<Vec<String>, String> {
     let env = env()?;

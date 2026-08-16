@@ -25,6 +25,7 @@ pub fn claude_registry(path: &Path, env: &Env) -> Result<Vec<RawEntry>, String> 
                 .get("version")
                 .and_then(|v| v.as_str())
                 .map(str::to_owned),
+            source_path: None,
         })
         .collect())
 }
@@ -46,6 +47,7 @@ pub fn claude_settings(path: &Path) -> Result<Vec<RawEntry>, String> {
             name: name.clone(),
             enabled: enabled.as_bool(),
             description: None,
+            source_path: None,
         })
         .collect())
 }
@@ -78,6 +80,7 @@ pub fn codex_cache(plugins_dir: &Path) -> Result<Vec<RawEntry>, String> {
             entries.push(RawEntry {
                 enabled: Some(!disabled.contains(&key)),
                 name: key,
+                source_path: Some(plugin.join(&newest)),
                 description: Some(newest),
             });
         }
@@ -119,6 +122,7 @@ pub fn cursor_dirs(plugins_dir: &Path) -> Vec<RawEntry> {
                 name,
                 enabled: Some(true),
                 description: Some("local".to_owned()),
+                source_path: Some(plugin.clone()),
             });
         }
     }
@@ -132,6 +136,7 @@ pub fn cursor_dirs(plugins_dir: &Path) -> Vec<RawEntry> {
                     name: format!("{name}@{marketplace_name}"),
                     enabled: None,
                     description: None,
+                    source_path: Some(plugin.clone()),
                 });
             }
         }
@@ -200,6 +205,35 @@ mod tests {
         assert_eq!(entries[0].name, "tool@mkt");
         assert_eq!(entries[0].description.as_deref(), Some("1.10.0"));
         assert_eq!(entries[0].enabled, Some(false));
+        // Its own version directory, not the shared cache the entry was
+        // read from — every plugin in that cache would otherwise be scored
+        // on every other plugin's files.
+        assert_eq!(
+            entries[0].source_path.as_deref(),
+            Some(root.join("plugins/cache/mkt/tool/1.10.0").as_path())
+        );
+    }
+
+    #[test]
+    fn cursor_dirs_point_each_plugin_at_its_own_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        fs::create_dir_all(root.join("local/fmt/.cursor-plugin")).unwrap();
+        fs::write(root.join("local/fmt/.cursor-plugin/plugin.json"), "{}").unwrap();
+        fs::create_dir_all(root.join("cache/mkt/lint")).unwrap();
+
+        let entries = cursor_dirs(root);
+        let by_name = |name: &str| {
+            entries
+                .iter()
+                .find(|e| e.name == name)
+                .unwrap()
+                .source_path
+                .clone()
+                .unwrap()
+        };
+        assert_eq!(by_name("fmt"), root.join("local/fmt"));
+        assert_eq!(by_name("lint@mkt"), root.join("cache/mkt/lint"));
     }
 
     #[test]

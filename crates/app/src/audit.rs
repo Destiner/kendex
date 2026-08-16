@@ -102,7 +102,7 @@ pub fn view(env: &Env, scope: &Scope) -> AuditView {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn audit_all() -> Result<Vec<AuditView>, String> {
     let env = env()?;
@@ -145,13 +145,13 @@ pub fn apply_scope(env: &Env, scope: &Scope, remove_orphans: bool) -> Result<Aud
     Ok(view(env, scope))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn apply_plan(scope: Scope, remove_orphans: bool) -> Result<AuditView, String> {
     apply_scope(&env()?, &scope, remove_orphans)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn adopt_item(
     scope: Scope,
@@ -168,7 +168,7 @@ pub fn adopt_item(
     Ok(view(&env, &scope))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn toggle_item(scope: Scope, name: String, enabled: bool) -> Result<AuditView, String> {
     let env = env()?;
@@ -178,7 +178,7 @@ pub fn toggle_item(scope: Scope, name: String, enabled: bool) -> Result<AuditVie
     Ok(view(&env, &scope))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn remove_item(scope: Scope, name: String) -> Result<AuditView, String> {
     let env = env()?;

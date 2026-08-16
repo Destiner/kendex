@@ -18,8 +18,16 @@ use crate::model::Scope;
 #[serde(tag = "pre", rename_all = "kebab-case")]
 pub enum Pre {
     Absent,
-    HashIs { hash: String },
-    SymlinkTo { target: PathBuf },
+    /// The bytes reachable at the path — through a link, if one sits there —
+    /// still hash to this. Whether a link may sit there at all is decided at
+    /// plan time (a foreign one is a conflict); a user's own symlinked
+    /// settings file is edited in place, link kept, target updated.
+    HashIs {
+        hash: String,
+    },
+    SymlinkTo {
+        target: PathBuf,
+    },
     Any,
 }
 
@@ -40,9 +48,7 @@ impl Pre {
             Pre::Any => true,
             Pre::Absent => !path.exists() && !path.is_symlink(),
             Pre::HashIs { hash } => {
-                !path.is_symlink()
-                    && path.exists()
-                    && hash_tree(path).map(|h| h == *hash).unwrap_or(false)
+                path.exists() && hash_tree(path).map(|h| h == *hash).unwrap_or(false)
             }
             Pre::SymlinkTo { target } => {
                 path.is_symlink() && fs::read_link(path).ok().as_deref() == Some(target)

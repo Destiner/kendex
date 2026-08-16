@@ -44,6 +44,7 @@ pub fn read(path: &Path) -> Result<Vec<RawEntry>, String> {
                 name: format!("{event}:{matcher}:{}", command_stem(&action)),
                 enabled: Some(enabled),
                 description: Some(action),
+                source_path: None,
             });
         }
     }
@@ -77,6 +78,7 @@ pub fn plugins(path: &Path) -> Result<Vec<RawEntry>, String> {
             name: key.clone(),
             enabled: enabled.as_bool(),
             description: key.split_once('@').map(|(_, market)| market.to_owned()),
+            source_path: None,
         })
         .collect())
 }

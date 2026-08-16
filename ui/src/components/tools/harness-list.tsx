@@ -2,6 +2,7 @@ import type { HarnessId } from "@/bindings";
 import { HarnessRow } from "@/components/tools/harness-row";
 import { Button } from "@/components/ui/button";
 import { countByKind } from "@/lib/derive";
+import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
 import { useScanStore } from "@/stores/scan";
 
 const ALL_HARNESSES: HarnessId[] = [
@@ -49,9 +50,9 @@ export function HarnessList() {
   );
 
   return (
-    <div className="p-8">
-      <div className="mx-auto w-full max-w-5xl">
-        <div className="divide-y rounded-lg border px-4">
+    <div className={PAGE_BODY}>
+      <div className={CONTENT_WIDTH}>
+        <div className="flex flex-col">
           {rows.map((id) => {
             const info = result?.harnesses.find((h) => h.harness === id);
             const items = result?.items.filter((i) => i.harness === id) ?? [];
