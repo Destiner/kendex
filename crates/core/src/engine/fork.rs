@@ -292,9 +292,23 @@ pub(crate) fn skill_content_path(
 ) -> Option<PathBuf> {
     if let Some(dir) = native_dir(env, scope, harness, ItemKind::Skill) {
         let native = dir.join(crate::harness::rendered_name(harness, name));
-        // A real directory here is this tool's own copy; a symlink means
-        // it shares the canonical tree.
-        if native.is_dir() && !native.is_symlink() {
+        // A real directory here is this tool's own copy (copy method). A
+        // symlink is followed to the tree this tool actually reads — the
+        // shared canonical tree, or its own divergent variant under the
+        // variants directory. Resolving it gives a real directory either
+        // way, never the wrong tool's bytes.
+        if native.is_symlink() {
+            if let Ok(target) = std::fs::read_link(&native) {
+                let resolved = if target.is_absolute() {
+                    target
+                } else {
+                    dir.join(target)
+                };
+                if resolved.is_dir() {
+                    return Some(resolved);
+                }
+            }
+        } else if native.is_dir() {
             return Some(native);
         }
     }

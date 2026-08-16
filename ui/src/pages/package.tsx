@@ -67,6 +67,7 @@ export function PackagePage() {
     view,
     group?.installations[0]?.harness ?? null,
   );
+  const updatesLoaded = useUpdatesStore((s) => s.loaded);
   const edited = useUpdatesStore((s) =>
     s.rows.some(
       (row) =>
@@ -92,15 +93,14 @@ export function PackagePage() {
   const displayName = packageDisplayName(ref);
   const installed = installedRow(versions);
   const latest = latestRow(versions);
-  // Update needs meta loaded to know whether the package is held (move the
-  // hold) or following (apply the scope) — acting on a stale null would
-  // silently mistreat a held package as a follower. It is also off while
-  // edits are held: those go through the fork decision first.
+  // Update waits for meta (held vs following) and the updates store
+  // (edited), and is off while edits are held.
   const canUpdate =
     latest != null &&
     !latest.installed &&
     installed != null &&
     meta != null &&
+    updatesLoaded &&
     !edited;
 
   const inEveryScope = async (act: (scope: Scope) => Promise<void>) => {

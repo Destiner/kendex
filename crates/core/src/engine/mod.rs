@@ -46,6 +46,16 @@ pub use gate::{ItemSafety, allow_unsafe_flag};
 pub use item_source::{ItemSource, item_source};
 pub use observed::observed_safety;
 
+/// Whether an installation's disk bytes cannot be proven to be vstack's own
+/// render — the conservative hold used when a full plan is unavailable.
+pub fn edit_holds(
+    env: &crate::env::Env,
+    scope: &crate::model::Scope,
+    entry: &crate::lock::LockEntry,
+) -> bool {
+    removal::edit_holds(env, scope, entry)
+}
+
 use scope_writes::{
     plan_config_edits, plan_lock_write, plan_schema_upgrade, plan_settings_seed, source_revisions,
 };

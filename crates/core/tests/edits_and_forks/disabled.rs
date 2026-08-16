@@ -59,3 +59,50 @@ fn an_edit_made_while_disabled_survives_being_re_enabled() {
         .unwrap();
     assert_eq!(content, "my edited disabled agent");
 }
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn upstream_changing_while_disabled_is_not_a_false_edit() {
+    let w = world();
+    let dir = w.upstream.join("agents");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("rev.md"),
+        "---\nname: rev\ndescription: reviewer\n---\nReview v1.\n",
+    )
+    .unwrap();
+    commit(&w.upstream, "one");
+    // Declared disabled from the start.
+    let path = manifest::manifest_path(&w.env, &w.scope);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        format!(
+            "schema = 3\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\nenabled = false\n"
+        ),
+    )
+    .unwrap();
+    sync_and_apply(&w);
+    assert!(w.home.join("app/.claude/agents/rev.md.disabled").is_file());
+
+    // Upstream moves; the item stays disabled and untouched on disk.
+    fs::write(
+        dir.join("rev.md"),
+        "---\nname: rev\ndescription: reviewer\n---\nReview v2.\n",
+    )
+    .unwrap();
+    commit(&w.upstream, "two");
+    let loaded = manifest::load_for_mutation(&manifest::manifest_path(&w.env, &w.scope))
+        .unwrap()
+        .unwrap();
+    remote::sync_sources(&w.env, &loaded).unwrap();
+
+    let report = audit(&w.env, &w.scope).unwrap();
+    let row = report.drift.iter().find(|row| row.name == "rev");
+    assert!(
+        row.is_none_or(
+            |row| row.cause != Some(DriftCause::LocalEdit) && row.cause != Some(DriftCause::Both)
+        ),
+        "a disabled item nobody touched must not read as edited: {row:?}"
+    );
+}

@@ -89,3 +89,62 @@ fn rename_fork_moves_the_declaration_and_refuses_depended_on_names() {
             .is_file()
     );
 }
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn forking_a_codex_agent_is_refused_with_the_fix_named() {
+    let w = world();
+    let dir = w.upstream.join("agents");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("rev.md"),
+        "---\nname: rev\ndescription: reviewer\n---\nReview.\n",
+    )
+    .unwrap();
+    commit(&w.upstream, "one");
+    let path = manifest::manifest_path(&w.env, &w.scope);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        format!(
+            "schema = 3\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"codex\"]\nmethod = \"copy\"\n\n[agents.rev]\nsource = \"cat\"\n"
+        ),
+    )
+    .unwrap();
+    sync_and_apply(&w);
+
+    // Codex renders agents as TOML, which cannot round-trip as source.
+    let error =
+        vstack_core::engine::fork::fork(&w.env, &w.scope, ItemKind::Agent, "rev", HarnessId::Codex)
+            .unwrap_err();
+    assert!(
+        error.to_string().contains("Claude"),
+        "the refusal names the fix: {error}"
+    );
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn forking_a_skill_with_a_symlink_refuses_rather_than_dropping_it() {
+    let w = world();
+    write_skill(&w.upstream, "gh", "One.");
+    commit(&w.upstream, "one");
+    declare(&w, "[skills.gh]\nsource = \"cat\"\n");
+    sync_and_apply(&w);
+
+    // Plant a symlink inside the canonical tree, then edit it into a fork.
+    let canonical = w.home.join("app/.agents/skills/gh");
+    std::os::unix::fs::symlink("/etc/hostname", canonical.join("link")).unwrap();
+    fs::write(
+        canonical.join("SKILL.md"),
+        "---\nname: gh\ndescription: mine\n---\nMine.\n",
+    )
+    .unwrap();
+    let error =
+        vstack_core::engine::fork::fork(&w.env, &w.scope, ItemKind::Skill, "gh", HarnessId::Claude)
+            .unwrap_err();
+    assert!(
+        matches!(error, vstack_core::error::CoreError::ForeignSymlink { .. }),
+        "a symlink in the tree is refused, never silently dropped: {error}"
+    );
+}

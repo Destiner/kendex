@@ -159,10 +159,11 @@ fn capture_ops(
 
 pub(crate) fn read_tree(root: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {
     fn walk(dir: &Path, rel: &Path, files: &mut Vec<(PathBuf, Vec<u8>)>) -> Result<()> {
-        for entry in fs::read_dir(dir)
-            .map_err(|e| CoreError::io(dir, e))?
-            .flatten()
-        {
+        for entry in fs::read_dir(dir).map_err(|e| CoreError::io(dir, e))? {
+            // A per-entry read error is not silently skipped: dropping it
+            // would capture an incomplete tree and then trash the
+            // original, losing content the caller asked to keep.
+            let entry = entry.map_err(|e| CoreError::io(dir, e))?;
             let path = entry.path();
             let Some(name) = path.file_name() else {
                 continue;
