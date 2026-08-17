@@ -39,7 +39,7 @@ fn an_override_is_recorded_by_the_apply_it_unblocks() {
         .expect("the override rides out on the manifest write");
     assert_eq!(entry.ruleset, vstack_core::quality::RULESET_VERSION);
     assert_eq!(entry.findings.len(), 1);
-    assert!(!entry.content_hash.is_empty());
+    assert!(!entry.review_hash.is_empty());
 
     // Nothing more to do, and the item stays installed on the next pass.
     let after = audit(&f.env, &f.scope).unwrap();
@@ -229,7 +229,7 @@ fn an_override_does_not_cover_a_problem_nobody_reviewed() {
     apply::execute(&f.env, &granted.plan, None).unwrap();
 
     // The same finding as before, plus one nobody has seen. The recorded
-    // content hash is moved forward by hand so that the *only* thing left
+    // review hash is moved forward by hand so that the *only* thing left
     // differing is the set of findings.
     skill(
         &f.source,
@@ -243,7 +243,7 @@ fn an_override_does_not_cover_a_problem_nobody_reviewed() {
         .safety_overrides
         .get_mut("skill:hostile:claude")
         .unwrap();
-    entry.content_hash = hash;
+    entry.review_hash = hash;
     manifest::save(&path, &manifest).unwrap();
 
     let after = audit(&f.env, &f.scope).unwrap();

@@ -8,5 +8,6 @@ mod gate;
 mod kinds;
 mod overrides;
 mod reading;
+mod review_hash;
 mod rules;
 mod scoring;

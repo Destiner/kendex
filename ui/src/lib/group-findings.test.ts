@@ -30,6 +30,7 @@ function row(overrides: Partial<ItemSafety>): ItemSafety {
     verdict: "warn",
     reasons: [],
     contentHash: "hash",
+    reviewHash: "review-hash",
     override: { state: "absent" },
     ...overrides,
   };

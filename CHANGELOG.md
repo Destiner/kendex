@@ -462,6 +462,25 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Fixed
 
+- **Breaking.** Accepting a problem now covers the exact bytes it was
+  shown with. It did not before: the safety check reads a summary of an
+  item — it stops after the first 512 KB or 200 files of a skill, counts
+  a binary file's size without looking inside it, and never opens a
+  plugin's payload — and an acceptance was bound to that summary rather
+  than to the content. So an accepted plugin's payload could be replaced
+  with entirely different code of the same size, or a file past those
+  limits rewritten, and the acceptance carried on covering it. It now
+  binds to every byte of what was installed, so any change of any kind
+  brings the block back and asks you to look again. Where the content
+  cannot be read at all — a plugin that is only a switch in a settings
+  file — an acceptance no longer counts as live, because nothing can
+  show it still describes what is there. Migration: acceptances recorded
+  before this change cannot prove what they covered, so they read as
+  out of date and the item is held back until you review it once more.
+  Accept it again and it is bound properly from then on. `vstack
+  accepted` and Settings both show which acceptances need this. The
+  project file's format moves to version 4, so an older vstack refuses
+  to read it rather than misreading an acceptance.
 - An accepted skill installed as a shared link no longer reads as
   "changed since it was reviewed" the moment it lands: the safety
   check's idea of content identity no longer depends on which path the

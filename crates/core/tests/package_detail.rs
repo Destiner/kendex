@@ -94,7 +94,7 @@ fn install(w: &World) -> String {
     fs::write(
         &path,
         format!(
-            "schema = 3\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.gh]\nsource = \"cat\"\n"
+            "schema = 4\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.gh]\nsource = \"cat\"\n"
         ),
     )
     .unwrap();
@@ -163,6 +163,69 @@ fn the_exact_readme_wins_over_case_variants() {
     assert_eq!(readme.content, "# The readme\n");
 }
 
+/// A skill vstack never declared — dropped straight onto disk the way a
+/// harness's own installer, or a hand-edit, would leave it — still has to
+/// preview: the manifest has nothing to say about it, but the files are
+/// real.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn an_undeclared_item_still_reads_from_disk() {
+    let w = world();
+    let dir = w.home.join("app/.claude/skills/loose");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("SKILL.md"), "---\nname: loose\n---\nBody.\n").unwrap();
+    fs::write(dir.join("README.md"), "# Loose\n").unwrap();
+
+    let files = detail::package_files(&w.env, &w.scope, ItemKind::Skill, "loose").unwrap();
+    let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+    assert_eq!(paths, vec!["README.md", "SKILL.md"]);
+
+    let file =
+        detail::package_file(&w.env, &w.scope, ItemKind::Skill, "loose", "SKILL.md").unwrap();
+    assert_eq!(file.content, "---\nname: loose\n---\nBody.\n");
+
+    let readme = detail::package_readme(&w.env, &w.scope, ItemKind::Skill, "loose")
+        .unwrap()
+        .unwrap();
+    assert_eq!(readme.content, "# Loose\n");
+}
+
+/// A project whose manifest is still v1 cannot be parsed for declarations
+/// at all — that must not stop the preview for what is actually on disk,
+/// any more than a declared-but-absent-from-the-manifest item does.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_v1_manifest_still_lets_disk_items_preview() {
+    let w = world();
+    let path = manifest::manifest_path(&w.env, &w.scope);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, "[skills.gh]\nsource = \"cat\"\n").unwrap();
+
+    let dir = w.home.join("app/.claude/skills/loose");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("SKILL.md"), "---\nname: loose\n---\nBody.\n").unwrap();
+
+    let files = detail::package_files(&w.env, &w.scope, ItemKind::Skill, "loose").unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].path, "SKILL.md");
+}
+
+/// Neither declared nor on disk: the error is about the missing item, not
+/// about version holds — `NotDeclared`'s wording stays reserved for the
+/// version-hold call sites that mean it.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn neither_declared_nor_on_disk_is_a_plain_not_found() {
+    let w = world();
+    let error = detail::package_files(&w.env, &w.scope, ItemKind::Skill, "ghost").unwrap_err();
+    assert!(
+        matches!(error, CoreError::PackageNotFound { .. }),
+        "{error}"
+    );
+    assert!(error.to_string().contains("ghost"), "{error}");
+    assert!(!error.to_string().contains("held at a version"), "{error}");
+}
+
 #[test]
 #[allow(clippy::unwrap_used)]
 fn meta_names_the_version_the_link_and_the_fork() {
@@ -203,4 +266,24 @@ fn meta_names_the_version_the_link_and_the_fork() {
     assert_eq!(fork.source, "cat");
     assert_eq!(fork.repo.as_deref(), Some(REPO));
     assert_eq!(fork.commit.as_deref(), Some(commit.as_str()));
+}
+
+/// Two tools sharing one folder reach it through a symlink, and the seal
+/// resolves its own root — so an unresolved item path sits outside it and
+/// every read is refused. This is the shape most shared skills install in.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_shared_install_reached_through_a_symlink_still_reads() {
+    let w = world();
+    let real = w.home.join(".agents/skills/shared");
+    fs::create_dir_all(&real).unwrap();
+    fs::write(real.join("SKILL.md"), "---\nname: shared\n---\nBody.\n").unwrap();
+
+    let link = w.home.join("app/.claude/skills/shared");
+    fs::create_dir_all(link.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+
+    let file =
+        detail::package_file(&w.env, &w.scope, ItemKind::Skill, "shared", "SKILL.md").unwrap();
+    assert_eq!(file.content, "---\nname: shared\n---\nBody.\n");
 }

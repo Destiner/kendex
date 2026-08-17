@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::model::HarnessId;
 
 /// A hook source: shell script with YAML-in-comments frontmatter between
@@ -146,6 +148,22 @@ pub fn codex_event(event: &str) -> Option<&str> {
         | "PostCompact" | "PermissionRequest" | "Stop" => Some(event),
         _ => None,
     }
+}
+
+/// A short recognizable handle for a shell command: the file stem of its
+/// script-looking token, else the first token.
+pub fn command_stem(command: &str) -> String {
+    let tokens: Vec<&str> = command.split_whitespace().collect();
+    let script = tokens
+        .iter()
+        .map(|t| t.trim_matches('"').trim_matches('\''))
+        .find(|t| t.contains('/') || t.contains('.'));
+    let pick = script.or(tokens.first().copied()).unwrap_or(command);
+    Path::new(pick)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(pick)
+        .to_owned()
 }
 
 #[cfg(test)]

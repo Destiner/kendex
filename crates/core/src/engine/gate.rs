@@ -46,9 +46,14 @@ pub struct ItemSafety {
     pub verdict: Verdict,
     /// Why the verdict is what it is, in sentences.
     pub reasons: Vec<String>,
-    /// The identity of the bytes that were read. An override binds to this,
-    /// so it is what a reviewer is accepting.
+    /// The identity of the bytes the rules read — the reduced input the
+    /// findings came out of, budgets and lossy decoding included.
     pub content_hash: String,
+    /// The identity of the complete bytes, or of the exact config entry. A
+    /// decision binds to this and the flag that grants one carries it, so it
+    /// is what a reviewer is accepting. `None` where the bytes cannot be
+    /// reached from here at all.
+    pub review_hash: Option<String>,
     #[serde(rename = "override")]
     pub override_state: OverrideState,
 }
@@ -80,19 +85,24 @@ pub(super) fn run(
         // artifact would give every such item the same hash and an override
         // would survive a command line being rewritten under it.
         let content_hash = content_hash(&input);
+        let review_hash = super::review_hash::desired(&item);
         let result = crate::quality::audit(input);
         let (verdict, reasons) =
             crate::quality::verdict(&result.findings, &result.safety, thresholds);
         let mut recorded = manifest.safety_overrides.get(&item.key);
-        if verdict == Verdict::Block && granted(options, &item, &content_hash) {
-            let minted = overrides::mint(&content_hash, &result.findings, &root, None);
+        if let Some(review_hash) = &review_hash
+            && verdict == Verdict::Block
+            && granted(options, &item, review_hash)
+        {
+            let minted = overrides::mint(review_hash, &result.findings, &root, None);
             let updated = state
                 .manifest_update
                 .get_or_insert_with(|| manifest.clone());
             updated.safety_overrides.insert(item.key.clone(), minted);
             recorded = updated.safety_overrides.get(&item.key);
         }
-        let override_state = overrides::state(recorded, &content_hash, &result.findings, &root);
+        let override_state =
+            overrides::state(recorded, review_hash.as_deref(), &result.findings, &root);
         let row = ItemSafety {
             kind: item.kind,
             name: item.name.clone(),
@@ -105,6 +115,7 @@ pub(super) fn run(
             verdict,
             reasons,
             content_hash,
+            review_hash,
             override_state,
         };
         match row.blocked() {
@@ -126,28 +137,28 @@ pub(super) fn run(
 /// nobody has read, which is the standing bypass an override exists to not
 /// become. When the content changes the printed hash changes with it, so
 /// re-running the same command line blocks again and prints the new one.
-fn granted(options: &PlanOptions, item: &Desired, content_hash: &str) -> bool {
+fn granted(options: &PlanOptions, item: &Desired, review_hash: &str) -> bool {
     options.allow_unsafe.iter().any(|named| {
         let Some((name, shown)) = named.rsplit_once('@') else {
             return false;
         };
         (name == item.name || name == item.key)
             && shown.len() >= SHOWN_HASH
-            && content_hash.starts_with(shown)
+            && review_hash.starts_with(shown)
     })
 }
 
-/// How much of the content hash is printed, and the least a flag may carry.
+/// How much of the review hash is printed, and the least a flag may carry.
 /// Long enough that nobody types a prefix that matches something else by
 /// accident, short enough to copy off a terminal.
 pub const SHOWN_HASH: usize = 12;
 
 /// The flag that would grant this exact decision, as the user should type
 /// it back.
-pub fn allow_unsafe_flag(name: &str, content_hash: &str) -> String {
+pub fn allow_unsafe_flag(name: &str, review_hash: &str) -> String {
     format!(
         "{name}@{}",
-        &content_hash[..SHOWN_HASH.min(content_hash.len())]
+        &review_hash[..SHOWN_HASH.min(review_hash.len())]
     )
 }
 

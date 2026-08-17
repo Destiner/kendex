@@ -17,8 +17,12 @@ use super::{Finding, RULESET_VERSION};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "kebab-case")]
 pub struct SafetyOverride {
-    /// Hash of the content that was reviewed.
-    pub content_hash: String,
+    /// Hash of the complete bytes that were reviewed. Empty on a record
+    /// written before decisions bound to those bytes: such a record proves
+    /// nothing about what is installed now, so it reads as stale and the
+    /// content has to be reviewed again.
+    #[serde(default)]
+    pub review_hash: String,
     /// The rule set that produced the findings below.
     pub ruleset: u32,
     /// Fingerprints of the exact findings that were reviewed, sorted.
@@ -58,13 +62,13 @@ pub fn fingerprints(findings: &[Finding], root: &str) -> Vec<String> {
 
 /// Record a review of exactly this content and these findings.
 pub fn mint(
-    content_hash: &str,
+    review_hash: &str,
     findings: &[Finding],
     root: &str,
     note: Option<String>,
 ) -> SafetyOverride {
     SafetyOverride {
-        content_hash: content_hash.to_owned(),
+        review_hash: review_hash.to_owned(),
         ruleset: RULESET_VERSION,
         findings: fingerprints(findings, root),
         granted_at: crate::clock::timestamp(),
@@ -75,14 +79,23 @@ pub fn mint(
 /// What a recorded override means for the content in front of us now.
 pub fn state(
     recorded: Option<&SafetyOverride>,
-    content_hash: &str,
+    review_hash: Option<&str>,
     findings: &[Finding],
     root: &str,
 ) -> OverrideState {
     let Some(recorded) = recorded else {
         return OverrideState::Absent;
     };
-    if recorded.content_hash != content_hash {
+    // Bytes nobody can read cannot be the bytes somebody reviewed. A record
+    // that has nothing to compare itself against never unblocks — the same
+    // rule that reports an artifact vstack cannot compare as uncompared
+    // rather than as passing.
+    let Some(review_hash) = review_hash else {
+        return OverrideState::Stale {
+            why: "the content it was granted for cannot be read here, so nothing proves it is still what was reviewed".to_owned(),
+        };
+    };
+    if recorded.review_hash != review_hash {
         return OverrideState::Stale {
             why: "the content changed since it was reviewed".to_owned(),
         };

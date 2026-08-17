@@ -5,12 +5,8 @@ import type {
   Manifest_Serialize,
   SourceRow,
 } from "@/bindings";
-import {
-  acmeHeldBack,
-  acmeSafety,
-  personalDrift,
-  personalSafety,
-} from "./fixture-safety";
+import { personalDrift, personalSafety } from "./fixture-safety";
+import { acmeHeldBack, acmeSafety } from "./fixture-safety-acme";
 import { ACME, API, GLOBAL, proj } from "./fixture-scopes";
 
 export function views(): AuditView[] {

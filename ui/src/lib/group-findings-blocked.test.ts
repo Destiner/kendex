@@ -28,6 +28,7 @@ function row(overrides: Partial<ItemSafety>): ItemSafety {
     verdict: "block",
     reasons: [],
     contentHash: "hash",
+    reviewHash: "review-hash",
     override: { state: "absent" },
     ...overrides,
   };
@@ -151,14 +152,14 @@ describe("mergeHeldBack", () => {
 
 describe("acceptTokens", () => {
   it("sends one token per distinct content, not per harness", () => {
-    const codex = row({ harness: "codex", contentHash: "aaaaaaaaaaaa9999" });
-    const pi = row({ harness: "pi", contentHash: "aaaaaaaaaaaa9999" });
+    const codex = row({ harness: "codex", reviewHash: "aaaaaaaaaaaa9999" });
+    const pi = row({ harness: "pi", reviewHash: "aaaaaaaaaaaa9999" });
     expect(acceptTokens([codex, pi])).toEqual(["visual-qa@aaaaaaaaaaaa"]);
   });
 
   it("divergent variants each get their own token", () => {
-    const codex = row({ harness: "codex", contentHash: "aaaaaaaaaaaa0000" });
-    const pi = row({ harness: "pi", contentHash: "bbbbbbbbbbbb0000" });
+    const codex = row({ harness: "codex", reviewHash: "aaaaaaaaaaaa0000" });
+    const pi = row({ harness: "pi", reviewHash: "bbbbbbbbbbbb0000" });
     expect(acceptTokens([codex, pi])).toEqual([
       "visual-qa@aaaaaaaaaaaa",
       "visual-qa@bbbbbbbbbbbb",

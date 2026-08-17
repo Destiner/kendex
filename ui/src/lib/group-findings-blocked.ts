@@ -104,19 +104,23 @@ export function mergeHeldBack(
   return { display, plannedByItem, onDisk };
 }
 
-/** How much of the content hash a token carries — mirrors SHOWN_HASH in
+/** How much of the review hash a token carries — mirrors SHOWN_HASH in
  *  engine/gate.rs; a shorter prefix grants nothing. */
 const TOKEN_HASH_CHARS = 12;
 
 // One token per distinct content: a skill shared by three tools is one
 // hash and one decision, while divergent per-tool variants each need
 // their own — a single token would silently accept only part of the group.
+// A row whose bytes could not be read has no hash to accept against, and a
+// token without one would grant a review of content nobody can name.
 export function acceptTokens(planned: ItemSafety[]): string[] {
   return [
     ...new Set(
-      planned.map(
-        (row) => `${row.name}@${row.contentHash.slice(0, TOKEN_HASH_CHARS)}`,
-      ),
+      planned
+        .filter((row) => row.reviewHash !== null)
+        .map(
+          (row) => `${row.name}@${row.reviewHash?.slice(0, TOKEN_HASH_CHARS)}`,
+        ),
     ),
   ];
 }

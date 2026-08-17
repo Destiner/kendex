@@ -9,6 +9,7 @@ use std::fs;
 
 use vstack_app::audit::{apply_scope, view};
 use vstack_core::env::{Env, FakeOs};
+use vstack_core::manifest::MANIFEST_SCHEMA;
 use vstack_core::model::Scope;
 
 const UPGRADE_OP: &str = "Upgrade vstack.toml to the current format";
@@ -79,7 +80,7 @@ fn apply_performs_the_upgrade_the_preview_promised() {
     let migrated = fs::read_to_string(&f.manifest_path).unwrap();
     assert_eq!(
         migrated,
-        original.replacen("schema = 1", "schema = 3", 1),
+        original.replacen("schema = 1", &format!("schema = {MANIFEST_SCHEMA}"), 1),
         "the upgrade must change the schema line and nothing else"
     );
 

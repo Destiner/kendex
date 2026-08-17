@@ -75,7 +75,18 @@ pub fn input_for(item: &ObservedItem) -> AuditInput {
 /// scope's trees together outweigh the work they save to copy.
 #[derive(Default)]
 pub struct AuditCache {
-    by_source: HashMap<(ItemKind, PathBuf, String), (String, AuditResult)>,
+    by_source: HashMap<(ItemKind, PathBuf, String), Scored>,
+}
+
+/// One observation's two hashes and what the rules made of it. The hashes
+/// answer different questions: `content` names the reduced input the
+/// findings came from, `review` names the complete bytes a decision binds
+/// to.
+#[derive(Clone)]
+pub struct Scored {
+    pub content: String,
+    pub review: Option<String>,
+    pub result: AuditResult,
 }
 
 /// Score what this observation points at, reusing the pass's earlier answer
@@ -85,13 +96,18 @@ pub fn audit_observed(
     cache: &mut AuditCache,
     item: &ObservedItem,
     hash: impl Fn(&AuditInput) -> String,
-) -> (String, AuditResult) {
+    review: impl Fn(&ObservedItem) -> Option<String>,
+) -> Scored {
     let key = (item.kind, item.path.clone(), item.name.clone());
     if let Some(done) = cache.by_source.get(&key) {
         return done.clone();
     }
     let input = input_for(item);
-    let done = (hash(&input), super::audit(input));
+    let done = Scored {
+        content: hash(&input),
+        review: review(item),
+        result: super::audit(input),
+    };
     cache.by_source.insert(key, done.clone());
     done
 }
@@ -137,26 +153,29 @@ fn read_hook(path: &Path) -> Content {
 /// cannot be found the input says so and the rules report themselves not
 /// applicable, which is the honest answer and never a pass.
 fn read_mcp(path: &Path, name: &str) -> Content {
-    const NESTS: &[&str] = &["mcpServers", "mcp_servers", "servers", "mcp"];
-    let Some(root) = read_config(path) else {
-        return Content::Unread {
-            why: UNREAD_MCP_ENTRY,
-        };
-    };
-    let entry = NESTS
-        .iter()
-        .filter_map(|nest| root.get(nest))
-        .find_map(|table| table.get(name));
-    match entry {
-        Some(value) => Content::Mcp(McpEntry::from_json(value)),
+    match mcp_entry(path, name) {
+        Some(value) => Content::Mcp(McpEntry::from_json(&value)),
         None => Content::Unread {
             why: UNREAD_MCP_ENTRY,
         },
     }
 }
 
+/// The server entry itself, before anything reduces it. Every layout vstack
+/// writes nests the servers under one key and each server under its own
+/// name, so the same walk covers JSON, JSONC and TOML.
+pub fn mcp_entry(path: &Path, name: &str) -> Option<serde_json::Value> {
+    const NESTS: &[&str] = &["mcpServers", "mcp_servers", "servers", "mcp"];
+    let root = config_json(path)?;
+    NESTS
+        .iter()
+        .filter_map(|nest| root.get(nest))
+        .find_map(|table| table.get(name))
+        .cloned()
+}
+
 /// A config file as JSON, whichever of the two syntaxes it is written in.
-fn read_config(path: &Path) -> Option<serde_json::Value> {
+pub fn config_json(path: &Path) -> Option<serde_json::Value> {
     let text = std::fs::read_to_string(path).ok()?;
     match path.extension().and_then(|e| e.to_str()) {
         Some("toml") => toml::from_str::<serde_json::Value>(&text).ok(),
@@ -305,11 +324,21 @@ mod tests {
         std::fs::write(&path, "first").unwrap();
         let mut cache = AuditCache::default();
 
-        let claude = audit_observed(&mut cache, &agent_at(&path, HarnessId::Claude), text_hash);
+        let claude = audit_observed(
+            &mut cache,
+            &agent_at(&path, HarnessId::Claude),
+            text_hash,
+            |_| None,
+        );
         std::fs::write(&path, "second").unwrap();
-        let pi = audit_observed(&mut cache, &agent_at(&path, HarnessId::Pi), text_hash);
+        let pi = audit_observed(
+            &mut cache,
+            &agent_at(&path, HarnessId::Pi),
+            text_hash,
+            |_| None,
+        );
 
-        assert_eq!(claude.0, pi.0);
+        assert_eq!(claude.content, pi.content);
     }
 
     /// The assumption the cache rests on, asserted rather than assumed: the
@@ -345,9 +374,9 @@ mod tests {
             ..agent_at(&path, HarnessId::Claude)
         };
 
-        let one = audit_observed(&mut cache, &server("one"), text_hash);
-        let two = audit_observed(&mut cache, &server("two"), text_hash);
+        let one = audit_observed(&mut cache, &server("one"), text_hash, |_| None);
+        let two = audit_observed(&mut cache, &server("two"), text_hash, |_| None);
 
-        assert_ne!(one.0, two.0);
+        assert_ne!(one.content, two.content);
     }
 }

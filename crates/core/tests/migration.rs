@@ -74,7 +74,7 @@ fn a_v01_scope_upgrades_in_place_changing_only_the_schema_line() {
     apply::execute(&f.env, &report.plan, None).unwrap();
 
     let migrated = fs::read_to_string(&f.manifest_path).unwrap();
-    assert_eq!(migrated, f.original.replacen("schema = 1", "schema = 3", 1));
+    assert_eq!(migrated, f.original.replacen("schema = 1", "schema = 4", 1));
     let lock = load_lock(&lock_path(&f.env, &f.scope)).unwrap();
     assert_eq!(lock.version, vstack_core::lock::LOCK_VERSION);
     assert!(lock.entries.contains_key("skill:gh:claude"));
@@ -121,7 +121,7 @@ fn a_comment_mentioning_the_schema_line_is_not_the_schema_line() {
     apply::execute(&f.env, &report.plan, None).unwrap();
 
     let migrated = fs::read_to_string(&f.manifest_path).unwrap();
-    assert_eq!(migrated, tricky.replace("schema = 1\n", "schema = 3\n"));
+    assert_eq!(migrated, tricky.replace("schema = 1\n", "schema = 4\n"));
     assert!(migrated.contains("# was schema = 1 before the migration"));
 }
 
@@ -132,8 +132,8 @@ fn a_comment_mentioning_the_schema_line_is_not_the_schema_line() {
 #[allow(clippy::unwrap_used)]
 fn unusual_schema_spellings_upgrade_in_place() {
     for (spelling, upgraded) in [
-        ("schema=1", "schema=3"),
-        ("schema = 1   # v0.1", "schema = 3   # v0.1"),
+        ("schema=1", "schema=4"),
+        ("schema = 1   # v0.1", "schema = 4   # v0.1"),
     ] {
         let f = fixture();
         let variant = f.original.replacen("schema = 1", spelling, 1);

@@ -60,7 +60,7 @@ pub fn fixture_with_method(method: &str) -> Fixture {
     fs::write(
         project.join("vstack.toml"),
         format!(
-            "schema = 3\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"{method}\"\n\n[skills.clean]\nsource = \"cat\"\n\n[skills.hostile]\nsource = \"cat\"\n",
+            "schema = 4\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"{method}\"\n\n[skills.clean]\nsource = \"cat\"\n\n[skills.hostile]\nsource = \"cat\"\n",
             source.display()
         ),
     )
@@ -118,9 +118,9 @@ pub fn installed(f: &Fixture, name: &str) -> bool {
         .exists()
 }
 
-/// The content hash the gate is binding to right now, as the gate itself
+/// The review hash the gate is binding to right now, as the gate itself
 /// reports it.
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 pub fn current_hash(f: &Fixture) -> String {
     audit(&f.env, &f.scope)
         .unwrap()
@@ -128,6 +128,7 @@ pub fn current_hash(f: &Fixture) -> String {
         .iter()
         .find(|row| row.name == "hostile")
         .unwrap()
-        .content_hash
+        .review_hash
         .clone()
+        .expect("a blocked item's bytes are always readable")
 }

@@ -37,6 +37,7 @@ pub mod ops;
 mod owned;
 mod plan_pass;
 mod removal;
+mod review_hash;
 mod scope_writes;
 mod set_change;
 mod targets;

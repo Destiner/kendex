@@ -77,10 +77,12 @@ pub fn print_safety(report: &EngineReport) {
             say(&format!("    fix: {}", finding.remediation));
         }
         print_skipped(row);
-        if row.blocked() {
+        if let Some(review_hash) = &row.review_hash
+            && row.blocked()
+        {
             say(&format!(
                 "    to install it anyway, review the findings above and re-run with --allow-unsafe {}",
-                vstack_core::engine::allow_unsafe_flag(&row.name, &row.content_hash)
+                vstack_core::engine::allow_unsafe_flag(&row.name, review_hash)
             ));
         }
     }

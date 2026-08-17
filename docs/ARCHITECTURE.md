@@ -171,9 +171,13 @@ lives in one capability table read by core and UI.
   draws its width and gutters from `lib/layout.ts` — two widths only, a
   reading measure and full-width for data-dense tables — so header,
   filters and body cannot drift out of alignment.
-- One search box, in the sidebar, holding the Library's filter. Typing
-  anywhere takes you to the Library rather than filtering a list that
-  isn't on screen.
+- One search box, on the Library page above the table it filters. "/"
+  works anywhere and takes you there, so the box is never a cursor
+  sitting over a list that isn't on screen.
+- Where an item lives is filtered once, by the app-wide scope, which the
+  sidebar picker and the Library's pills both write. A page-local second
+  location filter can contradict the global one and empty a table with no
+  way to see why.
 - Commands that touch disk, git, or a subprocess are declared
   `#[tauri::command(async)]`. On Linux a synchronous command runs on the
   GTK main loop, so seconds of work reads to the window manager as a
@@ -429,15 +433,31 @@ lives in one capability table read by core and UI.
   catalog that ships tests asserting on dangerous command lines. Secrets
   never weigh less anywhere.
 - **An override is permission for one decision, not for an item.** It
-  binds to the installation, the rendered content hash, the rule set
-  version and the exact finding fingerprints that were reviewed; it is
-  written into the manifest by the same transaction that installs what it
-  unblocks; and it goes stale the moment any of those four move. The flag
-  that grants one carries the content hash it was shown with
-  (`--allow-unsafe name@hash`), so a bare name in a shell history, a
-  Makefile or a CI job grants nothing. A one-time review must never become
-  a standing bypass, and the audit reports an accepted item as accepted
-  rather than as held back.
+  binds to the installation, the review hash, the rule set version and the
+  exact finding fingerprints that were reviewed; it is written into the
+  manifest by the same transaction that installs what it unblocks; and it
+  goes stale the moment any of those four move. The flag that grants one
+  carries the review hash it was shown with (`--allow-unsafe name@hash`),
+  so a bare name in a shell history, a Makefile or a CI job grants nothing.
+  A one-time review must never become a standing bypass, and the audit
+  reports an accepted item as accepted rather than as held back.
+- **A decision binds to the bytes, not to the reading of them.** Two
+  hashes, and they answer different questions. The *content hash* names
+  what the rules read — a reduced representation, with the scan's byte and
+  file budgets, symlinks stepped over, binary assets counted rather than
+  kept, and text decoded lossily — and it is the right input for scoring
+  and the wrong one for a decision: a plugin whose only file is a payload
+  no rule reads reduces to nothing at all, so swapping that payload for
+  different bytes of the same length would leave a decision speaking for
+  content nobody reviewed. The *review hash* names every owned byte, or
+  the exact config entry, with no budget and no decoding, and that is what
+  a decision binds to. Where the bytes cannot be reached from here at all
+  there is no review hash, and a decision with nothing to compare against
+  never reads as live — the same rule that reports an artifact vstack
+  cannot compare as uncompared rather than as passing. Budgets stay where
+  they belong: they bound what is read for scoring, never what a decision
+  covers, so content past a budget going unreviewable is said out loud
+  instead of waved through.
 - **Rule severities are calibrated against real catalogs, not inherited.**
   A Critical blocks an install on its own, so the tier is only worth
   something if it is precise. Patterns that fired only on legitimate

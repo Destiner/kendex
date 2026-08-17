@@ -38,7 +38,7 @@ fn fixture() -> Fixture {
     fs::write(
         project.join("vstack.toml"),
         format!(
-            "schema = 3\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.hostile]\nsource = \"cat\"\n",
+            "schema = 4\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.hostile]\nsource = \"cat\"\n",
             source.display()
         ),
     )
@@ -75,7 +75,11 @@ fn a_fresh_blocked_install_shows_in_held_back_and_accepts() {
         "nothing is on disk yet, so the observed list has nothing to say"
     );
 
-    let flag = allow_unsafe_flag("hostile", &held.content_hash);
+    let review_hash = held
+        .review_hash
+        .as_deref()
+        .expect("a blocked item's bytes are always readable");
+    let flag = allow_unsafe_flag("hostile", review_hash);
     let after = apply_scope(&f.env, &f.scope, false, vec![flag]).unwrap();
 
     assert!(installed(&f));

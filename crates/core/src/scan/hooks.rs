@@ -2,6 +2,7 @@ use std::path::Path;
 
 use super::RawEntry;
 use super::readers::read_json;
+use crate::hook::command_stem;
 
 /// `{"hooks": {"<Event>": [{matcher?, hooks: [{command}]} | {command}]}}` —
 /// claude settings.json and codex/cursor hooks.json share this shape; cursor
@@ -40,22 +41,6 @@ pub fn read(path: &Path) -> Result<Vec<RawEntry>, String> {
         }
     }
     Ok(entries)
-}
-
-/// A short recognizable handle for a shell command: the file stem of its
-/// script-looking token, else the first token.
-pub fn command_stem(command: &str) -> String {
-    let tokens: Vec<&str> = command.split_whitespace().collect();
-    let script = tokens
-        .iter()
-        .map(|t| t.trim_matches('"').trim_matches('\''))
-        .find(|t| t.contains('/') || t.contains('.'));
-    let pick = script.or(tokens.first().copied()).unwrap_or(command);
-    Path::new(pick)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or(pick)
-        .to_owned()
 }
 
 #[cfg(test)]

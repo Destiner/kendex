@@ -647,10 +647,17 @@ export type ItemSafety = {
 	/**  Why the verdict is what it is, in sentences. */
 	reasons: string[],
 	/**
-	 *  The identity of the bytes that were read. An override binds to this,
-	 *  so it is what a reviewer is accepting.
+	 *  The identity of the bytes the rules read — the reduced input the
+	 *  findings came out of, budgets and lossy decoding included.
 	 */
 	contentHash: string,
+	/**
+	 *  The identity of the complete bytes, or of the exact config entry. A
+	 *  decision binds to this and the flag that grants one carries it, so it
+	 *  is what a reviewer is accepting. `None` where the bytes cannot be
+	 *  reached from here at all.
+	 */
+	reviewHash: string | null,
 	override: OverrideState,
 };
 
@@ -992,8 +999,13 @@ export type SafetyOverride = SafetyOverride_Serialize | SafetyOverride_Deseriali
  *  kind, name and harness, inside the scope whose manifest holds it.
  */
 export type SafetyOverride_Deserialize = {
-	/**  Hash of the content that was reviewed. */
-	"content-hash": string,
+	/**
+	 *  Hash of the complete bytes that were reviewed. Empty on a record
+	 *  written before decisions bound to those bytes: such a record proves
+	 *  nothing about what is installed now, so it reads as stale and the
+	 *  content has to be reviewed again.
+	 */
+	"review-hash"?: string,
 	/**  The rule set that produced the findings below. */
 	ruleset: number,
 	/**  Fingerprints of the exact findings that were reviewed, sorted. */
@@ -1007,8 +1019,13 @@ export type SafetyOverride_Deserialize = {
  *  kind, name and harness, inside the scope whose manifest holds it.
  */
 export type SafetyOverride_Serialize = {
-	/**  Hash of the content that was reviewed. */
-	"content-hash": string,
+	/**
+	 *  Hash of the complete bytes that were reviewed. Empty on a record
+	 *  written before decisions bound to those bytes: such a record proves
+	 *  nothing about what is installed now, so it reads as stale and the
+	 *  content has to be reviewed again.
+	 */
+	"review-hash": string,
 	/**  The rule set that produced the findings below. */
 	ruleset: number,
 	/**  Fingerprints of the exact findings that were reviewed, sorted. */

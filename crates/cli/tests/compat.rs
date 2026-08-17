@@ -8,6 +8,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Command, Output};
 
+use vstack_core::manifest::MANIFEST_SCHEMA;
+
 #[allow(clippy::expect_used)]
 fn vstack_in(home: &Path, cwd: &Path, args: &[&str], envs: &[(&str, String)]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_vstack"));
@@ -257,7 +259,7 @@ fn import_migrates_v1_files_and_is_idempotent() {
         String::from_utf8_lossy(&output.stderr)
     );
     let manifest = fs::read_to_string(proj.join("vstack.toml")).unwrap();
-    assert!(manifest.contains("schema = 3"));
+    assert!(manifest.contains(&format!("schema = {MANIFEST_SCHEMA}")));
     assert!(manifest.contains("[skills.gh]"));
     assert!(!manifest.contains("agent-colors"));
     let lock = fs::read_to_string(proj.join(".vstack-lock.json")).unwrap();

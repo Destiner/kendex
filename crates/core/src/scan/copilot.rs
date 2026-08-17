@@ -3,8 +3,8 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::RawEntry;
-use super::hooks::command_stem;
 use super::readers::read_json;
+use crate::hook::command_stem;
 
 /// `{version, disableAllHooks, hooks: {<event>: [entry]}}` — a Copilot hook
 /// file, or the `hooks` key of one of its settings files

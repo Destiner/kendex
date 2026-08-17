@@ -15,8 +15,11 @@ pub use validate::{Finding, validate};
 /// than this build refuses to load — downgrades must never corrupt.
 /// Schema 3 added per-item `rev` and `[forks]`; an older build saving a
 /// schema-3 manifest would silently drop them, which is what the refusal
-/// protects.
-pub const MANIFEST_SCHEMA: u32 = 3;
+/// protects. Schema 4 binds a recorded acceptance to the complete bytes
+/// that were reviewed rather than to the audit's reduced reading of them —
+/// an older build would read the new record as covering content nobody
+/// looked at.
+pub const MANIFEST_SCHEMA: u32 = 4;
 pub const OLDEST_READABLE_SCHEMA: u32 = 1;
 pub const DEFAULT_SOURCE_NAME: &str = "vstack";
 pub const DEFAULT_SOURCE_REPO: &str = "vanillagreencom/vstack";

@@ -31,8 +31,13 @@ pub fn observed_safety(env: &Env, scope: &Scope) -> Result<Vec<ItemSafety>> {
         .items
         .iter()
         .map(|item| {
-            let (content_hash, result) =
-                crate::quality::observe::audit_observed(&mut cache, item, gate::content_hash);
+            let scored = crate::quality::observe::audit_observed(
+                &mut cache,
+                item,
+                gate::content_hash,
+                super::review_hash::observed,
+            );
+            let result = scored.result;
             let (verdict, reasons) =
                 crate::quality::verdict(&result.findings, &result.safety, settings.safety);
             let recorded =
@@ -46,7 +51,7 @@ pub fn observed_safety(env: &Env, scope: &Scope) -> Result<Vec<ItemSafety>> {
                 quality: result.quality,
                 override_state: crate::quality::overrides::state(
                     recorded,
-                    &content_hash,
+                    scored.review.as_deref(),
                     &result.findings,
                     &item.path.display().to_string(),
                 ),
@@ -54,7 +59,8 @@ pub fn observed_safety(env: &Env, scope: &Scope) -> Result<Vec<ItemSafety>> {
                 skipped: result.skipped,
                 verdict,
                 reasons,
-                content_hash,
+                content_hash: scored.content,
+                review_hash: scored.review,
             }
         })
         .filter(|row| {
