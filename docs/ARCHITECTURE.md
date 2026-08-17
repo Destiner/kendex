@@ -223,9 +223,11 @@ lives in one capability table read by core and UI.
   context; the one sanctioned redirect past invariant 13's scrubbing).
   Policy is read from the commit too: the `[guards]` tables in
   `vstack.settings.toml`, baselines, and excludes all resolve from the
-  staged copy, so a permissive unstaged edit can never authorize stricter
-  staged content; the process environment is the only machine-local
-  override, and the chain's local extension point is configured
+  staged copy and nothing else — a file staged for deletion, or never
+  staged at all, governs as absent — so a permissive unstaged edit can
+  never authorize stricter staged content and an untracked file dropped
+  on disk cannot flip a verdict; the process environment is the only
+  machine-local override, and the chain's local extension point is configured
   machine-locally only — never from a committed file, where a branch
   switch could point it at a tracked malicious executable. Index states
   that cannot be judged — unmerged entries, intent-to-add — are refused
@@ -254,10 +256,17 @@ lives in one capability table read by core and UI.
   shim, and foreign files found at uninstall are all refusals — a refused
   repo can still call `vstack guard run` from its own hook orchestration.
   Hook state is repository-common state: mutations take a common-dir lock
-  after the scope lock (one fixed order) and journal into a common-dir
-  journal every common-lock holder recovers before mutating. A missing
-  binary at commit time fails closed, naming the one-commit bypass and
-  the two-step manual removal — no vendored runner, because copies drift.
+  after the scope lock (one fixed order), build their plan — refusals
+  included — only once both are held, and journal into a common-dir
+  journal that every common-lock holder and the app's launch pass
+  recover. The one transaction engine runs scope and common applies
+  alike, keyed by what it locks. A missing binary at commit time fails
+  closed, naming the one-commit bypass and the two-step manual removal —
+  no vendored runner, because copies drift — and the entrypoints refuse
+  v1's shim at commit time as install refused it, so it cannot be chained
+  by reappearing. A hooks directory deleted by hand does not strand
+  `core.hooksPath`: the value is provably vstack's, and uninstall takes it
+  back.
 - **Pi hooks are enforced through the carrier.** Pi has no per-hook
   artifact: the `pi-hooks` extension package hosts native listeners, and
   hook content rides in the registry vstack renders beside them
@@ -279,11 +288,17 @@ lives in one capability table read by core and UI.
   the comment block seeding last wrote (v1's algorithm, so imported
   ledgers verify without re-guessing). A template revision rewrites a
   key's comment only while its on-disk text still hashes to that record
-  and the template belongs to the recorded owner — a hand edit, another
-  skill's template, or an ownerless v1 record is preserved forever. Value
-  lines are never touched, and the merger is byte-faithful: comment-block
-  bytes (and an inserted seed block) are the only bytes that change, so
-  CRLF files and missing-terminator state survive untouched.
+  and the template belongs to the recorded owner — a hand edit or another
+  skill's template is preserved forever. A v1 record names no owner and
+  imports as none; a template earns it only when the comment on disk is
+  provably what v1 seeded and matches the template word for word. When
+  several skills ship one key, seeding writes the first declaration and
+  the refresh listens to the recorded owner, so declaration order never
+  shadows the ledger; a bare key is never adopted, and a skill the safety
+  gate holds back seeds nothing. Value lines are never touched, and the
+  merger is byte-faithful: comment-block bytes (and an inserted seed
+  block) are the only bytes that change, so CRLF files and
+  missing-terminator state survive untouched.
 - **Schemas are versioned and migrations are applies.** The manifest and
   lock carry a format version; older files load, and the upgrade rides
   the normal journaled, previewed plan as a surgical edit (the version

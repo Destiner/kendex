@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use crate::error::Result;
 
 use super::settings::{Policy, config_path};
-use super::{GuardCtx, Outcome, grep_lane, guard_err, patterns};
+use super::{GuardCtx, Outcome, baseline, grep_lane, patterns};
 
 const CHECK: &str = "suppression-ban";
 
@@ -59,46 +59,13 @@ fn blanket_lanes(ctx: &GuardCtx, excludes: &patterns::Excludes, out: &mut Outcom
 }
 
 /// Per-file counts of reasonless allows over index content, excluded paths
-/// dropped. Paths carrying a tab or newline cannot be represented in the
-/// baseline TSV — a loud refusal, never garbage rows.
+/// dropped. A path the baseline TSV cannot carry (a tab or newline in the
+/// name) is refused after excludes apply, so the refusal's own remedy —
+/// exclude it — works.
 fn bare_counts(ctx: &GuardCtx, excludes: &patterns::Excludes) -> Result<BTreeMap<String, u64>> {
-    for entry in ctx.index_entries(CHECK)? {
-        let Ok(path) = std::str::from_utf8(&entry.path) else {
-            continue; // surfaces through grep lanes if it carries content
-        };
-        if path.ends_with(".rs") && (path.contains('\t') || path.contains('\n')) {
-            return Err(guard_err(
-                CHECK,
-                format!(
-                    "tracked path contains a tab or newline, unrepresentable in the baseline TSV (exclude it to skip the gate): '{path}'"
-                ),
-            ));
-        }
-    }
-    let raw = ctx.git_grep(
-        CHECK,
-        &["grep", "--cached", "-cIzE", BARE_ERE, "--", "*.rs"],
-    )?;
-    let mut counts = BTreeMap::new();
-    // With -z the record is "path NUL count NL".
-    for record in raw.split(|byte| *byte == b'\n') {
-        if record.is_empty() {
-            continue;
-        }
-        let Some(nul) = record.iter().position(|byte| *byte == 0) else {
-            return Err(guard_err(CHECK, "unparseable count record from git grep"));
-        };
-        let (path, count) = record.split_at(nul);
-        let path = String::from_utf8_lossy(path).into_owned();
-        let count: u64 = std::str::from_utf8(&count[1..])
-            .ok()
-            .and_then(|text| text.trim().parse().ok())
-            .ok_or_else(|| guard_err(CHECK, format!("unparseable count for '{path}'")))?;
-        if excludes.is_excluded(&path) {
-            continue;
-        }
-        counts.insert(path, count);
-    }
+    let mut counts = ctx.grep_counts(CHECK, BARE_ERE, &["*.rs"])?;
+    counts.retain(|path, _| !excludes.is_excluded(path));
+    baseline::assert_baseline_representable(CHECK, &counts)?;
     Ok(counts)
 }
 
@@ -152,24 +119,7 @@ fn tighten(
     counts: &BTreeMap<String, u64>,
     out: &mut Outcome,
 ) -> Result<BTreeMap<String, u64>> {
-    let mut updated = BTreeMap::new();
-    for (path, frozen) in baseline {
-        match counts.get(path) {
-            None => out.say(format!("removed: {path} (row {frozen})")),
-            Some(count) if count < frozen => {
-                out.say(format!("tightened: {path} {frozen} -> {count}"));
-                updated.insert(path.clone(), *count);
-            }
-            Some(count) => {
-                if count > frozen {
-                    out.say(format!(
-                        "kept (grew {count} > {frozen} — growth is a hand-edit, never --update): {path}"
-                    ));
-                }
-                updated.insert(path.clone(), *frozen);
-            }
-        }
-    }
+    let updated = baseline::tighten(baseline, counts, |_, _| None, out);
     let target = ctx.root.join(baseline_file);
     if baseline.is_empty() && !target.is_file() {
         out.say(format!(
@@ -177,7 +127,7 @@ fn tighten(
         ));
         return Ok(updated);
     }
-    crate::fs::atomic_write(&target, &patterns::render_baseline(&updated))?;
+    crate::fs::atomic_write(&target, &baseline::render_baseline(&updated))?;
     out.say(format!(
         "suppression-ban --update: baseline tightened at {baseline_file} ({} row(s))",
         updated.len()
@@ -205,19 +155,8 @@ pub fn run(ctx: &GuardCtx, policy: &Policy, update: bool) -> Result<Outcome> {
     // file the user will commit; the check reads the index like every
     // other policy input.
     let mut baseline = match update {
-        true => {
-            let target = ctx.root.join(&baseline_file);
-            match target.is_file() {
-                true => patterns::parse_baseline(
-                    CHECK,
-                    &baseline_file,
-                    &std::fs::read_to_string(&target)
-                        .map_err(|e| crate::error::CoreError::io(&target, e))?,
-                )?,
-                false => BTreeMap::new(),
-            }
-        }
-        false => patterns::load_baseline(ctx, CHECK, &baseline_file)?,
+        true => baseline::load_worktree_baseline(ctx, CHECK, &baseline_file)?,
+        false => baseline::load_baseline(ctx, CHECK, &baseline_file)?,
     };
     if update {
         baseline = tighten(ctx, &baseline_file, &baseline, &counts, &mut out)?;

@@ -80,8 +80,6 @@ impl ItemSafety {
     }
 }
 
-/// Audit every desired installation, hold back the ones that fail, and
-/// record the overrides this run was asked to grant.
 /// The gate with its thresholds loaded from app settings. A settings file
 /// that cannot be read fails the plan closed: defaulting past it would
 /// judge content against thresholds the user may have set stricter
@@ -97,6 +95,10 @@ pub(super) fn pass(
     Ok(run(scope, manifest, options, thresholds, state))
 }
 
+/// Audit every desired installation, hold back the ones that fail, and
+/// record the overrides this run was asked to grant. A skill held back on
+/// every harness also loses its say over the project's settings file:
+/// what it would seed or refresh there is content the gate refused.
 pub(super) fn run(
     scope: &Scope,
     manifest: &Manifest,
@@ -171,6 +173,22 @@ pub(super) fn run(
         safety.push(row);
     }
     state.items = kept;
+    let surviving_skills: std::collections::BTreeSet<&str> = state
+        .items
+        .iter()
+        .filter(|item| item.kind == ItemKind::Skill)
+        .map(|item| item.name.as_str())
+        .collect();
+    let blocked_skills: std::collections::BTreeSet<String> = state
+        .refused
+        .iter()
+        .filter(|refused| refused.kind == ItemKind::Skill)
+        .filter(|refused| !surviving_skills.contains(refused.name.as_str()))
+        .map(|refused| refused.name.clone())
+        .collect();
+    state
+        .settings_env
+        .retain(|seeded| !blocked_skills.contains(&seeded.owner));
     safety
 }
 

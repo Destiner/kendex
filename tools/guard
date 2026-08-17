@@ -44,29 +44,30 @@ scan() {
     case "$f" in
       tools/* | ui/src/components/ui/* | ui/src/bindings.ts) continue ;;
       *.md | *.lock | *.json | *.svg) continue ;;
-      # The commit-guard implementation bans these shapes, so it must name
-      # them — in its patterns, its messages, and its fixtures.
-      crates/core/src/guard/* | crates/cli/src/commands/guard_cmd.rs) continue ;;
-      crates/core/tests/guard_*.rs | crates/cli/tests/guard_*.rs) continue ;;
     esac
     [[ "$f" =~ $filter ]] || continue
     grep -nHE "$pat" "$f" || true
   done <<<"$files"
 }
 
-hits=$(scan 'TODO|FIXME|HACK')
+# The commit-guard implementation bans the marker shapes below, so it must
+# name them — in its patterns, its messages, and its fixtures. Only these
+# shape scans skip it; every other rule still applies there.
+guard_impl='^crates/core/src/guard/|^crates/cli/src/commands/guard_cmd\.rs|^crates/(core|cli)/tests/guard_'
+
+hits=$(scan 'TODO|FIXME|HACK' | grep -vE "$guard_impl")
 [ -n "$hits" ] && {
   echo "$hits" | head -5
   say "unfinished-work markers — finish it now or record it outside code"
 }
 
-hits=$(scan '#!\[allow')
+hits=$(scan '#!\[allow' | grep -vE "$guard_impl")
 [ -n "$hits" ] && {
   echo "$hits"
   say "module-wide #![allow] — fix the lint instead of silencing the file"
 }
 
-hits=$(scan 'allow\((dead_code|unused)')
+hits=$(scan 'allow\((dead_code|unused)' | grep -vE "$guard_impl")
 [ -n "$hits" ] && {
   echo "$hits"
   say "allow(dead_code/unused) — delete the code instead of keeping it warm"

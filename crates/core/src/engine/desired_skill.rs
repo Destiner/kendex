@@ -94,12 +94,10 @@ pub(super) fn desired_skill(ctx: &ItemCtx, state: &mut DesiredState) -> Result<(
         let template = ctx.item_path.join(crate::settings_seed::SETTINGS_TEMPLATE);
         if let Some(text) = ctx.sealed.read_if_exists(&template)? {
             for entry in crate::settings_seed::extract_env_entries(&text) {
-                if !state.settings_env.iter().any(|e| e.entry.key == entry.key) {
-                    state.settings_env.push(crate::settings_seed::SeededEnv {
-                        entry,
-                        owner: ctx.name.to_owned(),
-                    });
-                }
+                state.settings_env.push(crate::settings_seed::SeededEnv {
+                    entry,
+                    owner: ctx.name.to_owned(),
+                });
             }
         }
     }

@@ -9,7 +9,7 @@ mod common;
 pub mod journal;
 mod op;
 
-pub use common::{common_key, execute_common, recover_common};
+pub use common::{common_key, execute_common, recover_common_journals};
 pub use op::{Op, Plan, PlannedOp, Pre, read_git_config};
 
 /// Filesystem-safe key naming a scope's journal dir and lock file. Keys off
@@ -20,30 +20,30 @@ pub fn scope_key(scope: &Scope) -> String {
         Scope::Global => "global".to_owned(),
         Scope::Project { root } => {
             let text = root.display().to_string();
-            let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-            for byte in text.bytes() {
-                hash ^= u64::from(byte);
-                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-            }
             let base = root
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "project".to_owned());
-            format!("{base}-{hash:016x}")
+            format!("{base}-{}", crate::hash::fnv1a_hex(text.as_bytes()))
         }
     }
 }
 
-/// Exclusive per-scope writer lock (invariant 8). Held for the whole
-/// journal → mutate → clear window; recovery runs under the same lock.
+/// Exclusive writer lock over one journal key (invariant 8) — a scope, or
+/// a repository's common dir. Held for the whole journal → mutate → clear
+/// window; recovery runs under the same lock.
 pub struct ScopeGuard {
     _file: fs::File,
 }
 
 fn lock_scope(env: &Env, scope: &Scope) -> Result<ScopeGuard> {
+    lock_key(env, &scope_key(scope))
+}
+
+fn lock_key(env: &Env, key: &str) -> Result<ScopeGuard> {
     let dir = env.scope_locks_dir();
     fs::create_dir_all(&dir).map_err(|e| CoreError::io(&dir, e))?;
-    let path = dir.join(format!("{}.lock", scope_key(scope)));
+    let path = dir.join(format!("{key}.lock"));
     let file = fs::OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -70,9 +70,6 @@ fn lock_scope(env: &Env, scope: &Scope) -> Result<ScopeGuard> {
     }
 }
 
-/// Roll back an interrupted apply, if one left a journal. Returns whether
-/// recovery ran. Called under the scope lock on every apply, and at app
-/// launch for every known scope.
 /// Recovery under the scope lock, for callers outside an apply (launch
 /// passes). A busy scope has a live writer that will recover it itself.
 pub fn recover_locked(env: &Env, scope: &Scope) -> Result<bool> {
@@ -80,8 +77,15 @@ pub fn recover_locked(env: &Env, scope: &Scope) -> Result<bool> {
     recover(env, scope)
 }
 
+/// Roll back an interrupted apply, if one left a journal. Returns whether
+/// recovery ran. Called under the scope lock on every apply, and at app
+/// launch for every known scope.
 pub fn recover(env: &Env, scope: &Scope) -> Result<bool> {
-    let dir = journal::journal_dir_for(&env.journal_dir(), &scope_key(scope));
+    recover_key(env, &scope_key(scope))
+}
+
+fn recover_key(env: &Env, key: &str) -> Result<bool> {
+    let dir = journal::journal_dir_for(&env.journal_dir(), key);
     if journal::pending(&dir) {
         journal::rollback(&dir)?;
         return Ok(true);
@@ -96,21 +100,45 @@ pub struct ApplyOutcome {
     pub recovered_first: bool,
 }
 
-/// Execute a plan transactionally. `fail_after` is test-only fault
-/// injection: simulate a crash after N ops to exercise every boundary.
+/// Execute a plan transactionally. If recovery runs first, the plan
+/// predates it and preconditions do the talking. `fail_after` is
+/// test-only fault injection: simulate a crash after N ops to exercise
+/// every boundary.
 pub fn execute(env: &Env, plan: &Plan, fail_after: Option<usize>) -> Result<ApplyOutcome> {
     let _guard = lock_scope(env, &plan.scope)?;
     let recovered_first = recover(env, &plan.scope)?;
-    if recovered_first {
-        // The plan was computed against pre-crash state; after recovery the
-        // world may differ, so preconditions do the talking below.
+    let applied = run_journaled(env, &plan.ops, &scope_key(&plan.scope), fail_after)?;
+    // The scope just changed; a drift snapshot describing the old state
+    // would send the next session chasing drift that no longer exists.
+    // Invalidation is the cheap honest move: the check reads "not yet
+    // evaluated" and its background job re-derives. Verbs that already do
+    // the deep work re-record right after this returns. Best-effort — a
+    // failure here leaves a stale snapshot, which the refs-state check and
+    // the next deep pass both correct.
+    if !plan.ops.is_empty() {
+        let _ = crate::drift::snapshot::invalidate(env, &plan.scope);
     }
-    let journal_dir = journal::journal_dir_for(&env.journal_dir(), &scope_key(&plan.scope));
-    let mut touched: Vec<PathBuf> = plan.ops.iter().flat_map(|p| p.op.touched()).collect();
+    Ok(ApplyOutcome {
+        applied,
+        recovered_first,
+    })
+}
+
+/// The one transaction engine, under a lock the caller already holds for
+/// `key` and after it recovered: journal every pre-image, run the ops in
+/// order, roll back on the first failure. Returns how many ops ran.
+fn run_journaled(
+    env: &Env,
+    ops: &[PlannedOp],
+    key: &str,
+    fail_after: Option<usize>,
+) -> Result<usize> {
+    let journal_dir = journal::journal_dir_for(&env.journal_dir(), key);
+    let mut touched: Vec<PathBuf> = ops.iter().flat_map(|p| p.op.touched()).collect();
     touched.extend(created_dir_roots(&touched));
     journal::write(&journal_dir, &touched)?;
 
-    for (index, planned) in plan.ops.iter().enumerate() {
+    for (index, planned) in ops.iter().enumerate() {
         if fail_after == Some(index) {
             journal::rollback(&journal_dir)?;
             return Err(CoreError::RolledBack {
@@ -125,20 +153,7 @@ pub fn execute(env: &Env, plan: &Plan, fail_after: Option<usize>) -> Result<Appl
         }
     }
     journal::clear(&journal_dir)?;
-    // The scope just changed; a drift snapshot describing the old state
-    // would send the next session chasing drift that no longer exists.
-    // Invalidation is the cheap honest move: the check reads "not yet
-    // evaluated" and its background job re-derives. Verbs that already do
-    // the deep work re-record right after this returns. Best-effort — a
-    // failure here leaves a stale snapshot, which the refs-state check and
-    // the next deep pass both correct.
-    if !plan.ops.is_empty() {
-        let _ = crate::drift::snapshot::invalidate(env, &plan.scope);
-    }
-    Ok(ApplyOutcome {
-        applied: plan.ops.len(),
-        recovered_first,
-    })
+    Ok(ops.len())
 }
 
 /// The top of every directory chain the plan's `create_dir_all` calls will

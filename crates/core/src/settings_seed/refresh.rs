@@ -6,44 +6,37 @@
 //! preserved forever. Value lines are never touched, and comment-block
 //! bytes are the only bytes a refresh may change.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::lock::SettingsSeed;
 
 use super::{
-    SeededEnv, assignment_key, comment_hash, content_of, file_eol, is_env_header, is_table_header,
+    SeededEnv, assignment_key, comment_hash, content_of, env_section, file_eol, is_table_header,
     lines_keepends, trim_blank_edges,
 };
 
 /// Rewrite `[env]` comment blocks whose upstream template text changed,
 /// gated by the ledger. A block already matching the incoming template is
 /// adopted into the ledger without a file change — how installs predating
-/// the ledger pick up provenance — but never over another owner's record.
-/// Returns the (possibly rewritten) content and the refreshed keys.
+/// the ledger, and v1 imports whose comment is provably unedited, pick up
+/// provenance — but never over another owner's record. Returns the
+/// (possibly rewritten) content and the refreshed keys.
 pub fn refresh_comments(
     original: &str,
     entries: &[SeededEnv],
     seeds: &mut BTreeMap<String, SettingsSeed>,
 ) -> (String, Vec<String>) {
     let lines = lines_keepends(original);
-    let Some(env_start) = lines
-        .iter()
-        .position(|line| is_env_header(content_of(line)))
-    else {
+    let Some((env_start, env_end)) = env_section(&lines) else {
         return (original.to_owned(), Vec::new());
     };
-    let env_end = lines
-        .iter()
-        .enumerate()
-        .skip(env_start + 1)
-        .find_map(|(index, line)| is_table_header(content_of(line)).then_some(index))
-        .unwrap_or(lines.len());
     let eol = file_eol(&lines);
 
-    // (start, end, replacement-lines) spans over `lines`, spliced
-    // back-to-front below so earlier spans keep their indices.
+    // (start, end, replacement-lines) spans over `lines`, in file order,
+    // reassembled by one forward pass below.
     let mut replacements: Vec<(usize, usize, Vec<String>)> = Vec::new();
     let mut updated = Vec::new();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
     let mut pending: Vec<usize> = Vec::new();
     for index in env_start + 1..env_end {
         let content = content_of(lines[index]);
@@ -58,49 +51,41 @@ pub fn refresh_comments(
         let Some(key) = key else {
             continue;
         };
-        let Some(seeded) = entries.iter().find(|seeded| seeded.entry.key == key) else {
+        // Uniqueness is file-wide when seeding writes a key; a hand-made
+        // duplicate is judged once, at its first site, like `merge` would.
+        if !seen.insert(key.clone()) {
+            continue;
+        }
+        let Some(seeded) = template_for(&key, entries, seeds.get(&key)) else {
             continue;
         };
-        let mut lo = 0;
-        let mut hi = block.len();
-        while lo < hi && content_of(lines[block[lo]]).trim().is_empty() {
-            lo += 1;
-        }
-        while hi > lo && content_of(lines[block[hi - 1]]).trim().is_empty() {
-            hi -= 1;
-        }
-        let current: Vec<String> = block[lo..hi]
+        let contents: Vec<String> = block
             .iter()
             .map(|&i| content_of(lines[i]).to_owned())
             .collect();
-        let incoming = trim_blank_edges(seeded.comment());
+        let current = trim_blank_edges(&contents);
+        let skipped = contents
+            .iter()
+            .take_while(|line| line.trim().is_empty())
+            .count();
+        let incoming = seeded.comment();
         if current == incoming {
-            // Adoption, not takeover: a record another owner holds — or a
-            // v1 import holding none — stays exactly as it is.
-            match seeds.get(&key) {
-                None => {
-                    seeds.insert(key, seeded.seed_record());
-                }
-                Some(existing) if existing.owner.as_deref() == Some(seeded.owner.as_str()) => {
-                    seeds.insert(key, seeded.seed_record());
-                }
-                Some(_) => {}
-            }
+            adopt(&key, seeded, current, seeds);
             continue;
         }
         // Only the recorded owner's template may rewrite, and only while
         // the on-disk text is provably what seeding last wrote.
         let permits = seeds.get(&key).is_some_and(|record| {
             record.owner.as_deref() == Some(seeded.owner.as_str())
-                && record.hash == comment_hash(&current)
+                && record.hash == comment_hash(current)
         });
         if !permits {
             continue;
         }
-        let (start, end) = match lo < hi {
-            true => (block[lo], block[hi - 1] + 1),
+        let (start, end) = match current.is_empty() {
             // No existing comment: insert directly above the assignment.
-            false => (index, index),
+            true => (index, index),
+            false => (block[skipped], block[skipped + current.len() - 1] + 1),
         };
         seeds.insert(key.clone(), seeded.seed_record());
         replacements.push((start, end, incoming.to_vec()));
@@ -112,11 +97,9 @@ pub fn refresh_comments(
     }
     // Reassemble: untouched lines re-emitted byte-for-byte, replaced
     // comment lines written in the file's own terminator.
-    let mut spans: Vec<(usize, usize, Vec<String>)> = replacements;
-    spans.sort_by_key(|(start, _, _)| *start);
     let mut out = String::with_capacity(original.len());
     let mut cursor = 0;
-    for (start, end, replacement) in spans {
+    for (start, end, replacement) in replacements {
         for line in &lines[cursor..start] {
             out.push_str(line);
         }
@@ -137,4 +120,52 @@ pub fn refresh_comments(
         out.push_str(line);
     }
     (out, updated)
+}
+
+/// The template that speaks for a key: the recorded owner's when several
+/// skills ship the key — declaration order must not shadow the ledger —
+/// else the first declaration.
+fn template_for<'a>(
+    key: &str,
+    entries: &'a [SeededEnv],
+    record: Option<&SettingsSeed>,
+) -> Option<&'a SeededEnv> {
+    let mut candidates = entries.iter().filter(|seeded| seeded.entry.key == key);
+    let first = candidates.next()?;
+    let Some(owner) = record.and_then(|record| record.owner.as_deref()) else {
+        return Some(first);
+    };
+    match first.owner == owner {
+        true => Some(first),
+        false => candidates
+            .find(|seeded| seeded.owner == owner)
+            .or(Some(first)),
+    }
+}
+
+/// Adoption, not takeover: a block already matching the template enters
+/// the ledger under this owner. Never over another owner's record; over a
+/// v1 import (no owner) only while the text is provably what v1 seeded;
+/// and never for an empty block — a bare key says nothing about who
+/// wrote it, and claiming it would let a later template revision write
+/// prose above a line the user typed.
+fn adopt(
+    key: &str,
+    seeded: &SeededEnv,
+    current: &[String],
+    seeds: &mut BTreeMap<String, SettingsSeed>,
+) {
+    if current.is_empty() {
+        return;
+    }
+    let claimable = match seeds.get(key) {
+        None => true,
+        Some(existing) => match existing.owner.as_deref() {
+            Some(owner) => owner == seeded.owner,
+            None => existing.hash == comment_hash(current),
+        },
+    };
+    if claimable {
+        seeds.insert(key.to_owned(), seeded.seed_record());
+    }
 }

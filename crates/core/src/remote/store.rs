@@ -52,14 +52,10 @@ pub fn repo_key(url: &str) -> String {
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .take(32)
         .collect();
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in url.bytes() {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
     format!(
-        "{}-{hash:016x}",
-        if base.is_empty() { "repo" } else { &base }
+        "{}-{}",
+        if base.is_empty() { "repo" } else { &base },
+        crate::hash::fnv1a_hex(url.as_bytes())
     )
 }
 

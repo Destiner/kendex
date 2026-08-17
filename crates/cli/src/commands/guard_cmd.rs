@@ -101,46 +101,51 @@ fn verdict(outcome: Result<Outcome, vstack_core::error::CoreError>) -> ExitCode 
     }
 }
 
+fn report(lines: &[String], code: u8) -> ExitCode {
+    for line in lines {
+        out(line);
+    }
+    ExitCode::from(code)
+}
+
+/// The commit-msg verdicts: the hook lane (which honors the check's
+/// enabled switch, like every hook lane) and the standalone verb. Both
+/// read the message before anything else — its path is relative to the
+/// invoker's directory, never the repo root.
+fn commit_msg(ctx: &GuardCtx, file: Option<&PathBuf>, hook_lane: bool) -> ExitCode {
+    let message = match read_message(file) {
+        Ok(message) => message,
+        Err(error) => {
+            out(&format!("error: commit-msg: {error}"));
+            return ExitCode::from(2);
+        }
+    };
+    if hook_lane {
+        let chain = guard::run_commit_msg(ctx, &message);
+        return report(&chain.lines, chain.exit_code());
+    }
+    verdict(
+        guard::settings::Policy::load(ctx, "guard")
+            .and_then(|policy| guard::commit_msg::run(&policy, &message)),
+    )
+}
+
 pub fn run(env: &Env, command: GuardCommand) -> Result<ExitCode, Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
     // Hook installs mutate repository state through the ordinary journaled
     // machinery; everything else is a read-only verdict over the index.
     match &command {
         GuardCommand::Install => {
-            let report = vstack_core::githooks::install(env, &std::env::current_dir()?)?;
-            for line in report.lines {
-                out(&line);
-            }
-            return Ok(ExitCode::SUCCESS);
+            let hooks = vstack_core::githooks::install(env, &cwd)?;
+            return Ok(report(&hooks.lines, 0));
         }
         GuardCommand::Uninstall => {
-            let report = vstack_core::githooks::uninstall(env, &std::env::current_dir()?)?;
-            for line in report.lines {
-                out(&line);
-            }
-            return Ok(ExitCode::SUCCESS);
+            let hooks = vstack_core::githooks::uninstall(env, &cwd)?;
+            return Ok(report(&hooks.lines, 0));
         }
         _ => {}
     }
-
-    // The message is read before the repository is even bound: the path is
-    // relative to the invoker's directory, never the repo root.
-    let message = match &command {
-        GuardCommand::Run { hook, message_file } if hook == "commit-msg" => {
-            Some(read_message(message_file.as_ref()))
-        }
-        GuardCommand::CommitMsg { file } => Some(read_message(file.as_ref())),
-        _ => None,
-    };
-    let message = match message {
-        Some(Ok(message)) => Some(message),
-        Some(Err(error)) => {
-            out(&format!("error: commit-msg: {error}"));
-            return Ok(ExitCode::from(2));
-        }
-        None => None,
-    };
-
-    let ctx = match GuardCtx::bind(&std::env::current_dir()?) {
+    let ctx = match GuardCtx::bind(&cwd) {
         Ok(ctx) => ctx,
         Err(error) => {
             out(&format!("error: {error}"));
@@ -150,17 +155,12 @@ pub fn run(env: &Env, command: GuardCommand) -> Result<ExitCode, Box<dyn std::er
     let policy = || guard::settings::Policy::load(&ctx, "guard");
 
     Ok(match command {
-        GuardCommand::Run { hook, .. } => match hook.as_str() {
+        GuardCommand::Run { hook, message_file } => match hook.as_str() {
             "pre-commit" => {
-                let report = guard::run_pre_commit(&ctx);
-                for line in &report.lines {
-                    out(line);
-                }
-                ExitCode::from(report.exit_code())
+                let chain = guard::run_pre_commit(&ctx);
+                report(&chain.lines, chain.exit_code())
             }
-            "commit-msg" => verdict(policy().and_then(|policy| {
-                guard::commit_msg::run(&ctx, &policy, message.as_deref().unwrap_or_default())
-            })),
+            "commit-msg" => commit_msg(&ctx, message_file.as_ref(), true),
             other => {
                 out(&format!(
                     "error: unknown hook '{other}' (pre-commit | commit-msg)"
@@ -185,16 +185,13 @@ pub fn run(env: &Env, command: GuardCommand) -> Result<ExitCode, Box<dyn std::er
         GuardCommand::SuppressionBan { update } => {
             verdict(policy().and_then(|policy| guard::suppression_ban::run(&ctx, &policy, update)))
         }
-        GuardCommand::CommitMsg { .. } => verdict(policy().and_then(|policy| {
-            guard::commit_msg::run(&ctx, &policy, message.as_deref().unwrap_or_default())
-        })),
+        GuardCommand::CommitMsg { file } => commit_msg(&ctx, file.as_ref(), false),
         GuardCommand::ImportV1 => {
-            let report = guard::import::run(&ctx)?;
-            for line in &report.lines {
-                out(line);
-            }
-            ExitCode::SUCCESS
+            let converted = guard::import::run(&ctx)?;
+            report(&converted.lines, 0)
         }
-        GuardCommand::Install | GuardCommand::Uninstall => unreachable!("handled above"),
+        GuardCommand::Install | GuardCommand::Uninstall => {
+            unreachable!("install and uninstall return before the repository is bound")
+        }
     })
 }

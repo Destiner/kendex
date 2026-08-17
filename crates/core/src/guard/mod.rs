@@ -10,6 +10,7 @@
 
 use crate::error::{CoreError, Result};
 
+pub mod baseline;
 pub mod byte_ceiling;
 pub mod commit_msg;
 mod ctx;
@@ -56,9 +57,9 @@ pub(crate) struct Lane<'a> {
     pub(crate) pathspecs: &'a [&'a str],
 }
 
-/// One banned shape, scanned over index content in two phases: the
-/// offending files (`-l -z`, so a path containing `:` cannot garble
-/// parsing), then the numbered hits per file. Binary files are skipped.
+/// One banned shape, scanned over index content in one pass: `-n -z`
+/// records are `path NUL line NUL content NL`, so a path carrying `:` or
+/// even a newline cannot garble parsing. Binary files are skipped.
 pub(crate) fn grep_lane(
     ctx: &GuardCtx,
     check: &str,
@@ -72,33 +73,49 @@ pub(crate) fn grep_lane(
         remedy,
         pathspecs,
     } = lane;
-    let mut args = vec!["grep", "--cached", "-lIzE", ere, "--"];
+    let mut args = vec!["grep", "--cached", "-nIzE", ere, "--"];
     args.extend_from_slice(pathspecs);
-    let files = ctx.git_grep(check, &args)?;
-    for file in files.split(|byte| *byte == 0) {
-        if file.is_empty() {
-            continue;
-        }
-        let Ok(file) = std::str::from_utf8(file) else {
+    let raw = ctx.git_grep(check, &args)?;
+    let mut rest = raw.as_slice();
+    while !rest.is_empty() {
+        let (path, after) = split_at_nul(check, rest)?;
+        let (line, after) = split_at_nul(check, after)?;
+        let newline = after
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .unwrap_or(after.len());
+        let (content, tail) = after.split_at(newline);
+        rest = tail.get(1..).unwrap_or(&[]);
+        let Ok(file) = std::str::from_utf8(path) else {
             return Err(guard_err(
                 check,
                 format!(
                     "a file containing a banned {label} has a non-UTF-8 path: {:?}",
-                    String::from_utf8_lossy(file)
+                    String::from_utf8_lossy(path)
                 ),
             ));
         };
         if excludes.is_excluded(file) {
             continue;
         }
-        let literal = format!(":(literal){file}");
-        let hits = ctx.git_ok(check, &["grep", "--cached", "-nIE", ere, "--", &literal])?;
-        for hit in String::from_utf8_lossy(&hits).lines() {
-            let location = hit.strip_prefix(file).unwrap_or(hit);
-            out.violation(format!("{check} FAIL {label}: {file}{location}"), remedy);
-        }
+        out.violation(
+            format!(
+                "{check} FAIL {label}: {file}:{}:{}",
+                String::from_utf8_lossy(line),
+                String::from_utf8_lossy(content)
+            ),
+            remedy,
+        );
     }
     Ok(())
+}
+
+fn split_at_nul<'a>(check: &str, bytes: &'a [u8]) -> Result<(&'a [u8], &'a [u8])> {
+    let nul = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .ok_or_else(|| guard_err(check, "unparseable match record from git grep"))?;
+    Ok((&bytes[..nul], &bytes[nul + 1..]))
 }
 
 /// The chain's fold: every step runs, then one verdict. `Err` from a step
@@ -184,6 +201,29 @@ pub fn run_pre_commit(ctx: &GuardCtx) -> ChainReport {
             .to_owned(),
     };
     report.lines.push(verdict);
+    report
+}
+
+/// The commit-msg hook lane: the conventional-commit gate over the message
+/// git handed the hook, honoring the same `[guards.commit-msg] enabled`
+/// switch every pre-commit check honors.
+pub fn run_commit_msg(ctx: &GuardCtx, message: &str) -> ChainReport {
+    let mut report = ChainReport::default();
+    let policy = match Policy::load(ctx, "commit-msg") {
+        Ok(policy) => policy,
+        Err(error) => {
+            report.errors += 1;
+            report.lines.push(format!("commit-msg: {error}"));
+            return report;
+        }
+    };
+    match policy.enabled("commit-msg") {
+        Ok(false) => report
+            .lines
+            .push("=== commit-msg: disabled — skipped".to_owned()),
+        Ok(true) => report.fold("commit-msg", commit_msg::run(&policy, message)),
+        Err(error) => report.fold("commit-msg", Err(error)),
+    }
     report
 }
 

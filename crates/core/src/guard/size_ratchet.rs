@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use crate::error::Result;
 
 use super::settings::{Policy, config_path};
-use super::{GuardCtx, Outcome, guard_err, patterns};
+use super::{GuardCtx, Outcome, baseline, guard_err, patterns};
 
 const CHECK: &str = "size-ratchet";
 
@@ -65,44 +65,16 @@ fn thresholds(policy: &Policy) -> Result<Thresholds> {
     Ok(Thresholds { default, classes })
 }
 
-/// Per-file line counts over every tracked text blob, one subprocess:
-/// `git grep -c` with a match-every-line pattern. Binary blobs are skipped
-/// (`-I`) — their growth is the byte-ceiling's question. A file the
-/// listing omits has no lines to gate.
-fn line_counts(ctx: &GuardCtx) -> Result<BTreeMap<String, u64>> {
-    let raw = ctx.git_grep(CHECK, &["grep", "--cached", "-cIzE", "^", "--"])?;
-    let mut counts = BTreeMap::new();
-    for record in raw.split(|byte| *byte == b'\n') {
-        if record.is_empty() {
-            continue;
-        }
-        let Some(nul) = record.iter().position(|byte| *byte == 0) else {
-            return Err(guard_err(CHECK, "unparseable count record from git grep"));
-        };
-        let (path, count) = record.split_at(nul);
-        let Ok(path) = std::str::from_utf8(path) else {
-            return Err(guard_err(
-                CHECK,
-                format!(
-                    "tracked path is not valid UTF-8 and cannot be represented in the baseline: {:?}",
-                    String::from_utf8_lossy(path)
-                ),
-            ));
-        };
-        if path.contains('\t') {
-            return Err(guard_err(
-                CHECK,
-                format!(
-                    "tracked path contains a tab, unrepresentable in the baseline TSV (exclude it to skip the gate): '{path}'"
-                ),
-            ));
-        }
-        let count: u64 = std::str::from_utf8(&count[1..])
-            .ok()
-            .and_then(|text| text.trim().parse().ok())
-            .ok_or_else(|| guard_err(CHECK, format!("unparseable line count for '{path}'")))?;
-        counts.insert(path.to_owned(), count);
-    }
+/// Per-file line counts over every tracked, non-excluded text blob: `git
+/// grep -c` with a match-every-line pattern, one subprocess. Binary blobs
+/// are skipped (`-I`) — their growth is the byte-ceiling's question. A
+/// path the baseline TSV cannot carry (a tab or newline in the name) is
+/// refused after excludes apply, so the refusal's own remedy — exclude it
+/// — works.
+fn line_counts(ctx: &GuardCtx, excludes: &patterns::Excludes) -> Result<BTreeMap<String, u64>> {
+    let mut counts = ctx.grep_counts(CHECK, "^", &[])?;
+    counts.retain(|path, _| !excludes.is_excluded(path));
+    baseline::assert_baseline_representable(CHECK, &counts)?;
     Ok(counts)
 }
 
@@ -154,37 +126,6 @@ fn evaluate(
     }
 }
 
-fn tighten(
-    baseline: &BTreeMap<String, u64>,
-    counts: &BTreeMap<String, u64>,
-    thresholds: &Thresholds,
-    out: &mut Outcome,
-) -> BTreeMap<String, u64> {
-    let mut updated = BTreeMap::new();
-    for (path, frozen) in baseline {
-        let Some(count) = counts.get(path) else {
-            out.say(format!("removed: {path} (row {frozen})"));
-            continue;
-        };
-        if *count <= thresholds.for_path(path) {
-            out.say(format!("removed: {path} (now at/under its threshold)"));
-            continue;
-        }
-        if count < frozen {
-            out.say(format!("tightened: {path} {frozen} -> {count}"));
-            updated.insert(path.clone(), *count);
-        } else {
-            if count > frozen {
-                out.say(format!(
-                    "kept (grew {count} > {frozen} — growth is a hand-edit, never --update): {path}"
-                ));
-            }
-            updated.insert(path.clone(), *frozen);
-        }
-    }
-    updated
-}
-
 pub fn run(ctx: &GuardCtx, policy: &Policy, mode: Mode) -> Result<Outcome> {
     let thresholds = thresholds(policy)?;
     let baseline_file = config_path(
@@ -196,9 +137,7 @@ pub fn run(ctx: &GuardCtx, policy: &Policy, mode: Mode) -> Result<Outcome> {
         &policy.string(CHECK, "excludes", "tools/size-ratchet-excludes")?,
     )?;
     let excludes = patterns::load_excludes(ctx, CHECK, &excludes_file)?;
-
-    let mut counts = line_counts(ctx)?;
-    counts.retain(|path, _| !excludes.is_excluded(path));
+    let counts = line_counts(ctx, &excludes)?;
 
     let mut out = Outcome::default();
     let target = ctx.root.join(&baseline_file);
@@ -219,7 +158,7 @@ pub fn run(ctx: &GuardCtx, policy: &Policy, mode: Mode) -> Result<Outcome> {
                 .filter(|(path, count)| **count > thresholds.for_path(path))
                 .map(|(path, count)| (path.clone(), *count))
                 .collect();
-            crate::fs::atomic_write(&target, &patterns::render_baseline(&seeded))?;
+            crate::fs::atomic_write(&target, &baseline::render_baseline(&seeded))?;
             out.say(format!(
                 "size-ratchet --seed: baseline written at {baseline_file} ({} row(s))",
                 seeded.len()
@@ -227,18 +166,18 @@ pub fn run(ctx: &GuardCtx, policy: &Policy, mode: Mode) -> Result<Outcome> {
             seeded
         }
         Mode::Update => {
-            let current = match target.is_file() {
-                true => patterns::parse_baseline(
-                    CHECK,
-                    &baseline_file,
-                    &std::fs::read_to_string(&target)
-                        .map_err(|e| crate::error::CoreError::io(&target, e))?,
-                )?,
-                false => BTreeMap::new(),
-            };
-            let updated = tighten(&current, &counts, &thresholds, &mut out);
+            let current = baseline::load_worktree_baseline(ctx, CHECK, &baseline_file)?;
+            let updated = baseline::tighten(
+                &current,
+                &counts,
+                |path, count| {
+                    (count <= thresholds.for_path(path))
+                        .then(|| "now at/under its threshold".to_owned())
+                },
+                &mut out,
+            );
             if target.is_file() || !updated.is_empty() {
-                crate::fs::atomic_write(&target, &patterns::render_baseline(&updated))?;
+                crate::fs::atomic_write(&target, &baseline::render_baseline(&updated))?;
                 out.say(format!(
                     "size-ratchet --update: baseline tightened at {baseline_file} ({} row(s))",
                     updated.len()
@@ -246,7 +185,7 @@ pub fn run(ctx: &GuardCtx, policy: &Policy, mode: Mode) -> Result<Outcome> {
             }
             updated
         }
-        Mode::Check => patterns::load_baseline(ctx, CHECK, &baseline_file)?,
+        Mode::Check => baseline::load_baseline(ctx, CHECK, &baseline_file)?,
     };
 
     evaluate(&counts, &baseline, &thresholds, &baseline_file, &mut out);

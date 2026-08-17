@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::error::{CoreError, Result};
+use crate::error::Result;
 
 use super::{GuardCtx, guard_err, patterns};
 
@@ -66,25 +66,15 @@ fn flat_strings(table: &toml::Table) -> BTreeMap<String, String> {
 /// v1 `SIZE_RATCHET_CLASSES` — `pattern=threshold;…` — as the ordered
 /// class array, dialect preserved as legacy-glob.
 fn classes_toml(raw: &str) -> Result<String> {
-    let mut rows = Vec::new();
-    for entry in raw.split(';').filter(|entry| !entry.trim().is_empty()) {
-        let (pattern, threshold) = entry.split_once('=').ok_or_else(|| {
-            guard_err(
-                CHECK,
-                format!("SIZE_RATCHET_CLASSES entry '{entry}' is not pattern=threshold"),
+    let rows: Vec<String> = super::settings::parse_class_entries(CHECK, raw)?
+        .into_iter()
+        .map(|(pattern, threshold)| {
+            format!(
+                "  {{ pattern = {}, threshold = {threshold} }},",
+                toml_string(&pattern)
             )
-        })?;
-        let threshold: u64 = threshold.trim().parse().map_err(|_| {
-            guard_err(
-                CHECK,
-                format!("SIZE_RATCHET_CLASSES threshold in '{entry}' is not a positive integer"),
-            )
-        })?;
-        rows.push(format!(
-            "  {{ pattern = {}, threshold = {threshold} }},",
-            toml_string(pattern.trim())
-        ));
-    }
+        })
+        .collect();
     Ok(format!("classes = [\n{}\n]\n", rows.join("\n")))
 }
 
@@ -195,7 +185,7 @@ fn convert_sections(
             _ => format!("{key} = {}\n", toml_string(value)),
         };
         if key == "excludes" {
-            excludes_files.push(value.clone());
+            excludes_files.push(super::settings::config_path(CHECK, value)?);
         }
         sections.entry(check).or_default().push(rendered);
         report
@@ -235,10 +225,7 @@ fn mark_excludes_imported(ctx: &GuardCtx, file: &str, report: &mut ImportReport)
         return Ok(());
     }
     let updated = format!("{}\n{text}", patterns::LEGACY_DIALECT_MARKER);
-    crate::fs::atomic_write(&path, &updated).map_err(|e| match e {
-        CoreError::Io { path, source } => CoreError::io(path, source),
-        other => other,
-    })?;
+    crate::fs::atomic_write(&path, &updated)?;
     report.changed = true;
     report.lines.push(format!(
         "{file}: marked as imported — its patterns keep v1's legacy-glob semantics"

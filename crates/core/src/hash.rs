@@ -170,6 +170,18 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
     out
 }
 
+/// 64-bit FNV-1a as a 16-hex-digit string — the one implementation behind
+/// the scope-lock keys, the repo cache keys, and the settings-seed ledger.
+/// v1 used the same constants, which is what lets imported ledgers verify.
+pub fn fnv1a_hex(bytes: &[u8]) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

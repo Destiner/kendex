@@ -343,32 +343,15 @@ fn convert_lock(
 }
 
 /// The v1 seeded-comment ledger, carried across hash-for-hash — same
-/// algorithm, so migrated repos keep refreshing instead of re-freezing.
-/// v1 named no owner per key. Only skills seed settings keys, so a scope
-/// whose lock holds exactly one installed skill attributes every record to
-/// it; any other scope is contested or unattributable and imports
-/// legacy-owned — preserved, verified, never rewritten.
+/// algorithm, so migrated repos keep verifying instead of re-freezing.
+/// v1 named no owner per key, and nothing in a v1 lock proves which skill
+/// wrote a comment (the seeder may be long uninstalled), so every record
+/// imports legacy-owned: preserved and verified here, and adopted by a
+/// skill's template only when the on-disk comment is provably what v1
+/// seeded and matches that template word for word.
 fn convert_settings_seeds(value: &serde_json::Value, lock: &mut Lock, notes: &mut Vec<String>) {
     let Some(seeds) = value.get("settings_seeds").and_then(|s| s.as_object()) else {
         return;
-    };
-    if seeds.is_empty() {
-        return;
-    }
-    let skills: std::collections::BTreeSet<&str> = value
-        .get("entries")
-        .and_then(|e| e.as_object())
-        .map(|entries| {
-            entries
-                .iter()
-                .filter(|(_, entry)| entry.get("kind").and_then(|k| k.as_str()) == Some("skill"))
-                .map(|(name, _)| name.as_str())
-                .collect()
-        })
-        .unwrap_or_default();
-    let owner = match skills.len() {
-        1 => skills.first().map(|name| (*name).to_owned()),
-        _ => None,
     };
     let mut imported = 0usize;
     for (key, hash) in seeds {
@@ -379,15 +362,15 @@ fn convert_settings_seeds(value: &serde_json::Value, lock: &mut Lock, notes: &mu
         lock.settings_seeds.insert(
             key.clone(),
             crate::lock::SettingsSeed {
-                owner: owner.clone(),
+                owner: None,
                 hash: hash.to_owned(),
             },
         );
         imported += 1;
     }
-    if owner.is_none() && imported > 0 {
+    if imported > 0 {
         notes.push(format!(
-            "imported {imported} seeded settings comment record(s) without an unambiguous owning skill — their comments are preserved and never auto-refreshed"
+            "imported {imported} seeded settings comment record(s); each comment stays as it is until a skill's template matches it word for word"
         ));
     }
 }

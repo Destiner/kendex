@@ -222,27 +222,25 @@ pub(super) fn plan_settings_seed(
         return Ok(());
     }
     let current = crate::fs::read_if_exists(&path)?;
-    let (refreshed, updated) = match current.as_deref() {
-        Some(text) => crate::settings_seed::refresh_comments(
-            text,
-            &state.settings_env,
-            &mut new_lock.settings_seeds,
-        ),
-        None => (String::new(), Vec::new()),
-    };
-    let merged = crate::settings_seed::merge(
-        current.as_ref().map(|_| refreshed.as_str()),
-        &state.settings_env,
-    );
-    let (text, added) = match merged {
-        Some((text, added)) => (text, added),
-        None if !updated.is_empty() => (refreshed, Vec::new()),
-        None => return Ok(()),
+    let (text, added, updated) = match current.as_deref() {
+        None => match crate::settings_seed::merge(None, &state.settings_env) {
+            Some((text, added)) => (text, added, Vec::new()),
+            None => return Ok(()),
+        },
+        Some(original) => {
+            let (refreshed, updated) = crate::settings_seed::refresh_comments(
+                original,
+                &state.settings_env,
+                &mut new_lock.settings_seeds,
+            );
+            match crate::settings_seed::merge(Some(&refreshed), &state.settings_env) {
+                Some((text, added)) => (text, added, updated),
+                None if !updated.is_empty() => (refreshed, Vec::new(), updated),
+                None => return Ok(()),
+            }
+        }
     };
     crate::settings_seed::record_seeds(&mut new_lock.settings_seeds, &state.settings_env, &added);
-    if current.as_deref() == Some(text.as_str()) {
-        return Ok(());
-    }
     let mut said = Vec::new();
     if !added.is_empty() {
         said.push(format!("seed {}", added.join(", ")));

@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::apply::{Op, Plan, PlannedOp, Pre};
+use crate::apply::{Op, PlannedOp, Pre};
 use crate::env::Env;
 use crate::error::{CoreError, Result};
 use crate::model::Scope;
@@ -32,14 +32,13 @@ pub const RECEIPT_FILE: &str = "receipt.json";
 pub const V1_SENTINEL: &str = "# vstack-guards-hook";
 
 fn err(message: impl Into<String>) -> CoreError {
-    CoreError::Guard {
-        check: "hooks".to_owned(),
-        message: message.into(),
-    }
+    crate::guard::guard_err("hooks", message)
 }
 
 /// One repository, resolved: the worktree that invoked us and the common
-/// dir every linked worktree shares.
+/// dir every linked worktree shares. Both canonical, because leases and
+/// the registry compare paths as text: one worktree reached through a
+/// symlink must never read as two, or as none.
 pub struct Repo {
     pub worktree: PathBuf,
     pub common_dir: PathBuf,
@@ -57,8 +56,17 @@ impl Repo {
         }
         let text = String::from_utf8_lossy(&output.stdout);
         let mut lines = text.lines();
-        let worktree = PathBuf::from(lines.next().unwrap_or_default());
-        let common = PathBuf::from(lines.next().unwrap_or_default());
+        let (Some(worktree), Some(common)) = (lines.next(), lines.next()) else {
+            return Err(err(format!(
+                "git named no working tree for {} — hooks install into a checkout, not a bare repository",
+                dir.display()
+            )));
+        };
+        let worktree = PathBuf::from(worktree);
+        let worktree = worktree
+            .canonicalize()
+            .map_err(|e| CoreError::io(&worktree, e))?;
+        let common = PathBuf::from(common);
         let common_dir = match common.is_absolute() {
             true => common,
             false => worktree.join(common),
@@ -70,6 +78,12 @@ impl Repo {
             worktree,
             common_dir,
         })
+    }
+
+    fn scope(&self) -> Scope {
+        Scope::Project {
+            root: self.worktree.clone(),
+        }
     }
 
     pub fn hooks_dir(&self) -> PathBuf {
@@ -134,13 +148,23 @@ pub struct HooksReport {
 }
 
 /// Install (or repair) the owned hooks directory for the repository at
-/// `dir`, recording this worktree's lease. Every refusal is checked first
-/// (see [`refusals`]); the mutation is one journaled common-state apply.
+/// `dir`, recording this worktree's lease. The plan — refusals included
+/// (see [`refusals`]) — is built under the common lock, so the directory
+/// shape the refusals observe is the shape the writes land in.
 pub fn install(env: &Env, dir: &Path) -> Result<HooksReport> {
     let repo = Repo::at(dir)?;
-    crate::apply::recover_common(env, &repo.common_dir)?;
-    let receipt = load_receipt(&repo)?;
-    refusals::check_install(&repo, receipt.as_ref())?;
+    let (_, hooks_path) =
+        crate::apply::execute_common(env, &repo.scope(), &repo.common_dir, || plan_install(&repo))?;
+    Ok(HooksReport {
+        lines: vec![format!(
+            "commit checks installed: core.hooksPath -> {hooks_path} (covers every linked worktree)"
+        )],
+    })
+}
+
+fn plan_install(repo: &Repo) -> Result<(Vec<PlannedOp>, String)> {
+    let receipt = load_receipt(repo)?;
+    refusals::check_install(repo, receipt.as_ref())?;
 
     let hooks_dir = repo.hooks_dir();
     let hooks_path = hooks_dir.display().to_string();
@@ -193,18 +217,7 @@ pub fn install(env: &Env, dir: &Path) -> Result<HooksReport> {
             },
         });
     }
-    let plan = Plan {
-        scope: Scope::Project {
-            root: repo.worktree.clone(),
-        },
-        ops,
-    };
-    crate::apply::execute_common(env, &plan, &repo.common_dir)?;
-    Ok(HooksReport {
-        lines: vec![format!(
-            "commit checks installed: core.hooksPath -> {hooks_path} (covers every linked worktree)"
-        )],
-    })
+    Ok((ops, hooks_path))
 }
 
 /// Release this worktree's lease; disarm only when the last one goes.
@@ -214,11 +227,22 @@ pub fn install(env: &Env, dir: &Path) -> Result<HooksReport> {
 /// uninstall into a refusal, never a half-removal.
 pub fn uninstall(env: &Env, dir: &Path) -> Result<HooksReport> {
     let repo = Repo::at(dir)?;
-    crate::apply::recover_common(env, &repo.common_dir)?;
-    let Some(receipt) = load_receipt(&repo)? else {
-        return Ok(HooksReport {
-            lines: vec!["no vstack hooks are installed in this repository".into()],
-        });
+    let (_, mut lines) =
+        crate::apply::execute_common(env, &repo.scope(), &repo.common_dir, || {
+            plan_uninstall(&repo)
+        })?;
+    // What is effective after decides what the user sees next.
+    let effective = effective_hooks_path(&repo.worktree)?;
+    lines.push(match effective {
+        Some(path) => format!("effective core.hooksPath is now {path}"),
+        None => "no core.hooksPath is in effect; git's own hooks directory applies".into(),
+    });
+    Ok(HooksReport { lines })
+}
+
+fn plan_uninstall(repo: &Repo) -> Result<(Vec<PlannedOp>, Vec<String>)> {
+    let Some(receipt) = load_receipt(repo)? else {
+        return plan_orphan_cleanup(repo);
     };
     let registry: BTreeSet<String> = repo
         .worktrees()?
@@ -248,28 +272,22 @@ pub fn uninstall(env: &Env, dir: &Path) -> Result<HooksReport> {
             ..receipt
         };
         let receipt_path = repo.receipt_path();
-        let plan = Plan {
-            scope: Scope::Project {
-                root: repo.worktree.clone(),
+        let ops = vec![PlannedOp {
+            description: "release this worktree's lease".into(),
+            op: Op::WriteFile {
+                pre: Pre::observed(&receipt_path)?,
+                path: receipt_path,
+                bytes: render_receipt(&updated)?,
             },
-            ops: vec![PlannedOp {
-                description: "release this worktree's lease".into(),
-                op: Op::WriteFile {
-                    pre: Pre::observed(&receipt_path)?,
-                    path: receipt_path,
-                    bytes: render_receipt(&updated)?,
-                },
-            }],
-        };
-        crate::apply::execute_common(env, &plan, &repo.common_dir)?;
+        }];
         lines.push(format!(
             "lease released — the commit checks stay armed for {} other worktree(s)",
             leases.len()
         ));
-        return Ok(HooksReport { lines });
+        return Ok((ops, lines));
     }
 
-    refusals::check_uninstall(&repo, &receipt)?;
+    refusals::check_uninstall(repo, &receipt)?;
     let hooks_dir = repo.hooks_dir();
     let mut ops = vec![PlannedOp {
         description: "remove the owned hooks directory".into(),
@@ -298,20 +316,40 @@ pub fn uninstall(env: &Env, dir: &Path) -> Result<HooksReport> {
             current
         ));
     }
-    let plan = Plan {
-        scope: Scope::Project {
-            root: repo.worktree.clone(),
+    Ok((ops, lines))
+}
+
+/// No receipt, but `core.hooksPath` still names the owned directory and
+/// that directory is gone: someone removed the files by hand and left git
+/// resolving hooks from nowhere — which silently runs no hook at all,
+/// including the user's own. The config value is provably vstack's, so
+/// taking it back is still receipt-scoped removal.
+fn plan_orphan_cleanup(repo: &Repo) -> Result<(Vec<PlannedOp>, Vec<String>)> {
+    let hooks_dir = repo.hooks_dir();
+    let current = crate::apply::read_git_config(&repo.config_file(), "core.hooksPath")?;
+    if hooks_dir.exists() || current.as_deref() != Some(hooks_dir.display().to_string().as_str()) {
+        return Ok((
+            Vec::new(),
+            vec!["no vstack hooks are installed in this repository".into()],
+        ));
+    }
+    let ops = vec![PlannedOp {
+        description: "unset the core.hooksPath left behind by a hand-deleted hooks directory"
+            .into(),
+        op: Op::GitConfigSwap {
+            file: repo.config_file(),
+            key: "core.hooksPath".into(),
+            expected: current,
+            value: None,
         },
+    }];
+    Ok((
         ops,
-    };
-    crate::apply::execute_common(env, &plan, &repo.common_dir)?;
-    // What is effective after decides what the user sees next.
-    let effective = effective_hooks_path(&repo.worktree)?;
-    lines.push(match effective {
-        Some(path) => format!("effective core.hooksPath is now {path}"),
-        None => "no core.hooksPath is in effect; git's own hooks directory applies".into(),
-    });
-    Ok(HooksReport { lines })
+        vec![format!(
+            "the owned hooks directory {} was already gone; core.hooksPath still pointed at it and was unset",
+            hooks_dir.display()
+        )],
+    ))
 }
 
 /// The `core.hooksPath` a worktree actually resolves, git's own answer.

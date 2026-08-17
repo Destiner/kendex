@@ -114,6 +114,39 @@ fn import_v1_converts_settings_and_marks_excludes_imported() {
     );
 }
 
+/// A settings-supplied excludes path is validated like every configured
+/// path: the importer must never mark — rewrite — a file outside the
+/// repository because a cloned settings file pointed at one.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn import_v1_refuses_an_excludes_path_that_escapes_the_repository() {
+    let r = repo();
+    let outside = r.root.parent().unwrap().join("outside-excludes");
+    std::fs::write(
+        &outside, "*	all
+",
+    )
+    .unwrap();
+    stage(
+        &r,
+        "vstack.settings.toml",
+        "[env]\nGROWTH_GUARDS_TODO_EXCLUDES = \"../outside-excludes\"\n",
+    );
+    let error = guard::import::run(&ctx(&r)).unwrap_err();
+    assert!(error.to_string().contains("escapes"), "{error}");
+    assert_eq!(
+        std::fs::read_to_string(&outside).unwrap(),
+        "*\tall\n",
+        "nothing outside the repository was touched"
+    );
+    assert!(
+        !std::fs::read_to_string(r.root.join("vstack.settings.toml"))
+            .unwrap()
+            .contains("[guards"),
+        "a refused import converts nothing"
+    );
+}
+
 /// The differential test settled decision 7 asks for: the legacy-glob
 /// dialect against v1's own matcher — `/bin/sh` case globbing — over a
 /// synthetic corpus, not just today's trees.

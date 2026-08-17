@@ -136,8 +136,11 @@ fn lock_entries_split_per_harness_and_extras_are_skipped() {
     );
 }
 
+/// v1 named no owner, and one installed skill proves nothing about who
+/// seeded a key — the seeder may be long gone — so no import guesses an
+/// owner; a template earns the record later by matching the comment.
 #[test]
-fn settings_seeds_import_with_owner_when_one_skill_is_installed() {
+fn settings_seeds_import_legacy_owned_even_with_one_skill_installed() {
     let lock = r#"{
         "version": 1,
         "entries": {
@@ -148,11 +151,32 @@ fn settings_seeds_import_with_owner_when_one_skill_is_installed() {
     }"#;
     let outcome = convert(None, Some(lock)).unwrap();
     let record = outcome.lock.settings_seeds.get("REVIEWERS").unwrap();
-    // One installed skill: every seeded key is unambiguously its.
-    assert_eq!(record.owner.as_deref(), Some("decider"));
-    // Hash-for-hash: same algorithm, so migrated repos keep refreshing
+    assert_eq!(record.owner, None);
+    // Hash-for-hash: same algorithm, so migrated repos keep verifying
     // instead of re-freezing.
     assert_eq!(record.hash, "cbf29ce484222325");
+}
+
+/// A record whose hash is not a string cannot verify anything: skipped
+/// with a note, never imported as a record that would freeze the key.
+#[test]
+fn malformed_settings_seed_records_are_skipped_with_a_note() {
+    let lock = r#"{
+        "version": 1,
+        "entries": {},
+        "settings_seeds": { "REVIEWERS": 12, "DEPTH": "cbf29ce484222325" }
+    }"#;
+    let outcome = convert(None, Some(lock)).unwrap();
+    assert!(!outcome.lock.settings_seeds.contains_key("REVIEWERS"));
+    assert!(outcome.lock.settings_seeds.contains_key("DEPTH"));
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.contains("malformed settings seed record 'REVIEWERS'")),
+        "{:?}",
+        outcome.notes
+    );
 }
 
 #[test]
@@ -174,7 +198,7 @@ fn contested_settings_seeds_import_legacy_owned() {
         outcome
             .notes
             .iter()
-            .any(|n| n.contains("never auto-refreshed")),
+            .any(|n| n.contains("stays as it is until a skill's template matches it")),
         "{:?}",
         outcome.notes
     );

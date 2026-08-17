@@ -1,5 +1,5 @@
-//! Exclusion lists, path classes, and baseline TSVs — the policy files the
-//! guards read, all index-aware through [`super::settings::policy_content`].
+//! Exclusion lists and path classes — pattern policy the guards read,
+//! index-aware through [`super::settings::policy_content`].
 //!
 //! Two pattern dialects, never guessed between. New rules use
 //! gitignore-style matching (`*` and `?` stop at `/`, `**` crosses).
@@ -8,19 +8,11 @@
 //! imported where they live — a "same file, new matcher" conversion would
 //! silently change what is excluded.
 
-use std::collections::BTreeMap;
-
-use crate::error::{CoreError, Result};
+use crate::error::Result;
 
 use super::ctx::GuardCtx;
+use super::guard_err;
 use super::settings::policy_content;
-
-fn err(check: &str, message: impl Into<String>) -> CoreError {
-    CoreError::Guard {
-        check: check.to_owned(),
-        message: message.into(),
-    }
-}
 
 /// The marker line the importer writes at the top of a v1 excludes file.
 pub const LEGACY_DIALECT_MARKER: &str = "# vstack-guard-dialect: legacy-glob";
@@ -31,6 +23,22 @@ pub enum Dialect {
     LegacyGlob,
 }
 
+/// Where the character class opening at `open` closes: the index of its
+/// `]`, past an optional negation and past a `]` in first position, which
+/// sh reads as a member rather than the close. `None` = unclosed. The
+/// validator and the matcher both read classes through this, so a pattern
+/// accepted at load can never be parsed differently at match time.
+fn class_end(chars: &[char], open: usize) -> Option<usize> {
+    let mut end = open + 1;
+    if matches!(chars.get(end), Some('!') | Some('^')) {
+        end += 1;
+    }
+    if chars.get(end) == Some(&']') {
+        end += 1;
+    }
+    (end..chars.len()).find(|&index| chars[index] == ']')
+}
+
 /// A pattern's shape-check for the small legacy dialect: `*`, `?`, `[…]`
 /// classes, everything else literal. Anything the dialect does not define
 /// is a refusal, never a guess.
@@ -39,22 +47,12 @@ fn validate_pattern(check: &str, pattern: &str) -> Result<()> {
     let mut index = 0;
     while index < chars.len() {
         if chars[index] == '[' {
-            let mut end = index + 1;
-            if end < chars.len() && (chars[end] == '!' || chars[end] == '^') {
-                end += 1;
-            }
-            if end < chars.len() && chars[end] == ']' {
-                end += 1;
-            }
-            while end < chars.len() && chars[end] != ']' {
-                end += 1;
-            }
-            if end >= chars.len() {
-                return Err(err(
+            let Some(end) = class_end(&chars, index) else {
+                return Err(guard_err(
                     check,
                     format!("pattern '{pattern}' has an unclosed character class"),
                 ));
-            }
+            };
             index = end;
         }
         index += 1;
@@ -125,13 +123,9 @@ fn glob(pattern: &[char], path: &[char], dialect: Dialect) -> bool {
             glob(&pattern[1..], &path[1..], dialect)
         }
         '[' => {
-            let close = pattern[1..]
-                .iter()
-                .position(|c| *c == ']')
-                .map(|offset| offset + 1);
-            // An unclosed class was refused at load; treat defensively as
-            // a literal '[' if it ever gets here.
-            let Some(close) = close.filter(|close| *close > 1) else {
+            // An unclosed class was refused at load; a literal '[' is the
+            // only reading left if one ever gets here.
+            let Some(close) = class_end(pattern, 0) else {
                 return !path.is_empty()
                     && path[0] == '['
                     && glob(&pattern[1..], &path[1..], dialect);
@@ -190,7 +184,7 @@ pub fn load_excludes(ctx: &GuardCtx, check: &str, file: &str) -> Result<Excludes
             continue;
         }
         let Some((pattern, reason)) = line.split_once('\t') else {
-            return Err(err(
+            return Err(guard_err(
                 check,
                 format!(
                     "{file}:{}: expected 'pattern<TAB>reason' (every exclusion carries its justification)",
@@ -199,7 +193,7 @@ pub fn load_excludes(ctx: &GuardCtx, check: &str, file: &str) -> Result<Excludes
             ));
         };
         if pattern.is_empty() || reason.trim().is_empty() {
-            return Err(err(
+            return Err(guard_err(
                 check,
                 format!(
                     "{file}:{}: expected 'pattern<TAB>reason' (every exclusion carries its justification)",
@@ -211,66 +205,6 @@ pub fn load_excludes(ctx: &GuardCtx, check: &str, file: &str) -> Result<Excludes
         excludes.patterns.push(pattern.to_owned());
     }
     Ok(excludes)
-}
-
-/// A tighten-only baseline: `path<TAB>count` rows, byte-sorted, unique,
-/// positive counts — hygiene enforced, never repaired. Read through the
-/// index like every other policy file. A missing file is an empty
-/// baseline.
-pub fn load_baseline(ctx: &GuardCtx, check: &str, file: &str) -> Result<BTreeMap<String, u64>> {
-    let Some(bytes) = policy_content(ctx, check, file)? else {
-        return Ok(BTreeMap::new());
-    };
-    parse_baseline(check, file, &String::from_utf8_lossy(&bytes))
-}
-
-pub fn parse_baseline(check: &str, file: &str, text: &str) -> Result<BTreeMap<String, u64>> {
-    let mut rows = BTreeMap::new();
-    let mut previous: Option<String> = None;
-    for (number, line) in text.lines().enumerate() {
-        if line.is_empty() {
-            continue;
-        }
-        let malformed = || {
-            err(
-                check,
-                format!(
-                    "{file}:{}: malformed row (expected 'path<TAB>count' with a positive count)",
-                    number + 1
-                ),
-            )
-        };
-        let (path, count) = line.split_once('\t').ok_or_else(malformed)?;
-        let count: u64 = count.parse().map_err(|_| malformed())?;
-        if count == 0 || path.is_empty() {
-            return Err(malformed());
-        }
-        if let Some(previous) = &previous
-            && path <= previous.as_str()
-        {
-            return Err(err(
-                check,
-                format!(
-                    "{file}: rows must be byte-sorted and unique ('{path}' after '{previous}')"
-                ),
-            ));
-        }
-        previous = Some(path.to_owned());
-        rows.insert(path.to_owned(), count);
-    }
-    Ok(rows)
-}
-
-/// A baseline serialized back out, in the shape `load_baseline` demands.
-pub fn render_baseline(rows: &BTreeMap<String, u64>) -> String {
-    let mut out = String::new();
-    for (path, count) in rows {
-        out.push_str(path);
-        out.push('\t');
-        out.push_str(&count.to_string());
-        out.push('\n');
-    }
-    out
 }
 
 #[cfg(test)]
@@ -298,23 +232,24 @@ mod tests {
         assert!(validate_pattern("t", "a[bc").is_err());
         assert!(validate_pattern("t", "a[bc]").is_ok());
         assert!(validate_pattern("t", "a[]]").is_ok());
+        assert!(validate_pattern("t", "a[!]]").is_ok());
+        assert!(
+            validate_pattern("t", "a[]").is_err(),
+            "the ] is a member, not the close"
+        );
     }
 
+    /// sh reads a `]` in first position as a member of the class, and the
+    /// validator accepts it as one — so the matcher must read it the same
+    /// way, or a pattern accepted at load matches the wrong strings.
     #[test]
-    fn baseline_hygiene_is_enforced_not_repaired() {
-        assert!(parse_baseline("t", "b.tsv", "a\t3\nb\t1\n").is_ok());
-        assert!(
-            parse_baseline("t", "b.tsv", "b\t3\na\t1\n").is_err(),
-            "unsorted"
-        );
-        assert!(
-            parse_baseline("t", "b.tsv", "a\t3\na\t1\n").is_err(),
-            "duplicate"
-        );
-        assert!(
-            parse_baseline("t", "b.tsv", "a\t0\n").is_err(),
-            "zero count"
-        );
-        assert!(parse_baseline("t", "b.tsv", "a 3\n").is_err(), "no tab");
+    fn a_leading_close_bracket_is_a_class_member() {
+        assert!(matches("a[]]", "a]", Dialect::LegacyGlob));
+        assert!(!matches("a[]]", "a[", Dialect::LegacyGlob));
+        assert!(!matches("a[]]", "a[]]", Dialect::LegacyGlob));
+        assert!(matches("[!]]x", "ax", Dialect::LegacyGlob));
+        assert!(!matches("[!]]x", "]x", Dialect::LegacyGlob));
+        assert!(matches("a[]b]", "ab", Dialect::LegacyGlob));
+        assert!(matches("a[]b]", "a]", Dialect::LegacyGlob));
     }
 }

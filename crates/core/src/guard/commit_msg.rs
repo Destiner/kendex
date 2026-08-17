@@ -6,7 +6,7 @@
 use crate::error::Result;
 
 use super::settings::Policy;
-use super::{GuardCtx, Outcome, guard_err};
+use super::{Outcome, guard_err};
 
 const CHECK: &str = "commit-msg";
 const DEFAULT_TYPES: [&str; 11] = [
@@ -73,7 +73,7 @@ fn ordered(types: &[String]) -> Vec<String> {
     sorted
 }
 
-pub fn run(ctx: &GuardCtx, policy: &Policy, message: &str) -> Result<Outcome> {
+pub fn run(policy: &Policy, message: &str) -> Result<Outcome> {
     let types = policy.string_list(CHECK, "types", &DEFAULT_TYPES)?;
     for kind in &types {
         if kind.is_empty()
@@ -93,8 +93,6 @@ pub fn run(ctx: &GuardCtx, policy: &Policy, message: &str) -> Result<Outcome> {
             "types resolved empty — at least one type is required",
         ));
     }
-    let _ = ctx;
-
     let mut out = Outcome::default();
     let Some(header) = header(message) else {
         out.say("commit-msg FAIL empty commit message (no non-comment content)");

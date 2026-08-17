@@ -3,10 +3,13 @@
 //! here — NUL-delimited raw bytes end to end, so a path the configuration
 //! format cannot represent is a loud refusal, never a silently split row.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::error::{CoreError, Result};
 use crate::process::Hardened;
+
+use super::guard_err;
 
 /// One guard run's repository binding.
 #[derive(Debug)]
@@ -19,37 +22,6 @@ pub struct GuardCtx {
     pub index_file: Option<PathBuf>,
 }
 
-/// One index entry, path kept as raw bytes until a consumer proves it can
-/// represent it.
-#[derive(Debug)]
-pub struct IndexEntry {
-    pub mode: String,
-    pub sha: String,
-    pub stage: u8,
-    pub path: Vec<u8>,
-}
-
-impl IndexEntry {
-    /// The path as UTF-8, or the refusal naming why the guard cannot judge
-    /// it — a name the report and the baseline format cannot carry.
-    pub fn path_str(&self, check: &str) -> Result<&str> {
-        std::str::from_utf8(&self.path).map_err(|_| CoreError::Guard {
-            check: check.to_owned(),
-            message: format!(
-                "tracked path is not valid UTF-8 and cannot be represented in reports or baselines: {:?}",
-                String::from_utf8_lossy(&self.path)
-            ),
-        })
-    }
-}
-
-fn err(check: &str, message: impl Into<String>) -> CoreError {
-    CoreError::Guard {
-        check: check.to_owned(),
-        message: message.into(),
-    }
-}
-
 impl GuardCtx {
     /// Bind to the repository containing `dir`, capturing the environment's
     /// `GIT_INDEX_FILE` before anything else can scrub or outrun it. The
@@ -59,7 +31,7 @@ impl GuardCtx {
     pub fn bind(dir: &Path) -> Result<GuardCtx> {
         let output = Hardened::git(&["rev-parse", "--show-toplevel"], Some(dir)).run()?;
         if !output.status.success() {
-            return Err(err("guard", "not inside a git repository"));
+            return Err(guard_err("guard", "not inside a git repository"));
         }
         let root = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim().to_owned());
         let index_file = match std::env::var_os("GIT_INDEX_FILE") {
@@ -73,7 +45,7 @@ impl GuardCtx {
                         .join(path),
                 };
                 Some(absolute.canonicalize().map_err(|_| {
-                    err(
+                    guard_err(
                         "guard",
                         format!(
                             "GIT_INDEX_FILE names {}, which does not exist — refusing to judge a different index",
@@ -99,7 +71,7 @@ impl GuardCtx {
     pub fn git_ok(&self, check: &str, args: &[&str]) -> Result<Vec<u8>> {
         let output = self.git(args).run()?;
         if !output.status.success() {
-            return Err(err(
+            return Err(guard_err(
                 check,
                 format!(
                     "git {} failed: {}",
@@ -117,7 +89,7 @@ impl GuardCtx {
         let output = self.git(args).run()?;
         match output.status.code() {
             Some(0) | Some(1) => Ok(output.stdout),
-            _ => Err(err(
+            _ => Err(guard_err(
                 check,
                 format!(
                     "git {} failed collecting matches: {}",
@@ -137,7 +109,7 @@ impl GuardCtx {
     pub fn assert_judgeable(&self, check: &str) -> Result<()> {
         let unmerged = self.git_ok(check, &["ls-files", "-uz"])?;
         if !unmerged.is_empty() {
-            return Err(err(
+            return Err(guard_err(
                 check,
                 "the index holds unmerged entries — resolve the conflicts before committing",
             ));
@@ -164,7 +136,7 @@ impl GuardCtx {
             }
             if fields.next() == Some(".A") {
                 let path = record.rsplit(' ').next().unwrap_or("");
-                return Err(err(
+                return Err(guard_err(
                     check,
                     format!(
                         "intent-to-add entry for '{path}' has no staged content to judge — stage it or unstage it"
@@ -175,57 +147,18 @@ impl GuardCtx {
         Ok(())
     }
 
-    /// Every index entry, paths as raw bytes.
-    pub fn index_entries(&self, check: &str) -> Result<Vec<IndexEntry>> {
-        let raw = self.git_ok(check, &["ls-files", "-sz"])?;
-        let mut entries = Vec::new();
-        for record in raw.split(|byte| *byte == 0) {
-            if record.is_empty() {
-                continue;
-            }
-            // "<mode> <sha> <stage>\t<path>"
-            let tab = record
-                .iter()
-                .position(|byte| *byte == b'\t')
-                .ok_or_else(|| err(check, "unparseable ls-files record"))?;
-            let (meta, path) = record.split_at(tab);
-            let meta =
-                std::str::from_utf8(meta).map_err(|_| err(check, "unparseable ls-files record"))?;
-            let mut fields = meta.split(' ');
-            let (Some(mode), Some(sha), Some(stage)) =
-                (fields.next(), fields.next(), fields.next())
-            else {
-                return Err(err(check, "unparseable ls-files record"));
-            };
-            let entry = IndexEntry {
-                mode: mode.to_owned(),
-                sha: sha.to_owned(),
-                stage: stage.parse().unwrap_or(9),
-                path: path[1..].to_vec(),
-            };
-            if entry.stage != 0 {
-                return Err(err(
-                    check,
-                    format!(
-                        "unmerged index entry for '{}' — resolve the conflict before committing",
-                        String::from_utf8_lossy(&entry.path)
-                    ),
-                ));
-            }
-            entries.push(entry);
-        }
-        Ok(entries)
-    }
-
     /// One blob's size, from the object store — the bytes that enter
     /// history. A blob that cannot be read is exit 2: its size is
     /// unmeasurable, and refusing beats skipping it.
     pub fn blob_size(&self, check: &str, sha: &str, path_shown: &str) -> Result<u64> {
         if !sha.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(err(check, format!("invalid blob id for '{path_shown}'")));
+            return Err(guard_err(
+                check,
+                format!("invalid blob id for '{path_shown}'"),
+            ));
         }
         let out = self.git_ok(check, &["cat-file", "-s", sha]).map_err(|_| {
-            err(
+            guard_err(
                 check,
                 format!("cannot read blob {sha} for '{path_shown}' — its size is unmeasurable, refusing to skip it"),
             )
@@ -233,7 +166,7 @@ impl GuardCtx {
         String::from_utf8_lossy(&out)
             .trim()
             .parse()
-            .map_err(|_| err(check, format!("unparseable blob size for '{path_shown}'")))
+            .map_err(|_| guard_err(check, format!("unparseable blob size for '{path_shown}'")))
     }
 
     /// One tracked file's content as the commit would record it.
@@ -243,5 +176,51 @@ impl GuardCtx {
             true => Ok(Some(output.stdout)),
             false => Ok(None),
         }
+    }
+
+    /// Per-file match counts over index content — `git grep -c` with `-z`,
+    /// one subprocess — for the pathspecs given (none = every tracked
+    /// file). Binary blobs are skipped. A record is `path NUL count NL`,
+    /// so a path may carry a newline and still parse; one that is not
+    /// UTF-8 is refused: no report or baseline can name it.
+    pub fn grep_counts(
+        &self,
+        check: &str,
+        ere: &str,
+        pathspecs: &[&str],
+    ) -> Result<BTreeMap<String, u64>> {
+        let mut args = vec!["grep", "--cached", "-cIzE", ere, "--"];
+        args.extend_from_slice(pathspecs);
+        let raw = self.git_grep(check, &args)?;
+        let mut counts = BTreeMap::new();
+        let mut rest = raw.as_slice();
+        while !rest.is_empty() {
+            let Some(nul) = rest.iter().position(|byte| *byte == 0) else {
+                return Err(guard_err(check, "unparseable count record from git grep"));
+            };
+            let (path, after) = rest.split_at(nul);
+            let after = &after[1..];
+            let newline = after
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .unwrap_or(after.len());
+            let (count, tail) = after.split_at(newline);
+            rest = tail.get(1..).unwrap_or(&[]);
+            let Ok(path) = std::str::from_utf8(path) else {
+                return Err(guard_err(
+                    check,
+                    format!(
+                        "tracked path is not valid UTF-8 and cannot be represented in reports or baselines: {:?}",
+                        String::from_utf8_lossy(path)
+                    ),
+                ));
+            };
+            let count: u64 = std::str::from_utf8(count)
+                .ok()
+                .and_then(|text| text.trim().parse().ok())
+                .ok_or_else(|| guard_err(check, format!("unparseable match count for '{path}'")))?;
+            counts.insert(path.to_owned(), count);
+        }
+        Ok(counts)
     }
 }

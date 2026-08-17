@@ -22,13 +22,27 @@ pub fn recover_on_launch(env: &Env) -> Vec<String> {
         )),
     }
     for scope in scopes {
-        match apply::recover_locked(env, &scope) {
-            Ok(true) => messages.push(format!("{}: recovered an interrupted apply", scope.label())),
-            Ok(false) => {}
-            // A live writer holds this scope and recovers it itself.
-            Err(CoreError::ScopeBusy { .. }) => {}
-            Err(error) => messages.push(format!("{}: recovery failed: {error}", scope.label())),
-        }
+        report(
+            &mut messages,
+            &scope.label(),
+            apply::recover_locked(env, &scope),
+        );
+    }
+    // Hook installs journal under the repository's common dir, not a
+    // scope: a crash there leaves core.hooksPath live over a torn
+    // entrypoint, and no scope pass would ever find the journal.
+    for (key, result) in apply::recover_common_journals(env) {
+        report(&mut messages, &format!("repository hooks ({key})"), result);
     }
     messages
+}
+
+fn report(messages: &mut Vec<String>, label: &str, result: Result<bool, CoreError>) {
+    match result {
+        Ok(true) => messages.push(format!("{label}: recovered an interrupted apply")),
+        Ok(false) => {}
+        // A live writer holds this key and recovers it itself.
+        Err(CoreError::ScopeBusy { .. }) => {}
+        Err(error) => messages.push(format!("{label}: recovery failed: {error}")),
+    }
 }

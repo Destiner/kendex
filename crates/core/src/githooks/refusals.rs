@@ -1,20 +1,14 @@
-//! Every reason the hooks machinery refuses instead of proceeding. The
-//! goal was right in v1 and the machinery was the bug farm; here the
-//! invariants that machinery defended are checks that say no.
+//! Every reason the hooks machinery refuses instead of proceeding. Each
+//! guards an ownership invariant — vstack only ever removes or points at
+//! what it provably wrote — and a refusal is the whole response: no
+//! adoption, no repair, no partial mutation.
 
 use std::collections::BTreeSet;
 
 use crate::error::{CoreError, Result};
 use crate::process::Hardened;
 
-use super::{Receipt, Repo, V1_SENTINEL};
-
-fn err(message: impl Into<String>) -> CoreError {
-    CoreError::Guard {
-        check: "hooks".to_owned(),
-        message: message.into(),
-    }
-}
+use super::{Receipt, Repo, V1_SENTINEL, err};
 
 /// Install-time refusals, all checked before any mutation is planned.
 pub(super) fn check_install(repo: &Repo, receipt: Option<&Receipt>) -> Result<()> {

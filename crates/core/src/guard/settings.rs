@@ -4,57 +4,46 @@
 //! (`VSTACK_GUARDS_<CHECK>_<KEY>`), then `.vstack/settings.toml`, then the
 //! committed `vstack.settings.toml`, then the built-in default. Everything
 //! that decides a verdict is read from the index (settled decision 5): a
-//! tracked settings file resolves from the staged copy, one staged for
-//! deletion governs as absent, and only a never-tracked file is read from
-//! disk — the environment is the one machine-local override.
+//! settings file resolves from its staged copy and nothing else — one
+//! staged for deletion, or never staged at all, governs as absent. The
+//! environment is the one machine-local override; a file on disk that
+//! the commit does not carry cannot flip a verdict, however it got there.
 
-use crate::error::{CoreError, Result};
+use crate::error::Result;
 
 use super::ctx::GuardCtx;
+use super::guard_err;
 
 /// The two settings files, in precedence order.
 const SETTINGS_FILES: [&str; 2] = [".vstack/settings.toml", "vstack.settings.toml"];
 
-fn err(check: &str, message: impl Into<String>) -> CoreError {
-    CoreError::Guard {
-        check: check.to_owned(),
-        message: message.into(),
-    }
-}
-
-/// A policy file's content as the commit carries it. `None` = the commit
-/// has no such file. Tracked → the index copy (a read failure is loud);
-/// in HEAD but not the index → staged for deletion, absent; never
-/// tracked → the worktree copy, which is all there is.
+/// A policy file's content as the commit carries it: the index copy, or
+/// `None` when the index has no such path. Any git failure other than
+/// "not in the index" is exit 2 — a read that cannot be completed must
+/// never resolve as "absent" and so as the permissive default.
 pub fn policy_content(ctx: &GuardCtx, check: &str, path: &str) -> Result<Option<Vec<u8>>> {
-    let tracked = ctx
-        .git(&["ls-files", "--error-unmatch", "--", path])
-        .run()?
-        .status
-        .success();
-    if tracked {
-        return match ctx.index_content(check, path)? {
-            Some(bytes) => Ok(Some(bytes)),
-            None => Err(err(
+    let probe = ctx
+        .git(&["ls-files", "--error-unmatch", "-z", "--", path])
+        .run()?;
+    match probe.status.code() {
+        Some(0) => {}
+        Some(1) => return Ok(None),
+        _ => {
+            return Err(guard_err(
                 check,
-                format!("could not read the staged copy of {path}"),
-            )),
-        };
+                format!(
+                    "could not tell whether {path} is in the index: {}",
+                    String::from_utf8_lossy(&probe.stderr).trim()
+                ),
+            ));
+        }
     }
-    let in_head = ctx
-        .git(&["cat-file", "-e", &format!("HEAD:{path}")])
-        .run()?
-        .status
-        .success();
-    if in_head {
-        return Ok(None);
-    }
-    let on_disk = ctx.root.join(path);
-    match on_disk.is_file() {
-        true => Ok(Some(
-            std::fs::read(&on_disk).map_err(|e| CoreError::io(&on_disk, e))?,
+    match ctx.index_content(check, path)? {
+        Some(bytes) => Ok(Some(bytes)),
+        None => Err(guard_err(
+            check,
+            format!("could not read the staged copy of {path}"),
         )),
-        false => Ok(None),
     }
 }
 
@@ -83,9 +72,9 @@ impl Policy {
                 continue;
             };
             let text = String::from_utf8_lossy(&bytes);
-            let parsed: toml::Table = text
-                .parse()
-                .map_err(|e: toml::de::Error| err(check, format!("{file}: invalid TOML: {e}")))?;
+            let parsed: toml::Table = text.parse().map_err(|e: toml::de::Error| {
+                guard_err(check, format!("{file}: invalid TOML: {e}"))
+            })?;
             if text.contains("SIZE_RATCHET_") || text.contains("GROWTH_GUARDS_") {
                 legacy_in.push(file.to_owned());
             }
@@ -96,7 +85,13 @@ impl Policy {
                 .unwrap_or_default();
             tables.push((file.to_owned(), guards));
         }
-        // The dotenv layers v1 read are legacy carriers too.
+        let converted = tables.iter().any(|(_, guards)| !guards.is_empty());
+        if converted {
+            return Ok(Policy { tables });
+        }
+        // The dotenv layers v1 read are legacy carriers too — probed only
+        // in a repository nothing has converted yet, which is the only
+        // place they can still be the policy.
         for file in [".env.local", ".env"] {
             if let Some(bytes) = policy_content(ctx, check, file)? {
                 let text = String::from_utf8_lossy(&bytes);
@@ -105,9 +100,8 @@ impl Policy {
                 }
             }
         }
-        let converted = tables.iter().any(|(_, guards)| !guards.is_empty());
-        if !legacy_in.is_empty() && !converted {
-            return Err(err(
+        if !legacy_in.is_empty() {
+            return Err(guard_err(
                 check,
                 format!(
                     "legacy v1 guard settings found in {} with no [guards] tables — convert them once with the guard import-v1 command",
@@ -143,7 +137,7 @@ impl Policy {
         match self.file_value(check, key) {
             None => Ok(default.to_owned()),
             Some(toml::Value::String(value)) => Ok(value.clone()),
-            Some(other) => Err(err(
+            Some(other) => Err(guard_err(
                 check,
                 format!("[guards.{check}] {key} must be a string, got {other}"),
             )),
@@ -153,7 +147,7 @@ impl Policy {
     pub fn positive_int(&self, check: &str, key: &str, default: u64) -> Result<u64> {
         let parsed: Option<u64> = match Self::env_override(check, key) {
             Some(value) => Some(value.parse().map_err(|_| {
-                err(
+                guard_err(
                     check,
                     format!("{key} must be a positive integer, got '{value}'"),
                 )
@@ -162,7 +156,7 @@ impl Policy {
                 None => None,
                 Some(toml::Value::Integer(value)) if *value > 0 => Some(*value as u64),
                 Some(other) => {
-                    return Err(err(
+                    return Err(guard_err(
                         check,
                         format!("[guards.{check}] {key} must be a positive integer, got {other}"),
                     ));
@@ -170,7 +164,7 @@ impl Policy {
             },
         };
         match parsed {
-            Some(0) => Err(err(
+            Some(0) => Err(guard_err(
                 check,
                 format!("{key} must be a positive integer, got 0"),
             )),
@@ -191,14 +185,14 @@ impl Policy {
                 .iter()
                 .map(|item| {
                     item.as_str().map(str::to_owned).ok_or_else(|| {
-                        err(
+                        guard_err(
                             check,
                             format!("[guards.{check}] {key} must be an array of strings"),
                         )
                     })
                 })
                 .collect(),
-            Some(other) => Err(err(
+            Some(other) => Err(guard_err(
                 check,
                 format!("[guards.{check}] {key} must be an array of strings, got {other}"),
             )),
@@ -212,7 +206,7 @@ impl Policy {
         match self.file_value(check, "enabled") {
             None => Ok(true),
             Some(toml::Value::Boolean(value)) => Ok(*value),
-            Some(other) => Err(err(
+            Some(other) => Err(guard_err(
                 check,
                 format!("[guards.{check}] enabled must be a boolean, got {other}"),
             )),
@@ -225,25 +219,7 @@ impl Policy {
     /// environment override keeps v1's `pattern=threshold;…` spelling.
     pub fn classes(&self, check: &str) -> Result<Vec<(String, u64)>> {
         if let Some(value) = Self::env_override(check, "classes") {
-            return value
-                .split(';')
-                .filter(|entry| !entry.trim().is_empty())
-                .map(|entry| {
-                    let (pattern, threshold) = entry.split_once('=').ok_or_else(|| {
-                        err(
-                            check,
-                            format!("class entry '{entry}' is not pattern=threshold"),
-                        )
-                    })?;
-                    let threshold = threshold.trim().parse().map_err(|_| {
-                        err(
-                            check,
-                            format!("class threshold in '{entry}' is not a positive integer"),
-                        )
-                    })?;
-                    Ok((pattern.trim().to_owned(), threshold))
-                })
-                .collect();
+            return parse_class_entries(check, &value);
         }
         match self.file_value(check, "classes") {
             None => Ok(Vec::new()),
@@ -251,7 +227,7 @@ impl Policy {
                 .iter()
                 .map(|item| {
                     let table = item.as_table().ok_or_else(|| {
-                        err(
+                        guard_err(
                             check,
                             format!("[guards.{check}] classes entries must be tables"),
                         )
@@ -260,7 +236,7 @@ impl Policy {
                         .get("pattern")
                         .and_then(toml::Value::as_str)
                         .ok_or_else(|| {
-                            err(
+                            guard_err(
                                 check,
                                 format!("[guards.{check}] class entry needs a pattern"),
                             )
@@ -270,7 +246,7 @@ impl Policy {
                         .and_then(toml::Value::as_integer)
                         .filter(|value| *value > 0)
                         .ok_or_else(|| {
-                            err(
+                            guard_err(
                                 check,
                                 format!("[guards.{check}] class entry needs a positive threshold"),
                             )
@@ -278,7 +254,7 @@ impl Policy {
                     Ok((pattern.to_owned(), threshold as u64))
                 })
                 .collect(),
-            Some(other) => Err(err(
+            Some(other) => Err(guard_err(
                 check,
                 format!("[guards.{check}] classes must be an array of tables, got {other}"),
             )),
@@ -286,11 +262,39 @@ impl Policy {
     }
 }
 
+/// v1's `pattern=threshold;…` class spelling — the environment override's
+/// form, and what the importer converts — parsed once for both.
+pub fn parse_class_entries(check: &str, raw: &str) -> Result<Vec<(String, u64)>> {
+    raw.split(';')
+        .filter(|entry| !entry.trim().is_empty())
+        .map(|entry| {
+            let (pattern, threshold) = entry.split_once('=').ok_or_else(|| {
+                guard_err(
+                    check,
+                    format!("class entry '{entry}' is not pattern=threshold"),
+                )
+            })?;
+            let threshold: u64 = threshold
+                .trim()
+                .parse()
+                .ok()
+                .filter(|t| *t > 0)
+                .ok_or_else(|| {
+                    guard_err(
+                        check,
+                        format!("class threshold in '{entry}' is not a positive integer"),
+                    )
+                })?;
+            Ok((pattern.trim().to_owned(), threshold))
+        })
+        .collect()
+}
+
 /// A configured repo-relative path, validated: absolute paths, escapes,
 /// and names shaped like options are configuration errors.
 pub fn config_path(check: &str, raw: &str) -> Result<String> {
     if raw.starts_with('/') {
-        return Err(err(
+        return Err(guard_err(
             check,
             format!("path must be repo-root-relative, got absolute: {raw}"),
         ));
@@ -301,18 +305,21 @@ pub fn config_path(check: &str, raw: &str) -> Result<String> {
             "" | "." => {}
             ".." => {
                 if out.pop().is_none() {
-                    return Err(err(check, format!("path escapes the repository: {raw}")));
+                    return Err(guard_err(
+                        check,
+                        format!("path escapes the repository: {raw}"),
+                    ));
                 }
             }
             other => out.push(other),
         }
     }
     if out.is_empty() {
-        return Err(err(check, format!("path normalizes empty: {raw}")));
+        return Err(guard_err(check, format!("path normalizes empty: {raw}")));
     }
     let joined = out.join("/");
     if joined.starts_with('-') {
-        return Err(err(
+        return Err(guard_err(
             check,
             format!("path must not begin with '-': {joined}"),
         ));

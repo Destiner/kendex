@@ -13,7 +13,7 @@
 //! merge) are the only bytes that change, so CRLF files and
 //! missing-terminator state survive untouched.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::lock::SettingsSeed;
 
@@ -60,14 +60,7 @@ impl SeededEnv {
 /// v1's hash, kept bit-for-bit so imported ledgers verify without
 /// re-guessing: 64-bit FNV-1a over the block's lines joined with `\n`.
 pub fn comment_hash(lines: &[String]) -> String {
-    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-    const PRIME: u64 = 0x0000_0100_0000_01b3;
-    let mut hash = OFFSET;
-    for byte in lines.join("\n").bytes() {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(PRIME);
-    }
-    format!("{hash:016x}")
+    crate::hash::fnv1a_hex(lines.join("\n").as_bytes())
 }
 
 /// Blank separators around a comment block are layout, not content: trim
@@ -148,37 +141,44 @@ pub fn assigned_keys(text: &str) -> Vec<String> {
 /// exactly as read, terminator included, so CRLF files and a final line
 /// with no terminator survive every edit they are not part of.
 fn lines_keepends(text: &str) -> Vec<&str> {
-    let mut out = Vec::new();
-    let mut start = 0;
-    for (index, byte) in text.bytes().enumerate() {
-        if byte == b'\n' {
-            out.push(&text[start..=index]);
-            start = index + 1;
-        }
-    }
-    if start < text.len() {
-        out.push(&text[start..]);
-    }
-    out
+    text.split_inclusive('\n').collect()
 }
 
 /// A line's content without its terminator.
 fn content_of(line: &str) -> &str {
-    line.trim_end_matches('\n').trim_end_matches('\r')
+    line.strip_suffix('\n')
+        .map(|line| line.strip_suffix('\r').unwrap_or(line))
+        .unwrap_or(line)
 }
 
-/// The terminator new lines are written with: whatever the file already
-/// uses (first line's word), `\n` where it has nothing to say.
+/// The terminator new lines are written with: whatever the file's first
+/// terminated line uses, `\n` where it has nothing to say.
 fn file_eol(lines: &[&str]) -> &'static str {
     match lines
         .iter()
-        .find_map(|line| match &line[content_of(line).len()..] {
-            "" => None,
-            eol => Some(eol.ends_with('\n') && eol.contains('\r')),
-        }) {
-        Some(true) => "\r\n",
-        _ => "\n",
+        .find(|line| line.ends_with('\n'))
+        .is_some_and(|line| line.ends_with("\r\n"))
+    {
+        true => "\r\n",
+        false => "\n",
     }
+}
+
+/// The `[env]` section's line span: the header's index and the index of
+/// the first line after the section (the next table header, or the end
+/// of the file). `None` = no `[env]` header. Seeding and refresh both
+/// splice inside this span, so they cannot disagree about where it ends.
+fn env_section(lines: &[&str]) -> Option<(usize, usize)> {
+    let start = lines
+        .iter()
+        .position(|line| is_env_header(content_of(line)))?;
+    let end = lines
+        .iter()
+        .enumerate()
+        .skip(start + 1)
+        .find_map(|(index, line)| is_table_header(content_of(line)).then_some(index))
+        .unwrap_or(lines.len());
+    Some((start, end))
 }
 
 fn render_entries(entries: &[&SeededEnv], eol: &str) -> String {
@@ -200,10 +200,15 @@ fn render_entries(entries: &[&SeededEnv], eol: &str) -> String {
 /// terminator. `None` = nothing to add. Returns the new text plus the keys
 /// that were added.
 pub fn merge(original: Option<&str>, entries: &[SeededEnv]) -> Option<(String, Vec<String>)> {
-    let existing = original.map(assigned_keys).unwrap_or_default();
+    let mut existing: BTreeSet<String> = original
+        .map(assigned_keys)
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    // First declaration wins a key that several skills ship.
     let missing: Vec<&SeededEnv> = entries
         .iter()
-        .filter(|seeded| !existing.contains(&seeded.entry.key))
+        .filter(|seeded| existing.insert(seeded.entry.key.clone()))
         .collect();
     if missing.is_empty() {
         return None;
@@ -220,20 +225,10 @@ pub fn merge(original: Option<&str>, entries: &[SeededEnv]) -> Option<(String, V
 
     let lines = lines_keepends(original);
     let eol = file_eol(&lines);
-    let env_start = lines
-        .iter()
-        .position(|line| is_env_header(content_of(line)));
+    let env = env_section(&lines);
     // Where the new block lands: the end of the `[env]` section, or the end
     // of the file (with a header) when there is none.
-    let insert_at = match env_start {
-        Some(start) => lines
-            .iter()
-            .enumerate()
-            .skip(start + 1)
-            .find_map(|(index, line)| is_table_header(content_of(line)).then_some(index))
-            .unwrap_or(lines.len()),
-        None => lines.len(),
-    };
+    let insert_at = env.map_or(lines.len(), |(_, end)| end);
 
     let mut block = String::new();
     // A final line with no terminator gets one — the once-only repair that
@@ -245,7 +240,7 @@ pub fn merge(original: Option<&str>, entries: &[SeededEnv]) -> Option<(String, V
     {
         block.push_str(eol);
     }
-    if env_start.is_none() {
+    if env.is_none() {
         if !lines.is_empty() && insert_at > 0 && !content_of(lines[insert_at - 1]).trim().is_empty()
         {
             block.push_str(eol);
@@ -271,15 +266,16 @@ pub fn merge(original: Option<&str>, entries: &[SeededEnv]) -> Option<(String, V
     Some((out, added))
 }
 
-/// The ledger records the added entries were seeded, each under its owner.
+/// The ledger records the added entries were seeded, each under the owner
+/// whose lines were written — the first declaration, as `merge` chose.
 pub fn record_seeds(
     seeds: &mut BTreeMap<String, SettingsSeed>,
     entries: &[SeededEnv],
     added: &[String],
 ) {
-    for seeded in entries {
-        if added.contains(&seeded.entry.key) {
-            seeds.insert(seeded.entry.key.clone(), seeded.seed_record());
+    for key in added {
+        if let Some(seeded) = entries.iter().find(|seeded| &seeded.entry.key == key) {
+            seeds.insert(key.clone(), seeded.seed_record());
         }
     }
 }
