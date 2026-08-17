@@ -165,6 +165,9 @@ enum Command {
         #[arg(short = 'y', long)]
         yes: bool,
     },
+    /// Commit-time quality guards and the git hooks that run them
+    #[command(subcommand)]
+    Guard(commands::guard_cmd::GuardCommand),
     /// File an issue about an installed asset, routed by ownership
     Report(ReportFlags),
     /// Migrate v1 manifests and locks to v2 (originals go to the trash)
@@ -346,6 +349,7 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             let filter = ScopeFilter::resolve(scope.as_deref(), false, ScopeFilter::All)?;
             commands::update_pi::run(&env, filter, check)?;
         }
+        Command::Guard(guard_command) => return commands::guard_cmd::run(&env, guard_command),
         Command::Report(flags) => commands::report::run(&env, flags.into_args())?,
         Command::Import { global, scope } => {
             let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::All)?;

@@ -8,6 +8,7 @@ pub mod diff_cmd;
 pub mod drift_hook;
 pub mod engine_common;
 pub mod fork_cmd;
+pub mod guard_cmd;
 pub mod import;
 pub mod init;
 pub mod list;

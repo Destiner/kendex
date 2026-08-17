@@ -126,8 +126,29 @@ impl Hardened {
         Hardened::new("curl", owned(args))
     }
 
+    /// The machine-locally configured guard extension: an executable the
+    /// user pointed the pre-commit chain at, run from the repository root
+    /// under the standard hardening (no stdin, captured output, a
+    /// timeout). Never configured from a committed file.
+    pub fn local_guard(program: &Path, cwd: &Path) -> Hardened {
+        let mut hardened = Hardened::new(&program.to_string_lossy(), Vec::new());
+        hardened.command.current_dir(cwd);
+        hardened
+    }
+
     pub fn timeout(mut self, timeout: Duration) -> Hardened {
         self.timeout = timeout;
+        self
+    }
+
+    /// The one sanctioned redirect: a commit-time guard must judge the
+    /// index git actually named in `GIT_INDEX_FILE` — during `git commit`
+    /// that is a temporary index, and scrubbing it would silently judge
+    /// the wrong one. The value never arrives straight from the process
+    /// environment: the guard context captured and canonicalized it once,
+    /// and threads it here explicitly.
+    pub fn index_file(mut self, path: &Path) -> Hardened {
+        self.command.env("GIT_INDEX_FILE", path);
         self
     }
 

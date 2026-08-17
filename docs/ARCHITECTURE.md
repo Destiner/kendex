@@ -216,6 +216,48 @@ lives in one capability table read by core and UI.
   second installation, which would count one file on disk twice.
 - Fresh manifest schema + one-time v1 importer; no compat shims. v1
   extras/theme packs are not carried over.
+- **Commits walk through the guards whatever tool makes them.** The guard
+  family (`core/guard/`) — size-ratchet, todo-ban, byte-ceiling,
+  suppression-ban, commit-msg — judges the index git names for the commit
+  (`GIT_INDEX_FILE`, captured once and threaded through a validated
+  context; the one sanctioned redirect past invariant 13's scrubbing).
+  Policy is read from the commit too: the `[guards]` tables in
+  `vstack.settings.toml`, baselines, and excludes all resolve from the
+  staged copy, so a permissive unstaged edit can never authorize stricter
+  staged content; the process environment is the only machine-local
+  override, and the chain's local extension point is configured
+  machine-locally only — never from a committed file, where a branch
+  switch could point it at a tracked malicious executable. Index states
+  that cannot be judged — unmerged entries, intent-to-add — are refused
+  loudly, never skipped; paths travel NUL-delimited end to end, and a name
+  the configuration format cannot carry is a refusal, not a skip. Every
+  enabled check runs before the verdict so one commit attempt reports
+  every blocker; exit 1 (violations) and 2 (could not run) both block.
+  Fleet compatibility is a conversion, not a similarity claim: baseline
+  TSVs read as-is, while legacy env-style settings convert once through
+  `guard import-v1` and imported excludes keep v1's legacy-glob dialect,
+  marked as such — "same file, new matcher" would silently change what is
+  excluded, and a pattern outside the documented dialect is a refusal.
+- **vstack owns its hooks directory — provably, not declaratively.** The
+  guards reach git through `<git-common-dir>/vstack-hooks/`, two
+  entrypoints whose call surface (`vstack guard run <hook>`) is a stable
+  contract, with `core.hooksPath` pointed at them in the repo's shared
+  local config. Ownership is a recorded receipt: the exact files written,
+  the exact config value set, and one lease per worktree that enabled the
+  install — uninstall releases its own lease and disarms only when the
+  last one goes, reaping leases git's registry no longer lists. Repair
+  rewrites only receipt-listed files; uninstall deletes only
+  receipt-listed files and unsets `core.hooksPath` only while its current
+  value still equals the receipt's (compare-and-swap both sides). vstack
+  never edits a hook file it did not create: a pre-existing or symlinked
+  directory, a worktree resolving a foreign effective `hooksPath`, v1's
+  shim, and foreign files found at uninstall are all refusals — a refused
+  repo can still call `vstack guard run` from its own hook orchestration.
+  Hook state is repository-common state: mutations take a common-dir lock
+  after the scope lock (one fixed order) and journal into a common-dir
+  journal every common-lock holder recovers before mutating. A missing
+  binary at commit time fails closed, naming the one-commit bypass and
+  the two-step manual removal — no vendored runner, because copies drift.
 - **A seeded settings comment refreshes only while provably unedited.**
   Skills seed `[env]` defaults into `vstack.settings.toml` write-if-absent;
   the lock keeps, per key, which skill seeded it and the FNV-1a hash of

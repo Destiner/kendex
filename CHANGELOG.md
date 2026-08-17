@@ -30,6 +30,27 @@ changes carry a **Breaking** call-out with their migration note inline.
   checked — a broken mirror or an unreachable source shows under
   "Couldn't be checked" instead of silently reading as up to date — and a
   package deleted from its catalog is flagged **No longer in its source**.
+- Commit checks now guard every commit, whatever tool makes it. `vstack
+  guard install` puts a vstack-owned hooks directory in front of git for a
+  repository, so Claude Code, Codex, Cursor, and a plain terminal all walk
+  through the same five checks before a commit lands: files that grew past
+  their size budget (with a tighten-only baseline and `--seed` to start
+  one), leftover TODO/FIXME/HACK/XXX markers, newly added files over
+  200 KB, blanket lint-silencing pragmas (with a ratchet for the narrow
+  ones), and non-conventional commit messages. Every check judges exactly
+  what the commit will record — staged content, staged settings, staged
+  baselines — so an unstaged edit can never change a verdict, and every
+  check runs before the verdict so one attempt reports every blocker.
+  Configuration lives in `[guards]` tables in `vstack.settings.toml`;
+  repos with v1's settings convert once with `vstack guard import-v1`
+  (baselines are read as-is, and imported exclusion patterns keep exactly
+  the matching behavior they were written for). Removal is as careful as
+  install: `vstack guard uninstall` takes back only what vstack wrote,
+  leaves a hand-changed hooks setting alone, stays armed while another
+  worktree still uses the checks, and refuses rather than half-removing
+  around files it doesn't own. If the vstack binary is missing at commit
+  time the checks fail closed with the bypass spelled out
+  (`git commit --no-verify`).
 - Seeded settings comments now stay current. When a skill improves the
   explanation above a `vstack.settings.toml` key it seeded, a refresh
   brings the new words in — but only while the comment is provably

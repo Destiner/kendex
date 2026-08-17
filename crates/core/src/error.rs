@@ -174,6 +174,11 @@ pub enum CoreError {
 
     #[error("{command} failed: {stderr}")]
     GitFailed { command: String, stderr: String },
+
+    /// A guard's configuration is wrong or a measurement could not be
+    /// taken — the loud exit-2 state, never a silent pass.
+    #[error("{check}: {message}")]
+    Guard { check: String, message: String },
 }
 
 impl CoreError {

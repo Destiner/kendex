@@ -5,10 +5,12 @@ use crate::env::Env;
 use crate::error::{CoreError, Result};
 use crate::model::Scope;
 
+mod common;
 pub mod journal;
 mod op;
 
-pub use op::{Op, Plan, PlannedOp, Pre};
+pub use common::{common_key, execute_common, recover_common};
+pub use op::{Op, Plan, PlannedOp, Pre, read_git_config};
 
 /// Filesystem-safe key naming a scope's journal dir and lock file. Keys off
 /// the canonical scope so two spellings of one root can never hold two

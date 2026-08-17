@@ -112,6 +112,27 @@ pub enum Op {
         manifest: Box<Manifest>,
         pre: Pre,
     },
+    /// A file that must carry the executable bit — a git hook entrypoint.
+    /// Same rollback story as WriteFile: the journal holds the pre-image.
+    WriteExecutable {
+        path: PathBuf,
+        bytes: Vec<u8>,
+        pre: Pre,
+    },
+    /// Compare-and-swap one key in one git config file. `expected` is the
+    /// current value the plan observed (None = unset); a config that moved
+    /// since planning aborts, so a user's hand-set value is never
+    /// clobbered and an uninstall never unsets somebody else's path.
+    /// Rollback restores the whole config file from its journaled
+    /// pre-image.
+    GitConfigSwap {
+        /// The config file itself — what the journal snapshots.
+        file: PathBuf,
+        key: String,
+        expected: Option<String>,
+        /// None unsets the key.
+        value: Option<String>,
+    },
 }
 
 impl Op {
@@ -126,6 +147,8 @@ impl Op {
             Op::EditFile { path, .. } => vec![path.clone()],
             Op::WriteLock { path, .. } => vec![path.clone()],
             Op::WriteManifest { path, .. } => vec![path.clone()],
+            Op::WriteExecutable { path, .. } => vec![path.clone()],
+            Op::GitConfigSwap { file, .. } => vec![file.clone()],
         }
     }
 
@@ -216,7 +239,90 @@ impl Op {
                 pre.check(path)?;
                 crate::manifest::save(path, manifest)
             }
+            Op::WriteExecutable { path, bytes, pre } => {
+                pre.check(path)?;
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
+                }
+                fs::write(path, bytes).map_err(|e| CoreError::io(path, e))?;
+                executable_bit(path)
+            }
+            Op::GitConfigSwap {
+                file,
+                key,
+                expected,
+                value,
+            } => git_config_swap(file, key, expected.as_deref(), value.as_deref()),
         }
+    }
+}
+
+#[cfg(unix)]
+fn executable_bit(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).map_err(|e| CoreError::io(path, e))
+}
+
+#[cfg(not(unix))]
+fn executable_bit(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+/// The swap runs through git itself against the named file, so quoting and
+/// includes behave exactly as git will read them back. The precondition is
+/// revalidated here, immediately before the write (invariant 7).
+fn git_config_swap(
+    file: &Path,
+    key: &str,
+    expected: Option<&str>,
+    value: Option<&str>,
+) -> Result<()> {
+    let current = read_git_config(file, key)?;
+    if current.as_deref() != expected {
+        return Err(CoreError::PlanStale {
+            path: file.to_path_buf(),
+        });
+    }
+    if current.as_deref() == value {
+        return Ok(());
+    }
+    let file_text = file.display().to_string();
+    let args: Vec<&str> = match value {
+        Some(value) => vec!["config", "--file", &file_text, key, value],
+        None => vec!["config", "--file", &file_text, "--unset", key],
+    };
+    let output = crate::process::Hardened::git(&args, file.parent()).run()?;
+    if !output.status.success() {
+        return Err(CoreError::GitFailed {
+            command: format!("git config {key}"),
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        });
+    }
+    Ok(())
+}
+
+/// One key's value in one config file, read the way git reads it.
+pub fn read_git_config(file: &Path, key: &str) -> Result<Option<String>> {
+    if !file.exists() {
+        return Ok(None);
+    }
+    let file_text = file.display().to_string();
+    let output = crate::process::Hardened::git(
+        &["config", "--file", &file_text, "--get", key],
+        file.parent(),
+    )
+    .run()?;
+    match output.status.code() {
+        Some(0) => Ok(Some(
+            String::from_utf8_lossy(&output.stdout)
+                .trim_end_matches('\n')
+                .to_owned(),
+        )),
+        Some(1) => Ok(None),
+        _ => Err(CoreError::GitFailed {
+            command: format!("git config --get {key}"),
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        }),
     }
 }
 

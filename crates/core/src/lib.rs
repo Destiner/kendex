@@ -8,6 +8,8 @@ pub mod env;
 pub mod error;
 pub mod frontmatter;
 pub mod fs;
+pub mod githooks;
+pub mod guard;
 pub mod harness;
 pub mod hash;
 pub mod hook;

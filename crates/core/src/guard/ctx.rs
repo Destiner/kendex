@@ -1,0 +1,247 @@
+//! The repository one guard invocation judges: its top level, and the index
+//! git named for this commit. Every git read the guards make goes through
+//! here — NUL-delimited raw bytes end to end, so a path the configuration
+//! format cannot represent is a loud refusal, never a silently split row.
+
+use std::path::{Path, PathBuf};
+
+use crate::error::{CoreError, Result};
+use crate::process::Hardened;
+
+/// One guard run's repository binding.
+#[derive(Debug)]
+pub struct GuardCtx {
+    /// The working tree's top level.
+    pub root: PathBuf,
+    /// The index this commit is being built from — `GIT_INDEX_FILE` as the
+    /// hook entrypoint captured it, canonicalized once. `None` means the
+    /// repository's ordinary index.
+    pub index_file: Option<PathBuf>,
+}
+
+/// One index entry, path kept as raw bytes until a consumer proves it can
+/// represent it.
+#[derive(Debug)]
+pub struct IndexEntry {
+    pub mode: String,
+    pub sha: String,
+    pub stage: u8,
+    pub path: Vec<u8>,
+}
+
+impl IndexEntry {
+    /// The path as UTF-8, or the refusal naming why the guard cannot judge
+    /// it — a name the report and the baseline format cannot carry.
+    pub fn path_str(&self, check: &str) -> Result<&str> {
+        std::str::from_utf8(&self.path).map_err(|_| CoreError::Guard {
+            check: check.to_owned(),
+            message: format!(
+                "tracked path is not valid UTF-8 and cannot be represented in reports or baselines: {:?}",
+                String::from_utf8_lossy(&self.path)
+            ),
+        })
+    }
+}
+
+fn err(check: &str, message: impl Into<String>) -> CoreError {
+    CoreError::Guard {
+        check: check.to_owned(),
+        message: message.into(),
+    }
+}
+
+impl GuardCtx {
+    /// Bind to the repository containing `dir`, capturing the environment's
+    /// `GIT_INDEX_FILE` before anything else can scrub or outrun it. The
+    /// value is resolved against the current working directory — git hands
+    /// hooks a relative path — and must exist: a named index that is not
+    /// there is exit 2, never a fallback to the wrong index.
+    pub fn bind(dir: &Path) -> Result<GuardCtx> {
+        let output = Hardened::git(&["rev-parse", "--show-toplevel"], Some(dir)).run()?;
+        if !output.status.success() {
+            return Err(err("guard", "not inside a git repository"));
+        }
+        let root = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim().to_owned());
+        let index_file = match std::env::var_os("GIT_INDEX_FILE") {
+            None => None,
+            Some(raw) => {
+                let path = PathBuf::from(raw);
+                let absolute = match path.is_absolute() {
+                    true => path,
+                    false => std::env::current_dir()
+                        .map_err(|e| CoreError::io("current dir", e))?
+                        .join(path),
+                };
+                Some(absolute.canonicalize().map_err(|_| {
+                    err(
+                        "guard",
+                        format!(
+                            "GIT_INDEX_FILE names {}, which does not exist — refusing to judge a different index",
+                            absolute.display()
+                        ),
+                    )
+                })?)
+            }
+        };
+        Ok(GuardCtx { root, index_file })
+    }
+
+    /// A git invocation in this repository, reading this commit's index.
+    pub fn git(&self, args: &[&str]) -> Hardened {
+        let hardened = Hardened::git(args, Some(&self.root));
+        match &self.index_file {
+            Some(index) => hardened.index_file(index),
+            None => hardened,
+        }
+    }
+
+    /// Run and demand success; stderr travels into the error.
+    pub fn git_ok(&self, check: &str, args: &[&str]) -> Result<Vec<u8>> {
+        let output = self.git(args).run()?;
+        if !output.status.success() {
+            return Err(err(
+                check,
+                format!(
+                    "git {} failed: {}",
+                    args.join(" "),
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ),
+            ));
+        }
+        Ok(output.stdout)
+    }
+
+    /// Run where exit 1 is a measurement ("no matches"), anything above is
+    /// a failed collection.
+    pub fn git_grep(&self, check: &str, args: &[&str]) -> Result<Vec<u8>> {
+        let output = self.git(args).run()?;
+        match output.status.code() {
+            Some(0) | Some(1) => Ok(output.stdout),
+            _ => Err(err(
+                check,
+                format!(
+                    "git {} failed collecting matches: {}",
+                    args.join(" "),
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ),
+            )),
+        }
+    }
+
+    /// Refuse the index states no guard can judge. Unmerged entries have
+    /// several truths at once; an intent-to-add record stages an empty
+    /// stand-in for content that exists only on disk — judging either
+    /// silently would wave through exactly the files in question. The
+    /// intent-to-add probe reads the staged diff, where such an entry is
+    /// the one addition with no destination blob.
+    pub fn assert_judgeable(&self, check: &str) -> Result<()> {
+        let unmerged = self.git_ok(check, &["ls-files", "-uz"])?;
+        if !unmerged.is_empty() {
+            return Err(err(
+                check,
+                "the index holds unmerged entries — resolve the conflicts before committing",
+            ));
+        }
+        // Porcelain v2 names an intent-to-add entry unambiguously: a
+        // changed-entry record whose staged state is '.' and worktree
+        // state 'A' — the shape ls-files masks behind an empty stand-in
+        // blob no honest check should judge.
+        let raw = self.git_ok(
+            check,
+            &[
+                "status",
+                "--porcelain=v2",
+                "-z",
+                "--no-renames",
+                "--untracked-files=no",
+            ],
+        )?;
+        for record in raw.split(|byte| *byte == 0) {
+            let record = String::from_utf8_lossy(record);
+            let mut fields = record.split(' ');
+            if fields.next() != Some("1") {
+                continue;
+            }
+            if fields.next() == Some(".A") {
+                let path = record.rsplit(' ').next().unwrap_or("");
+                return Err(err(
+                    check,
+                    format!(
+                        "intent-to-add entry for '{path}' has no staged content to judge — stage it or unstage it"
+                    ),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Every index entry, paths as raw bytes.
+    pub fn index_entries(&self, check: &str) -> Result<Vec<IndexEntry>> {
+        let raw = self.git_ok(check, &["ls-files", "-sz"])?;
+        let mut entries = Vec::new();
+        for record in raw.split(|byte| *byte == 0) {
+            if record.is_empty() {
+                continue;
+            }
+            // "<mode> <sha> <stage>\t<path>"
+            let tab = record
+                .iter()
+                .position(|byte| *byte == b'\t')
+                .ok_or_else(|| err(check, "unparseable ls-files record"))?;
+            let (meta, path) = record.split_at(tab);
+            let meta =
+                std::str::from_utf8(meta).map_err(|_| err(check, "unparseable ls-files record"))?;
+            let mut fields = meta.split(' ');
+            let (Some(mode), Some(sha), Some(stage)) =
+                (fields.next(), fields.next(), fields.next())
+            else {
+                return Err(err(check, "unparseable ls-files record"));
+            };
+            let entry = IndexEntry {
+                mode: mode.to_owned(),
+                sha: sha.to_owned(),
+                stage: stage.parse().unwrap_or(9),
+                path: path[1..].to_vec(),
+            };
+            if entry.stage != 0 {
+                return Err(err(
+                    check,
+                    format!(
+                        "unmerged index entry for '{}' — resolve the conflict before committing",
+                        String::from_utf8_lossy(&entry.path)
+                    ),
+                ));
+            }
+            entries.push(entry);
+        }
+        Ok(entries)
+    }
+
+    /// One blob's size, from the object store — the bytes that enter
+    /// history. A blob that cannot be read is exit 2: its size is
+    /// unmeasurable, and refusing beats skipping it.
+    pub fn blob_size(&self, check: &str, sha: &str, path_shown: &str) -> Result<u64> {
+        if !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(err(check, format!("invalid blob id for '{path_shown}'")));
+        }
+        let out = self.git_ok(check, &["cat-file", "-s", sha]).map_err(|_| {
+            err(
+                check,
+                format!("cannot read blob {sha} for '{path_shown}' — its size is unmeasurable, refusing to skip it"),
+            )
+        })?;
+        String::from_utf8_lossy(&out)
+            .trim()
+            .parse()
+            .map_err(|_| err(check, format!("unparseable blob size for '{path_shown}'")))
+    }
+
+    /// One tracked file's content as the commit would record it.
+    pub fn index_content(&self, _check: &str, path: &str) -> Result<Option<Vec<u8>>> {
+        let output = self.git(&["show", &format!(":{path}")]).run()?;
+        match output.status.success() {
+            true => Ok(Some(output.stdout)),
+            false => Ok(None),
+        }
+    }
+}

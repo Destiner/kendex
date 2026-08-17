@@ -44,6 +44,10 @@ scan() {
     case "$f" in
       tools/* | ui/src/components/ui/* | ui/src/bindings.ts) continue ;;
       *.md | *.lock | *.json | *.svg) continue ;;
+      # The commit-guard implementation bans these shapes, so it must name
+      # them — in its patterns, its messages, and its fixtures.
+      crates/core/src/guard/* | crates/cli/src/commands/guard_cmd.rs) continue ;;
+      crates/core/tests/guard_*.rs | crates/cli/tests/guard_*.rs) continue ;;
     esac
     [[ "$f" =~ $filter ]] || continue
     grep -nHE "$pat" "$f" || true
