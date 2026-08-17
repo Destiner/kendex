@@ -93,6 +93,7 @@ describe("updates store", () => {
         warnings: [],
         safety: [],
         heldBack: [],
+        queued: [],
       },
     });
     vi.mocked(commands.updatesOverview).mockResolvedValue({
@@ -127,6 +128,7 @@ describe("updates store", () => {
         warnings: [],
         safety: [],
         heldBack: [],
+        queued: [],
       },
     });
     vi.mocked(commands.updatesOverview).mockResolvedValue({

@@ -30,6 +30,7 @@ export function view(scope: Scope): AuditView {
     warnings: [],
     safety: [],
     heldBack: [],
+    queued: [],
   };
   store.state.views.push(fresh);
   return fresh;

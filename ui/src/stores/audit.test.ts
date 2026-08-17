@@ -33,6 +33,7 @@ const emptyView: AuditView = {
   warnings: [],
   safety: [],
   heldBack: [],
+  queued: [],
 };
 
 describe("audit store refresh", () => {

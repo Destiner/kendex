@@ -51,6 +51,14 @@ export const TAKEN_BACK_TOAST = "Dismissal taken back — the finding is back";
 export const NO_SOURCE_TO_TRUST =
   "Nothing on this machine says where this content came from, so there is no source to trust.";
 
+// The apply preview: a warning-only install is not held back, so before
+// this its findings only appeared once it had landed. Now the preview says
+// what will be waiting.
+export const queuedDecisionsLabel = (count: number): string =>
+  count === 1
+    ? "The safety check found 1 thing in what this installs. It will be waiting for your decision here once it lands."
+    : `The safety check found ${count} things in what this installs. They will be waiting for your decision here once they land.`;
+
 // The Settings list of every recorded decision — acceptances and
 // dismissals — with the way out of each.
 export const DECISIONS_SECTION_TITLE = "Recorded decisions";

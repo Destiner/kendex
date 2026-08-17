@@ -34,6 +34,10 @@ changes carry a **Breaking** call-out with their migration note inline.
   waiting, and a project whose every finding is decided reads as in sync
   instead of warning forever. Findings already decided are tallied under
   the safety list rather than hidden.
+- Applying something the safety check flagged but did not hold back used
+  to look like a clean install, with the findings only turning up under
+  review afterwards. The apply preview now says how many things will be
+  waiting for your decision once the content lands.
 - Settings' **Accepted findings** grows into **Recorded decisions**: every
   acceptance and dismissal on the machine, each saying what it decided,
   when, and whose file it lives in — yours on this machine, or a

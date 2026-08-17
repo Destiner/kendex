@@ -1,5 +1,6 @@
 import type { AuditView } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { StatusLine } from "@/components/status-note";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
@@ -8,8 +9,10 @@ import {
   APPLY_DIALOG_TITLE,
   removeLeftBehindLabel,
 } from "@/lib/copy";
+import { queuedDecisionsLabel } from "@/lib/copy-decisions";
 import type { MergedDriftRow } from "@/lib/drift-merge";
 import { kindLabel } from "@/lib/labels";
+import { queuedDecisions } from "@/lib/queued";
 
 /** The last look before anything is written: every line this will do, and
  *  the one opt-in extra — clearing out items nothing declares any more. */
@@ -32,6 +35,7 @@ export function ApplyDialog({
   onRemoveOrphansChange: (value: boolean) => void;
   onApply: () => void;
 }) {
+  const queued = queuedDecisions(view);
   return (
     <ConfirmDialog
       open={open}
@@ -61,6 +65,9 @@ export function ApplyDialog({
               ))
             : null}
         </div>
+        {queued > 0 ? (
+          <StatusLine tone="info">{queuedDecisionsLabel(queued)}</StatusLine>
+        ) : null}
         {orphans.length > 0 ? (
           <div className="flex items-center gap-2 text-sm">
             <Checkbox

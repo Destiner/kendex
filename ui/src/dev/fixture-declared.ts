@@ -20,6 +20,7 @@ export function views(): AuditView[] {
       warnings: [],
       safety: personalSafety(),
       heldBack: [],
+      queued: [],
     },
     {
       scope: acme,
@@ -66,6 +67,7 @@ export function views(): AuditView[] {
       warnings: [],
       safety: acmeSafety(),
       heldBack: acmeHeldBack(),
+      queued: [],
     },
     {
       scope: proj(API),
@@ -75,6 +77,7 @@ export function views(): AuditView[] {
       warnings: [],
       safety: [],
       heldBack: [],
+      queued: [],
       // Demoes the "scope couldn't be read" path: the review card and
       // Problems page both need a real error to render, not just an empty
       // clean scope, or the modal/footer/page have nothing to show.

@@ -503,6 +503,13 @@ lives in one capability table read by core and UI.
   summary, and whether the Review page is finished — reads that one number,
   so dismissing a finding moves all of them at once, and a scope whose every
   finding is decided reads as done rather than as warning forever.
+  A dismissal is about installed bytes and is never made on a plan: the
+  observed audit is what a tool would load right now, and that is what a
+  decision has to bind to. What a plan would install is scored the same
+  way, and the rows that will install with findings travel with the view
+  as `queued`, so the apply preview says how many decisions will be waiting
+  once the content lands — review-after-install, said before the install
+  instead of discovered after it.
 - **Rule severities are calibrated against real catalogs, not inherited.**
   A Critical blocks an install on its own, so the tier is only worth
   something if it is precise. Patterns that fired only on legitimate

@@ -261,6 +261,14 @@ export type AuditView_Deserialize = {
 	 */
 	heldBack: ItemSafety_Deserialize[],
 	/**
+	 *  Installations the plan would write that install with findings. The
+	 *  same bytes as `safety` where an item is already installed unchanged;
+	 *  for content that is new or changing, the findings that will need a
+	 *  decision after apply — said before the write, since a dismissal is
+	 *  about installed bytes and cannot be made on a plan.
+	 */
+	queued: ItemSafety_Deserialize[],
+	/**
 	 *  Set when this one scope couldn't be read at all — a corrupt or
 	 *  future-version lock or manifest. Carried as data so one scope's
 	 *  failure never blanks every other scope's audit (drift/plan/notes/
@@ -292,6 +300,14 @@ export type AuditView_Serialize = {
 	 *  apply would write, and only these rows carry it.
 	 */
 	heldBack: ItemSafety_Serialize[],
+	/**
+	 *  Installations the plan would write that install with findings. The
+	 *  same bytes as `safety` where an item is already installed unchanged;
+	 *  for content that is new or changing, the findings that will need a
+	 *  decision after apply — said before the write, since a dismissal is
+	 *  about installed bytes and cannot be made on a plan.
+	 */
+	queued: ItemSafety_Serialize[],
 	/**
 	 *  Set when this one scope couldn't be read at all — a corrupt or
 	 *  future-version lock or manifest. Carried as data so one scope's

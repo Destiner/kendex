@@ -51,6 +51,12 @@ pub struct AuditView {
     /// two describe different bytes: an accept has to name the hash of what
     /// apply would write, and only these rows carry it.
     pub held_back: Vec<ItemSafety>,
+    /// Installations the plan would write that install with findings. The
+    /// same bytes as `safety` where an item is already installed unchanged;
+    /// for content that is new or changing, the findings that will need a
+    /// decision after apply — said before the write, since a dismissal is
+    /// about installed bytes and cannot be made on a plan.
+    pub queued: Vec<ItemSafety>,
     /// Set when this one scope couldn't be read at all — a corrupt or
     /// future-version lock or manifest. Carried as data so one scope's
     /// failure never blanks every other scope's audit (drift/plan/notes/
@@ -84,6 +90,7 @@ impl AuditView {
             warnings: Vec::new(),
             safety: Vec::new(),
             held_back: Vec::new(),
+            queued: Vec::new(),
             error: Some(ScopeError::from(error)),
         }
     }
@@ -98,6 +105,8 @@ pub fn view(env: &Env, scope: &Scope) -> AuditView {
         Ok(safety) => safety,
         Err(e) => return AuditView::failed(scope, &e),
     };
+    let (held_back, queued): (Vec<ItemSafety>, Vec<ItemSafety>) =
+        report.safety.into_iter().partition(ItemSafety::blocked);
     AuditView {
         scope: scope.clone(),
         drift: report.drift,
@@ -110,10 +119,10 @@ pub fn view(env: &Env, scope: &Scope) -> AuditView {
         notes: report.notes,
         warnings: report.warnings,
         safety,
-        held_back: report
-            .safety
+        held_back,
+        queued: queued
             .into_iter()
-            .filter(|row| row.blocked())
+            .filter(|row| !row.findings.is_empty())
             .collect(),
         error: None,
     }
