@@ -8,10 +8,9 @@
 
 use clap::Args;
 use vstack_core::apply;
-use vstack_core::engine::decisions::{DecisionState, short_token};
+use vstack_core::engine::decisions::{DecisionState, DecisionToken, short_token};
 use vstack_core::engine::ops::{
-    DecisionRecord, DismissTarget, RecordState, dismiss, list_decisions, revoke_dismissal,
-    revoke_override,
+    DecisionRecord, RecordState, dismiss, list_decisions, revoke_dismissal, revoke_override,
 };
 use vstack_core::engine::{ItemSafety, allow_unsafe_flag, observed_safety};
 use vstack_core::env::Env;
@@ -73,7 +72,10 @@ fn print_row(row: &ItemSafety) {
         match &decision.state {
             DecisionState::Open { earlier } => {
                 if let Some(token) = &decision.token {
-                    say(&format!("      token: {}", short_token_of(token)));
+                    say(&format!(
+                        "      token: {}",
+                        short_token(&row.key(), &decision.fingerprint, token_hash(token))
+                    ));
                 }
                 if let Some(earlier) = earlier {
                     say(&format!("      dismissed before, but {earlier}"));
@@ -101,13 +103,10 @@ fn print_row(row: &ItemSafety) {
     }
 }
 
-/// The token as printed: the backend issues it with the full hash, and a
-/// person types back the same prefix the accept flag uses.
-fn short_token_of(token: &str) -> String {
-    match vstack_core::engine::decisions::DecisionToken::parse(token) {
-        Some(parsed) => short_token(&parsed.key, &parsed.fingerprint, &parsed.hash),
-        None => token.to_owned(),
-    }
+/// The hash the backend put on this token — the token is its own spelling of
+/// key, fingerprint and hash, so the hash is whatever follows the last `@`.
+fn token_hash(token: &str) -> &str {
+    token.rsplit_once('@').map_or(token, |(_, hash)| hash)
 }
 
 #[derive(Args)]
@@ -140,23 +139,24 @@ pub fn dismiss_cmd(env: &Env, args: DismissArgs) -> CliResult {
                 .join(", ")
         )
     })?;
-    let targets = args
+    let tokens = args
         .tokens
         .iter()
-        .map(|token| DismissTarget::parse(token))
+        .map(|token| DecisionToken::parse(token))
         .collect::<Result<Vec<_>, _>>()?;
+    // A token names one installation in one scope; a batch is one journaled
+    // write to one manifest. Whatever the filter spells, one scope is taken.
     let filter = ScopeFilter::resolve(args.scope.as_deref(), args.global, ScopeFilter::Project)?;
-    for scope in resolve_scopes(env, filter)? {
-        let plan = dismiss(env, &scope, &targets, reason)?;
-        apply::execute(env, &plan, None)?;
-        say(&format!(
-            "{}: dismissed {} finding{} as {}",
-            scope.label(),
-            targets.len(),
-            if targets.len() == 1 { "" } else { "s" },
-            reason.name()
-        ));
-    }
+    let scope = resolve_scopes(env, filter)?.remove(0);
+    let plan = dismiss(env, &scope, &tokens, reason)?;
+    apply::execute(env, &plan, None)?;
+    say(&format!(
+        "{}: dismissed {} finding{} as {}",
+        scope.label(),
+        tokens.len(),
+        if tokens.len() == 1 { "" } else { "s" },
+        reason.name()
+    ));
     Ok(())
 }
 
@@ -181,7 +181,10 @@ pub fn decisions(env: &Env, args: DecisionsArgs) -> CliResult {
         false => ScopeFilter::Project,
     };
     let filter = ScopeFilter::resolve(args.scope.as_deref(), args.global, default)?;
-    for scope in resolve_scopes(env, filter)? {
+    let mut scopes = resolve_scopes(env, filter)?;
+    if !args.revoke.is_empty() {
+        // An id names a record in one manifest; the revoke is one scope's.
+        let scope = scopes.remove(0);
         for id in &args.revoke {
             let plan = match id.split_once('#') {
                 Some((key, fingerprint)) => revoke_dismissal(env, &scope, key, fingerprint, None)?,
@@ -190,9 +193,9 @@ pub fn decisions(env: &Env, args: DecisionsArgs) -> CliResult {
             apply::execute(env, &plan, None)?;
             say(&format!("{}: took back the decision {id}", scope.label()));
         }
-        if !args.revoke.is_empty() {
-            continue;
-        }
+        return Ok(());
+    }
+    for scope in scopes {
         let recorded = list_decisions(env, &scope)?;
         if recorded.is_empty() {
             say(&format!("{}: no decisions recorded", scope.label()));

@@ -1,9 +1,14 @@
 import { useState } from "react";
 import type { DismissReason } from "@/bindings";
 import { DismissDialog } from "@/components/dismiss-dialog";
+import { StatusLine } from "@/components/status-note";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DISMISS_LABEL } from "@/lib/copy-decisions";
+import {
+  DISMISS_LABEL,
+  earlierDecisionNote,
+  UNDECIDABLE_HERE,
+} from "@/lib/copy-decisions";
 import { abbreviateHome } from "@/lib/drift-merge";
 import { toolName } from "@/lib/labels";
 import type { EvidenceGroup } from "@/lib/reviewable";
@@ -26,6 +31,13 @@ export function DismissButton({
   onDismiss: (tokens: string[], reason: DismissReason) => void;
 }) {
   const [open, setOpen] = useState(false);
+  if (group.tokens.length === 0) {
+    return (
+      <span className="shrink-0 text-xs text-muted-foreground">
+        {UNDECIDABLE_HERE}
+      </span>
+    );
+  }
   return (
     <>
       <Button
@@ -83,12 +95,19 @@ export function EvidenceLine({
       >
         {name}
       </Badge>
-      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-        {tools.join(", ")}
-        {" · "}
-        <span className="font-mono">
-          {abbreviateHome(group.finding.location)}
+      <span className="flex min-w-0 flex-1 flex-col text-xs text-muted-foreground">
+        <span className="truncate">
+          {tools.join(", ")}
+          {" · "}
+          <span className="font-mono">
+            {abbreviateHome(group.finding.location)}
+          </span>
         </span>
+        {group.earlier ? (
+          <StatusLine tone="info">
+            {earlierDecisionNote(group.earlier)}
+          </StatusLine>
+        ) : null}
       </span>
       <DismissButton
         group={group}

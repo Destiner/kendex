@@ -3,7 +3,8 @@
 
 use serde::Serialize;
 use specta::Type;
-use vstack_core::engine::ops::{self, DismissTarget, RecordedDecision};
+use vstack_core::engine::decisions::DecisionToken;
+use vstack_core::engine::ops::{self, RecordedDecision};
 use vstack_core::env::Env;
 use vstack_core::model::Scope;
 use vstack_core::quality::reviews::DismissReason;
@@ -99,14 +100,14 @@ pub fn dismiss_findings(
     reason: DismissReason,
 ) -> Result<Dismissed, String> {
     let env = env()?;
-    let targets = tokens
+    let tokens = tokens
         .iter()
-        .map(|token| DismissTarget::parse(token))
+        .map(|token| DecisionToken::parse(token))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
-    let plan = ops::dismiss(&env, &scope, &targets, reason).map_err(|e| e.to_string())?;
+    let plan = ops::dismiss(&env, &scope, &tokens, reason).map_err(|e| e.to_string())?;
     apply::execute(&env, &plan, None).map_err(|e| e.to_string())?;
-    let records = written(&env, &scope, &targets)?;
+    let records = written(&env, &scope, &tokens)?;
     Ok(Dismissed {
         view: view(&env, &scope),
         records,
@@ -119,7 +120,7 @@ pub fn dismiss_findings(
 fn written(
     env: &Env,
     scope: &Scope,
-    targets: &[DismissTarget],
+    tokens: &[DecisionToken],
 ) -> Result<Vec<DismissedRecord>, String> {
     let path = manifest::manifest_path(env, scope);
     let manifest::ManifestFile::Current(manifest) =
@@ -127,16 +128,16 @@ fn written(
     else {
         return Err("the manifest could not be read back after the write".to_owned());
     };
-    targets
+    tokens
         .iter()
-        .map(|target| {
+        .map(|token| {
             manifest
                 .safety_reviews
-                .get(&target.token.key)
-                .and_then(|review| review.dismissed.get(&target.token.fingerprint))
+                .get(&token.key)
+                .and_then(|review| review.dismissed.get(&token.fingerprint))
                 .map(|dismissal| DismissedRecord {
-                    key: target.token.key.clone(),
-                    fingerprint: target.token.fingerprint.clone(),
+                    key: token.key.clone(),
+                    fingerprint: token.fingerprint.clone(),
                     dismissed_at: dismissal.dismissed_at.clone(),
                 })
                 .ok_or_else(|| "the dismissal was not found after the write".to_owned())

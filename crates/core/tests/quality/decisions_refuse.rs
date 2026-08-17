@@ -7,7 +7,7 @@ use std::fs;
 
 use vstack_core::apply;
 use vstack_core::engine::decisions::{DecisionState, DecisionToken};
-use vstack_core::engine::ops::{self, DismissTarget, dismiss};
+use vstack_core::engine::ops::{self, dismiss};
 use vstack_core::error::CoreError;
 use vstack_core::manifest;
 use vstack_core::quality::reviews::DismissReason;
@@ -30,7 +30,7 @@ fn a_stale_token_writes_nothing() {
     let refused = dismiss(
         &f.env,
         &f.scope,
-        &[DismissTarget::parse(&token).unwrap()],
+        &[DecisionToken::parse(&token).unwrap()],
         DismissReason::WrongCall,
     );
     assert!(
@@ -49,12 +49,7 @@ fn a_token_for_a_finding_that_is_gone_writes_nothing() {
         fingerprint: "0000000000000000".to_owned(),
         ..token
     };
-    let refused = dismiss(
-        &f.env,
-        &f.scope,
-        &[DismissTarget { token: forged }],
-        DismissReason::WrongCall,
-    );
+    let refused = dismiss(&f.env, &f.scope, &[forged], DismissReason::WrongCall);
     assert!(matches!(refused, Err(CoreError::DecisionStale { .. })));
     assert!(manifest_of(&f).safety_reviews.is_empty());
 }
@@ -70,12 +65,7 @@ fn a_batch_with_one_bad_token_writes_nothing() {
         hash: "000000000000".to_owned(),
         ..good.clone()
     };
-    let refused = dismiss(
-        &f.env,
-        &f.scope,
-        &[DismissTarget { token: good }, DismissTarget { token: bad }],
-        DismissReason::WrongCall,
-    );
+    let refused = dismiss(&f.env, &f.scope, &[good, bad], DismissReason::WrongCall);
     assert!(refused.is_err());
     assert!(manifest_of(&f).safety_reviews.is_empty());
 }
@@ -98,7 +88,7 @@ fn a_held_back_items_findings_cannot_be_dismissed() {
     let refused = dismiss(
         &f.env,
         &f.scope,
-        &[DismissTarget::parse(&first_token(&hostile)).unwrap()],
+        &[DecisionToken::parse(&first_token(&hostile)).unwrap()],
         DismissReason::WrongCall,
     );
     assert!(
@@ -125,7 +115,7 @@ fn an_accepted_items_findings_read_as_accepted() {
     let refused = dismiss(
         &f.env,
         &f.scope,
-        &[DismissTarget::parse(&first_token(&hostile)).unwrap()],
+        &[DecisionToken::parse(&first_token(&hostile)).unwrap()],
         DismissReason::WrongCall,
     );
     assert!(
@@ -143,7 +133,7 @@ fn a_concurrent_manifest_write_makes_the_dismissal_stale() {
     let planned = dismiss(
         &f.env,
         &f.scope,
-        &[DismissTarget::parse(&token).unwrap()],
+        &[DecisionToken::parse(&token).unwrap()],
         DismissReason::WrongCall,
     )
     .unwrap();
@@ -181,14 +171,14 @@ fn trusting_an_unknown_source_is_refused() {
     let refused = dismiss(
         &f.env,
         &f.scope,
-        &[DismissTarget::parse(&first_token(&loose)).unwrap()],
+        &[DecisionToken::parse(&first_token(&loose)).unwrap()],
         DismissReason::TrustedSource,
     );
     assert!(matches!(refused, Err(CoreError::DecisionStale { why, .. }) if why.contains("source")));
     let allowed = dismiss(
         &f.env,
         &f.scope,
-        &[DismissTarget::parse(&first_token(&loose)).unwrap()],
+        &[DecisionToken::parse(&first_token(&loose)).unwrap()],
         DismissReason::WrongCall,
     );
     assert!(allowed.is_ok());
@@ -206,5 +196,8 @@ fn a_reason_outside_the_vocabulary_refuses_to_load() {
         + "\n[safety-reviews.\"skill:mild:claude\"]\nreview-hash = \"abc\"\nruleset = 1\n\n[safety-reviews.\"skill:mild:claude\".dismissed.\"0000000000000000\"]\nreason = \"because\"\ndismissed-at = \"2026-01-01T00:00:00Z\"\n";
     fs::write(&path, text).unwrap();
     let loaded = manifest::load(&path);
-    assert!(loaded.is_err(), "{loaded:?}");
+    assert!(
+        matches!(loaded, Err(CoreError::TomlParse { .. })),
+        "{loaded:?}"
+    );
 }

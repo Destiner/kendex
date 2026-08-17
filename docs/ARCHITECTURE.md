@@ -486,8 +486,9 @@ lives in one capability table read by core and UI.
   longer names what is installed. Every write is one journaled manifest
   op for one scope. Removing an item reaps its decisions; the registry
   (`vstack decisions`, Recorded decisions) reads every record against what
-  is installed now — active, stale with the reason, or obsolete — and takes
-  back exactly the record it was shown, never a newer one at the same key.
+  is installed now — active, stale with the reason, or obsolete. An undo
+  from the app takes back exactly the record it was shown, never a newer
+  one at the same key; the CLI's revoke names the record by key.
   How the two decisions compose, written down so no surface has to guess:
   a held-back item's findings are decided by accepting or removing the
   item, so they are never offered for dismissal and the item stays visible

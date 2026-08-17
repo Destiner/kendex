@@ -76,6 +76,32 @@ pub fn mint(
     }
 }
 
+/// Why a decision made against `recorded_hash` under `recorded_ruleset` no
+/// longer speaks for the content in front of us — or `None` while it still
+/// does. Every decision binds the same two things, so every decision goes
+/// stale the same way. Bytes nobody can read cannot be the bytes somebody
+/// reviewed: a record with nothing to compare itself against never applies,
+/// the same rule that reports an artifact vstack cannot compare as
+/// uncompared rather than as passing.
+pub fn snapshot_stale(
+    recorded_hash: &str,
+    recorded_ruleset: u32,
+    review_hash: Option<&str>,
+) -> Option<String> {
+    let Some(review_hash) = review_hash else {
+        return Some("the content it was made for cannot be read here, so nothing proves it is still what was reviewed".to_owned());
+    };
+    if recorded_hash != review_hash {
+        return Some("the content changed since it was reviewed".to_owned());
+    }
+    if recorded_ruleset != RULESET_VERSION {
+        return Some(format!(
+            "the safety rules changed since it was reviewed (reviewed under rule set {recorded_ruleset}, now {RULESET_VERSION})"
+        ));
+    }
+    None
+}
+
 /// What a recorded override means for the content in front of us now.
 pub fn state(
     recorded: Option<&SafetyOverride>,
@@ -86,27 +112,8 @@ pub fn state(
     let Some(recorded) = recorded else {
         return OverrideState::Absent;
     };
-    // Bytes nobody can read cannot be the bytes somebody reviewed. A record
-    // that has nothing to compare itself against never unblocks — the same
-    // rule that reports an artifact vstack cannot compare as uncompared
-    // rather than as passing.
-    let Some(review_hash) = review_hash else {
-        return OverrideState::Stale {
-            why: "the content it was granted for cannot be read here, so nothing proves it is still what was reviewed".to_owned(),
-        };
-    };
-    if recorded.review_hash != review_hash {
-        return OverrideState::Stale {
-            why: "the content changed since it was reviewed".to_owned(),
-        };
-    }
-    if recorded.ruleset != RULESET_VERSION {
-        return OverrideState::Stale {
-            why: format!(
-                "the safety rules changed since it was reviewed (reviewed under rule set {}, now {RULESET_VERSION})",
-                recorded.ruleset
-            ),
-        };
+    if let Some(why) = snapshot_stale(&recorded.review_hash, recorded.ruleset, review_hash) {
+        return OverrideState::Stale { why };
     }
     if recorded.findings != fingerprints(findings, root) {
         return OverrideState::Stale {

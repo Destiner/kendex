@@ -1,7 +1,7 @@
-//! A warning-only install used to look "ready to apply" with no findings,
-//! and only after applying did the findings appear under review. The view
-//! now carries what the plan would install with findings, so the preview
-//! can say what will need a decision once it lands.
+//! A warning-only install is not held back, and its findings can only be
+//! decided once it is on disk. The view carries what the plan would install
+//! with findings, so the preview can say what will need a decision once it
+//! lands rather than leaving it to be discovered afterwards.
 #![cfg(unix)]
 
 use std::fs;
@@ -49,7 +49,10 @@ fn a_warning_only_install_is_named_before_it_lands() {
         .find(|row| row.name == "mild")
         .expect("the install with a finding is named before it lands");
     assert_eq!(queued.findings.len(), 1);
-    assert!(queued.decisions[0].state.is_open());
+    assert!(matches!(
+        queued.decisions[0].state,
+        vstack_core::engine::decisions::DecisionState::Open { .. }
+    ));
 
     apply_scope(&env, &scope, false, Vec::new()).unwrap();
     let after = view(&env, &scope);

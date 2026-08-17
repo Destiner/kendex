@@ -119,7 +119,11 @@ fn hook_entry(event: &str, matcher: Option<&str>, command: &str, timeout: Option
 
 /// The registration this observed hook was named after, found again in the
 /// config file that holds it. The name is `event:matcher:stem`, so the walk
-/// that produced it is the walk that finds it.
+/// that produced it is the walk that finds it — and there are two walks,
+/// because two shapes exist: the Claude/Codex/Gemini file nests handlers
+/// under a matcher group, and Copilot's carries each entry's action, matcher
+/// and timeout inline. Reading only one shape would leave the other's hooks
+/// with no hash, and a decision about them permanently unreadable.
 fn observed_hook(path: &Path, name: &str) -> Option<String> {
     let root = crate::quality::observe::config_json(path)?;
     let events = root.get("hooks")?.as_object()?;
@@ -131,26 +135,30 @@ fn observed_hook(path: &Path, name: &str) -> Option<String> {
                 None => vec![group],
             };
             for handler in handlers {
-                let Some(command) = handler.get("command").and_then(Value::as_str) else {
+                let Some(action) = hook_action(handler) else {
                     continue;
                 };
-                let entry = hook_entry(
-                    event,
-                    matcher,
-                    command,
-                    handler
-                        .get("timeout")
-                        .and_then(Value::as_u64)
-                        .and_then(|t| u32::try_from(t).ok()),
-                );
-                let stem = crate::hook::command_stem(command);
+                let timeout = ["timeout", "timeoutSec"]
+                    .iter()
+                    .find_map(|key| handler.get(*key).and_then(Value::as_u64))
+                    .and_then(|t| u32::try_from(t).ok());
+                let stem = crate::hook::command_stem(action);
                 if name == format!("{event}:{}:{stem}", matcher.unwrap_or("*")) {
-                    return Some(entry);
+                    return Some(hook_entry(event, matcher, action, timeout));
                 }
             }
         }
     }
     None
+}
+
+/// What one registered handler runs, in whichever key its file spells it:
+/// `command` in the nested shape, `bash`/`powershell`/`url`/`prompt` in
+/// Copilot's — the same keys the scanner named the item by.
+fn hook_action(handler: &Value) -> Option<&str> {
+    ["command", "bash", "powershell", "url", "prompt"]
+        .iter()
+        .find_map(|key| handler.get(*key).and_then(Value::as_str))
 }
 
 /// `value` as text with object keys in one order. The JSON reader preserves

@@ -6,7 +6,7 @@ use std::fs;
 use vstack_core::apply;
 use vstack_core::engine::decisions::{DecisionState, DecisionToken};
 use vstack_core::engine::ops::{
-    self, DecisionRecord, DismissTarget, RecordState, dismiss, list_decisions, revoke_dismissal,
+    self, DecisionRecord, RecordState, dismiss, list_decisions, revoke_dismissal,
 };
 use vstack_core::engine::{ItemSafety, audit, observed_safety};
 use vstack_core::error::CoreError;
@@ -59,7 +59,7 @@ fn dismiss_first(f: &Fixture, name: &str, reason: DismissReason) -> String {
     let plan = dismiss(
         &f.env,
         &f.scope,
-        &[DismissTarget::parse(&token).unwrap()],
+        &[DecisionToken::parse(&token).unwrap()],
         reason,
     )
     .unwrap();
@@ -73,7 +73,12 @@ fn a_dismissal_settles_one_finding_on_exactly_this_content() {
     let f = with_mild();
     let before = row(&f, "mild");
     assert!(!before.blocked());
-    assert!(before.decisions.iter().all(|d| d.state.is_open()));
+    assert!(
+        before
+            .decisions
+            .iter()
+            .all(|d| d.state == DecisionState::Open { earlier: None })
+    );
 
     let token = dismiss_first(&f, "mild", DismissReason::WrongCall);
 
@@ -183,7 +188,7 @@ fn undo_takes_back_only_the_record_it_made() {
         manifest_of(&f).safety_reviews.is_empty(),
         "an emptied snapshot leaves the file"
     );
-    assert!(row(&f, "mild").decisions[0].state.is_open());
+    assert!(row(&f, "mild").decisions[0].state == DecisionState::Open { earlier: None });
 
     let twice = revoke_dismissal(&f.env, &f.scope, &token.key, &token.fingerprint, None);
     assert!(matches!(twice, Err(CoreError::DismissalNotFound { .. })));
@@ -228,7 +233,11 @@ fn an_older_manifest_loads_and_the_first_dismissal_writes_the_current_schema() {
     assert!(text.contains(&format!("schema = {MANIFEST_SCHEMA}")));
     fs::write(
         &path,
-        text.replacen(&format!("schema = {MANIFEST_SCHEMA}"), "schema = 5", 1),
+        text.replacen(
+            &format!("schema = {MANIFEST_SCHEMA}"),
+            &format!("schema = {}", MANIFEST_SCHEMA - 1),
+            1,
+        ),
     )
     .unwrap();
     assert!(manifest_of(&f).safety_reviews.is_empty());
@@ -335,4 +344,37 @@ fn a_trusted_source_dismissal_binds_to_the_source() {
         DecisionState::Open { earlier: Some(why) } => assert!(why.contains("it trusted"), "{why}"),
         other => panic!("expected an open finding that says why, got {other:?}"),
     }
+}
+
+/// A rename moves the item's decisions with it. What must not happen is a
+/// record left under the old name, waiting for something else to take it.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn renaming_an_item_carries_its_decision_and_leaves_nothing_behind() {
+    use vstack_core::model::{HarnessId, ItemKind};
+    let f = with_mild();
+    let forked = vstack_core::engine::fork::fork(
+        &f.env,
+        &f.scope,
+        ItemKind::Skill,
+        "mild",
+        HarnessId::Claude,
+    )
+    .unwrap();
+    apply::execute(&f.env, &forked, None).unwrap();
+    apply::execute(&f.env, &audit(&f.env, &f.scope).unwrap().plan, None).unwrap();
+    dismiss_first(&f, "mild", DismissReason::Intended);
+
+    let renamed =
+        vstack_core::engine::fork::rename_fork(&f.env, &f.scope, ItemKind::Skill, "mild", "gentle")
+            .unwrap();
+    apply::execute(&f.env, &renamed, None).unwrap();
+
+    let recorded = manifest_of(&f);
+    assert!(
+        !recorded.safety_reviews.contains_key(MILD_KEY),
+        "{recorded:?}"
+    );
+    let moved = recorded.safety_reviews.get("skill:gentle:claude").unwrap();
+    assert_eq!(moved.dismissed.len(), 1);
 }

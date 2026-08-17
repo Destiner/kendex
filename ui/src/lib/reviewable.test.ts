@@ -61,6 +61,44 @@ describe("openOccurrences", () => {
     expect(settledCount([row(), dismissed, blocked])).toBe(1);
   });
 
+  it("treats a decision the content outran as open again, not as settled", () => {
+    const mixed = row({
+      findings: [
+        FINDING,
+        { ...FINDING, location: "SKILL.md:9" },
+        { ...FINDING, location: "SKILL.md:12" },
+      ],
+      decisions: [
+        decision({
+          fingerprint: "a",
+          state: {
+            state: "dismissed",
+            reason: "intended",
+            dismissedAt: "2026-08-16T00:00:00Z",
+          },
+        }),
+        decision({
+          fingerprint: "b",
+          state: {
+            state: "open",
+            earlier: "the content changed since it was reviewed",
+          },
+        }),
+        decision({
+          fingerprint: "c",
+          state: { state: "accepted", grantedAt: "2026-08-16T00:00:00Z" },
+        }),
+      ],
+    });
+    const open = openOccurrences([mixed]);
+    expect(open).toHaveLength(1);
+    expect(open[0].decision.fingerprint).toBe("b");
+    expect(settledCount([mixed])).toBe(2);
+    expect(evidenceGroups(open)[0].earlier).toBe(
+      "the content changed since it was reviewed",
+    );
+  });
+
   it("refuses a row whose decisions do not line up with its findings", () => {
     expect(() => openOccurrences([row({ decisions: [] })])).toThrow(
       /no decision beside it/,
@@ -118,11 +156,13 @@ describe("evidenceGroups", () => {
     expect(b.canTrustSource).toBe(false);
   });
 
-  it("skips a finding that has no token to decide with", () => {
+  it("keeps a finding that has no token to decide with, so it is still counted", () => {
     const unreadable = row({
       reviewHash: null,
       decisions: [decision({ token: null })],
     });
-    expect(evidenceGroups(openOccurrences([unreadable]))).toHaveLength(0);
+    const groups = evidenceGroups(openOccurrences([unreadable]));
+    expect(groups).toHaveLength(1);
+    expect(groups[0].tokens).toEqual([]);
   });
 });

@@ -48,6 +48,10 @@ export const UNDO_LABEL = "Undo";
 export const dismissedToast = (count: number): string =>
   count === 1 ? "Finding dismissed" : `${count} findings dismissed`;
 export const TAKEN_BACK_TOAST = "Dismissal taken back — the finding is back";
+export const earlierDecisionNote = (why: string): string =>
+  `You dismissed this before, but ${why}.`;
+export const UNDECIDABLE_HERE =
+  "Can't be decided here — its content can't be read on this machine";
 export const NO_SOURCE_TO_TRUST =
   "Nothing on this machine says where this content came from, so there is no source to trust.";
 
@@ -66,8 +70,8 @@ export const FOCUSED_ALL_DONE = "That's everything";
 export const FOCUSED_ALL_DONE_BODY =
   "Every finding here has been looked at. Anything you skipped is still waiting on the page.";
 
-// The apply preview: a warning-only install is not held back, so before
-// this its findings only appeared once it had landed. Now the preview says
+// The apply preview: a warning-only install is not held back, and its
+// findings can only be decided once it is on disk — so the preview says
 // what will be waiting.
 export const queuedDecisionsLabel = (count: number): string =>
   count === 1

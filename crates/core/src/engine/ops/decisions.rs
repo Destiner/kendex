@@ -26,22 +26,6 @@ use crate::quality::reviews::{
 
 use super::manifest_for_mutation;
 
-/// One finding to dismiss, as the token that names it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DismissTarget {
-    pub token: DecisionToken,
-}
-
-impl DismissTarget {
-    pub fn parse(token: &str) -> Result<DismissTarget> {
-        DecisionToken::parse(token)
-            .map(|token| DismissTarget { token })
-            .ok_or_else(|| CoreError::DecisionToken {
-                token: token.to_owned(),
-            })
-    }
-}
-
 /// Record that these findings are not problems, for the reason given, on
 /// exactly the content each token names. Refuses — writing nothing — if any
 /// token names content that has changed, a finding that is no longer there,
@@ -51,15 +35,14 @@ impl DismissTarget {
 pub fn dismiss(
     env: &Env,
     scope: &Scope,
-    targets: &[DismissTarget],
+    tokens: &[DecisionToken],
     reason: DismissReason,
 ) -> Result<Plan> {
     let mut manifest = manifest_for_mutation(env, scope)?;
     let rows = observed_rows(env, scope)?;
     let now = crate::clock::timestamp();
-    for target in targets {
-        let token = &target.token;
-        let (row, root) = installed(&rows, &token.key)?;
+    for token in tokens {
+        let row = installed(&rows, &token.key)?;
         let Some(review_hash) = row.review_hash.as_deref() else {
             return Err(stale(token, "its content cannot be read here"));
         };
@@ -69,7 +52,7 @@ pub fn dismiss(
                 "the content changed since the finding was read",
             ));
         }
-        if !fingerprints(&row.findings, &root).contains(&token.fingerprint) {
+        if !fingerprints(&row.findings, &row.location).contains(&token.fingerprint) {
             return Err(stale(token, "the finding is no longer there"));
         }
         if row.override_state.unblocks() {
@@ -110,7 +93,7 @@ pub fn dismiss(
             },
         );
     }
-    let what = match targets.len() {
+    let what = match tokens.len() {
         1 => "dismiss a safety finding".to_owned(),
         n => format!("dismiss {n} safety findings"),
     };
@@ -191,14 +174,15 @@ fn manifest_write(env: &Env, scope: &Scope, manifest: Manifest, what: String) ->
     })
 }
 
-fn installed<'a>(rows: &'a [ItemSafety], key: &str) -> Result<(&'a ItemSafety, String)> {
+/// The installed row a key names. A key that does not parse names nothing
+/// that could be installed, and says so in its own words.
+fn installed<'a>(rows: &'a [ItemSafety], key: &str) -> Result<&'a ItemSafety> {
     let (kind, name, harness) =
-        crate::lock::parse_entry_key(key).ok_or_else(|| CoreError::DecisionToken {
-            token: key.to_owned(),
+        crate::lock::parse_entry_key(key).ok_or_else(|| CoreError::DecisionKey {
+            key: key.to_owned(),
         })?;
     rows.iter()
         .find(|row| row.kind == kind && row.name == name && row.harness == harness)
-        .map(|row| (row, row.location.clone()))
         .ok_or(CoreError::ItemNotFound {
             kind,
             name: name.to_owned(),
@@ -277,7 +261,7 @@ pub fn list_decisions(env: &Env, scope: &Scope) -> Result<Vec<RecordedDecision>>
     for (key, recorded) in &manifest.safety_overrides {
         let (kind, name, harness) = parsed(key);
         let state = match installed(&rows, key) {
-            Ok((row, _)) => match &row.override_state {
+            Ok(row) => match &row.override_state {
                 OverrideState::Active => RecordState::Active,
                 OverrideState::Stale { why } => RecordState::Stale { why: why.clone() },
                 OverrideState::Absent => RecordState::Obsolete,
@@ -301,13 +285,13 @@ pub fn list_decisions(env: &Env, scope: &Scope) -> Result<Vec<RecordedDecision>>
         let (kind, name, harness) = parsed(key);
         let row = installed(&rows, key).ok();
         for (fingerprint, dismissal) in &review.dismissed {
-            let (state, finding) = match &row {
+            let (state, finding) = match row {
                 None => (RecordState::Obsolete, None),
-                Some((row, root)) => {
+                Some(row) => {
                     let finding = row
                         .findings
                         .iter()
-                        .find(|finding| finding.fingerprint(root) == *fingerprint)
+                        .find(|finding| finding.fingerprint(&row.location) == *fingerprint)
                         .cloned();
                     let state = match dismissal_state(
                         review,

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { DismissReason, ItemSafety } from "@/bindings";
 import { FindingLine } from "@/components/safety-findings";
+import { StatusLine } from "@/components/status-note";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  earlierDecisionNote,
   FOCUSED_ALL_DONE,
   FOCUSED_ALL_DONE_BODY,
   FOCUSED_SKIP,
@@ -121,6 +123,11 @@ function Walk({
           </Badge>
         </div>
         <FindingLine finding={step.finding} />
+        {step.earlier ? (
+          <StatusLine tone="info">
+            {earlierDecisionNote(step.earlier)}
+          </StatusLine>
+        ) : null}
         <div className="flex flex-col gap-1.5">
           {REASON_ORDER.map((reason) => {
             const disabled =

@@ -98,23 +98,9 @@ impl SafetyReview {
     }
 
     /// Whether this snapshot still describes the content in front of us:
-    /// the same bytes, judged by the same rules. `None` for the hash means
-    /// the bytes cannot be read here, and a decision with nothing to compare
-    /// against never applies.
+    /// the same bytes, judged by the same rules.
     pub fn stale_why(&self, review_hash: Option<&str>) -> Option<String> {
-        let Some(review_hash) = review_hash else {
-            return Some("the content it was made for cannot be read here, so nothing proves it is still what was reviewed".to_owned());
-        };
-        if self.review_hash != review_hash {
-            return Some("the content changed since it was reviewed".to_owned());
-        }
-        if self.ruleset != RULESET_VERSION {
-            return Some(format!(
-                "the safety rules changed since it was reviewed (reviewed under rule set {}, now {RULESET_VERSION})",
-                self.ruleset
-            ));
-        }
-        None
+        super::overrides::snapshot_stale(&self.review_hash, self.ruleset, review_hash)
     }
 }
 

@@ -11,12 +11,16 @@ import {
   openOccurrences,
 } from "@/lib/reviewable";
 
-/** The evidence to walk, most serious first. */
+/** The evidence to walk, most serious first. Evidence with no token has
+ *  nothing a walk could do with it, so it stays on the page and out of the
+ *  queue. */
 export function reviewQueue(rows: ItemSafety[]): EvidenceGroup[] {
-  return [...evidenceGroups(openOccurrences(rows))].sort(
-    (a, b) =>
-      SEVERITY_RANK[b.finding.severity] - SEVERITY_RANK[a.finding.severity],
-  );
+  return evidenceGroups(openOccurrences(rows))
+    .filter((group) => group.tokens.length > 0)
+    .sort(
+      (a, b) =>
+        SEVERITY_RANK[b.finding.severity] - SEVERITY_RANK[a.finding.severity],
+    );
 }
 
 /** Whether a queued step is still a live question on the current view: the

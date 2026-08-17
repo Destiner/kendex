@@ -5,6 +5,7 @@ use specta::Type;
 
 use crate::model::HarnessId;
 
+mod decisions;
 mod file;
 mod validate;
 pub use file::{ManifestFile, load, load_for_mutation, manifest_path, save, seed};
@@ -330,19 +331,6 @@ impl Manifest {
         let names = self.suppressed.entry(kind).or_default();
         names.push(name.to_owned());
         names.sort();
-    }
-
-    /// Forget every safety decision recorded for this item, whatever tool it
-    /// was installed for. Removing an item is removing what the decisions
-    /// were about; a record left behind would speak for a reinstall of the
-    /// same name that nobody has looked at.
-    pub fn reap_decisions(&mut self, kind: crate::model::ItemKind, name: &str) {
-        let about_item = |key: &str| {
-            crate::lock::parse_entry_key(key)
-                .is_some_and(|(key_kind, key_name, _)| key_kind == kind && key_name == name)
-        };
-        self.safety_overrides.retain(|key, _| !about_item(key));
-        self.safety_reviews.retain(|key, _| !about_item(key));
     }
 
     pub fn declared_mut(

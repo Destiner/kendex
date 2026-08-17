@@ -168,4 +168,34 @@ describe("acceptTokens", () => {
       "visual-qa@bbbbbbbbbbbb",
     ]);
   });
+
+  it("keeps every finding on a held-back item, whatever was decided about it", () => {
+    const other = {
+      ...RULE_FINDING,
+      rule: "supply-chain",
+      location: "SKILL.md:9",
+    };
+    const held = row({
+      findings: [RULE_FINDING, other],
+      decisions: [
+        {
+          fingerprint: "a",
+          token: "t1",
+          state: {
+            state: "dismissed",
+            reason: "wrong-call",
+            dismissedAt: "2026-08-16T00:00:00Z",
+          },
+        },
+        {
+          fingerprint: "b",
+          token: "t2",
+          state: { state: "open", earlier: null },
+        },
+      ],
+    });
+    const [group] = groupBlocked([held]);
+    const shown = group.findingGroups.flatMap((rule) => rule.locations);
+    expect(shown).toHaveLength(2);
+  });
 });

@@ -4,8 +4,10 @@ import type { DismissReason, ItemSafety } from "@/bindings";
 import { DismissButton, EvidenceLine } from "@/components/finding-decide";
 import { FindingLine } from "@/components/safety-findings";
 import { StatusDot } from "@/components/status-dot";
+import { StatusLine } from "@/components/status-note";
 import { Badge } from "@/components/ui/badge";
 import { FEWER_ITEMS_LABEL } from "@/lib/copy";
+import { earlierDecisionNote } from "@/lib/copy-decisions";
 import { findingHeadline } from "@/lib/finding-headlines";
 import {
   type ConcernGroup,
@@ -163,6 +165,11 @@ function ConcernRow({
               locations={detail.locations}
             />
           ))}
+          {single?.earlier ? (
+            <StatusLine tone="info">
+              {earlierDecisionNote(single.earlier)}
+            </StatusLine>
+          ) : null}
           {single ? (
             <AffectedList concern={concern} />
           ) : (

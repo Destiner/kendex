@@ -65,27 +65,42 @@ export interface EvidenceItem {
  *  separate group, however alike the sentence looks. */
 export interface EvidenceGroup {
   finding: Finding;
-  /** The tokens a dismissal of this group sends — one per installation. */
+  /** The tokens a dismissal of this group sends — one per installation.
+   *  Empty where the content cannot be read here: the finding still needs
+   *  a person, it just cannot be settled from this machine, and the page
+   *  says so rather than dropping it from the count. */
   tokens: string[];
   items: EvidenceItem[];
   /** Whether every installation here can name where its content came
    *  from — the one thing a trusted-source dismissal needs. */
   canTrustSource: boolean;
+  /** Why an earlier decision on this finding stopped applying, when there
+   *  was one — the person deciding again deserves to know it is again. */
+  earlier: string | null;
 }
 
 export function evidenceGroups(open: Occurrence[]): EvidenceGroup[] {
   const ordered: EvidenceGroup[] = [];
   const byEvidence = new Map<string, EvidenceGroup>();
   for (const { row, finding, decision } of open) {
-    if (!decision.token) continue;
-    const key = `${row.reviewHash}::${decision.fingerprint}`;
-    let group = byEvidence.get(key);
-    if (!group) {
-      group = { finding, tokens: [], items: [], canTrustSource: true };
+    const content = row.reviewHash ?? `${row.kind}:${row.name}:${row.harness}`;
+    const key = `${content}::${decision.fingerprint}`;
+    const existing = byEvidence.get(key);
+    const group: EvidenceGroup = existing ?? {
+      finding,
+      tokens: [],
+      items: [],
+      canTrustSource: true,
+      earlier:
+        decision.state.state === "open"
+          ? (decision.state.earlier ?? null)
+          : null,
+    };
+    if (!existing) {
       byEvidence.set(key, group);
       ordered.push(group);
     }
-    group.tokens.push(decision.token);
+    if (decision.token) group.tokens.push(decision.token);
     group.items.push({ kind: row.kind, name: row.name, harness: row.harness });
     if (row.provenance == null) group.canTrustSource = false;
   }

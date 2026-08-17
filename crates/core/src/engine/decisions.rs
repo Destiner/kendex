@@ -44,13 +44,6 @@ pub enum DecisionState {
     Accepted { granted_at: String },
 }
 
-impl DecisionState {
-    /// Whether a person still has to look at this finding.
-    pub fn is_open(&self) -> bool {
-        matches!(self, DecisionState::Open { .. })
-    }
-}
-
 /// One finding as a thing a person can rule on. Sits beside the finding it
 /// is about — `ItemSafety.decisions[i]` speaks for `ItemSafety.findings[i]`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -80,13 +73,16 @@ pub struct DecisionToken {
 }
 
 impl DecisionToken {
-    pub fn parse(token: &str) -> Option<DecisionToken> {
-        let (rest, hash) = token.rsplit_once('@')?;
-        let (key, fingerprint) = rest.rsplit_once('#')?;
+    pub fn parse(token: &str) -> crate::error::Result<DecisionToken> {
+        let malformed = || crate::error::CoreError::DecisionToken {
+            token: token.to_owned(),
+        };
+        let (rest, hash) = token.rsplit_once('@').ok_or_else(malformed)?;
+        let (key, fingerprint) = rest.rsplit_once('#').ok_or_else(malformed)?;
         if key.is_empty() || fingerprint.is_empty() || hash.len() < SHOWN_HASH {
-            return None;
+            return Err(malformed());
         }
-        Some(DecisionToken {
+        Ok(DecisionToken {
             key: key.to_owned(),
             fingerprint: fingerprint.to_owned(),
             hash: hash.to_owned(),
@@ -187,12 +183,12 @@ mod tests {
             hash: "abcdefabcdefabcdef".to_owned(),
         };
         assert_eq!(
-            DecisionToken::parse(&token.to_string()),
+            DecisionToken::parse(&token.to_string()).ok(),
             Some(token.clone())
         );
         assert!(token.names("abcdefabcdefabcdef0000"));
         assert!(!token.names("abcdefabcdefabcde"));
-        assert!(DecisionToken::parse("plugin:x:claude#3fa9@abc").is_none());
-        assert!(DecisionToken::parse("nothing").is_none());
+        assert!(DecisionToken::parse("plugin:x:claude#3fa9@abc").is_err());
+        assert!(DecisionToken::parse("nothing").is_err());
     }
 }

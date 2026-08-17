@@ -10,7 +10,7 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 - A safety finding that turns out not to be a problem can now be
   dismissed, so it stops asking. Pick why — **Not actually a problem**,
-  **Does this on purpose**, or **Comes from a source I trust** — and the
+  **Does this on purpose**, or **From a source I trust** — and the
   decision is recorded against exactly that version of the content: any
   change to the file, or to the safety rules, brings the finding back.
   Trusting a source binds to that source, so the same content arriving
@@ -618,8 +618,9 @@ changes carry a **Breaking** call-out with their migration note inline.
   out of date and the item is held back until you review it once more.
   Accept it again and it is bound properly from then on. `vstack
   accepted` and Settings both show which acceptances need this. The
-  project file's format moves to version 4, so an older vstack refuses
-  to read it rather than misreading an acceptance.
+  project file's format moves on (to version 5, together with the
+  dismissals above), so an older vstack refuses to read it rather than
+  misreading an acceptance.
 - An accepted skill installed as a shared link no longer reads as
   "changed since it was reviewed" the moment it lands: the safety
   check's idea of content identity no longer depends on which path the

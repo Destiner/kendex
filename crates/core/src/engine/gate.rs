@@ -72,6 +72,11 @@ impl ItemSafety {
     pub fn blocked(&self) -> bool {
         self.verdict == Verdict::Block && !self.override_state.unblocks()
     }
+
+    /// The installation's key — what the manifest records decisions under.
+    pub fn key(&self) -> String {
+        crate::lock::entry_key(self.kind, &self.name, self.harness)
+    }
 }
 
 /// Audit every desired installation, hold back the ones that fail, and

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RecordedDecision } from "@/bindings";
 import {
+  decisionDetail,
   decisionHome,
   describeDecision,
   revokeLabel,
@@ -89,5 +90,20 @@ describe("revokeLabel", () => {
     expect(revokeLabel(accepted({ state: { state: "stale", why: "x" } }))).toBe(
       "Forget",
     );
+  });
+
+  it("quotes the finding a dismissal was about, and nothing once it is gone", () => {
+    const finding = {
+      rule: "r",
+      severity: "medium" as const,
+      location: "SKILL.md:1",
+      message: "makes files writable by every account",
+      remediation: "narrow it",
+    };
+    const live = dismissed();
+    if (live.record.kind === "dismissed") live.record.finding = finding;
+    expect(decisionDetail(live)).toBe("makes files writable by every account");
+    expect(decisionDetail(dismissed())).toBeNull();
+    expect(decisionDetail(accepted())).toBeNull();
   });
 });

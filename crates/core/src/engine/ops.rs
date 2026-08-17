@@ -12,8 +12,8 @@ mod decisions;
 mod persist;
 pub use add::{AddRequest, add};
 pub use decisions::{
-    DecisionRecord, DismissTarget, RecordState, RecordedDecision, dismiss, list_decisions,
-    revoke_dismissal, revoke_override,
+    DecisionRecord, RecordState, RecordedDecision, dismiss, list_decisions, revoke_dismissal,
+    revoke_override,
 };
 use persist::ensure_manifest_persisted;
 

@@ -59,6 +59,7 @@ function safety(
   harness: HarnessId,
   decided: boolean,
   hash = "hash-1",
+  overrides: Partial<ItemSafety> = {},
 ): ItemSafety {
   return {
     kind: "skill",
@@ -89,6 +90,7 @@ function safety(
           : { state: "open", earlier: null },
       },
     ],
+    ...overrides,
   };
 }
 
@@ -149,5 +151,27 @@ describe("auditCounts", () => {
   it("stops asking once every finding is decided", () => {
     const rows = [safety("done", "claude", true)];
     expect(needsReviewCount(auditCounts([view([], undefined, rows)]))).toBe(0);
+  });
+
+  it("counts a held-back item once, and an accepted one not at all", () => {
+    const rows = [
+      safety("hostile", "claude", false, "h1", { verdict: "block" }),
+      safety("hostile", "codex", false, "h1", { verdict: "block" }),
+      safety("accepted", "claude", false, "h2", {
+        verdict: "block",
+        override: { state: "active" },
+        decisions: [
+          {
+            fingerprint: "aaaaaaaaaaaaaaaa",
+            token: "skill:accepted:claude#aaaaaaaaaaaaaaaa@h2",
+            state: { state: "accepted", grantedAt: "2026-08-16T00:00:00Z" },
+          },
+        ],
+      }),
+    ];
+    const counts = auditCounts([view([], undefined, rows)]);
+    expect(counts.blocked).toBe(1);
+    expect(counts.open).toBe(0);
+    expect(decisionsPendingCount(counts)).toBe(1);
   });
 });
