@@ -6,7 +6,7 @@ import { StatusNote } from "@/components/status-note";
 import { SyncScopeCard } from "@/components/sync-scope";
 import { blockedCount, openCount } from "@/lib/audit-counts";
 import { REVIEW_SUBTITLE } from "@/lib/copy";
-import { scopeLabel } from "@/lib/derive";
+import { scopeLabel, viewsInScope } from "@/lib/derive";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
 import { cn } from "@/lib/utils";
 import { useAuditStore } from "@/stores/audit";
@@ -23,11 +23,7 @@ export function ReviewPage() {
     void refresh();
   }, [refresh]);
 
-  const visible = views.filter((view) => {
-    if (scope === "all") return true;
-    if (scope === "global") return view.scope.scope === "global";
-    return view.scope.scope === "project" && view.scope.root === scope.project;
-  });
+  const visible = viewsInScope(views, scope);
   // A scope is finished when nothing in it waits on a person: no change to
   // apply, no note, and no decision left to make. Findings someone already
   // ruled on do not keep the page open — that is what ruling on them is for.

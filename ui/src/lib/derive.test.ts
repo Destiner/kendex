@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ObservedItem } from "@/bindings";
+import type { AuditView, ObservedItem } from "@/bindings";
 import {
   bundleSummary,
   countByKind,
@@ -8,6 +8,7 @@ import {
   groupScopes,
   recentItems,
   scopeMatches,
+  viewsInScope,
 } from "./derive";
 
 function item(overrides: Partial<ObservedItem>): ObservedItem {
@@ -194,5 +195,31 @@ describe("bundleSummary", () => {
 
   it("says so when a bundle carries nothing", () => {
     expect(bundleSummary([])).toBe("Carries nothing yet");
+  });
+});
+
+describe("viewsInScope", () => {
+  const view = (scope: AuditView["scope"]): AuditView => ({
+    scope,
+    drift: [],
+    plan: [],
+    notes: [],
+    warnings: [],
+    safety: [],
+    heldBack: [],
+    queued: [],
+  });
+  const all = [
+    view({ scope: "global" }),
+    view({ scope: "project", root: "/a" }),
+    view({ scope: "project", root: "/b" }),
+  ];
+
+  it("narrows to the picked scope and nothing else", () => {
+    expect(viewsInScope(all, "all")).toHaveLength(3);
+    expect(viewsInScope(all, "global").map((v) => v.scope.scope)).toEqual([
+      "global",
+    ]);
+    expect(viewsInScope(all, { project: "/b" })).toEqual([all[2]]);
   });
 });

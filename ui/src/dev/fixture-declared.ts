@@ -6,7 +6,7 @@ import type {
   SourceRow,
 } from "@/bindings";
 import { personalDrift, personalSafety } from "./fixture-safety";
-import { acmeHeldBack, acmeSafety } from "./fixture-safety-acme";
+import { acmeHeldBack, acmeQueued, acmeSafety } from "./fixture-safety-acme";
 import { ACME, API, GLOBAL, proj } from "./fixture-scopes";
 
 export function views(): AuditView[] {
@@ -67,7 +67,7 @@ export function views(): AuditView[] {
       warnings: [],
       safety: acmeSafety(),
       heldBack: acmeHeldBack(),
-      queued: [],
+      queued: acmeQueued(),
     },
     {
       scope: proj(API),

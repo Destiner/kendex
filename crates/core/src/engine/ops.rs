@@ -148,8 +148,36 @@ pub fn remove(
     report
         .notes
         .extend(unreadable_origins(env, scope, &manifest, &lock, names));
+    reap_dropped(&mut report, &mut manifest);
     ensure_manifest_persisted(env, scope, &manifest, &mut report)?;
     Ok(report)
+}
+
+/// The decisions about every installation this plan takes away — a bundle's
+/// members, a swept dependency — go with it, the same as a name asked for
+/// directly. What actually leaves is known only once the plan is made, and
+/// the manifest write the plan may already carry has to say the same thing
+/// as the one persisted here, or the two would disagree about what stays.
+fn reap_dropped(report: &mut EngineReport, manifest: &mut Manifest) {
+    let dropped: Vec<(ItemKind, String)> = report
+        .set_changes
+        .iter()
+        .filter(|change| change.direction == super::SetDirection::Remove)
+        .map(|change| (change.kind, change.name.clone()))
+        .collect();
+    for (kind, name) in &dropped {
+        manifest.reap_decisions(*kind, name);
+    }
+    for op in &mut report.plan.ops {
+        if let crate::apply::Op::WriteManifest {
+            manifest: planned, ..
+        } = &mut op.op
+        {
+            for (kind, name) in &dropped {
+                planned.reap_decisions(*kind, name);
+            }
+        }
+    }
 }
 
 /// Which of these names something that stays would pull straight back in,

@@ -45,6 +45,7 @@ export function DismissButton({
         variant="outline"
         className="shrink-0"
         disabled={busy}
+        aria-label={`Dismiss the finding on ${group.items[0].name}`}
         onClick={(event) => {
           event.stopPropagation();
           setOpen(true);

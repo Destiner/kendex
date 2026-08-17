@@ -16,7 +16,9 @@ import {
   earlierDecisionNote,
   FOCUSED_ALL_DONE,
   FOCUSED_ALL_DONE_BODY,
+  FOCUSED_REVIEW_LABEL,
   FOCUSED_SKIP,
+  FOCUSED_UNDO_HINT,
   focusedBody,
   focusedProgress,
   NO_SOURCE_TO_TRUST,
@@ -112,7 +114,12 @@ function Walk({
   return (
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>{focusedProgress(at + 1, queue.length)}</DialogTitle>
+        <DialogTitle className="flex items-baseline justify-between gap-4">
+          <span>{FOCUSED_REVIEW_LABEL}</span>
+          <span className="text-sm font-normal text-muted-foreground">
+            {focusedProgress(at + 1, queue.length)}
+          </span>
+        </DialogTitle>
         <DialogDescription>{focusedBody(projectScope)}</DialogDescription>
       </DialogHeader>
       <div className="flex flex-col gap-4">
@@ -138,7 +145,7 @@ function Walk({
                 type="button"
                 disabled={busy || disabled}
                 onClick={() => decide(reason)}
-                className="flex cursor-pointer flex-col items-start gap-0.5 rounded-lg border px-3 py-2.5 text-left hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex cursor-pointer flex-col items-start gap-0.5 rounded-lg border bg-background px-3 py-2.5 text-left shadow-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <span className="text-sm font-medium">
                   {REASON_LABELS[reason]}
@@ -151,7 +158,10 @@ function Walk({
           })}
         </div>
       </div>
-      <DialogFooter>
+      <DialogFooter className="items-center sm:justify-between">
+        <span className="text-xs text-muted-foreground">
+          {FOCUSED_UNDO_HINT}
+        </span>
         <Button
           variant="outline"
           disabled={busy}

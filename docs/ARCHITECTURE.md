@@ -481,9 +481,12 @@ lives in one capability table read by core and UI.
   item cannot be dismissed into silence — it is decided by accepting or
   removing it — and an accepted item's findings already read as accepted.
   The UI never spells a decision key: the backend issues a token per
-  finding (`kind:name:harness#fingerprint@review-hash`), and a dismiss
-  re-audits before it writes, refusing the whole batch if any token no
-  longer names what is installed. Every write is one journaled manifest
+  finding (`kind:name:harness#fingerprint@review-hash/scope-digest`), and
+  a dismiss re-audits before it writes, refusing the whole batch if any
+  token no longer names what is installed or was minted for another
+  scope's manifest. Trusting a source needs a source vstack itself
+  resolved and recorded in the lock; a remote url found beside unmanaged
+  files is not one, since the files could have written it. Every write is one journaled manifest
   op for one scope. Removing an item reaps its decisions; the registry
   (`vstack decisions`, Recorded decisions) reads every record against what
   is installed now — active, stale with the reason, or obsolete. An undo

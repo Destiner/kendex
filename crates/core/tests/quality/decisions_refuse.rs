@@ -85,15 +85,41 @@ fn a_held_back_items_findings_cannot_be_dismissed() {
     apply::execute(&f.env, &revoke, None).unwrap();
     let hostile = row(&f, "hostile");
     assert!(hostile.blocked());
-    let refused = dismiss(
-        &f.env,
-        &f.scope,
-        &[DecisionToken::parse(&first_token(&hostile)).unwrap()],
-        DismissReason::WrongCall,
+    assert!(
+        hostile.decisions.iter().all(|d| d.token.is_none()),
+        "a held-back item's findings are not offered for dismissal"
     );
+    // A token forged from what the row does carry is refused on arrival.
+    let forged = DecisionToken {
+        key: "skill:hostile:claude".to_owned(),
+        fingerprint: hostile.decisions[0].fingerprint.clone(),
+        hash: hostile.review_hash.clone().unwrap(),
+        scope: vstack_core::engine::decisions::scope_tag(&f.scope),
+    };
+    let refused = dismiss(&f.env, &f.scope, &[forged], DismissReason::WrongCall);
     assert!(
         matches!(refused, Err(CoreError::DecisionStale { why, .. }) if why.contains("held back"))
     );
+}
+
+/// A token is minted for one scope's view. The same skill installed in a
+/// project and personally has the same key, bytes and finding; only the
+/// file of record differs, and a token must not cross from one to the
+/// other.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_token_from_another_scope_writes_nothing() {
+    let f = with_mild();
+    let token = DecisionToken::parse(&first_token(&row(&f, "mild"))).unwrap();
+    let elsewhere = DecisionToken {
+        scope: vstack_core::engine::decisions::scope_tag(&vstack_core::model::Scope::Global),
+        ..token
+    };
+    let refused = dismiss(&f.env, &f.scope, &[elsewhere], DismissReason::WrongCall);
+    assert!(
+        matches!(refused, Err(CoreError::DecisionStale { why, .. }) if why.contains("another scope"))
+    );
+    assert!(manifest_of(&f).safety_reviews.is_empty());
 }
 
 /// Once an item's findings are accepted as a whole, each one reads as

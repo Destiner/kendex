@@ -53,7 +53,7 @@ export const earlierDecisionNote = (why: string): string =>
 export const UNDECIDABLE_HERE =
   "Can't be decided here — its content can't be read on this machine";
 export const NO_SOURCE_TO_TRUST =
-  "Nothing on this machine says where this content came from, so there is no source to trust.";
+  "vstack didn't install this from a catalog it resolved, so there is no source to trust.";
 
 // Reviewing one finding at a time. Each step is one piece of evidence: an
 // item, a finding, three reasons, and Skip. Twenty different plugins are
@@ -66,9 +66,11 @@ export const focusedBody = (projectScope: boolean): string =>
     ? "Pick why this isn't a problem, or skip it. Decisions are saved into this project's vstack.toml, shared with everyone using it."
     : "Pick why this isn't a problem, or skip it. Decisions are saved in your personal manifest on this machine.";
 export const FOCUSED_SKIP = "Skip";
-export const FOCUSED_ALL_DONE = "That's everything";
+export const FOCUSED_UNDO_HINT =
+  "Each pick records a decision. Undo is on the toast.";
+export const FOCUSED_ALL_DONE = "You've reached the end of the list";
 export const FOCUSED_ALL_DONE_BODY =
-  "Every finding here has been looked at. Anything you skipped is still waiting on the page.";
+  "Anything you skipped is still waiting on the page.";
 
 // The apply preview: a warning-only install is not held back, and its
 // findings can only be decided once it is on disk — so the preview says

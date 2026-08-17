@@ -20,12 +20,15 @@ import {
   revokeLabel,
   sortDecisions,
 } from "@/lib/decisions";
-import { hookDisplayName, kindLabel, scopeName, toolName } from "@/lib/labels";
+import { kindLabel, scopeName, toolName } from "@/lib/labels";
 import { useAuditStore } from "@/stores/audit";
 import { useProblemsStore } from "@/stores/problems";
 
+// A hook keeps its full id here — event, matcher, script — because seven
+// hooks in one settings file all shorten to the same word, and a list of
+// seven identical rows each with its own Take back tells nobody anything.
 function rowTitle(row: RecordedDecision): string {
-  const name = row.kind === "hook" ? hookDisplayName(row.name) : row.name;
+  const name = row.name;
   const kind = row.kind ? kindLabel(row.kind) : null;
   const tool = row.harness ? toolName(row.harness) : null;
   return [name, [kind, tool].filter(Boolean).join(" · ")]
@@ -35,7 +38,7 @@ function rowTitle(row: RecordedDecision): string {
 
 /** What the row's button will do, said before it does it. */
 function confirmCopy(row: RecordedDecision): { title: string; body: string } {
-  const name = row.kind === "hook" ? hookDisplayName(row.name) : row.name;
+  const name = row.name;
   if (row.state.state !== "active") {
     return {
       title: `Forget this decision about ${name}?`,

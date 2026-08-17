@@ -918,9 +918,10 @@ export type ItemSafety_Deserialize = {
 	 */
 	reviewHash: string | null,
 	/**
-	 *  Where the bytes came from: the resolved provenance the lock records,
-	 *  or the git origin of an unmanaged item's files. What a trusted-source
-	 *  dismissal binds to. `None` where nothing on this machine says.
+	 *  Where the bytes came from, as vstack itself resolved and recorded it.
+	 *  What a trusted-source dismissal binds to. `None` for anything vstack
+	 *  did not install — a remote url found near the files is not a source
+	 *  to trust by, since the files could have written it.
 	 */
 	provenance: string | null,
 	override: OverrideState,
@@ -966,9 +967,10 @@ export type ItemSafety_Serialize = {
 	 */
 	reviewHash: string | null,
 	/**
-	 *  Where the bytes came from: the resolved provenance the lock records,
-	 *  or the git origin of an unmanaged item's files. What a trusted-source
-	 *  dismissal binds to. `None` where nothing on this machine says.
+	 *  Where the bytes came from, as vstack itself resolved and recorded it.
+	 *  What a trusted-source dismissal binds to. `None` for anything vstack
+	 *  did not install — a remote url found near the files is not a source
+	 *  to trust by, since the files could have written it.
 	 */
 	provenance: string | null,
 	override: OverrideState,

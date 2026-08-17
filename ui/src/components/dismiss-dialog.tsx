@@ -46,7 +46,11 @@ export function DismissDialog({
   return (
     <ConfirmDialog
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={(next) => {
+        // A cancelled pick must not pre-answer the next question.
+        if (!next) setReason("wrong-call");
+        onOpenChange(next);
+      }}
       title={count > 1 ? dismissManyTitle(count) : DISMISS_TITLE}
       description={[
         count > 1 ? dismissManyBody : null,

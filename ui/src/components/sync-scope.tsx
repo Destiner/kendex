@@ -98,7 +98,7 @@ export function SyncScopeCard({
             <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
           )}
           <span className="flex min-w-0 flex-col">
-            <span className="truncate text-sm font-semibold">
+            <span className="truncate text-[15px] font-semibold tracking-tight">
               {scopeName(view.scope)}
             </span>
             <span className="truncate text-[13px] text-muted-foreground">
@@ -107,7 +107,7 @@ export function SyncScopeCard({
           </span>
         </button>
         {path ? (
-          <span className="hidden min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground lg:block">
+          <span className="hidden max-w-[40%] min-w-0 shrink truncate font-mono text-xs text-muted-foreground lg:block">
             {path}
           </span>
         ) : null}

@@ -89,22 +89,50 @@ export const decisionHandlers: Record<string, Handler> = {
       reason,
       dismissedAt,
     });
-    return { view: view(scope), dismissedAt };
+    const records = tokens.map((token) => {
+      const [key, rest] = token.split("#");
+      return { key, fingerprint: rest?.split("@")[0] ?? "", dismissedAt };
+    });
+    return { view: view(scope), records };
   },
   revoke_dismissal: ({
     scope,
     key: itemKey,
     fingerprint,
+    dismissedAt,
   }: {
     scope: Scope;
     key: string;
     fingerprint: string;
+    dismissedAt: string;
   }) => {
-    setDecision(
-      scope,
-      (token) => token.startsWith(`${itemKey}#${fingerprint}@`),
-      { state: "open", earlier: null },
-    );
+    // The same pin the real backend applies: an undo names the record it
+    // wrote, and a newer record at the same key is somebody's later call.
+    let matched = false;
+    for (const v of store.state.views) {
+      if (!same(v.scope, scope)) continue;
+      for (const row of v.safety) {
+        for (const decision of row.decisions) {
+          if (
+            decision.token?.startsWith(`${itemKey}#${fingerprint}@`) &&
+            decision.state.state === "dismissed"
+          ) {
+            if (decision.state.dismissedAt !== dismissedAt) {
+              return Promise.reject(
+                `the dismissal of ${fingerprint} on '${itemKey}' was replaced by a newer one — nothing was changed`,
+              );
+            }
+            decision.state = { state: "open", earlier: null };
+            matched = true;
+          }
+        }
+      }
+    }
+    if (!matched) {
+      return Promise.reject(
+        `no dismissed finding ${fingerprint} recorded under '${itemKey}'`,
+      );
+    }
     return view(scope);
   },
   revoke_safety_override: ({

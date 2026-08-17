@@ -2,14 +2,12 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { DriftRow, HarnessId, ItemKind } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { SectionHeading } from "@/components/section";
 import { Button } from "@/components/ui/button";
 import {
   HIDE_ITEMS_LABEL,
   START_MANAGING_LABEL,
   showAllItemsLabel,
   startManagingAllLabel,
-  UNMANAGED_SECTION_EXPLAINER,
 } from "@/lib/copy";
 import {
   ADOPT_SHARED_CONFIRM,
@@ -90,13 +88,14 @@ function sharedLinkOf(group: MergedDriftRow): SharedLink | null {
 export function UnmanagedItems({
   rows,
   busy,
-  title = "Not managed yet",
+  title,
   onAdopt,
 }: {
   rows: MergedDriftRow[];
   busy: boolean;
-  /** The heading, named per project where several are listed together. */
-  title?: string;
+  /** The list's heading — a project's name where several projects' lists
+   *  sit under one panel heading, or nothing where the panel says it all. */
+  title: string | null;
   onAdopt: (
     kind: DriftRow["kind"],
     name: string,
@@ -135,10 +134,7 @@ export function UnmanagedItems({
 
   return (
     <div className="flex flex-col gap-2">
-      <SectionHeading>{title}</SectionHeading>
-      <p className="text-[13px] text-muted-foreground">
-        {UNMANAGED_SECTION_EXPLAINER}
-      </p>
+      {title ? <p className="text-sm font-medium">{title}</p> : null}
       <div className="divide-y divide-border/60 rounded-lg border bg-muted/30">
         {foldable ? (
           <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">

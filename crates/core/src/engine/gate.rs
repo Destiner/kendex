@@ -57,9 +57,10 @@ pub struct ItemSafety {
     /// is what a reviewer is accepting. `None` where the bytes cannot be
     /// reached from here at all.
     pub review_hash: Option<String>,
-    /// Where the bytes came from: the resolved provenance the lock records,
-    /// or the git origin of an unmanaged item's files. What a trusted-source
-    /// dismissal binds to. `None` where nothing on this machine says.
+    /// Where the bytes came from, as vstack itself resolved and recorded it.
+    /// What a trusted-source dismissal binds to. `None` for anything vstack
+    /// did not install — a remote url found near the files is not a source
+    /// to trust by, since the files could have written it.
     pub provenance: Option<String>,
     #[serde(rename = "override")]
     pub override_state: OverrideState,
@@ -118,12 +119,16 @@ pub(super) fn run(
         let override_state =
             overrides::state(recorded, review_hash.as_deref(), &result.findings, &root);
         let decisions = super::decisions::decisions(
-            state.manifest_update.as_ref().unwrap_or(manifest),
-            &item.key,
-            &root,
-            review_hash.as_deref(),
-            Some(&item.provenance),
-            &override_state,
+            &super::decisions::Installation {
+                manifest: state.manifest_update.as_ref().unwrap_or(manifest),
+                scope,
+                key: &item.key,
+                root: &root,
+                review_hash: review_hash.as_deref(),
+                provenance: Some(&item.provenance),
+                override_state: &override_state,
+                held_back: verdict == Verdict::Block && !override_state.unblocks(),
+            },
             &result.findings,
         );
         let row = ItemSafety {

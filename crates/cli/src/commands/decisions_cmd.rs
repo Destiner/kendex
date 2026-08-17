@@ -72,10 +72,11 @@ fn print_row(row: &ItemSafety) {
         match &decision.state {
             DecisionState::Open { earlier } => {
                 if let Some(token) = &decision.token {
-                    say(&format!(
-                        "      token: {}",
-                        short_token(&row.key(), &decision.fingerprint, token_hash(token))
-                    ));
+                    let printed = match DecisionToken::parse(token) {
+                        Ok(parsed) => short_token(&parsed),
+                        Err(_) => token.clone(),
+                    };
+                    say(&format!("      token: {printed}"));
                 }
                 if let Some(earlier) = earlier {
                     say(&format!("      dismissed before, but {earlier}"));
@@ -101,12 +102,6 @@ fn print_row(row: &ItemSafety) {
             allow_unsafe_flag(&row.name, review_hash)
         ));
     }
-}
-
-/// The hash the backend put on this token — the token is its own spelling of
-/// key, fingerprint and hash, so the hash is whatever follows the last `@`.
-fn token_hash(token: &str) -> &str {
-    token.rsplit_once('@').map_or(token, |(_, hash)| hash)
 }
 
 #[derive(Args)]
@@ -186,7 +181,7 @@ pub fn decisions(env: &Env, args: DecisionsArgs) -> CliResult {
         // An id names a record in one manifest; the revoke is one scope's.
         let scope = scopes.remove(0);
         for id in &args.revoke {
-            let plan = match id.split_once('#') {
+            let plan = match id.rsplit_once('#') {
                 Some((key, fingerprint)) => revoke_dismissal(env, &scope, key, fingerprint, None)?,
                 None => revoke_override(env, &scope, id)?,
             };

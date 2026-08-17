@@ -205,3 +205,40 @@ export function acmeHeldBack(): ItemSafety[] {
     logUploaderSafety(),
   ];
 }
+
+// What the queued github update would install with: a finding the check
+// noticed but does not hold back, so the apply preview can say it will be
+// waiting once the update lands.
+export function acmeQueued(): ItemSafety[] {
+  const findings: Finding[] = [
+    {
+      rule: "dangerous-commands",
+      severity: "medium",
+      location: "SKILL.md:31",
+      message:
+        "`chmod 777` makes files writable by every account on the machine",
+      remediation:
+        "narrow the command to the exact path it needs, and let the user see it before it runs",
+    },
+  ];
+  return [
+    {
+      kind: "skill",
+      name: "github",
+      harness: "claude",
+      scope: proj(ACME),
+      location: "",
+      safety: { score: 92, deductions: [] },
+      quality: null,
+      findings,
+      skipped: [],
+      verdict: "warn",
+      reasons: [],
+      contentHash: "github-v3",
+      reviewHash: "github-v3",
+      provenance: "vanillagreencom/vstack",
+      override: { state: "absent" },
+      decisions: decisionsFor("skill:github:claude", "github-v3", findings),
+    },
+  ];
+}

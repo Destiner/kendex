@@ -4,6 +4,7 @@
 #![cfg(unix)]
 
 mod decisions;
+mod decisions_lifecycle;
 mod decisions_refuse;
 mod fixture;
 mod gate;
@@ -11,5 +12,6 @@ mod kinds;
 mod overrides;
 mod reading;
 mod review_hash;
+mod review_hash_entries;
 mod rules;
 mod scoring;

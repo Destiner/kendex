@@ -42,6 +42,9 @@ pub fn dismiss(
     let rows = observed_rows(env, scope)?;
     let now = crate::clock::timestamp();
     for token in tokens {
+        if !token.in_scope(scope) {
+            return Err(stale(token, "it was issued for another scope's manifest"));
+        }
         let row = installed(&rows, &token.key)?;
         let Some(review_hash) = row.review_hash.as_deref() else {
             return Err(stale(token, "its content cannot be read here"));
@@ -69,15 +72,18 @@ pub fn dismiss(
         }
         let source = match reason {
             DismissReason::TrustedSource => Some(row.provenance.clone().ok_or_else(|| {
-                stale(token, "nothing on this machine says where its content came from, so there is no source to trust")
+                stale(token, "vstack did not install it from a source it resolved, so there is no source to trust")
             })?),
             _ => None,
         };
         // A snapshot of other content is stale as a whole: what it says was
-        // reviewed is gone. This decision starts a fresh one.
+        // reviewed is gone. This decision starts a fresh one. The record is
+        // keyed by the installation's own spelling, not the token's — a
+        // hand-typed alias for a tool would otherwise land under a key
+        // nothing reads back.
         let review = manifest
             .safety_reviews
-            .entry(token.key.clone())
+            .entry(row.key())
             .and_modify(|review| {
                 if review.stale_why(Some(review_hash)).is_some() {
                     *review = SafetyReview::of(review_hash);

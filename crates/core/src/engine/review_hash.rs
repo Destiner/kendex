@@ -18,20 +18,23 @@
 //! read as live, which is the same rule that reports an artifact vstack
 //! cannot compare as uncompared rather than as passing.
 //!
-//! A hook is the one kind whose two paths see different things. The gate
-//! reads the script this plan would write; the scanner finds the hook as a
-//! registration inside a shared settings file and never attributes the
-//! script to it. Both bind the registration, so the gate's own decision is
-//! exact; the observed reading of that registration is what the audit page
-//! can compare against, and it is deliberately not the settings file's other
-//! keys.
+//! A hook is the one kind whose two paths read different things, and each
+//! hash follows what its rules read. The gate reads the script this plan
+//! would write and the registration it would add, and binds both. The
+//! scanner finds a hook as one registration inside a shared settings file
+//! and scores that whole file under the hook's name — so the observed hash
+//! is the whole file's bytes, not the entry alone: a dismissal bound to the
+//! entry would stay live while something else in the same file, which the
+//! rules did read, was rewritten underneath it.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde_json::Value;
 
 use crate::configedit::ConfigEdit;
-use crate::hash::{hash_bytes, hash_files, hash_tree};
+use sha2::{Digest, Sha256};
+
+use crate::hash::{hash_bytes, hash_files};
 use crate::model::{ItemKind, ObservedItem};
 
 use super::desired::{Artifact, Desired};
@@ -49,22 +52,80 @@ pub(super) fn desired(item: &Desired) -> Option<String> {
 /// What is installed here right now, read back off disk.
 pub(super) fn observed(item: &ObservedItem) -> Option<String> {
     let inner = match item.kind {
-        // The whole tree, every byte of it, and a link inside one is read
-        // through rather than skipped — a decision covers what the harness
-        // would load, and that is what is at the end of the link.
         ItemKind::Skill | ItemKind::Plugin => match item.path.is_dir() {
-            true => hash_tree(&item.path).ok()?,
+            true => owned_tree(&item.path)?,
             false => return None,
         },
         ItemKind::Agent | ItemKind::Command | ItemKind::PiExtension => {
             hash_bytes(&std::fs::read(&item.path).ok()?)
         }
-        ItemKind::Hook => hash_bytes(observed_hook(&item.path, &item.name)?.as_bytes()),
+        ItemKind::Hook => hash_bytes(&std::fs::read(&item.path).ok()?),
         ItemKind::McpServer => hash_bytes(
             canonical(&crate::quality::observe::mcp_entry(&item.path, &item.name)?).as_bytes(),
         ),
     };
     Some(seal(item.kind, &inner))
+}
+
+/// The whole tree, every byte of it — the same construction as the hash a
+/// rendered tree gets before it is written, so the two readings agree. A
+/// link inside the tree is hashed as a link, by where it points, and never
+/// read through: the scoring walk stops at links for the same reason (what
+/// is past one is somebody else's files under this item's name), and
+/// following one would also turn an audit refresh into an unbounded read
+/// of wherever the link leads. The item's own path is followed, since a
+/// harness-native link to the canonical tree is how a shared skill is
+/// installed and that tree is what the tool loads.
+fn owned_tree(root: &std::path::Path) -> Option<String> {
+    let mut hasher = Sha256::new();
+    walk(&mut hasher, root, std::path::Path::new(""), 0).ok()?;
+    Some(crate::hash::hex(&hasher.finalize()))
+}
+
+/// Deeper than any rendered tree goes.
+const MAX_DEPTH: usize = 32;
+
+fn walk(
+    hasher: &mut Sha256,
+    path: &std::path::Path,
+    rel: &std::path::Path,
+    depth: usize,
+) -> std::io::Result<()> {
+    if depth > MAX_DEPTH {
+        return Err(std::io::Error::other("nested too deep"));
+    }
+    let meta = match depth {
+        0 => std::fs::metadata(path)?,
+        _ => std::fs::symlink_metadata(path)?,
+    };
+    if meta.file_type().is_symlink() {
+        let target = std::fs::read_link(path)?;
+        hasher.update(rel.to_string_lossy().as_bytes());
+        hasher.update([0]);
+        hasher.update(b"->");
+        hasher.update(target.to_string_lossy().as_bytes());
+        hasher.update([0]);
+    } else if meta.is_dir() {
+        let mut entries: Vec<PathBuf> = std::fs::read_dir(path)?
+            .flatten()
+            .map(|entry| entry.path())
+            .collect();
+        entries.sort();
+        for entry in entries {
+            let Some(name) = entry.file_name() else {
+                continue;
+            };
+            walk(hasher, &entry, &rel.join(name), depth + 1)?;
+        }
+    } else if meta.is_file() {
+        hasher.update(rel.to_string_lossy().as_bytes());
+        hasher.update([0]);
+        hasher.update(std::fs::read(path)?);
+        hasher.update([0]);
+    } else {
+        return Err(std::io::Error::other("not a regular file or directory"));
+    }
+    Ok(())
 }
 
 /// The kind is folded in so no two kinds' material can be the same string.
@@ -109,56 +170,11 @@ fn registration(
 }
 
 /// One hook registration as the four values a harness loads it by. An empty
-/// matcher is `*`, which is how the scanner names it too — the two readings
-/// have to spell one registration the same way.
+/// matcher is spelled `*`, the way the scanner names it.
 fn hook_entry(event: &str, matcher: Option<&str>, command: &str, timeout: Option<u32>) -> String {
     let matcher = matcher.filter(|m| !m.is_empty()).unwrap_or("*");
     let timeout = timeout.map(|t| t.to_string()).unwrap_or_default();
     format!("{event}|{matcher}|{command}|{timeout}")
-}
-
-/// The registration this observed hook was named after, found again in the
-/// config file that holds it. The name is `event:matcher:stem`, so the walk
-/// that produced it is the walk that finds it — and there are two walks,
-/// because two shapes exist: the Claude/Codex/Gemini file nests handlers
-/// under a matcher group, and Copilot's carries each entry's action, matcher
-/// and timeout inline. Reading only one shape would leave the other's hooks
-/// with no hash, and a decision about them permanently unreadable.
-fn observed_hook(path: &Path, name: &str) -> Option<String> {
-    let root = crate::quality::observe::config_json(path)?;
-    let events = root.get("hooks")?.as_object()?;
-    for (event, groups) in events {
-        for group in groups.as_array()? {
-            let matcher = group.get("matcher").and_then(Value::as_str);
-            let handlers = match group.get("hooks").and_then(|h| h.as_array()) {
-                Some(list) => list.iter().collect::<Vec<_>>(),
-                None => vec![group],
-            };
-            for handler in handlers {
-                let Some(action) = hook_action(handler) else {
-                    continue;
-                };
-                let timeout = ["timeout", "timeoutSec"]
-                    .iter()
-                    .find_map(|key| handler.get(*key).and_then(Value::as_u64))
-                    .and_then(|t| u32::try_from(t).ok());
-                let stem = crate::hook::command_stem(action);
-                if name == format!("{event}:{}:{stem}", matcher.unwrap_or("*")) {
-                    return Some(hook_entry(event, matcher, action, timeout));
-                }
-            }
-        }
-    }
-    None
-}
-
-/// What one registered handler runs, in whichever key its file spells it:
-/// `command` in the nested shape, `bash`/`powershell`/`url`/`prompt` in
-/// Copilot's — the same keys the scanner named the item by.
-fn hook_action(handler: &Value) -> Option<&str> {
-    ["command", "bash", "powershell", "url", "prompt"]
-        .iter()
-        .find_map(|key| handler.get(*key).and_then(Value::as_str))
 }
 
 /// `value` as text with object keys in one order. The JSON reader preserves

@@ -8,6 +8,7 @@ import {
   SCANNING_LABEL,
   scanStatusLabel,
 } from "@/lib/copy";
+import { viewsInScope } from "@/lib/derive";
 import { problemsFooterLabel } from "@/lib/error-copy";
 import { relativeTime } from "@/lib/relative-time";
 import { useAuditStore } from "@/stores/audit";
@@ -26,6 +27,7 @@ export function StatusFooter() {
   const views = useAuditStore((s) => s.views);
   const problems = useProblems();
   const goTo = useNavStore((s) => s.goTo);
+  const scope = useNavStore((s) => s.scope);
 
   // "Scanned Nm ago" goes stale on its own; nothing else re-renders this
   // component often enough to keep it honest.
@@ -35,7 +37,7 @@ export function StatusFooter() {
     return () => clearInterval(id);
   }, []);
 
-  const counts = auditCounts(views);
+  const counts = auditCounts(viewsInScope(views, scope));
   const pending = counts.changes;
   const decisions = decisionsPendingCount(counts);
 

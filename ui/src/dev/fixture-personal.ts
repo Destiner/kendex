@@ -89,7 +89,8 @@ export const CODEX_FINDINGS: Finding[] = [
     rule: "no-manifest",
     severity: "low",
     location: `${CODEX_PLUGINS_PATH}/registry.json`,
-    message: "has no manifest, so vstack can't confirm what it declares to do",
+    message:
+      "this plugin carries no manifest, so nothing on disk says what it is or who wrote it",
     remediation:
       "check with the plugin's author for a manifest, or remove it if you don't use it",
   },

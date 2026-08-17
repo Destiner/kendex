@@ -125,6 +125,7 @@ function ConcernRow({
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
           className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left"
         >
           <StatusDot tone={SEVERITY_DOT_TONE[concern.severity]} />
@@ -146,6 +147,7 @@ function ConcernRow({
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
           aria-label={open ? "Collapse" : "Expand"}
           className="cursor-pointer"
         >

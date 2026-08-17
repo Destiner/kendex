@@ -61,8 +61,8 @@ export function scopeSummaryLabel(counts: {
   if (counts.open > 0) {
     parts.push(
       counts.open === 1
-        ? "1 needs your decision"
-        : `${counts.open} need your decision`,
+        ? "1 finding needs your decision"
+        : `${counts.open} findings need your decision`,
     );
   }
   if (counts.unmanaged > 0) {
@@ -160,7 +160,9 @@ export const scanStatusLabel = (scannedAgo: string | null): string =>
 export const pendingChangesLabel = (count: number): string =>
   count === 1 ? "1 change ready" : `${count} changes ready`;
 export const decisionsFooterLabel = (count: number): string =>
-  count === 1 ? "1 needs your decision" : `${count} need your decision`;
+  count === 1
+    ? "1 thing needs your decision"
+    : `${count} things need your decision`;
 
 // Package page: files, versions, and the diff between them.
 export const PACKAGE_FILES_TITLE = "Files";

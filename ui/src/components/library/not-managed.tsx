@@ -1,8 +1,20 @@
+import { useState } from "react";
+import { SectionHeading } from "@/components/section";
+import { Button } from "@/components/ui/button";
 import { UnmanagedItems } from "@/components/unmanaged-items";
+import {
+  HIDE_ITEMS_LABEL,
+  showAllItemsLabel,
+  UNMANAGED_SECTION_EXPLAINER,
+} from "@/lib/copy";
 import { mergeDriftRows } from "@/lib/drift-merge";
 import { scopeName } from "@/lib/labels";
 import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
+
+// Past this many, the lists fold behind the heading so the Installed table
+// they sit above stays the point of the tab.
+const INLINE_LIMIT = 5;
 
 /**
  * Items on this machine that vstack was never asked to look after, with the
@@ -17,6 +29,7 @@ export function NotManagedPanel() {
   const busy = useAuditStore((s) => s.busy);
   const adopt = useAuditStore((s) => s.adopt);
   const scope = useNavStore((s) => s.scope);
+  const [expanded, setExpanded] = useState(false);
   const perScope = views
     .filter((view) => {
       if (scope === "all") return true;
@@ -32,23 +45,43 @@ export function NotManagedPanel() {
       ),
     }))
     .filter(({ rows }) => rows.length > 0);
-  if (perScope.length === 0) return null;
+  const total = perScope.reduce((sum, { rows }) => sum + rows.length, 0);
+  if (total === 0) return null;
   const several = perScope.length > 1;
+  const foldable = total > INLINE_LIMIT;
+  const showLists = !foldable || expanded;
   return (
-    <div className="flex flex-col gap-6 pb-8">
-      {perScope.map(({ view, rows }) => (
-        <UnmanagedItems
-          key={scopeName(view.scope)}
-          rows={rows}
-          busy={busy}
-          title={
-            several ? `Not managed yet — ${scopeName(view.scope)}` : undefined
-          }
-          onAdopt={(kind, name, harness, opts) =>
-            adopt(view.scope, kind, name, harness, opts)
-          }
-        />
-      ))}
+    <div className="flex flex-col gap-4 pb-8">
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center justify-between gap-4">
+          <SectionHeading>Not managed yet</SectionHeading>
+          {foldable ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setExpanded((e) => !e)}
+            >
+              {expanded ? HIDE_ITEMS_LABEL : showAllItemsLabel(total)}
+            </Button>
+          ) : null}
+        </div>
+        <p className="max-w-prose text-[13px] text-muted-foreground">
+          {UNMANAGED_SECTION_EXPLAINER}
+        </p>
+      </div>
+      {showLists
+        ? perScope.map(({ view, rows }) => (
+            <UnmanagedItems
+              key={scopeName(view.scope)}
+              rows={rows}
+              busy={busy}
+              title={several ? scopeName(view.scope) : null}
+              onAdopt={(kind, name, harness, opts) =>
+                adopt(view.scope, kind, name, harness, opts)
+              }
+            />
+          ))
+        : null}
     </div>
   );
 }

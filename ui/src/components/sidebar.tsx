@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { auditCounts, needsReviewCount } from "@/lib/audit-counts";
-import { projectScopes } from "@/lib/derive";
+import { projectScopes, viewsInScope } from "@/lib/derive";
 import { scopeName } from "@/lib/labels";
 import { isSearchShortcutKey } from "@/lib/search-shortcut";
 import { cn } from "@/lib/utils";
@@ -49,7 +49,7 @@ export function Sidebar() {
   const { page, scope, setPage, setScope, focusSearch } = useNavStore();
   const { result, scanning, refresh } = useScanStore();
   const driftCount = useAuditStore((s) =>
-    needsReviewCount(auditCounts(s.views)),
+    needsReviewCount(auditCounts(viewsInScope(s.views, scope))),
   );
   const updateCount = useUpdatesStore((s) => visibleUpdateCount(s.rows));
   const projects = result ? projectScopes(result) : [];

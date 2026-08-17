@@ -15,7 +15,7 @@ use vstack_core::quality::reviews::DismissReason;
 
 use super::fixture::{Fixture, fixture, grant, installed, manifest_of, plan, skill};
 
-const MILD_KEY: &str = "skill:mild:claude";
+pub const MILD_KEY: &str = "skill:mild:claude";
 
 /// The gate fixture plus one installed skill with a finding that warns but
 /// does not block — the only kind of finding a dismissal is for.
@@ -54,7 +54,7 @@ pub fn first_token(row: &ItemSafety) -> String {
 }
 
 #[allow(clippy::unwrap_used)]
-fn dismiss_first(f: &Fixture, name: &str, reason: DismissReason) -> String {
+pub fn dismiss_first(f: &Fixture, name: &str, reason: DismissReason) -> String {
     let token = first_token(&row(f, name));
     let plan = dismiss(
         &f.env,
@@ -300,81 +300,4 @@ fn a_plugin_that_is_only_a_switch_gets_no_token() {
     let ghost = row(&f, "ghost@mkt");
     assert!(ghost.review_hash.is_none());
     assert!(ghost.decisions.iter().all(|d| d.token.is_none()));
-}
-
-/// Trusting a source is trusting *that* source. The same bytes served from
-/// somewhere else are not what was trusted, and the record says so.
-#[test]
-#[allow(clippy::unwrap_used)]
-fn a_trusted_source_dismissal_binds_to_the_source() {
-    let f = with_mild();
-    let trusted = row(&f, "mild").provenance.clone().unwrap();
-    let row_hash = row(&f, "mild").review_hash.clone();
-    dismiss_first(&f, "mild", DismissReason::TrustedSource);
-    let recorded = manifest_of(&f);
-    let dismissal = recorded.safety_reviews[MILD_KEY]
-        .dismissed
-        .values()
-        .next()
-        .unwrap();
-    assert_eq!(dismissal.source.as_deref(), Some(trusted.as_str()));
-    assert!(matches!(
-        row(&f, "mild").decisions[0].state,
-        DecisionState::Dismissed { .. }
-    ));
-
-    // A fork keeps the name and the bytes and rebinds the item to the local
-    // source — exactly the move a trusted-source decision must not survive.
-    let forked = vstack_core::engine::fork::fork(
-        &f.env,
-        &f.scope,
-        vstack_core::model::ItemKind::Skill,
-        "mild",
-        vstack_core::model::HarnessId::Claude,
-    )
-    .unwrap();
-    apply::execute(&f.env, &forked, None).unwrap();
-    let report = audit(&f.env, &f.scope).unwrap();
-    apply::execute(&f.env, &report.plan, None).unwrap();
-
-    let after = row(&f, "mild");
-    assert_eq!(after.provenance.as_deref(), Some("local"));
-    assert_eq!(after.review_hash, row_hash, "the bytes did not move");
-    match &after.decisions[0].state {
-        DecisionState::Open { earlier: Some(why) } => assert!(why.contains("it trusted"), "{why}"),
-        other => panic!("expected an open finding that says why, got {other:?}"),
-    }
-}
-
-/// A rename moves the item's decisions with it. What must not happen is a
-/// record left under the old name, waiting for something else to take it.
-#[test]
-#[allow(clippy::unwrap_used)]
-fn renaming_an_item_carries_its_decision_and_leaves_nothing_behind() {
-    use vstack_core::model::{HarnessId, ItemKind};
-    let f = with_mild();
-    let forked = vstack_core::engine::fork::fork(
-        &f.env,
-        &f.scope,
-        ItemKind::Skill,
-        "mild",
-        HarnessId::Claude,
-    )
-    .unwrap();
-    apply::execute(&f.env, &forked, None).unwrap();
-    apply::execute(&f.env, &audit(&f.env, &f.scope).unwrap().plan, None).unwrap();
-    dismiss_first(&f, "mild", DismissReason::Intended);
-
-    let renamed =
-        vstack_core::engine::fork::rename_fork(&f.env, &f.scope, ItemKind::Skill, "mild", "gentle")
-            .unwrap();
-    apply::execute(&f.env, &renamed, None).unwrap();
-
-    let recorded = manifest_of(&f);
-    assert!(
-        !recorded.safety_reviews.contains_key(MILD_KEY),
-        "{recorded:?}"
-    );
-    let moved = recorded.safety_reviews.get("skill:gentle:claude").unwrap();
-    assert_eq!(moved.dismissed.len(), 1);
 }

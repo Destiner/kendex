@@ -20,8 +20,10 @@ changes carry a **Breaking** call-out with their migration note inline.
   a project's in its `vstack.toml`, where a teammate inherits them in
   plain sight. Removing an item takes its decisions with it. On the
   command line: `vstack findings` prints each finding with the token
-  that dismisses it, `vstack dismiss <token> --reason …` records the
-  decision, and `vstack decisions [--revoke <id>]` lists every recorded
+  that dismisses it — a token names the finding, the exact content, and
+  the project or personal file it belongs to, so one copied from
+  elsewhere records nothing — `vstack dismiss <token> --reason …`
+  records the decision, and `vstack decisions [--revoke <id>]` lists every recorded
   decision — active, out of date and why, or about an item that is gone
   — and takes one back. `vstack accepted` is folded into `vstack
   decisions`. The project file's format moves to version 5.

@@ -62,14 +62,15 @@ pub fn observed_rows(env: &Env, scope: &Scope) -> Result<Vec<ItemSafety>> {
                 crate::quality::verdict(&result.findings, &result.safety, settings.safety);
             let key = crate::lock::entry_key(item.kind, &item.name, item.harness);
             let root = item.path.display().to_string();
-            // The lock's word on where the bytes came from outranks the
-            // scanner's guess: a managed item's origin is what was declared
-            // and resolved, whatever git remote happens to sit near it.
+            // Only the lock's word on where the bytes came from: what vstack
+            // itself declared and resolved. The scanner's guess is a remote
+            // url read out of a `.git/config` sitting inside the very
+            // content being judged, which is not something to trust a
+            // source by.
             let provenance = lock
                 .entries
                 .get(&key)
-                .map(|entry| entry.source_repo.clone())
-                .or_else(|| item.origin.clone());
+                .map(|entry| entry.source_repo.clone());
             let override_state = crate::quality::overrides::state(
                 manifest.safety_overrides.get(&key),
                 scored.review.as_deref(),
@@ -77,12 +78,17 @@ pub fn observed_rows(env: &Env, scope: &Scope) -> Result<Vec<ItemSafety>> {
                 &root,
             );
             let decisions = super::decisions::decisions(
-                &manifest,
-                &key,
-                &root,
-                scored.review.as_deref(),
-                provenance.as_deref(),
-                &override_state,
+                &super::decisions::Installation {
+                    manifest: &manifest,
+                    scope: &scope,
+                    key: &key,
+                    root: &root,
+                    review_hash: scored.review.as_deref(),
+                    provenance: provenance.as_deref(),
+                    override_state: &override_state,
+                    held_back: verdict == crate::quality::Verdict::Block
+                        && !override_state.unblocks(),
+                },
                 &result.findings,
             );
             ItemSafety {
