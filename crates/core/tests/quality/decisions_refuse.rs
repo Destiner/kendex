@@ -193,3 +193,18 @@ fn trusting_an_unknown_source_is_refused() {
     );
     assert!(allowed.is_ok());
 }
+
+/// A reason is a closed vocabulary. A hand edit that writes one nobody
+/// defined is a manifest this build cannot vouch for, and it says so at
+/// load rather than reading the record as some default.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_reason_outside_the_vocabulary_refuses_to_load() {
+    let f = with_mild();
+    let path = manifest::manifest_path(&f.env, &f.scope);
+    let text = fs::read_to_string(&path).unwrap()
+        + "\n[safety-reviews.\"skill:mild:claude\"]\nreview-hash = \"abc\"\nruleset = 1\n\n[safety-reviews.\"skill:mild:claude\".dismissed.\"0000000000000000\"]\nreason = \"because\"\ndismissed-at = \"2026-01-01T00:00:00Z\"\n";
+    fs::write(&path, text).unwrap();
+    let loaded = manifest::load(&path);
+    assert!(loaded.is_err(), "{loaded:?}");
+}
