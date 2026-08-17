@@ -49,13 +49,10 @@ pub fn run(
         if let Ok(vstack_core::manifest::ManifestFile::Current(manifest)) =
             vstack_core::manifest::load(&manifest_path)
         {
-            match vstack_core::remote::sync_sources(env, &manifest) {
-                Ok(warnings) => {
-                    for warning in warnings {
-                        say(&format!("warning: {warning}"));
-                    }
-                }
-                Err(error) => failures.push(error.to_string()),
+            // An unreachable catalog is reported, not fatal: what came from
+            // every other catalog still refreshes.
+            for note in vstack_core::remote::sync_declared_sources(env, &manifest) {
+                say(&format!("warning: {note}"));
             }
         }
         let options = PlanOptions {

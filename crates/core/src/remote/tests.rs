@@ -6,6 +6,8 @@ use super::*;
 use crate::env::FakeOs;
 use crate::process::Hardened;
 
+mod sync;
+
 fn git(dir: &Path, args: &[&str]) {
     let output = Hardened::git(args, Some(dir)).run().unwrap();
     assert!(output.status.success(), "git {args:?}");
@@ -329,33 +331,6 @@ fn the_pre_2_0_clone_is_read_until_a_refresh_replaces_it() {
     );
 }
 
-/// Every enabled remote in a manifest resolves; a never-cached one that
-/// cannot be reached fails the whole call rather than half-resolving.
-#[test]
-fn sync_sources_reports_warnings_and_fails_on_the_unreachable() {
-    let f = fixture();
-    let mut manifest = crate::manifest::seed(&[]);
-    manifest.sources.insert(
-        "cat".to_owned(),
-        crate::manifest::SourceDecl {
-            repo: Some(REPO.to_owned()),
-            path: None,
-            rev: None,
-            enabled: true,
-        },
-    );
-    manifest
-        .sources
-        .remove(crate::manifest::DEFAULT_SOURCE_NAME);
-    assert!(sync_sources(&f.env, &manifest).unwrap().is_empty());
-    assert_eq!(cache_head(&f.env, REPO, None).unwrap().len(), 7);
-
-    fs::remove_dir_all(&f.upstream).unwrap();
-    assert_eq!(sync_sources(&f.env, &manifest).unwrap().len(), 1);
-
-    manifest.sources.get_mut("cat").unwrap().repo = Some("owner/gone".to_owned());
-    assert!(sync_sources(&f.env, &manifest).is_err());
-}
 /// The lock lives as long as its guard and not a moment longer — an
 /// abandoned lock file would wedge a repository until someone deleted it.
 #[test]

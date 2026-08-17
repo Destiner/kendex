@@ -173,11 +173,20 @@ fn sweeping_takes_the_leftovers_and_a_held_back_dependency_says_so() {
             .contains("skill = [\"github\"]")
     );
 
-    // Asking for it again outranks the removal.
+    // Asking for it again outranks the removal. Named source: with none, the
+    // default catalog is consulted, and this suite must not reach the network.
     let output = vstack(
         home,
         &project,
-        &["add", "--skill", "github", "--harness", "claude", "-y"],
+        &[
+            "add",
+            home.join("catalog").to_str().unwrap(),
+            "--skill",
+            "github",
+            "--harness",
+            "claude",
+            "-y",
+        ],
     );
     assert!(
         output.status.success(),

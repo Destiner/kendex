@@ -519,6 +519,17 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Fixed
 
+- A refresh no longer downloads catalogs you install nothing from, and
+  one unreachable catalog no longer stops the rest. Every new
+  configuration lists the built-in catalog whether or not anything ever
+  came from it, and refresh fetched all of them — so a routine refresh
+  paid for a repository no installed item needs, and because an
+  unreachable catalog was a hard error, that one unused entry could fail
+  the whole refresh. Refresh now fetches only catalogs something is
+  actually installed from, and reports the ones it could not reach while
+  refreshing everything it could. Browsing catalogs still loads them
+  all.
+
 - A Pi extension installed as a package shows what it is. The scan used
   the raw install spec as the description, so twenty extensions read as
   twenty near-identical folder paths — `./packages/@you/pi-caveman` —

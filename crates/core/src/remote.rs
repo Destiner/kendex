@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::env::Env;
 use crate::error::{CoreError, Result};
-use crate::manifest::Manifest;
+use crate::manifest::{Manifest, SourceDecl};
 
 pub mod history;
 pub mod store;
@@ -195,31 +195,76 @@ pub fn fetch_all(env: &Env, manifest: &Manifest) -> Vec<String> {
     warnings
 }
 
+/// The sources some declaration actually names — items, and the bundles
+/// that carry them.
+fn sources_in_use(manifest: &Manifest) -> std::collections::BTreeSet<&str> {
+    crate::model::ItemKind::ALL
+        .iter()
+        .flat_map(|kind| manifest.declared(*kind).values())
+        .chain(manifest.bundles.values())
+        .map(|decl| decl.source.as_str())
+        .collect()
+}
+
+/// Resolve the enabled remote sources this scope installs from, doing as
+/// much as it can and reporting the rest.
+///
+/// Every seeded manifest declares the default catalog whether or not
+/// anything ever came from it, so fetching all of them makes a routine
+/// refresh pay for a repository no installed item needs. And one catalog
+/// being out of reach — a flaky connection, a plane — must not strand the
+/// items that came from every other catalog, so an unreachable source is
+/// reported and the rest still resolve. Browsing a catalog is a different
+/// question and still syncs everything, strictly: see `sync_sources`.
+pub fn sync_declared_sources(env: &Env, manifest: &Manifest) -> Vec<String> {
+    let in_use = sources_in_use(manifest);
+    let mut notes = Vec::new();
+    for (name, decl) in syncable(manifest, |name| in_use.contains(name)) {
+        match sync_one(env, name, decl) {
+            Ok(warning) => notes.extend(warning),
+            Err(error) => notes.push(error.to_string()),
+        }
+    }
+    notes
+}
+
 /// Resolve every enabled remote source a manifest declares. Failures on
 /// never-cached sources are hard errors; refresh failures on cached
 /// sources degrade to warnings.
 pub fn sync_sources(env: &Env, manifest: &Manifest) -> Result<Vec<String>> {
     let mut warnings = Vec::new();
-    for (name, decl) in &manifest.sources {
-        if !decl.enabled {
-            continue;
-        }
-        let Some(repo) = &decl.repo else {
-            continue;
-        };
-        match sync(env, repo, decl.rev.as_deref()) {
-            Ok(resolution) => warnings.extend(resolution.warning),
-            // Already names the repository and the pin the user must fix.
-            Err(error @ CoreError::PinUnavailable { .. }) => return Err(error),
-            Err(error) => {
-                return Err(CoreError::GitFailed {
-                    command: format!("resolving source '{name}' ({repo})"),
-                    stderr: error.to_string(),
-                });
-            }
-        }
+    for (name, decl) in syncable(manifest, |_| true) {
+        warnings.extend(sync_one(env, name, decl)?);
     }
     Ok(warnings)
+}
+
+/// The enabled remote sources a caller cares about. A source with no repo
+/// is a local path and has nothing to fetch.
+fn syncable<'a>(
+    manifest: &'a Manifest,
+    wanted: impl Fn(&str) -> bool + 'a,
+) -> impl Iterator<Item = (&'a str, &'a SourceDecl)> {
+    manifest
+        .sources
+        .iter()
+        .filter(move |(name, decl)| decl.enabled && decl.repo.is_some() && wanted(name))
+        .map(|(name, decl)| (name.as_str(), decl))
+}
+
+fn sync_one(env: &Env, name: &str, decl: &SourceDecl) -> Result<Option<String>> {
+    let Some(repo) = &decl.repo else {
+        return Ok(None);
+    };
+    match sync(env, repo, decl.rev.as_deref()) {
+        Ok(resolution) => Ok(resolution.warning),
+        // Already names the repository and the pin the user must fix.
+        Err(error @ CoreError::PinUnavailable { .. }) => Err(error),
+        Err(error) => Err(CoreError::GitFailed {
+            command: format!("resolving source '{name}' ({repo})"),
+            stderr: error.to_string(),
+        }),
+    }
 }
 
 /// The commit a source reads as right now, abbreviated for display. Cheap
