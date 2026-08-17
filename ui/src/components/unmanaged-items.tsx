@@ -90,10 +90,13 @@ function sharedLinkOf(group: MergedDriftRow): SharedLink | null {
 export function UnmanagedItems({
   rows,
   busy,
+  title = "Not managed yet",
   onAdopt,
 }: {
   rows: MergedDriftRow[];
   busy: boolean;
+  /** The heading, named per project where several are listed together. */
+  title?: string;
   onAdopt: (
     kind: DriftRow["kind"],
     name: string,
@@ -132,7 +135,7 @@ export function UnmanagedItems({
 
   return (
     <div className="flex flex-col gap-2">
-      <SectionHeading>Not managed yet</SectionHeading>
+      <SectionHeading>{title}</SectionHeading>
       <p className="text-[13px] text-muted-foreground">
         {UNMANAGED_SECTION_EXPLAINER}
       </p>

@@ -39,6 +39,11 @@ changes carry a **Breaking** call-out with their migration note inline.
   call — and **Ready to apply**, what the button does. An item you already
   accepted stays listed with its note but no longer counts as waiting on
   you, so the caption, the project summary and the sidebar badge agree.
+- **Start managing** moves from the Review page to the Library's Installed
+  tab, where the item already is: taking over something vstack didn't put
+  there is an offer, not work the Review page owes, so Review now says how
+  many such items a project has and points at the Library. Home's
+  "aren't managed yet" row opens the Library too.
 - Applying something the safety check flagged but did not hold back used
   to look like a clean install, with the findings only turning up under
   review afterwards. The apply preview now says how many things will be

@@ -13,9 +13,11 @@ import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
 
 export function ReviewPage() {
-  const { views, auditing, error, busy, refresh, applyPlan, adopt, dismiss } =
+  const { views, auditing, error, busy, refresh, applyPlan, dismiss } =
     useAuditStore();
   const scope = useNavStore((s) => s.scope);
+  const setScope = useNavStore((s) => s.setScope);
+  const goToLibrary = useNavStore((s) => s.goToLibrary);
 
   useEffect(() => {
     void refresh();
@@ -79,12 +81,17 @@ export function ReviewPage() {
                   onApply={(removeOrphans, allowUnsafe) =>
                     void applyPlan(view.scope, removeOrphans, allowUnsafe)
                   }
-                  onAdopt={(kind, name, harness, opts) =>
-                    void adopt(view.scope, kind, name, harness, opts)
-                  }
                   onDismiss={(tokens, reason) =>
                     void dismiss(view.scope, tokens, reason)
                   }
+                  onSeeUnmanaged={() => {
+                    setScope(
+                      view.scope.scope === "global"
+                        ? "global"
+                        : { project: view.scope.root },
+                    );
+                    goToLibrary({ tab: "installed" });
+                  }}
                 />
               ),
             )

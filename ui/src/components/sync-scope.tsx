@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import type { AuditView, DismissReason, DriftRow } from "@/bindings";
+import type { AuditView, DismissReason } from "@/bindings";
 import { ApplyDialog } from "@/components/apply-dialog";
 import { SafetyCleanSummary } from "@/components/safety-findings";
 import { SafetyWarnings } from "@/components/safety-findings-affected";
@@ -8,11 +8,12 @@ import { BlockedFindings } from "@/components/safety-findings-blocked";
 import { ScopeChanges, ScopeNotes } from "@/components/scope-details";
 import { Section } from "@/components/section";
 import { Button } from "@/components/ui/button";
-import { UnmanagedItems } from "@/components/unmanaged-items";
 import { blockedCount as countBlocked } from "@/lib/audit-counts";
 import {
   APPLY_BUTTON_LABEL,
   NOTHING_TO_DO_HERE,
+  notManagedFootnote,
+  SEE_IN_LIBRARY_LABEL,
   scopeSummaryLabel,
 } from "@/lib/copy";
 import { DECISION_ZONE_TITLE, decisionZoneLabel } from "@/lib/copy-safety";
@@ -34,19 +35,15 @@ export function SyncScopeCard({
   view,
   busy,
   onApply,
-  onAdopt,
   onDismiss,
+  onSeeUnmanaged,
 }: {
   view: AuditView;
   busy: boolean;
   onApply: (removeOrphans: boolean, allowUnsafe?: string[]) => void;
-  onAdopt: (
-    kind: DriftRow["kind"],
-    name: string,
-    harness: DriftRow["harness"],
-    opts?: { silent?: boolean },
-  ) => void;
   onDismiss: (tokens: string[], reason: DismissReason) => void;
+  /** Opens the Library's Installed tab on this scope, where adopting lives. */
+  onSeeUnmanaged: () => void;
 }) {
   const [applyOpen, setApplyOpen] = useState(false);
   const changes = mergeDriftRows(
@@ -158,7 +155,18 @@ export function SyncScopeCard({
           <ScopeChanges changes={changes} />
           <ScopeNotes notes={view.notes} warnings={view.warnings} />
           <SafetyCleanSummary rows={clean} settled={settled} />
-          <UnmanagedItems rows={unmanaged} busy={busy} onAdopt={onAdopt} />
+          {unmanaged.length > 0 ? (
+            <p className="text-[13px] text-muted-foreground">
+              {notManagedFootnote(unmanaged.length)}{" "}
+              <button
+                type="button"
+                className="underline underline-offset-2 hover:text-foreground"
+                onClick={onSeeUnmanaged}
+              >
+                {SEE_IN_LIBRARY_LABEL}
+              </button>
+            </p>
+          ) : null}
         </div>
       ) : null}
       <ApplyDialog

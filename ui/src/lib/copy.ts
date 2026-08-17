@@ -70,6 +70,13 @@ export function scopeSummaryLabel(counts: {
   }
   return parts.length > 0 ? parts.join(" · ") : null;
 }
+// The Review card's footnote about items vstack does not manage: they are
+// not a debt, so they are counted here and acted on in the Library.
+export const notManagedFootnote = (count: number): string =>
+  count === 1
+    ? "1 item on your machine isn't managed by vstack yet."
+    : `${count} items on your machine aren't managed by vstack yet.`;
+export const SEE_IN_LIBRARY_LABEL = "See them in the Library";
 export const removeLeftBehindLabel = (count: number): string =>
   count === 1
     ? "Also delete 1 item nothing asks for any more"

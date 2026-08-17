@@ -138,7 +138,10 @@ export function OverviewPage() {
           ? "1 item isn't managed yet"
           : `${unmanagedCount} items aren't managed yet`,
       detail: "Already on your machine, but vstack didn't put them there.",
-      action: { label: REVIEW_ACTION_LABEL, onClick: () => setPage("review") },
+      action: {
+        label: "Open Library",
+        onClick: () => goToLibrary({ tab: "installed" }),
+      },
     });
   }
   if (missing.length > 0) {

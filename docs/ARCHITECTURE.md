@@ -18,7 +18,11 @@ Four verbs over one model: **scan → declare → diff → apply**.
 - **Diff** — drift = declared vs observed. The Review & apply page is this
   diff.
 - **Apply** — make disk match declaration, plan shown first. Adopt is the
-  reverse arrow: record an observed item into the manifest.
+  reverse arrow: record an observed item into the manifest. It lives on
+  the Library's Installed tab, beside the item, because it is an offer a
+  person takes up rather than work the diff owes; the Review page is for
+  what needs deciding and what needs applying, and counts what it does
+  not manage as a footnote pointing there.
 
 Every page and every CLI verb is a projection of these four; none owns
 logic.

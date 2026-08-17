@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { ItemKind, Tag } from "@/bindings";
 import { InstalledRow } from "@/components/library/installed-row";
 import { LibraryFilters } from "@/components/library/library-filters";
+import { NotManagedPanel } from "@/components/library/not-managed";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -124,6 +125,7 @@ export function InstalledView() {
             ref={scroller}
             className="min-w-0 flex-1 overflow-y-auto pr-2 [scrollbar-gutter:stable]"
           >
+            <NotManagedPanel />
             <Table>
               <TableHeader>
                 <TableRow>
