@@ -4,12 +4,11 @@ import {
   Home,
   Library,
   RefreshCw,
-  Search,
   Settings,
   SlidersHorizontal,
   TerminalSquare,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { commands } from "@/bindings";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { auditCounts, needsReviewCount } from "@/lib/audit-counts";
 import { projectScopes } from "@/lib/derive";
 import { scopeName } from "@/lib/labels";
 import { isSearchShortcutKey } from "@/lib/search-shortcut";
@@ -28,10 +28,10 @@ import { type Page, useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 import { useUpdatesStore, visibleUpdateCount } from "@/stores/updates";
 
-// One row shape for the search box and every nav item, so the icon column
-// and the text column line up down the whole sidebar. The transparent border
-// is load-bearing: the selected row shows one, and without it here every
-// other row would shift a pixel when selection moved.
+// One row shape for every nav item, so the icon column and the text column
+// line up down the whole sidebar. The transparent border is load-bearing:
+// the selected row shows one, and without it here every other row would
+// shift a pixel when selection moved.
 const NAV_ROW =
   "flex h-9 items-center gap-2.5 rounded-lg border border-transparent px-2 text-sm";
 
@@ -46,27 +46,26 @@ const NAV: { page: Page; label: string; icon: typeof Home }[] = [
 ];
 
 export function Sidebar() {
-  const { page, scope, search, setPage, setScope, setSearch } = useNavStore();
+  const { page, scope, setPage, setScope, focusSearch } = useNavStore();
   const { result, scanning, refresh } = useScanStore();
   const driftCount = useAuditStore((s) =>
-    s.views.reduce((sum, view) => sum + view.drift.length, 0),
+    needsReviewCount(auditCounts(s.views)),
   );
   const updateCount = useUpdatesStore((s) => visibleUpdateCount(s.rows));
   const projects = result ? projectScopes(result) : [];
-  const searchRef = useRef<HTMLInputElement>(null);
 
-  // One search box for the whole app, so "/" always lands in the same place
-  // whatever page is showing.
+  // The shortcut lives in the always-mounted chrome so "/" works on every
+  // page, not only the one holding the search box.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!isSearchShortcutKey(event.key, event.target as HTMLElement | null))
         return;
       event.preventDefault();
-      searchRef.current?.focus();
+      focusSearch();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [focusSearch]);
 
   const scopeValue =
     scope === "all" ? "all" : scope === "global" ? "global" : scope.project;
@@ -95,28 +94,6 @@ export function Sidebar() {
         >
           <RefreshCw className={cn("size-4", scanning && "animate-spin")} />
         </Button>
-      </div>
-      {/* Search is laid out as a nav row, not as an input with padding
-          guessed to match one. Same wrapper, same icon size, same gap — so
-          its text starts exactly where every label below it does, and stays
-          there if any of those numbers ever change. */}
-      <div className="px-2 pb-3">
-        <div className={cn(NAV_ROW, "text-muted-foreground")}>
-          <Search className="size-[18px] shrink-0" />
-          <input
-            ref={searchRef}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search"
-            aria-label="Search everything installed"
-            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-          />
-          {search ? null : (
-            <kbd className="pointer-events-none rounded bg-foreground/[0.07] px-1.5 py-0.5 font-mono text-[11px] leading-none">
-              /
-            </kbd>
-          )}
-        </div>
       </div>
       <nav className="flex flex-1 flex-col gap-0.5 px-2">
         {NAV.map(({ page: target, label, icon: Icon }) => (

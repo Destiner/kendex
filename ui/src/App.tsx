@@ -40,6 +40,33 @@ function useAppearance() {
   }, [appearance]);
 }
 
+// The side buttons on a mouse mean back and forward everywhere else on the
+// desktop, so they mean it here too. The webview has no history of its own
+// to move through, so nothing else would happen if we left them alone.
+function useMouseNavigation() {
+  const back = useNavStore((s) => s.back);
+  const forward = useNavStore((s) => s.forward);
+  useEffect(() => {
+    const onMouseUp = (event: MouseEvent) => {
+      if (event.button !== 3 && event.button !== 4) return;
+      event.preventDefault();
+      if (event.button === 3) back();
+      else forward();
+    };
+    // Chromium fires auxclick for these too; swallowing it stops a stray
+    // click landing on whatever sits under the cursor after the page swaps.
+    const swallow = (event: MouseEvent) => {
+      if (event.button === 3 || event.button === 4) event.preventDefault();
+    };
+    window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("auxclick", swallow);
+    return () => {
+      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("auxclick", swallow);
+    };
+  }, [back, forward]);
+}
+
 function useScanTriggers() {
   const refresh = useScanStore((s) => s.refresh);
   const auditRefresh = useAuditStore((s) => s.refresh);
@@ -67,6 +94,7 @@ function useScanTriggers() {
 export default function App() {
   useAppearance();
   useScanTriggers();
+  useMouseNavigation();
   const page = useNavStore((s) => s.page);
   const packageRef = useNavStore((s) => s.packageRef);
   const packageKey = packageRef

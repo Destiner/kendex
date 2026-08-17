@@ -7,6 +7,7 @@ import { FrontmatterTab } from "@/components/editor/frontmatter-tab";
 import { InstructionsTab } from "@/components/editor/instructions-tab";
 import { SaveBar } from "@/components/editor/save-bar";
 import { PageHeader } from "@/components/page-header";
+import { StatusNote } from "@/components/status-note";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -86,9 +87,9 @@ export function CustomizePage() {
           </div>
 
           {error ? (
-            <p className="whitespace-pre-wrap text-sm text-destructive">
-              {error}
-            </p>
+            <StatusNote tone="critical" title="That change couldn't be saved">
+              <span className="whitespace-pre-wrap">{error}</span>
+            </StatusNote>
           ) : null}
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>

@@ -5,6 +5,7 @@ import type {
   PackageMeta_Serialize,
 } from "@/bindings";
 import { SectionHeading } from "@/components/section";
+import { StatusLine } from "@/components/status-note";
 import { TagBadges } from "@/components/tag-badge";
 import { ToolBadge } from "@/components/tool-badge";
 import { Badge } from "@/components/ui/badge";
@@ -82,7 +83,7 @@ export function PackageMetaBlock({
         ) : null}
       </dl>
       {primary.fileState.state === "symlink" && primary.fileState.broken ? (
-        <p className="text-xs text-destructive">The link is broken.</p>
+        <StatusLine tone="critical">The link is broken.</StatusLine>
       ) : null}
     </div>
   );

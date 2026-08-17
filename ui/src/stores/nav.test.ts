@@ -6,12 +6,15 @@ describe("nav store", () => {
     useNavStore.setState({
       page: "home",
       scope: "all",
+      search: "",
+      searchFocus: 0,
       libraryTab: "installed",
       toolsTab: "tools",
       libraryFilter: null,
       packageRef: null,
       packageView: null,
       history: [],
+      future: [],
     });
   });
 
@@ -38,6 +41,68 @@ describe("nav store", () => {
     useNavStore.getState().setPage("home");
     expect(useNavStore.getState().packageRef).toBeNull();
     expect(useNavStore.getState().history).toEqual([]);
+  });
+
+  it("walks back and forward over the same trail, like a browser", () => {
+    useNavStore.getState().goToLibrary();
+    useNavStore.getState().goToPackage(GH);
+
+    useNavStore.getState().back();
+    expect(useNavStore.getState().page).toBe("library");
+    useNavStore.getState().back();
+    expect(useNavStore.getState().page).toBe("home");
+
+    useNavStore.getState().forward();
+    expect(useNavStore.getState().page).toBe("library");
+    useNavStore.getState().forward();
+
+    const state = useNavStore.getState();
+    expect(state.page).toBe("package");
+    expect(state.packageRef).toEqual(GH);
+    expect(state.future).toEqual([]);
+  });
+
+  it("abandons the forward trail once a new page is opened", () => {
+    useNavStore.getState().goToLibrary();
+    useNavStore.getState().back();
+    expect(useNavStore.getState().future).toHaveLength(1);
+
+    useNavStore.getState().goToTools("tools");
+    expect(useNavStore.getState().future).toEqual([]);
+  });
+
+  it("does nothing at either end of the trail", () => {
+    useNavStore.getState().forward();
+    expect(useNavStore.getState().page).toBe("home");
+    useNavStore.getState().back();
+    expect(useNavStore.getState().page).toBe("home");
+  });
+
+  it("takes the search shortcut to the Library's installed tab", () => {
+    useNavStore.getState().goToLibrary({ tab: "add" });
+    useNavStore.getState().focusSearch();
+
+    const state = useNavStore.getState();
+    expect(state.page).toBe("library");
+    expect(state.libraryTab).toBe("installed");
+    expect(state.searchFocus).toBe(1);
+  });
+
+  it("re-asking for the search box on the Library refocuses without navigating", () => {
+    useNavStore.getState().focusSearch();
+    const pushed = useNavStore.getState().history;
+    useNavStore.getState().focusSearch();
+
+    const state = useNavStore.getState();
+    expect(state.searchFocus).toBe(2);
+    expect(state.history).toEqual(pushed);
+  });
+
+  it("keeps the search text while moving between pages", () => {
+    useNavStore.getState().setSearch("deploy");
+    useNavStore.getState().goToPackage(GH);
+
+    expect(useNavStore.getState().search).toBe("deploy");
   });
 
   it("carries an initial diff view to the package page, consumed once", () => {

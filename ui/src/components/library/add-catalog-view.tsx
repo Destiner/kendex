@@ -5,6 +5,7 @@ import { CatalogScopeGroup } from "@/components/catalog-scope";
 import { AddCatalogDialog } from "@/components/library/add-catalog-dialog";
 import { BundleGallery } from "@/components/library/bundle-gallery";
 import { SectionHeading } from "@/components/section";
+import { StatusNote } from "@/components/status-note";
 import { Button } from "@/components/ui/button";
 import {
   BUNDLES_HELP,
@@ -50,11 +51,15 @@ export function AddCatalogView() {
 
   return (
     <div className={cn("space-y-6", CONTENT_WIDTH, PAGE_BODY)}>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {error ? (
+        <StatusNote tone="critical" title="That catalog couldn't be added">
+          {error}
+        </StatusNote>
+      ) : null}
       {warnings.map((w) => (
-        <p key={w} className="text-sm text-muted-foreground">
-          Heads up: {w}
-        </p>
+        <StatusNote key={w} tone="warning" title="Heads up">
+          {w}
+        </StatusNote>
       ))}
 
       <section className="space-y-3">

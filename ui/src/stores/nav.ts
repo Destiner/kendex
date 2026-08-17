@@ -62,9 +62,13 @@ const HISTORY_CAP = 20;
 interface NavState {
   page: Page;
   scope: ScopeSelection;
-  /** What the sidebar's search box holds — the Library's filter, kept here
-   * so searching from anywhere lands you in the Library already filtered. */
+  /** What the Library's search box holds, kept here so leaving the page and
+   * coming back keeps the table narrowed the same way. */
   search: string;
+  /** Bumped whenever something asks for the search box. The box focuses
+   * itself on every change, so the "/" shortcut reaches it from any page
+   * rather than only from the one it happens to be mounted on. */
+  searchFocus: number;
   libraryTab: LibraryTab;
   toolsTab: ToolsTab;
   /** Consumed once by Installed on mount, then cleared. */
@@ -74,9 +78,14 @@ interface NavState {
   /** Consumed once by the package page on mount, then cleared. */
   packageView: PackageView | null;
   history: HistoryEntry[];
+  /** Where back has been from, newest last — the other half of a browser's
+   * pair. Any fresh navigation abandons it, exactly as a browser does. */
+  future: HistoryEntry[];
   setPage: (page: Page) => void;
   setScope: (scope: ScopeSelection) => void;
   setSearch: (search: string) => void;
+  /** Send the user to the Library with the cursor in its search box. */
+  focusSearch: () => void;
   goToLibrary: (opts?: { tab?: LibraryTab } & LibraryFilter) => void;
   goToTools: (tab: ToolsTab) => void;
   /** A cross-page link from chrome that's always on screen (e.g. the status
@@ -87,55 +96,68 @@ interface NavState {
   clearLibraryFilter: () => void;
   clearPackageView: () => void;
   back: () => void;
+  forward: () => void;
 }
 
 export const useNavStore = create<NavState>((set) => ({
   page: "home",
   scope: "all",
   search: "",
+  searchFocus: 0,
   libraryTab: "installed",
   toolsTab: "tools",
   libraryFilter: null,
   packageRef: null,
   packageView: null,
   history: [],
+  future: [],
   // A direct page pick starts a fresh navigation context — an old back
   // trail pointing at a page the user deliberately left is a bug, not a
   // shortcut, and a stale filter from before the jump shouldn't resurface.
   setPage: (page) =>
-    set({ page, history: [], libraryFilter: null, packageRef: null }),
+    set({
+      page,
+      history: [],
+      future: [],
+      libraryFilter: null,
+      packageRef: null,
+    }),
   setScope: (scope) => set({ scope }),
-  // Typing anywhere in the app means "find me this thing", and the only
-  // page that can answer is the Library — so the first keystroke takes you
-  // there rather than filtering a list you cannot see.
-  setSearch: (search) =>
-    set((state) =>
-      search && state.page !== "library"
-        ? {
-            search,
-            page: "library",
-            libraryTab: "installed",
-            history: pushHistory(state, "library"),
-          }
-        : { search },
-    ),
+  setSearch: (search) => set({ search }),
+  // Asking to search means "find me this thing", and the only page that can
+  // answer is the Library — so the shortcut takes you there rather than
+  // putting a cursor in a box that filters a list you cannot see.
+  focusSearch: () =>
+    set((state) => ({
+      page: "library",
+      libraryTab: "installed",
+      searchFocus: state.searchFocus + 1,
+      history:
+        state.page === "library"
+          ? state.history
+          : pushHistory(state, "library"),
+      future: state.page === "library" ? state.future : [],
+    })),
   goToLibrary: ({ tab = "installed", tool, kind } = {}) =>
     set((state) => ({
       page: "library",
       libraryTab: tab,
       libraryFilter: tool || kind ? { tool, kind } : null,
       history: pushHistory(state, "library"),
+      future: [],
     })),
   goToTools: (tab) =>
     set((state) => ({
       page: "tools",
       toolsTab: tab,
       history: pushHistory(state, "tools"),
+      future: [],
     })),
   goTo: (page) =>
     set((state) => ({
       page,
       history: pushHistory(state, page),
+      future: [],
     })),
   goToPackage: (ref, view) =>
     set((state) => ({
@@ -143,6 +165,7 @@ export const useNavStore = create<NavState>((set) => ({
       packageRef: ref,
       packageView: view ?? null,
       history: pushHistory(state, "package"),
+      future: [],
     })),
   clearLibraryFilter: () => set({ libraryFilter: null }),
   clearPackageView: () => set({ packageView: null }),
@@ -155,19 +178,36 @@ export const useNavStore = create<NavState>((set) => ({
         libraryFilter: null,
         packageView: null,
         history: state.history.slice(0, -1),
+        future: [...state.future, here(state)].slice(-HISTORY_CAP),
+      };
+    }),
+  forward: () =>
+    set((state) => {
+      const next = state.future.at(-1);
+      if (!next) return state;
+      return {
+        ...next,
+        libraryFilter: null,
+        packageView: null,
+        history: [...state.history, here(state)].slice(-HISTORY_CAP),
+        future: state.future.slice(0, -1),
       };
     }),
 }));
 
-// Only a real page change is worth a stack entry — switching tabs within
-// the page you're already on isn't a "place" to come back to.
-function pushHistory(state: NavState, destination: Page): HistoryEntry[] {
-  if (state.page === destination) return state.history;
-  const entry: HistoryEntry = {
+/** The entry describing where the user is standing right now. */
+function here(state: NavState): HistoryEntry {
+  return {
     page: state.page,
     libraryTab: state.libraryTab,
     toolsTab: state.toolsTab,
     packageRef: state.packageRef,
   };
-  return [...state.history, entry].slice(-HISTORY_CAP);
+}
+
+// Only a real page change is worth a stack entry — switching tabs within
+// the page you're already on isn't a "place" to come back to.
+function pushHistory(state: NavState, destination: Page): HistoryEntry[] {
+  if (state.page === destination) return state.history;
+  return [...state.history, here(state)].slice(-HISTORY_CAP);
 }

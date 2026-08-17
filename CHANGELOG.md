@@ -283,6 +283,23 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Changed
 
+- Back and forward now work the way they do in a browser. The side
+  buttons on a mouse move through where you have been, a forward arrow
+  sits beside the back arrow, and each greys out when there is nowhere
+  to go that way. Opening anything new abandons the forward trail, as a
+  browser does. The back button also grew to a normal size and now lines
+  up with the title beneath it instead of sitting out to its left.
+- A page's buttons sit beside its title rather than beside its
+  description. On a package with eight lines of description they used to
+  float in the middle of the page; the description now runs at a
+  readable width underneath.
+- Errors, warnings and notices share one treatment. Each was written by
+  hand where it appeared, so they disagreed on colour, icon and weight —
+  and the file preview's failure had no error styling at all, reading as
+  ordinary grey text. All four states (error, warning, information,
+  success) now draw on the same palette the rest of the app already
+  used.
+
 - The building blocks behind every control — menus, dialogs, switches,
   tabs, tooltips — were swapped for Base UI, their maintained successor.
   Nothing looks or behaves differently day to day; dropdown labels,

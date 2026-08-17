@@ -2,6 +2,7 @@ import { CheckCircle2 } from "lucide-react";
 import { useEffect } from "react";
 import { PageHeader } from "@/components/page-header";
 import { ScopeErrorCard } from "@/components/scope-error-card";
+import { StatusNote } from "@/components/status-note";
 import { SyncScopeCard } from "@/components/sync-scope";
 import { REVIEW_SUBTITLE } from "@/lib/copy";
 import { scopeLabel } from "@/lib/derive";
@@ -39,7 +40,11 @@ export function ReviewPage() {
       <PageHeader title="Review & apply" subtitle={REVIEW_SUBTITLE} />
       <div className={PAGE_BODY}>
         <div className={cn("flex flex-col gap-12", CONTENT_WIDTH)}>
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          {error ? (
+            <StatusNote tone="critical" title="Checking for changes failed">
+              {error}
+            </StatusNote>
+          ) : null}
           {auditing && views.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Checking for changes…

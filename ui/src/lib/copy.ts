@@ -103,7 +103,7 @@ export const TAGS_ROW_LABEL = "For";
 export const ADD_PROJECT_HELP =
   "Point vstack at a repository and it keeps that project's tools in sync too.";
 export const SCAN_FOLDER_HELP =
-  "Or look through a folder for repositories to add.";
+  "Look inside a folder for repositories, then add the ones you want.";
 export const NO_PROJECTS_FOUND = "Nothing that looks like a project in there.";
 
 // "Add from a catalog". A catalog is a git repo of shareable skills and
@@ -137,6 +137,7 @@ export const EDITOR_ERROR_STEPS = [
 export const FILE_BROWSER_ERROR_TITLE = "Couldn't open the file browser";
 
 export const BACK_LABEL = "Back";
+export const FORWARD_LABEL = "Forward";
 export const WINDOW_CONTROL_LABELS = {
   minimize: "Minimize",
   maximize: "Maximize",

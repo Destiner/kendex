@@ -9,26 +9,32 @@ export function PageHeader({
   wide = false,
 }: {
   title: ReactNode;
-  subtitle?: string;
+  subtitle?: ReactNode;
   action?: ReactNode;
   /** Line the header up with a page that runs full-width, not to the reading cap. */
   wide?: boolean;
 }) {
   return (
     <header className={cn("pt-8 pb-6", PAGE_GUTTER)}>
-      <div
-        className={cn(
-          "flex items-center justify-between gap-4",
-          wide ? WIDE_CONTENT_WIDTH : CONTENT_WIDTH,
-        )}
-      >
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-          {subtitle ? (
-            <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+      <div className={cn(wide ? WIDE_CONTENT_WIDTH : CONTENT_WIDTH)}>
+        {/* Actions belong beside the title, not beside the description: a
+            description can run to eight lines, and buttons centred against
+            that end up floating in the middle of the page. */}
+        <div className="flex items-start justify-between gap-4">
+          <h1 className="min-w-0 text-2xl font-semibold tracking-tight">
+            {title}
+          </h1>
+          {action ? (
+            <div className="flex shrink-0 items-center gap-2">{action}</div>
           ) : null}
         </div>
-        {action ? <div className="flex shrink-0 gap-2">{action}</div> : null}
+        {subtitle ? (
+          // Capped at a reading measure even on a full-width page — prose
+          // that runs the whole window is prose nobody finishes a line of.
+          <div className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+            {subtitle}
+          </div>
+        ) : null}
       </div>
     </header>
   );
