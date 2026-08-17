@@ -51,6 +51,21 @@ export const TAKEN_BACK_TOAST = "Dismissal taken back — the finding is back";
 export const NO_SOURCE_TO_TRUST =
   "Nothing on this machine says where this content came from, so there is no source to trust.";
 
+// Reviewing one finding at a time. Each step is one piece of evidence: an
+// item, a finding, three reasons, and Skip. Twenty different plugins are
+// twenty steps, because that is how many things there are to look at.
+export const FOCUSED_REVIEW_LABEL = "Review one by one";
+export const focusedProgress = (at: number, total: number): string =>
+  `${at} of ${total}`;
+export const focusedBody = (projectScope: boolean): string =>
+  projectScope
+    ? "Pick why this isn't a problem, or skip it. Decisions are saved into this project's vstack.toml, shared with everyone using it."
+    : "Pick why this isn't a problem, or skip it. Decisions are saved in your personal manifest on this machine.";
+export const FOCUSED_SKIP = "Skip";
+export const FOCUSED_ALL_DONE = "That's everything";
+export const FOCUSED_ALL_DONE_BODY =
+  "Every finding here has been looked at. Anything you skipped is still waiting on the page.";
+
 // The apply preview: a warning-only install is not held back, so before
 // this its findings only appeared once it had landed. Now the preview says
 // what will be waiting.

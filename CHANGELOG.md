@@ -39,6 +39,11 @@ changes carry a **Breaking** call-out with their migration note inline.
   call — and **Ready to apply**, what the button does. An item you already
   accepted stays listed with its note but no longer counts as waiting on
   you, so the caption, the project summary and the sidebar badge agree.
+- **Review one by one** walks a project's open findings worst-first — one
+  item, one finding, the three reasons and Skip — so twenty plugins that
+  trip the same rule are looked at as twenty things rather than muted with
+  one click. Findings that are the same content seen through several tools
+  are one step, since one decision honestly covers them.
 - **Start managing** moves from the Review page to the Library's Installed
   tab, where the item already is: taking over something vstack didn't put
   there is an offer, not work the Review page owes, so Review now says how

@@ -514,6 +514,15 @@ lives in one capability table read by core and UI.
   as `queued`, so the apply preview says how many decisions will be waiting
   once the content lands — review-after-install, said before the install
   instead of discovered after it.
+  Grouping on the page is presentation only. A concern row collapses one
+  rule across everything it touched, which is how a person reads a list;
+  a decision is made per piece of evidence, which is how a person is
+  honest. Where a concern is one piece of evidence its row carries the
+  verb; where it spans different content, each piece has its own, and the
+  page offers a one-at-a-time walk through the scope's open evidence,
+  worst first, rather than any button that would decide twenty different
+  contents at once. There is no rule-level mute, no time-based snooze and
+  no cross-scope action: a plan belongs to one scope and locks one scope.
 - **Rule severities are calibrated against real catalogs, not inherited.**
   A Critical blocks an install on its own, so the tier is only worth
   something if it is precise. Patterns that fired only on legitimate

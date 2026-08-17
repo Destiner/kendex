@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { AuditView, DismissReason } from "@/bindings";
 import { ApplyDialog } from "@/components/apply-dialog";
+import { FocusedReview } from "@/components/focused-review";
 import { SafetyCleanSummary } from "@/components/safety-findings";
 import { SafetyWarnings } from "@/components/safety-findings-affected";
 import { BlockedFindings } from "@/components/safety-findings-blocked";
@@ -16,6 +17,7 @@ import {
   SEE_IN_LIBRARY_LABEL,
   scopeSummaryLabel,
 } from "@/lib/copy";
+import { FOCUSED_REVIEW_LABEL } from "@/lib/copy-decisions";
 import { DECISION_ZONE_TITLE, decisionZoneLabel } from "@/lib/copy-safety";
 import { mergeDriftRows } from "@/lib/drift-merge";
 import { partitionSafety } from "@/lib/group-findings";
@@ -46,6 +48,7 @@ export function SyncScopeCard({
   onSeeUnmanaged: () => void;
 }) {
   const [applyOpen, setApplyOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
   const changes = mergeDriftRows(
     view.drift.filter((row) => row.state !== "unmanaged"),
   );
@@ -134,6 +137,18 @@ export function SyncScopeCard({
             <Section
               title={DECISION_ZONE_TITLE}
               description={decisionZoneLabel(blockedCount, openCount)}
+              action={
+                openCount > 1 ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => setFocused(true)}
+                  >
+                    {FOCUSED_REVIEW_LABEL}
+                  </Button>
+                ) : undefined
+              }
             >
               <div className="flex flex-col gap-3">
                 <BlockedFindings
@@ -169,6 +184,14 @@ export function SyncScopeCard({
           ) : null}
         </div>
       ) : null}
+      <FocusedReview
+        open={focused}
+        onOpenChange={setFocused}
+        rows={view.safety}
+        projectScope={view.scope.scope === "project"}
+        busy={busy}
+        onDismiss={onDismiss}
+      />
       <ApplyDialog
         open={applyOpen}
         onOpenChange={setApplyOpen}
