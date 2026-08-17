@@ -393,6 +393,19 @@ changes carry a **Breaking** call-out with their migration note inline.
   prompt, and every external command gives up with an error rather than
   hanging forever.
 
+### Fixed
+
+- Migrating from v1 now fails closed instead of guessing. A damaged v1
+  install record refuses with its path named rather than being treated as
+  absent and buried under a fresh empty one, and a stale v1 record can
+  never be re-imported over a scope that already has live v2 installs —
+  the refusal names the leftover to remove. The migration itself runs as
+  one journaled, crash-safe transaction. A damaged app settings file now
+  also stops a plan cold: safety thresholds you set are never silently
+  swapped for defaults because the file could not be read. And upgrading
+  an older project file's format now repairs a missing final newline
+  exactly once, changing no other byte.
+
 ### Changed
 
 - Projects are cards, and adding one is a dialog. Personal and each

@@ -82,18 +82,19 @@ impl ItemSafety {
 
 /// Audit every desired installation, hold back the ones that fail, and
 /// record the overrides this run was asked to grant.
-/// The gate with its thresholds loaded from app settings.
+/// The gate with its thresholds loaded from app settings. A settings file
+/// that cannot be read fails the plan closed: defaulting past it would
+/// judge content against thresholds the user may have set stricter
+/// (the #1307 class — a corrupt config must never weaken a gate).
 pub(super) fn pass(
     env: &crate::env::Env,
     scope: &Scope,
     manifest: &Manifest,
     options: &super::PlanOptions,
     state: &mut super::desired::DesiredState,
-) -> Vec<ItemSafety> {
-    let thresholds = crate::settings::load(env)
-        .map(|settings| settings.safety)
-        .unwrap_or_default();
-    run(scope, manifest, options, thresholds, state)
+) -> crate::error::Result<Vec<ItemSafety>> {
+    let thresholds = crate::settings::load(env)?.safety;
+    Ok(run(scope, manifest, options, thresholds, state))
 }
 
 pub(super) fn run(

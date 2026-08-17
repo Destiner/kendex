@@ -1,0 +1,228 @@
+//! The four v1 bug classes v2 claims to have designed away, pinned:
+//! per-install source identity on refresh (#1313), trailing-newline
+//! preservation with a once-only repair (#1308), corrupt state failing
+//! closed (#1307), and no user-visible mutation before validation and
+//! confirmation (#1292).
+#![cfg(unix)]
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use vstack_core::apply;
+use vstack_core::engine::{audit, ops};
+use vstack_core::env::{Env, FakeOs};
+use vstack_core::model::Scope;
+
+struct World {
+    _tmp: tempfile::TempDir,
+    env: Env,
+    home: PathBuf,
+    project: PathBuf,
+}
+
+#[allow(clippy::unwrap_used)]
+fn world() -> World {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().canonicalize().unwrap();
+    let project = home.join("app");
+    fs::create_dir_all(project.join(".claude")).unwrap();
+    fs::create_dir_all(home.join(".claude")).unwrap();
+    World {
+        env: Env::fake(&home, FakeOs::Linux),
+        home,
+        project,
+        _tmp: tmp,
+    }
+}
+
+#[allow(clippy::unwrap_used)]
+fn write_catalog(dir: &Path, body: &str) {
+    let skill = dir.join("skills/gh");
+    fs::create_dir_all(&skill).unwrap();
+    fs::write(
+        skill.join("SKILL.md"),
+        format!("---\nname: gh\ndescription: about gh\n---\n{body}\n"),
+    )
+    .unwrap();
+}
+
+#[allow(clippy::unwrap_used)]
+fn apply_scope(w: &World, scope: &Scope) {
+    let report = audit(&w.env, scope).unwrap();
+    apply::execute(&w.env, &report.plan, None).unwrap();
+}
+
+/// The #1313 class: two scopes install the same package name from two
+/// different sources; a refresh regenerates each install from its own
+/// recorded source, never its neighbour's.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn refresh_reads_each_installs_own_recorded_source_across_scopes() {
+    let w = world();
+    write_catalog(&w.home.join("catA"), "From catalog A.");
+    write_catalog(&w.home.join("catB"), "From catalog B.");
+    fs::create_dir_all(w.env.global_manifest_file().parent().unwrap()).unwrap();
+    fs::write(
+        w.env.global_manifest_file(),
+        format!(
+            "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.gh]\nsource = \"cat\"\n",
+            w.home.join("catA").display()
+        ),
+    )
+    .unwrap();
+    fs::write(
+        w.project.join("vstack.toml"),
+        format!(
+            "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.gh]\nsource = \"cat\"\n",
+            w.home.join("catB").display()
+        ),
+    )
+    .unwrap();
+
+    let global = Scope::Global;
+    let project = Scope::Project {
+        root: w.project.clone(),
+    };
+    apply_scope(&w, &global);
+    apply_scope(&w, &project);
+
+    // Upstreams both move; each refresh must follow its own source.
+    write_catalog(&w.home.join("catA"), "A, revised.");
+    write_catalog(&w.home.join("catB"), "B, revised.");
+    apply_scope(&w, &global);
+    apply_scope(&w, &project);
+
+    let global_body = fs::read_to_string(w.env.rendered_skills_dir().join("gh/SKILL.md")).unwrap();
+    let project_body = fs::read_to_string(w.project.join(".agents/skills/gh/SKILL.md")).unwrap();
+    assert!(global_body.contains("A, revised."), "{global_body}");
+    assert!(project_body.contains("B, revised."), "{project_body}");
+}
+
+/// The #1308 class over vstack.toml: the schema upgrade keeps every byte
+/// but the schema line, preserves a present trailing newline, and repairs
+/// a missing one exactly once.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn schema_upgrade_is_byte_faithful_and_repairs_a_missing_terminator_once() {
+    let w = world();
+    let manifest_path = w.project.join("vstack.toml");
+    let scope = Scope::Project {
+        root: w.project.clone(),
+    };
+    // Odd spacing, a comment, and no trailing newline.
+    fs::write(
+        &manifest_path,
+        "schema =   3   # my note\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"",
+    )
+    .unwrap();
+    apply_scope(&w, &scope);
+    let upgraded = fs::read_to_string(&manifest_path).unwrap();
+    assert_eq!(
+        upgraded,
+        format!(
+            "schema =   {}   # my note\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n",
+            vstack_core::manifest::MANIFEST_SCHEMA
+        ),
+        "one line changed, one terminator repaired, nothing else"
+    );
+
+    // Stable from here: another pass changes nothing.
+    apply_scope(&w, &scope);
+    assert_eq!(fs::read_to_string(&manifest_path).unwrap(), upgraded);
+}
+
+/// The #1307 class: corrupt state fails the operation closed — a damaged
+/// lock, manifest, or app settings file is an error, never a default.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn corrupt_state_fails_closed_instead_of_defaulting() {
+    let w = world();
+    let scope = Scope::Project {
+        root: w.project.clone(),
+    };
+    fs::write(
+        w.project.join("vstack.toml"),
+        "schema = 5\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n",
+    )
+    .unwrap();
+
+    // Damaged lock: the audit refuses rather than planning against nothing.
+    fs::write(w.project.join(".vstack-lock.json"), "{torn").unwrap();
+    assert!(audit(&w.env, &scope).is_err(), "a corrupt lock must refuse");
+    fs::remove_file(w.project.join(".vstack-lock.json")).unwrap();
+
+    // Damaged app settings: the safety gate must not fall back to default
+    // thresholds the user may have set stricter.
+    let settings = w.env.settings_file();
+    fs::create_dir_all(settings.parent().unwrap()).unwrap();
+    fs::write(&settings, "not = [valid").unwrap();
+    assert!(
+        audit(&w.env, &scope).is_err(),
+        "corrupt settings must fail the plan closed"
+    );
+    fs::remove_file(&settings).unwrap();
+
+    // Damaged manifest: same refusal.
+    fs::write(w.project.join("vstack.toml"), "schema = [broken").unwrap();
+    assert!(audit(&w.env, &scope).is_err());
+}
+
+/// The #1292 class: `add` mutates nothing user-visible before validation
+/// and confirmation. A rejected request and an unconfirmed plan both leave
+/// manifest, lock, and install tree byte-identical.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn add_writes_nothing_before_validation_and_confirmation() {
+    let w = world();
+    write_catalog(&w.home.join("cat"), "Body.");
+    let manifest_text = format!(
+        "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n",
+        w.home.join("cat").display()
+    );
+    fs::write(w.project.join("vstack.toml"), &manifest_text).unwrap();
+    let scope = Scope::Project {
+        root: w.project.clone(),
+    };
+
+    // A request that fails validation (an optional dependency nothing
+    // offers) leaves everything exactly as it was.
+    let bad = ops::AddRequest {
+        source: Some("cat".into()),
+        skills: vec!["gh".into()],
+        optional: vec!["no-such-extra".into()],
+        ..Default::default()
+    };
+    assert!(ops::add(&w.env, &scope, &bad).is_err());
+    assert_eq!(
+        fs::read_to_string(w.project.join("vstack.toml")).unwrap(),
+        manifest_text,
+        "a rejected add leaves the manifest untouched"
+    );
+    assert!(!w.project.join(".vstack-lock.json").exists());
+    assert!(!w.project.join(".agents").exists());
+
+    // A valid request plans; until the plan is confirmed and executed,
+    // nothing user-visible has moved.
+    let good = ops::AddRequest {
+        source: Some("cat".into()),
+        skills: vec!["gh".into()],
+        ..Default::default()
+    };
+    let report = ops::add(&w.env, &scope, &good).unwrap();
+    assert_eq!(
+        fs::read_to_string(w.project.join("vstack.toml")).unwrap(),
+        manifest_text,
+        "planning writes nothing"
+    );
+    assert!(!w.project.join(".vstack-lock.json").exists());
+    assert!(!w.project.join(".agents").exists());
+
+    // Confirmation is the execute; only then does state move.
+    apply::execute(&w.env, &report.plan, None).unwrap();
+    assert!(
+        fs::read_to_string(w.project.join("vstack.toml"))
+            .unwrap()
+            .contains("[skills.gh]")
+    );
+    assert!(w.project.join(".agents/skills/gh/SKILL.md").exists());
+}

@@ -192,7 +192,7 @@ pub fn plan_scope(
     // The gate runs before anything is planned for these items: a blocked
     // rendering must never reach the op list, and an override it grants has
     // to ride out on the manifest write this same plan performs.
-    let safety = gate::pass(env, scope, manifest, options, &mut state);
+    let safety = gate::pass(env, scope, manifest, options, &mut state)?;
     let state = state;
     let mut drift = Vec::new();
     let mut ops: Vec<PlannedOp> = Vec::new();

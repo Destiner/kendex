@@ -163,6 +163,13 @@ pub(super) fn plan_schema_upgrade(
             }
         })
         .collect();
+    // The one terminator repair a managed write makes (the #1308 class):
+    // a file missing its final newline gains one, once, and every later
+    // write is byte-stable.
+    let mut upgraded_text = upgraded_text;
+    if !upgraded_text.is_empty() && !upgraded_text.ends_with('\n') {
+        upgraded_text.push('\n');
+    }
     let op = match rewritten {
         true => Op::WriteFile {
             pre: crate::apply::Pre::observed(&path)?,
