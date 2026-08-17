@@ -216,6 +216,17 @@ lives in one capability table read by core and UI.
   second installation, which would count one file on disk twice.
 - Fresh manifest schema + one-time v1 importer; no compat shims. v1
   extras/theme packs are not carried over.
+- **A seeded settings comment refreshes only while provably unedited.**
+  Skills seed `[env]` defaults into `vstack.settings.toml` write-if-absent;
+  the lock keeps, per key, which skill seeded it and the FNV-1a hash of
+  the comment block seeding last wrote (v1's algorithm, so imported
+  ledgers verify without re-guessing). A template revision rewrites a
+  key's comment only while its on-disk text still hashes to that record
+  and the template belongs to the recorded owner — a hand edit, another
+  skill's template, or an ownerless v1 record is preserved forever. Value
+  lines are never touched, and the merger is byte-faithful: comment-block
+  bytes (and an inserted seed block) are the only bytes that change, so
+  CRLF files and missing-terminator state survive untouched.
 - **Schemas are versioned and migrations are applies.** The manifest and
   lock carry a format version; older files load, and the upgrade rides
   the normal journaled, previewed plan as a surgical edit (the version

@@ -52,15 +52,8 @@ pub use item_source::{ItemSource, item_source};
 pub use observed::{observed_rows, observed_safety};
 pub use planned::{PlannedDeclaration, planned_declarations};
 
-/// Whether an installation's disk bytes cannot be proven to be vstack's own
-/// render — the conservative hold used when a full plan is unavailable.
-pub fn edit_holds(
-    env: &crate::env::Env,
-    scope: &crate::model::Scope,
-    entry: &crate::lock::LockEntry,
-) -> bool {
-    removal::edit_holds(env, scope, entry)
-}
+/// The conservative "cannot prove these bytes are our render" hold.
+pub use removal::edit_holds;
 
 /// Every file path one lock entry put on this machine — what a cheap
 /// existence check can stat without reading any source.
@@ -193,17 +186,13 @@ pub fn plan_scope(
     lock: &Lock,
     options: &PlanOptions,
 ) -> Result<EngineReport> {
-    // Identity first: every derived path and the eventual scope lock key
-    // off the canonical root, whatever spelling the caller passed.
+    // Identity first: derived paths and the scope lock key off canonical.
     let scope = &scope.canonical();
     let mut state = desired_state(env, scope, manifest, lock)?;
     // The gate runs before anything is planned for these items: a blocked
     // rendering must never reach the op list, and an override it grants has
     // to ride out on the manifest write this same plan performs.
-    let thresholds = crate::settings::load(env)
-        .map(|settings| settings.safety)
-        .unwrap_or_default();
-    let safety = gate::run(scope, manifest, options, thresholds, &mut state);
+    let safety = gate::pass(env, scope, manifest, options, &mut state);
     let state = state;
     let mut drift = Vec::new();
     let mut ops: Vec<PlannedOp> = Vec::new();
@@ -211,6 +200,8 @@ pub fn plan_scope(
         version: crate::lock::LOCK_VERSION,
         entries: BTreeMap::new(),
         sources: source_revisions(manifest, lock, &state),
+        // Evidence carried forward; only seeding and refresh may move it.
+        settings_seeds: lock.settings_seeds.clone(),
     };
     let mut written = tree_plan::Written::default();
     let mut config_edits = config_edits::ConfigEditPlan::default();
@@ -261,7 +252,7 @@ pub fn plan_scope(
         &mut written,
     )?;
 
-    plan_settings_seed(scope, &state, &mut ops, &mut drift)?;
+    plan_settings_seed(scope, &state, &mut new_lock, &mut ops, &mut drift)?;
 
     // Trash ops all pass one guard: writes for this pass are already
     // planned, so anything still wanted is known, and no path goes to the

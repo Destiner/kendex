@@ -10,13 +10,14 @@ use crate::fs::{atomic_write, read_if_exists};
 use crate::manifest::Method;
 use crate::model::{HarnessId, ItemKind, Scope};
 
-/// Current lock version. Versions 1 (v0.1) and 2 still load — the shapes
-/// are compatible and the next lock write records the current version. A
-/// lock newer than this build refuses to load. Version 3 added
-/// `source_commit` and `rendered_hash`; the bump is what stops an older
-/// build from reading the lock, dropping both on its next write, and
-/// erasing the record that tells an edit from an update.
-pub const LOCK_VERSION: u32 = 3;
+/// Current lock version. Versions 1 (v0.1) through 3 still load — the
+/// shapes are compatible and the next lock write records the current
+/// version. A lock newer than this build refuses to load. Version 3 added
+/// `source_commit` and `rendered_hash`; version 4 added `settings-seeds`;
+/// each bump is what stops an older build from reading the lock, dropping
+/// the newer record on its next write, and erasing evidence — of which
+/// bytes are whose, or of which comment blocks seeding wrote.
+pub const LOCK_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
 pub struct Lock {
@@ -29,6 +30,30 @@ pub struct Lock {
     /// lock costs the record, not the pin.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub sources: BTreeMap<String, SourceRev>,
+    /// Per `vstack.settings.toml` key: which skill seeded it and the hash
+    /// of the comment block seeding last wrote — the proof a later refresh
+    /// needs before it may rewrite the comment to a newer template.
+    /// Project-scope locks only.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        rename = "settings-seeds"
+    )]
+    pub settings_seeds: BTreeMap<String, SettingsSeed>,
+}
+
+/// One seeded settings key's provenance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsSeed {
+    /// The skill whose template owns this key's comment. `None` on records
+    /// imported from a v1 ledger that named no owner: those verify — a
+    /// hand edit is still told from seeded text — but are never rewritten.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    /// FNV-1a (v1's algorithm, kept so imported ledgers verify) of the
+    /// comment block last written by seeding.
+    pub hash: String,
 }
 
 /// One source's resolution at the last write.

@@ -3,6 +3,22 @@
 //! project's settings file, write-if-absent per key (v1 semantics kept
 //! line-for-line: comment blocks travel with their key, and uniqueness is
 //! file-wide because the shell-side reader is not TOML-table-aware).
+//!
+//! Seeded comments stay current ([`refresh`]): the lock keeps, per key, the
+//! FNV-1a hash of the comment block last written by seeding, and a key's
+//! comment is rewritten to the template's revision only while its on-disk
+//! text still hashes to that record — anything else is a hand edit,
+//! preserved forever. Value lines are never touched, and every write here
+//! is byte-faithful: comment-block bytes (and the inserted block on a
+//! merge) are the only bytes that change, so CRLF files and
+//! missing-terminator state survive untouched.
+
+use std::collections::BTreeMap;
+
+use crate::lock::SettingsSeed;
+
+mod refresh;
+pub use refresh::refresh_comments;
 
 pub const SETTINGS_FILE: &str = "vstack.settings.toml";
 pub const SETTINGS_TEMPLATE: &str = "vstack.settings.toml.example";
@@ -11,6 +27,61 @@ pub const SETTINGS_TEMPLATE: &str = "vstack.settings.toml.example";
 pub struct EnvEntry {
     pub key: String,
     pub lines: Vec<String>,
+}
+
+/// One entry as a scope plans it: the template's lines plus the skill that
+/// ships them — the owner every later comment refresh is gated on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeededEnv {
+    pub entry: EnvEntry,
+    /// The declared skill whose template this came from.
+    pub owner: String,
+}
+
+impl SeededEnv {
+    /// The comment block this entry would write, trimmed the way the
+    /// ledger hashes it.
+    fn comment(&self) -> &[String] {
+        let Some((_, comment)) = self.entry.lines.split_last() else {
+            return &[];
+        };
+        trim_blank_edges(comment)
+    }
+
+    /// The ledger record seeding this entry writes.
+    pub fn seed_record(&self) -> SettingsSeed {
+        SettingsSeed {
+            owner: Some(self.owner.clone()),
+            hash: comment_hash(self.comment()),
+        }
+    }
+}
+
+/// v1's hash, kept bit-for-bit so imported ledgers verify without
+/// re-guessing: 64-bit FNV-1a over the block's lines joined with `\n`.
+pub fn comment_hash(lines: &[String]) -> String {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut hash = OFFSET;
+    for byte in lines.join("\n").bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(PRIME);
+    }
+    format!("{hash:016x}")
+}
+
+/// Blank separators around a comment block are layout, not content: trim
+/// them off both edges before comparing or hashing. Interior blanks stay.
+fn trim_blank_edges(lines: &[String]) -> &[String] {
+    let mut lo = 0;
+    let mut hi = lines.len();
+    while lo < hi && lines[lo].trim().is_empty() {
+        lo += 1;
+    }
+    while hi > lo && lines[hi - 1].trim().is_empty() {
+        hi -= 1;
+    }
+    &lines[lo..hi]
 }
 
 fn is_table_header(line: &str) -> bool {
@@ -72,118 +143,146 @@ pub fn assigned_keys(text: &str) -> Vec<String> {
     text.lines().filter_map(assignment_key).collect()
 }
 
-fn render_entries(entries: &[EnvEntry]) -> String {
-    let mut out = String::new();
-    for entry in entries {
-        if !out.is_empty() && !out.ends_with("\n\n") {
-            out.push('\n');
+/// One line of the original with its terminator kept — the unit the
+/// byte-faithful editors splice between. Untouched lines are re-emitted
+/// exactly as read, terminator included, so CRLF files and a final line
+/// with no terminator survive every edit they are not part of.
+fn lines_keepends(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    for (index, byte) in text.bytes().enumerate() {
+        if byte == b'\n' {
+            out.push(&text[start..=index]);
+            start = index + 1;
         }
-        for line in &entry.lines {
+    }
+    if start < text.len() {
+        out.push(&text[start..]);
+    }
+    out
+}
+
+/// A line's content without its terminator.
+fn content_of(line: &str) -> &str {
+    line.trim_end_matches('\n').trim_end_matches('\r')
+}
+
+/// The terminator new lines are written with: whatever the file already
+/// uses (first line's word), `\n` where it has nothing to say.
+fn file_eol(lines: &[&str]) -> &'static str {
+    match lines
+        .iter()
+        .find_map(|line| match &line[content_of(line).len()..] {
+            "" => None,
+            eol => Some(eol.ends_with('\n') && eol.contains('\r')),
+        }) {
+        Some(true) => "\r\n",
+        _ => "\n",
+    }
+}
+
+fn render_entries(entries: &[&SeededEnv], eol: &str) -> String {
+    let mut out = String::new();
+    for seeded in entries {
+        if !out.is_empty() {
+            out.push_str(eol);
+        }
+        for line in &seeded.entry.lines {
             out.push_str(line);
-            out.push('\n');
+            out.push_str(eol);
         }
     }
     out
 }
 
-/// Merge missing entries into the settings text. `None` = nothing to add.
-/// Returns the new text plus the keys that were added.
-pub fn merge(original: Option<&str>, entries: &[EnvEntry]) -> Option<(String, Vec<String>)> {
+/// Merge missing entries into the settings text, byte-faithfully: the
+/// inserted block is the only change, spelled in the file's own line
+/// terminator. `None` = nothing to add. Returns the new text plus the keys
+/// that were added.
+pub fn merge(original: Option<&str>, entries: &[SeededEnv]) -> Option<(String, Vec<String>)> {
     let existing = original.map(assigned_keys).unwrap_or_default();
-    let missing: Vec<&EnvEntry> = entries
+    let missing: Vec<&SeededEnv> = entries
         .iter()
-        .filter(|entry| !existing.contains(&entry.key))
+        .filter(|seeded| !existing.contains(&seeded.entry.key))
         .collect();
     if missing.is_empty() {
         return None;
     }
-    let added: Vec<String> = missing.iter().map(|e| e.key.clone()).collect();
-    let owned: Vec<EnvEntry> = missing.into_iter().cloned().collect();
+    let added: Vec<String> = missing.iter().map(|s| s.entry.key.clone()).collect();
 
     let Some(original) = original else {
         let mut out = String::from(
             "# Public vstack settings seeded from installed skill defaults.\n# Skill scripts read this [env] table after .env and before .env.local.\n# Keep secrets, tokens, and personal overrides in .env.local.\n\n[env]\n",
         );
-        out.push_str(&render_entries(&owned));
+        out.push_str(&render_entries(&missing, "\n"));
         return Some((out, added));
     };
 
-    let lines: Vec<String> = original.lines().map(str::to_owned).collect();
-    let Some(env_start) = lines.iter().position(|l| is_env_header(l)) else {
-        let mut out = original.to_owned();
-        if !out.is_empty() && !out.ends_with('\n') {
-            out.push('\n');
-        }
-        if !out.is_empty() && !out.ends_with("\n\n") {
-            out.push('\n');
-        }
-        out.push_str("[env]\n");
-        out.push_str(&render_entries(&owned));
-        return Some((out, added));
-    };
-    let env_end = lines
+    let lines = lines_keepends(original);
+    let eol = file_eol(&lines);
+    let env_start = lines
         .iter()
-        .enumerate()
-        .skip(env_start + 1)
-        .find_map(|(index, line)| is_table_header(line).then_some(index))
-        .unwrap_or(lines.len());
+        .position(|line| is_env_header(content_of(line)));
+    // Where the new block lands: the end of the `[env]` section, or the end
+    // of the file (with a header) when there is none.
+    let insert_at = match env_start {
+        Some(start) => lines
+            .iter()
+            .enumerate()
+            .skip(start + 1)
+            .find_map(|(index, line)| is_table_header(content_of(line)).then_some(index))
+            .unwrap_or(lines.len()),
+        None => lines.len(),
+    };
 
-    let mut block: Vec<String> = render_entries(&owned)
-        .trim_end_matches('\n')
-        .lines()
-        .map(str::to_owned)
-        .collect();
-    if env_end > 0 && !lines[env_end - 1].trim().is_empty() {
-        block.insert(0, String::new());
+    let mut block = String::new();
+    // A final line with no terminator gets one — the once-only repair that
+    // makes inserting after it possible at all.
+    if insert_at == lines.len()
+        && lines
+            .last()
+            .is_some_and(|line| content_of(line).len() == line.len() && !line.is_empty())
+    {
+        block.push_str(eol);
     }
-    if env_end < lines.len() && !block.last().is_some_and(|l| l.trim().is_empty()) {
-        block.push(String::new());
+    if env_start.is_none() {
+        if !lines.is_empty() && insert_at > 0 && !content_of(lines[insert_at - 1]).trim().is_empty()
+        {
+            block.push_str(eol);
+        }
+        block.push_str("[env]");
+        block.push_str(eol);
+    } else if insert_at > 0 && !content_of(lines[insert_at - 1]).trim().is_empty() {
+        block.push_str(eol);
     }
-    let mut merged = lines;
-    merged.splice(env_end..env_end, block);
-    let mut out = merged.join("\n");
-    out.push('\n');
+    block.push_str(&render_entries(&missing, eol));
+    if insert_at < lines.len() && !content_of(lines[insert_at]).trim().is_empty() {
+        block.push_str(eol);
+    }
+
+    let mut out = String::with_capacity(original.len() + block.len());
+    for line in &lines[..insert_at] {
+        out.push_str(line);
+    }
+    out.push_str(&block);
+    for line in &lines[insert_at..] {
+        out.push_str(line);
+    }
     Some((out, added))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const TEMPLATE: &str = "# ignored preamble\n[env]\n# Which reviewer set to run.\n# Comma separated.\nREVIEWERS = \"arch,security\"\n\nDEPTH = \"2\"\n\n[other]\nX = \"1\"\n";
-
-    #[test]
-    fn entries_carry_their_comment_blocks() {
-        let entries = extract_env_entries(TEMPLATE);
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].key, "REVIEWERS");
-        assert_eq!(entries[0].lines.len(), 3);
-        assert_eq!(entries[1].key, "DEPTH");
-    }
-
-    #[test]
-    fn merge_is_write_if_absent_with_file_wide_uniqueness() {
-        let entries = extract_env_entries(TEMPLATE);
-        // Key already assigned under a DIFFERENT table still blocks the add.
-        let existing = "[custom]\nREVIEWERS = \"mine\"\n\n[env]\nOTHER = \"x\"\n";
-        let (merged, added) = merge(Some(existing), &entries).unwrap();
-        assert_eq!(added, ["DEPTH"]);
-        assert!(merged.contains("REVIEWERS = \"mine\""));
-        assert!(!merged.contains("arch,security"));
-        assert!(merged.contains("DEPTH = \"2\""));
-        // The new key lands inside [env], before [custom]… order: env is
-        // second here, so it lands at the file end.
-        assert!(merged.ends_with("DEPTH = \"2\"\n"));
-
-        assert!(merge(Some(&merged), &entries).is_none());
-    }
-
-    #[test]
-    fn fresh_file_gets_the_seeded_header() {
-        let entries = extract_env_entries(TEMPLATE);
-        let (created, added) = merge(None, &entries).unwrap();
-        assert_eq!(added, ["REVIEWERS", "DEPTH"]);
-        assert!(created.starts_with("# Public vstack settings"));
-        assert!(created.contains("[env]\n# Which reviewer set to run."));
+/// The ledger records the added entries were seeded, each under its owner.
+pub fn record_seeds(
+    seeds: &mut BTreeMap<String, SettingsSeed>,
+    entries: &[SeededEnv],
+    added: &[String],
+) {
+    for seeded in entries {
+        if added.contains(&seeded.entry.key) {
+            seeds.insert(seeded.entry.key.clone(), seeded.seed_record());
+        }
     }
 }
+
+#[cfg(test)]
+mod tests;

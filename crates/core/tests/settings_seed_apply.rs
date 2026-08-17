@@ -91,9 +91,16 @@ fn seeds_env_defaults_and_never_overwrites_user_values() {
             .plan
             .ops
             .iter()
-            .any(|op| op.description.starts_with("Seed ")),
+            .any(|op| op.description.contains("vstack.settings.toml")),
         "clean settings file must not be re-planned"
     );
+
+    // Seeding left its evidence: the lock's ledger names the owner and the
+    // comment hash for every seeded key.
+    let lock = vstack_core::lock::load(&vstack_core::lock::lock_path(&f.env, &f.scope)).unwrap();
+    let record = lock.settings_seeds.get("REVIEWERS").unwrap();
+    assert_eq!(record.owner.as_deref(), Some("review"));
+    assert!(lock.settings_seeds.contains_key("DEPTH"));
 }
 
 #[test]
@@ -121,6 +128,69 @@ fn occupied_settings_path_is_a_conflict_not_a_clobber() {
             .plan
             .ops
             .iter()
-            .any(|op| op.description.starts_with("Seed "))
+            .any(|op| op.description.contains("vstack.settings.toml"))
     );
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_revised_template_refreshes_an_unedited_comment_through_a_real_apply() {
+    let f = fixture(true);
+    apply_now(&f);
+    let settings_path = f.project.join("vstack.settings.toml");
+
+    // Upstream improves the comment; the value stays the user's.
+    let before = fs::read_to_string(&settings_path).unwrap();
+    let user_valued = before.replace("\"arch,security\"", "\"mine\"");
+    fs::write(&settings_path, &user_valued).unwrap();
+    let template_v2 = TEMPLATE.replace(
+        "# Which reviewers run by default.",
+        "# Which reviewers run by default.\n# Comma separated, no spaces.",
+    );
+    fs::write(
+        f.project
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("catalog/skills/review/vstack.settings.toml.example"),
+        &template_v2,
+    )
+    .unwrap();
+    apply_now(&f);
+
+    let after = fs::read_to_string(&settings_path).unwrap();
+    assert!(
+        after.contains("# Comma separated, no spaces."),
+        "unedited seeded comment follows the template: {after}"
+    );
+    assert!(
+        after.contains("REVIEWERS = \"mine\""),
+        "value lines are never touched: {after}"
+    );
+
+    // A hand-edited comment stops following forever.
+    let edited = after.replace("# Comma separated, no spaces.", "# My own words.");
+    fs::write(&settings_path, &edited).unwrap();
+    apply_now(&f);
+    fs::write(
+        f.project
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("catalog/skills/review/vstack.settings.toml.example"),
+        TEMPLATE.replace(
+            "# Which reviewers run by default.",
+            "# Third revision of the words.",
+        ),
+    )
+    .unwrap();
+    apply_now(&f);
+    let frozen = fs::read_to_string(&settings_path).unwrap();
+    assert!(
+        frozen.contains("# My own words."),
+        "a hand-edited comment is preserved forever: {frozen}"
+    );
+    assert!(!frozen.contains("# Third revision of the words."));
 }

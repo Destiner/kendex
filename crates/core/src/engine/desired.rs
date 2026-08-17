@@ -93,8 +93,9 @@ pub struct DesiredState {
     /// the merge changed something and must be written back.
     pub manifest_update: Option<Manifest>,
     /// `[env]` defaults shipped by enabled skills
-    /// (vstack.settings.toml.example), first declaration wins per key.
-    pub settings_env: Vec<crate::settings_seed::EnvEntry>,
+    /// (vstack.settings.toml.example), first declaration wins per key —
+    /// each with the skill that owns it, which gates comment refreshes.
+    pub settings_env: Vec<crate::settings_seed::SeededEnv>,
     /// What each source an item names resolved to. One resolution per
     /// source per pass: resolving a remote reads its checkout to confirm
     /// nothing has altered it, which is worth doing once and wasteful to

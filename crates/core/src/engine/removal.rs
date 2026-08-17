@@ -18,7 +18,7 @@ use crate::model::{ItemKind, Scope};
 /// to what apply last wrote. A record from before that hash existed cannot
 /// prove anything, so any content present holds. Explicitly asked-for
 /// removals are not gated here: the trash keeps what they take.
-pub(super) fn edit_holds(env: &Env, scope: &Scope, entry: &LockEntry) -> bool {
+pub fn edit_holds(env: &Env, scope: &Scope, entry: &LockEntry) -> bool {
     if !matches!(
         entry.kind,
         ItemKind::Skill | ItemKind::Agent | ItemKind::Command

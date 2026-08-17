@@ -87,6 +87,7 @@ pub(super) fn plan_lock_write(
 ) -> Result<()> {
     if new_lock.entries == lock.entries
         && (new_lock.sources == lock.sources || new_lock.entries.is_empty())
+        && new_lock.settings_seeds == lock.settings_seeds
         && (lock.version == crate::lock::LOCK_VERSION || lock.entries.is_empty())
     {
         return Ok(());
@@ -184,10 +185,13 @@ pub(super) fn plan_schema_upgrade(
 
 /// Skills may ship `[env]` defaults; missing keys merge into the project's
 /// vstack.settings.toml write-if-absent (v1 semantics — a key the user set
-/// anywhere in the file is never touched).
+/// anywhere in the file is never touched), and seeded comment blocks whose
+/// template improved are refreshed while provably unedited — gated by the
+/// lock's per-key ledger, which this plan carries forward on `new_lock`.
 pub(super) fn plan_settings_seed(
     scope: &Scope,
     state: &DesiredState,
+    new_lock: &mut crate::lock::Lock,
     ops: &mut Vec<PlannedOp>,
     drift: &mut Vec<DriftRow>,
 ) -> Result<()> {
@@ -211,15 +215,39 @@ pub(super) fn plan_settings_seed(
         return Ok(());
     }
     let current = crate::fs::read_if_exists(&path)?;
-    let Some((text, added)) = crate::settings_seed::merge(current.as_deref(), &state.settings_env)
-    else {
-        return Ok(());
+    let (refreshed, updated) = match current.as_deref() {
+        Some(text) => crate::settings_seed::refresh_comments(
+            text,
+            &state.settings_env,
+            &mut new_lock.settings_seeds,
+        ),
+        None => (String::new(), Vec::new()),
     };
+    let merged = crate::settings_seed::merge(
+        current.as_ref().map(|_| refreshed.as_str()),
+        &state.settings_env,
+    );
+    let (text, added) = match merged {
+        Some((text, added)) => (text, added),
+        None if !updated.is_empty() => (refreshed, Vec::new()),
+        None => return Ok(()),
+    };
+    crate::settings_seed::record_seeds(&mut new_lock.settings_seeds, &state.settings_env, &added);
+    if current.as_deref() == Some(text.as_str()) {
+        return Ok(());
+    }
+    let mut said = Vec::new();
+    if !added.is_empty() {
+        said.push(format!("seed {}", added.join(", ")));
+    }
+    if !updated.is_empty() {
+        said.push(format!("refresh the comments on {}", updated.join(", ")));
+    }
     ops.push(PlannedOp {
         description: format!(
-            "Seed {} with {}",
+            "Update {} ({})",
             crate::settings_seed::SETTINGS_FILE,
-            added.join(", ")
+            said.join("; ")
         ),
         op: Op::WriteFile {
             pre: crate::apply::Pre::observed(&path)?,

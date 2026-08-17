@@ -135,3 +135,47 @@ fn lock_entries_split_per_harness_and_extras_are_skipped() {
             .starts_with("v1:")
     );
 }
+
+#[test]
+fn settings_seeds_import_with_owner_when_one_skill_is_installed() {
+    let lock = r#"{
+        "version": 1,
+        "entries": {
+            "decider": { "kind": "skill", "source": "vanillagreencom/vstack",
+                         "harnesses": ["claude-code"], "installed_at": "t", "source_hash": "x" }
+        },
+        "settings_seeds": { "REVIEWERS": "cbf29ce484222325" }
+    }"#;
+    let outcome = convert(None, Some(lock)).unwrap();
+    let record = outcome.lock.settings_seeds.get("REVIEWERS").unwrap();
+    // One installed skill: every seeded key is unambiguously its.
+    assert_eq!(record.owner.as_deref(), Some("decider"));
+    // Hash-for-hash: same algorithm, so migrated repos keep refreshing
+    // instead of re-freezing.
+    assert_eq!(record.hash, "cbf29ce484222325");
+}
+
+#[test]
+fn contested_settings_seeds_import_legacy_owned() {
+    let lock = r#"{
+        "version": 1,
+        "entries": {
+            "one": { "kind": "skill", "source": "vanillagreencom/vstack",
+                     "harnesses": ["claude-code"], "installed_at": "t", "source_hash": "x" },
+            "two": { "kind": "skill", "source": "vanillagreencom/vstack",
+                     "harnesses": ["claude-code"], "installed_at": "t", "source_hash": "x" }
+        },
+        "settings_seeds": { "REVIEWERS": "cbf29ce484222325" }
+    }"#;
+    let outcome = convert(None, Some(lock)).unwrap();
+    let record = outcome.lock.settings_seeds.get("REVIEWERS").unwrap();
+    assert_eq!(record.owner, None, "contested keys import legacy-owned");
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.contains("never auto-refreshed")),
+        "{:?}",
+        outcome.notes
+    );
+}

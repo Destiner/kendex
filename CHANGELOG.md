@@ -30,6 +30,14 @@ changes carry a **Breaking** call-out with their migration note inline.
   checked — a broken mirror or an unreachable source shows under
   "Couldn't be checked" instead of silently reading as up to date — and a
   package deleted from its catalog is flagged **No longer in its source**.
+- Seeded settings comments now stay current. When a skill improves the
+  explanation above a `vstack.settings.toml` key it seeded, a refresh
+  brings the new words in — but only while the comment is provably
+  untouched: any hand edit freezes it forever, values are never touched,
+  and another skill can never rewrite words a different skill seeded.
+  Files keep their exact bytes outside the comment being refreshed
+  (Windows line endings included), and repos migrated from v1 keep their
+  edit-protection records instead of re-freezing everything.
 
 - A safety finding that turns out not to be a problem can now be
   dismissed, so it stops asking. Pick why — **Not actually a problem**,

@@ -82,6 +82,20 @@ impl ItemSafety {
 
 /// Audit every desired installation, hold back the ones that fail, and
 /// record the overrides this run was asked to grant.
+/// The gate with its thresholds loaded from app settings.
+pub(super) fn pass(
+    env: &crate::env::Env,
+    scope: &Scope,
+    manifest: &Manifest,
+    options: &super::PlanOptions,
+    state: &mut super::desired::DesiredState,
+) -> Vec<ItemSafety> {
+    let thresholds = crate::settings::load(env)
+        .map(|settings| settings.safety)
+        .unwrap_or_default();
+    run(scope, manifest, options, thresholds, state)
+}
+
 pub(super) fn run(
     scope: &Scope,
     manifest: &Manifest,
