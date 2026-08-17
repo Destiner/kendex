@@ -6,7 +6,6 @@ import {
   filterItems,
   groupItems,
   groupScopes,
-  locationMatches,
   recentItems,
   scopeMatches,
 } from "./derive";
@@ -58,51 +57,26 @@ describe("filterItems", () => {
   });
 });
 
-describe("locationMatches", () => {
-  it("empty selection means All — no narrowing", () => {
-    const global = item({});
-    const project = item({ scope: { scope: "project", root: "/a" } });
-    expect(locationMatches(global, new Set())).toBe(true);
-    expect(locationMatches(project, new Set())).toBe(true);
-  });
-
-  it("unions every selected location", () => {
-    const a = item({ scope: { scope: "project", root: "/a" } });
-    const b = item({ scope: { scope: "project", root: "/b" } });
-    const c = item({ scope: { scope: "project", root: "/c" } });
-    const selection = new Set(["/a", "/b"]);
-    expect(locationMatches(a, selection)).toBe(true);
-    expect(locationMatches(b, selection)).toBe(true);
-    expect(locationMatches(c, selection)).toBe(false);
-  });
-});
-
-describe("filterItems with locations", () => {
+describe("filterItems by where it lives", () => {
   const items = [
     item({ name: "a", scope: { scope: "project", root: "/a" } }),
     item({ name: "b", scope: { scope: "project", root: "/b" } }),
     item({ name: "g", scope: { scope: "global" } }),
   ];
 
-  it("unions selected locations when the sidebar scope is wide open", () => {
-    expect(
-      filterItems(items, { scope: "all", locations: new Set(["/a", "/b"]) }),
-    ).toHaveLength(2);
+  it("narrows to one project, to personal, or to everything", () => {
+    expect(filterItems(items, { scope: { project: "/a" } })).toHaveLength(1);
+    expect(filterItems(items, { scope: "global" })).toHaveLength(1);
+    expect(filterItems(items, { scope: "all" })).toHaveLength(3);
   });
 
-  it("an empty location set still respects a narrowed sidebar scope", () => {
+  it("combines where it lives with the other filters", () => {
     expect(
-      filterItems(items, { scope: { project: "/a" }, locations: new Set() }),
-    ).toHaveLength(1);
-  });
-
-  it("layers pill locations under the sidebar scope instead of replacing it", () => {
-    expect(
-      filterItems(items, {
-        scope: { project: "/a" },
-        locations: new Set(["/b"]),
-      }),
+      filterItems(items, { scope: { project: "/a" }, search: "b" }),
     ).toHaveLength(0);
+    expect(
+      filterItems(items, { scope: { project: "/a" }, search: "a" }),
+    ).toHaveLength(1);
   });
 });
 

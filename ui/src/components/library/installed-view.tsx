@@ -25,6 +25,7 @@ import { useScanStore } from "@/stores/scan";
 export function InstalledView() {
   const result = useScanStore((s) => s.result);
   const scope = useNavStore((s) => s.scope);
+  const setScope = useNavStore((s) => s.setScope);
   const goToLibrary = useNavStore((s) => s.goToLibrary);
   const goToPackage = useNavStore((s) => s.goToPackage);
   const clearLibraryFilter = useNavStore((s) => s.clearLibraryFilter);
@@ -32,15 +33,14 @@ export function InstalledView() {
     kind,
     harness,
     tag,
-    locations,
     setKind,
     setHarness,
     setTag,
-    setLocations,
     setScrollTop,
     clearFilters: clearViewFilters,
   } = useLibraryViewStore();
-  // The search box lives in the sidebar, one for the whole app.
+  // Kept in nav rather than here so leaving for a package page and coming
+  // back lands on the same narrowed table.
   const search = useNavStore((s) => s.search);
   const setSearch = useNavStore((s) => s.setSearch);
   const projects = result ? projectScopes(result) : [];
@@ -71,36 +71,54 @@ export function InstalledView() {
     if (!result) return [];
     const filtered = filterItems(result.items, {
       scope,
-      locations,
       kind: kind === "any" ? undefined : (kind as ItemKind),
       harness: harness === "any" ? undefined : harness,
       tag: tag === "any" ? undefined : (tag as Tag),
       search,
     });
     return groupItems(filtered);
-  }, [result, scope, locations, kind, harness, tag, search]);
+  }, [result, scope, kind, harness, tag, search]);
 
+  // The count the filtered total is measured against: every row the table
+  // could show, not the ones left after the current narrowing.
+  const total = useMemo(
+    () => (result ? groupItems(result.items).length : 0),
+    [result],
+  );
   const hasAnyItems = (result?.items.length ?? 0) > 0;
+  const filtered =
+    search !== "" ||
+    kind !== "any" ||
+    harness !== "any" ||
+    tag !== "any" ||
+    scope !== "all";
 
   const clearFilters = () => {
     clearViewFilters();
     setSearch("");
+    setScope("all");
   };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <LibraryFilters
+        search={search}
+        onSearchChange={setSearch}
         kind={kind}
         onKindChange={setKind}
         harness={harness}
         onHarnessChange={setHarness}
         tag={tag}
         onTagChange={setTag}
-        locations={locations}
-        onLocationsChange={setLocations}
+        scope={scope}
+        onScopeChange={setScope}
         projects={projects}
+        shown={groups.length}
+        total={total}
+        filtered={filtered}
+        onClear={clearFilters}
       />
-      <div className={cn("flex min-h-0 flex-1 flex-col", PAGE_GUTTER)}>
+      <div className={cn("flex min-h-0 flex-1 flex-col pt-6", PAGE_GUTTER)}>
         <div className={cn("flex min-h-0 flex-1", WIDE_CONTENT_WIDTH)}>
           <div
             ref={scroller}

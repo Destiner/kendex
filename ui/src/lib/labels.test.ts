@@ -3,6 +3,7 @@ import type { DriftRow } from "@/bindings";
 import { findingHeadline } from "@/lib/finding-headlines";
 import {
   breadcrumbLabel,
+  describesItself,
   driftDetail,
   hookDisplayName,
   kindLabel,
@@ -133,5 +134,16 @@ describe("breadcrumbLabel for a package", () => {
       }),
     ).toBe("Library / gh");
     expect(packageDisplayName({ kind: "hook", name: "block-rm" })).not.toBe("");
+  });
+});
+
+describe("describesItself", () => {
+  it("separates what an author writes from what a config runs", () => {
+    for (const kind of ["skill", "agent", "command", "pi-extension"] as const) {
+      expect(describesItself(kind)).toBe(true);
+    }
+    // Nowhere to write a description, so the command stands in for one.
+    expect(describesItself("hook")).toBe(false);
+    expect(describesItself("mcp-server")).toBe(false);
   });
 });

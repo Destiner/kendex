@@ -7,8 +7,14 @@ import { TableCell, TableRow } from "@/components/ui/table";
 import { FORKED_BADGE_LABEL } from "@/lib/copy";
 import { groupScopes, type ItemGroup } from "@/lib/derive";
 import { kindIcon } from "@/lib/kind-icon";
-import { hookDisplayName, kindLabel, scopeName } from "@/lib/labels";
+import {
+  describesItself,
+  hookDisplayName,
+  kindLabel,
+  scopeName,
+} from "@/lib/labels";
 import { relativeTime } from "@/lib/relative-time";
+import { cn } from "@/lib/utils";
 import { useUpdatesStore } from "@/stores/updates";
 
 export function InstalledRow({
@@ -35,7 +41,9 @@ export function InstalledRow({
 
   return (
     <TableRow onClick={onOpen} className="cursor-pointer">
-      <TableCell className="max-w-[22rem] font-medium">
+      {/* Cells are nowrap by default; the description is the one column that
+          wants to wrap rather than run out of the row and get cut mid-word. */}
+      <TableCell className="max-w-[22rem] font-medium whitespace-normal">
         <span className="flex items-start gap-2">
           <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <span className="min-w-0">
@@ -46,7 +54,12 @@ export function InstalledRow({
               ) : null}
             </span>
             {group.description ? (
-              <span className="line-clamp-2 block text-xs font-normal text-muted-foreground">
+              <span
+                className={cn(
+                  "line-clamp-2 text-xs font-normal text-muted-foreground",
+                  !describesItself(group.kind) && "font-mono text-[11px]",
+                )}
+              >
                 {group.description}
               </span>
             ) : null}

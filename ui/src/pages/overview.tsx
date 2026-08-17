@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { StatTile } from "@/components/stat-tile";
 import { Skeleton } from "@/components/ui/skeleton";
+import { auditCounts } from "@/lib/audit-counts";
 import {
   FORKED_ATTENTION_DETAIL,
   forkedAttentionTitle,
@@ -14,7 +15,7 @@ import {
   RECENTLY_CHANGED_HELP,
   REVIEW_ACTION_LABEL,
 } from "@/lib/copy";
-import { groupItems, heldBackCount, recentItems } from "@/lib/derive";
+import { groupItems, recentItems } from "@/lib/derive";
 import { toolName } from "@/lib/labels";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
 import { cn } from "@/lib/utils";
@@ -60,12 +61,11 @@ export function OverviewPage() {
     );
   }
 
-  const allDrift = views.flatMap((view) => view.drift);
-  const actionableCount = allDrift.filter(
-    (d) => d.state !== "unmanaged",
-  ).length;
-  const unmanagedCount = allDrift.filter((d) => d.state === "unmanaged").length;
-  const blocked = heldBackCount(views);
+  const {
+    changes: actionableCount,
+    unmanaged: unmanagedCount,
+    blocked,
+  } = auditCounts(views);
   const missing = result.missingProjects;
 
   const rows: AttentionRow[] = [];

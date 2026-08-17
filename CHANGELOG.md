@@ -283,6 +283,34 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Changed
 
+- The Library has its own search box, above the table it filters. It
+  used to sit in the sidebar, where it did nothing at all on six of the
+  seven pages — typing into it on Home changed nothing. `/` still
+  reaches it from anywhere and now takes you to the Library with the
+  cursor already in the box. Beside it, the pickers name what they
+  filter once something is chosen (**Type: Agents**), a live count says
+  how much is showing against how much there is, and **Clear filters**
+  appears whenever anything is narrowing the list.
+- Where an item lives is filtered once. The Library's own place-pills
+  and the sidebar's project picker were two separate filters that
+  stacked, so choosing one project in the sidebar and a different one in
+  the pills emptied the table with nothing on screen to explain why.
+  They are now the same setting and move together. **Trade-off:** the
+  pills no longer multi-select, since the app-wide setting takes one
+  project at a time.
+- Counts mean things, not rows. The Review badge, the status footer and
+  Home each added up one row per tool an item is installed for, so 45
+  unmanaged items read as 171 while the page beside them said 45. They
+  now count items, from one shared place so they cannot disagree again,
+  and things vstack was never asked to manage are no longer counted as
+  changes waiting to be applied — applying never touched them.
+- A row's second line is a description or nothing. Plugins were showing
+  a version folder name (`1.2.0`) where a description belongs, which
+  identifies nothing and made a list of plugins read as a list of
+  numbers. Hooks and MCP servers have nowhere to write a description, so
+  they keep the command that distinguishes them but set it in monospace,
+  as the literal it is.
+
 - Back and forward now work the way they do in a browser. The side
   buttons on a mouse move through where you have been, a forward arrow
   sits beside the back arrow, and each greys out when there is nowhere

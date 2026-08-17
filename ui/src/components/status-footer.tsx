@@ -1,6 +1,7 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { StatusDot } from "@/components/status-dot";
+import { auditCounts } from "@/lib/audit-counts";
 import {
   heldBackFooterLabel,
   pendingChangesLabel,
@@ -35,7 +36,7 @@ export function StatusFooter() {
     return () => clearInterval(id);
   }, []);
 
-  const pending = views.reduce((sum, view) => sum + view.drift.length, 0);
+  const pending = auditCounts(views).changes;
   const held = heldBackCount(views);
 
   return (

@@ -25,26 +25,8 @@ export function scopeMatches(
   );
 }
 
-/** A single place an item can live: "global" (Personal) or a project root. */
-export type Location = "global" | string;
-
-export function itemLocation(item: ObservedItem): Location {
-  return item.scope.scope === "global" ? "global" : item.scope.root;
-}
-
-// The Installed page's location pills are a multi-select on top of the
-// sidebar's single-select scope — an empty set is "All" (no narrowing),
-// a non-empty set is the union of whichever locations are checked.
-export function locationMatches(
-  item: ObservedItem,
-  locations: ReadonlySet<Location>,
-): boolean {
-  return locations.size === 0 || locations.has(itemLocation(item));
-}
-
 export interface ItemFilter {
   scope: ScopeSelection;
-  locations?: ReadonlySet<Location>;
   kind?: ItemKind;
   harness?: string;
   tag?: Tag;
@@ -58,8 +40,6 @@ export function filterItems(
   const needle = filter.search?.trim().toLowerCase();
   return items.filter((item) => {
     if (!scopeMatches(item, filter.scope)) return false;
-    if (filter.locations && !locationMatches(item, filter.locations))
-      return false;
     if (filter.kind && item.kind !== filter.kind) return false;
     if (filter.harness && item.harness !== filter.harness) return false;
     if (filter.tag && !item.tags.includes(filter.tag)) return false;

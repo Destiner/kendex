@@ -1,4 +1,8 @@
+import { Search, X } from "lucide-react";
+import { useEffect, useRef } from "react";
 import type { HarnessId, ItemKind, Tag } from "@/bindings";
+import { ScopePills } from "@/components/library/scope-pills";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -6,10 +10,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Location } from "@/lib/derive";
-import { kindLabel, scopeName, TAG_LABELS, toolName } from "@/lib/labels";
+import { TAGS_ROW_LABEL } from "@/lib/copy";
+import type { ScopeSelection } from "@/lib/derive";
+import { kindLabel, TAG_LABELS, toolName } from "@/lib/labels";
 import { PAGE_GUTTER, WIDE_CONTENT_WIDTH } from "@/lib/layout";
 import { cn } from "@/lib/utils";
+import { useNavStore } from "@/stores/nav";
 
 const KINDS: ItemKind[] = [
   "agent",
@@ -34,162 +40,173 @@ const HARNESSES: HarnessId[] = [
 ];
 
 export function LibraryFilters({
+  search,
+  onSearchChange,
   kind,
   onKindChange,
   harness,
   onHarnessChange,
   tag,
   onTagChange,
-  locations,
-  onLocationsChange,
+  scope,
+  onScopeChange,
   projects,
+  shown,
+  total,
+  filtered,
+  onClear,
 }: {
+  search: string;
+  onSearchChange: (value: string) => void;
   kind: string;
   onKindChange: (value: string) => void;
   harness: string;
   onHarnessChange: (value: string) => void;
   tag: string;
   onTagChange: (value: string) => void;
-  /** Empty set is "All" — the pills are a multi-select on top of it. */
-  locations: ReadonlySet<Location>;
-  onLocationsChange: (locations: Set<Location>) => void;
-  /** Project roots that currently have at least one item, for the pills. */
+  scope: ScopeSelection;
+  onScopeChange: (scope: ScopeSelection) => void;
   projects: string[];
+  /** Rows the table is showing, against every row it could show. */
+  shown: number;
+  total: number;
+  filtered: boolean;
+  onClear: () => void;
 }) {
-  const toggleLocation = (location: Location) => {
-    const next = new Set(locations);
-    if (next.has(location)) next.delete(location);
-    else next.add(location);
-    onLocationsChange(next);
-  };
+  const searchFocus = useNavStore((s) => s.searchFocus);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // The "/" shortcut fires from any page, so it bumps a counter rather than
+  // reaching for a box that may not have been mounted at the time.
+  useEffect(() => {
+    if (searchFocus === 0) return;
+    searchRef.current?.focus();
+    searchRef.current?.select();
+  }, [searchFocus]);
 
   return (
-    <div className={cn("border-b py-3", PAGE_GUTTER)}>
-      {/* Narrower windows (900px, the density check point) can't fit search
-          plus three pickers at full width — this scrolls sideways instead
-          of squeezing the search box down to unreadable, à la the table's
-          own overflow wrapper. */}
-      <div className={cn("flex flex-col gap-3", WIDE_CONTENT_WIDTH)}>
-        <div className="flex gap-2 overflow-x-auto">
-          <Select
-            value={kind}
-            onValueChange={(value) => onKindChange(value ?? kind)}
-          >
-            <SelectTrigger className="w-40 shrink-0">
-              <SelectValue>
-                {(value: string) =>
-                  value === "any"
-                    ? "All types"
-                    : kindLabel(value as ItemKind, 2)
-                }
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="any">All types</SelectItem>
-              {KINDS.map((k) => (
-                <SelectItem key={k} value={k}>
-                  {kindLabel(k, 2)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={tag}
-            onValueChange={(value) => onTagChange(value ?? tag)}
-          >
-            <SelectTrigger className="w-40 shrink-0">
-              <SelectValue>
-                {(value: string) =>
-                  value === "any" ? "All tags" : TAG_LABELS[value as Tag]
-                }
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="any">All tags</SelectItem>
-              {TAGS.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {TAG_LABELS[t]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={harness}
-            onValueChange={(value) => onHarnessChange(value ?? harness)}
-          >
-            <SelectTrigger className="w-40 shrink-0">
-              <SelectValue>
-                {(value: string) =>
-                  value === "any" ? "All tools" : toolName(value as HarnessId)
-                }
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="any">All tools</SelectItem>
-              {HARNESSES.map((h) => (
-                <SelectItem key={h} value={h}>
-                  {toolName(h)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {projects.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5">
-            <LocationPill
-              label="All"
-              selected={locations.size === 0}
-              onClick={() => onLocationsChange(new Set())}
+    <div className={cn("border-b pt-1 pb-5", PAGE_GUTTER)}>
+      <div className={cn("flex flex-col gap-5", WIDE_CONTENT_WIDTH)}>
+        {/* Finding a thing by name is the common errand, so search leads and
+            the pickers refine what it returns. They wrap rather than scroll
+            sideways: a filter you cannot see is a filter you forget is on. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-56 flex-1 md:max-w-96">
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              ref={searchRef}
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search by name or description"
+              aria-label="Search installed items"
+              className="pr-9 pl-9"
             />
-            <LocationPill
-              label="Personal"
-              selected={locations.has("global")}
-              onClick={() => toggleLocation("global")}
-            />
-            {projects.map((root) => (
-              <LocationPill
-                key={root}
-                label={scopeName({ scope: "project", root })}
-                title={root}
-                selected={locations.has(root)}
-                onClick={() => toggleLocation(root)}
-              />
-            ))}
+            {search ? (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => onSearchChange("")}
+                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            ) : (
+              <kbd className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 rounded bg-foreground/[0.07] px-1.5 py-0.5 font-mono text-[11px] leading-none text-muted-foreground">
+                /
+              </kbd>
+            )}
           </div>
-        ) : null}
+          <FacetSelect
+            label="Type"
+            empty="All types"
+            value={kind}
+            onChange={onKindChange}
+            options={KINDS.map((k) => [k, kindLabel(k, 2)])}
+          />
+          <FacetSelect
+            label={TAGS_ROW_LABEL}
+            empty="All uses"
+            value={tag}
+            onChange={onTagChange}
+            options={TAGS.map((t) => [t, TAG_LABELS[t]])}
+          />
+          <FacetSelect
+            label="Tool"
+            empty="All tools"
+            value={harness}
+            onChange={onHarnessChange}
+            options={HARNESSES.map((h) => [h, toolName(h)])}
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+          {projects.length > 0 ? (
+            // With no projects there is nothing to choose between — the pills
+            // would offer two buttons that show the same list.
+            <ScopePills
+              scope={scope}
+              onScopeChange={onScopeChange}
+              projects={projects}
+            />
+          ) : (
+            <span />
+          )}
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="tabular-nums">
+              {shown === total ? `${total} items` : `${shown} of ${total}`}
+            </span>
+            {filtered ? (
+              <button
+                type="button"
+                onClick={onClear}
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                Clear filters
+              </button>
+            ) : null}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function LocationPill({
+/** One picker. Narrowed pickers name their facet ("Type: Agents") so a row
+ *  of chosen values never reads as an unlabelled list of nouns. */
+function FacetSelect({
   label,
-  title,
-  selected,
-  onClick,
+  empty,
+  value,
+  onChange,
+  options,
 }: {
   label: string;
-  title?: string;
-  selected: boolean;
-  onClick: () => void;
+  empty: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: [string, string][];
 }) {
+  const labels = new Map(options);
+  const active = value !== "any";
   return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      title={title}
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-6 shrink-0 items-center rounded-full border px-2.5 text-xs font-medium transition-colors",
-        // Selection is the loudest thing about the pill: a fill only a
-        // shade lighter than the page, against an outlined neighbour, reads
-        // backwards.
-        selected
-          ? "border-transparent bg-primary/20 text-primary"
-          : "border-border text-muted-foreground hover:border-input hover:text-foreground",
-      )}
-    >
-      {label}
-    </button>
+    <Select value={value} onValueChange={(next) => onChange(next ?? value)}>
+      <SelectTrigger
+        aria-label={label}
+        className={cn("w-44 shrink-0", active && "border-primary/40")}
+      >
+        <SelectValue>
+          {(current: string) =>
+            current === "any" ? empty : `${label}: ${labels.get(current)}`
+          }
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="any">{empty}</SelectItem>
+        {options.map(([key, text]) => (
+          <SelectItem key={key} value={key}>
+            {text}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

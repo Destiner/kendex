@@ -37,6 +37,19 @@ const KIND_LABELS: Record<ItemKind, { one: string; many: string }> = {
 export const kindLabel = (kind: ItemKind, count = 1): string =>
   count === 1 ? KIND_LABELS[kind].one : KIND_LABELS[kind].many;
 
+// A hook and an MCP server have nowhere to write a description — no
+// frontmatter, just an entry in a config file — so what stands in for one is
+// the command they run. That is the only thing telling two of them apart, so
+// it stays on screen, but it is a literal and reads as one: set in mono, not
+// in the same voice as an author's sentence.
+const RUNS_A_COMMAND: ReadonlySet<ItemKind> = new Set<ItemKind>([
+  "hook",
+  "mcp-server",
+]);
+
+export const describesItself = (kind: ItemKind): boolean =>
+  !RUNS_A_COMMAND.has(kind);
+
 // What each tag is called on screen. The written form is lower-case (it is
 // what an author types into a file); the label is what a reader sees.
 export const TAG_LABELS: Record<Tag, string> = {
