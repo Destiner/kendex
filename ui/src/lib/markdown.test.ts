@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { renderMarkdown, stripFrontmatter } from "./markdown";
+import {
+  renderInlineMarkdown,
+  renderMarkdown,
+  stripFrontmatter,
+} from "./markdown";
 
 describe("renderMarkdown", () => {
   it("renders ordinary markdown", () => {
@@ -65,5 +69,30 @@ describe("stripFrontmatter", () => {
   it("leaves an unterminated block alone rather than eating the rest", () => {
     const source = "---\nname: deploy\n\n# Title\n";
     expect(stripFrontmatter(source)).toBe(source);
+  });
+});
+
+describe("renderInlineMarkdown", () => {
+  it("gives file names and commands their own treatment", () => {
+    const html = renderInlineMarkdown("Reads `vstack.toml` before it runs.");
+    expect(html).toContain("<code>vstack.toml</code>");
+  });
+
+  it("stays on one line — block syntax is left as written", () => {
+    const html = renderInlineMarkdown("# Not a heading\n- not a list");
+    expect(html).not.toContain("<h1");
+    expect(html).not.toContain("<ul");
+  });
+
+  it("leaves underscores inside an identifier alone", () => {
+    const html = renderInlineMarkdown("Use pane_grid layout for this.");
+    expect(html).not.toContain("<em>");
+    expect(html).toContain("pane_grid layout");
+  });
+
+  it("escapes raw HTML, like the full renderer", () => {
+    const html = renderInlineMarkdown('<img src=x onerror="alert(1)">');
+    expect(html).not.toContain("<img");
+    expect(html).toContain("&lt;img");
   });
 });

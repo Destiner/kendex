@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { commands, type ItemKind, type Scope } from "@/bindings";
 import { CodeBlock } from "@/components/code-block";
 import { MarkdownView } from "@/components/markdown-view";
+import { StatusNote } from "@/components/status-note";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -77,9 +78,9 @@ export function FilePreview({
 
   if (state.status === "error") {
     return (
-      <p className="text-sm text-muted-foreground">
-        Couldn't load this file: {state.error}
-      </p>
+      <StatusNote tone="critical" title="This file couldn't be shown">
+        {state.error}
+      </StatusNote>
     );
   }
 

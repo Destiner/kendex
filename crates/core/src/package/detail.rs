@@ -59,20 +59,31 @@ pub struct PackageMeta {
 /// The sealed root and item path the declaration reads right now — its own
 /// hold when it has one, the source's resolution otherwise. Forks and other
 /// local items read the local source; every read stays sealed either way.
+///
+/// The manifest is loaded here rather than passed in: a project whose
+/// manifest is still v1, or any other manifest that fails to load, must not
+/// stop the preview for an item that vstack never touched — it falls
+/// through to the on-disk installation exactly as an undeclared item does.
 fn effective_item(
     env: &Env,
     scope: &Scope,
-    manifest: &Manifest,
     kind: ItemKind,
     name: &str,
 ) -> Result<(SealedSource, PathBuf)> {
-    let Some(decl) = manifest.declared(kind).get(name) else {
-        return Err(CoreError::NotDeclared {
-            kind,
-            name: name.to_owned(),
+    let declared = crate::engine::ops::manifest_for_mutation(env, scope)
+        .ok()
+        .and_then(|manifest| {
+            manifest
+                .declared(kind)
+                .get(name)
+                .cloned()
+                .map(|decl| (manifest, decl))
         });
+    let Some((manifest, decl)) = declared else {
+        return effective_item_on_disk(env, scope, kind, name);
     };
-    let state = crate::source::resolve_at(env, scope, &decl.source, manifest, decl.rev.as_deref())?;
+    let state =
+        crate::source::resolve_at(env, scope, &decl.source, &manifest, decl.rev.as_deref())?;
     let crate::source::SourceState::Ready(ready) = state else {
         return Err(CoreError::SourcePending {
             name: decl.source.clone(),
@@ -89,6 +100,47 @@ fn effective_item(
     Ok((sealed, item_path))
 }
 
+/// The installation behind an item the manifest cannot vouch for, found the
+/// same way the drift scan finds every unmanaged item: by walking the
+/// harnesses' real surfaces rather than a declaration. Reused rather than
+/// reimplemented — this is the only place scope+kind+name already resolves
+/// to a real path.
+fn effective_item_on_disk(
+    env: &Env,
+    scope: &Scope,
+    kind: ItemKind,
+    name: &str,
+) -> Result<(SealedSource, PathBuf)> {
+    let scope = scope.canonical();
+    let harness_roots = crate::settings::load(env)
+        .map(|settings| settings.harness_roots)
+        .unwrap_or_default();
+    let Some(item) = crate::scan::find_installed(env, &harness_roots, &scope, kind, name) else {
+        return Err(CoreError::PackageNotFound {
+            kind,
+            name: name.to_owned(),
+        });
+    };
+    // The seal canonicalizes its own root, so the item has to be resolved
+    // the same way: two tools sharing one folder reach it through a symlink,
+    // and an unresolved path never sits beneath the resolved root.
+    let resolved = item
+        .path
+        .canonicalize()
+        .map_err(|e| CoreError::io(&item.path, e))?;
+    let (root, item_path) = if resolved.is_dir() {
+        (resolved.clone(), resolved)
+    } else {
+        let parent = resolved
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| resolved.clone());
+        (parent, resolved)
+    };
+    let sealed = SealedSource::open(&root)?;
+    Ok((sealed, item_path))
+}
+
 fn is_readme(path: &str) -> bool {
     let base = path.rsplit('/').next().unwrap_or(path);
     base.eq_ignore_ascii_case("README.md") || base.eq_ignore_ascii_case("README")
@@ -101,8 +153,7 @@ pub fn package_files(
     kind: ItemKind,
     name: &str,
 ) -> Result<Vec<PackageFile>> {
-    let manifest = crate::engine::ops::manifest_for_mutation(env, scope)?;
-    let (sealed, item_path) = effective_item(env, scope, &manifest, kind, name)?;
+    let (sealed, item_path) = effective_item(env, scope, kind, name)?;
     let mut files = Vec::new();
     if sealed.is_dir(&item_path) {
         for (rel, bytes) in sealed.collect_tree(&item_path, &[])? {
@@ -151,8 +202,7 @@ pub fn package_file(
             reason: "a package file is named by a plain relative path".to_owned(),
         });
     }
-    let manifest = crate::engine::ops::manifest_for_mutation(env, scope)?;
-    let (sealed, item_path) = effective_item(env, scope, &manifest, kind, name)?;
+    let (sealed, item_path) = effective_item(env, scope, kind, name)?;
     let target = if sealed.is_dir(&item_path) {
         item_path.join(clean)
     } else {
@@ -171,8 +221,7 @@ pub fn package_readme(
     kind: ItemKind,
     name: &str,
 ) -> Result<Option<ItemSource>> {
-    let manifest = crate::engine::ops::manifest_for_mutation(env, scope)?;
-    let (sealed, item_path) = effective_item(env, scope, &manifest, kind, name)?;
+    let (sealed, item_path) = effective_item(env, scope, kind, name)?;
     if !sealed.is_dir(&item_path) {
         return Ok(None);
     }

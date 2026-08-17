@@ -56,6 +56,14 @@ export function renderMarkdown(source: string): string {
   return renderer.parse(source, { async: false }) as string;
 }
 
+/** One line's worth: emphasis, links and `code`, but no blocks. For prose
+ *  vstack shows inside its own layout — a package description — where a
+ *  heading or a list would break the surface it sits in. Hardened by the
+ *  same renderer as the full document. */
+export function renderInlineMarkdown(source: string): string {
+  return renderer.parseInline(source, { async: false }) as string;
+}
+
 // SKILL.md and agent files open with a YAML frontmatter block that the
 // preview's own header already surfaces as name/description — left in, it
 // renders as a stray "---" rule followed by raw "key: value" text instead

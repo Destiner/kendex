@@ -15,6 +15,7 @@ mod files;
 mod hooks;
 pub(crate) mod jsonc;
 mod metadata;
+mod pi_packages;
 mod plugins;
 mod provenance;
 mod readers;
@@ -59,56 +60,104 @@ pub fn scan_scopes(
     let mut provenance = provenance::OriginCache::default();
 
     for scope in scopes {
-        match scope {
-            Scope::Global => {
-                for adapter in all_adapters() {
-                    let root = harness_roots
-                        .get(adapter.id().name())
-                        .cloned()
-                        .unwrap_or_else(|| adapter.default_global_root(env));
-                    if let Some(found) = adapter.detect(env, &root) {
-                        result.harnesses.push(found);
-                    }
-                    for kind in ItemKind::ALL {
-                        for surface in adapter.global_surfaces(kind, &root, env) {
-                            scan_surface(
-                                adapter,
-                                kind,
-                                Scope::Global,
-                                &surface,
-                                env,
-                                &mut provenance,
-                                &mut result,
-                            );
-                        }
+        scan_scope(
+            env,
+            harness_roots,
+            scope,
+            &ItemKind::ALL,
+            &mut provenance,
+            &mut result,
+        );
+    }
+
+    result
+}
+
+/// The installation behind one scope + kind + name, found by walking only
+/// the surfaces that could hold it. A full scan answers the same question,
+/// but a file preview asks it several times a page and has no use for the
+/// other kinds, the other scopes, or the frontmatter of every unrelated
+/// document those would parse on the way past.
+pub fn find_installed(
+    env: &Env,
+    harness_roots: &std::collections::BTreeMap<String, PathBuf>,
+    scope: &Scope,
+    kind: ItemKind,
+    name: &str,
+) -> Option<ObservedItem> {
+    let mut result = ScanResult {
+        harnesses: Vec::new(),
+        items: Vec::new(),
+        missing_projects: Vec::new(),
+        warnings: Vec::new(),
+    };
+    let mut provenance = provenance::OriginCache::default();
+    scan_scope(
+        env,
+        harness_roots,
+        scope,
+        &[kind],
+        &mut provenance,
+        &mut result,
+    );
+    result.items.into_iter().find(|item| item.name == name)
+}
+
+fn scan_scope(
+    env: &Env,
+    harness_roots: &std::collections::BTreeMap<String, PathBuf>,
+    scope: &Scope,
+    kinds: &[ItemKind],
+    provenance: &mut provenance::OriginCache,
+    result: &mut ScanResult,
+) {
+    match scope {
+        Scope::Global => {
+            for adapter in all_adapters() {
+                let root = harness_roots
+                    .get(adapter.id().name())
+                    .cloned()
+                    .unwrap_or_else(|| adapter.default_global_root(env));
+                if let Some(found) = adapter.detect(env, &root) {
+                    result.harnesses.push(found);
+                }
+                for kind in kinds.iter().copied() {
+                    for surface in adapter.global_surfaces(kind, &root, env) {
+                        scan_surface(
+                            adapter,
+                            kind,
+                            Scope::Global,
+                            &surface,
+                            env,
+                            provenance,
+                            result,
+                        );
                     }
                 }
             }
-            Scope::Project { root: project } => {
-                if !project.is_dir() {
-                    result.missing_projects.push(project.clone());
-                    continue;
-                }
-                for adapter in all_adapters() {
-                    for kind in ItemKind::ALL {
-                        for surface in adapter.project_surfaces(kind, project, env) {
-                            scan_surface(
-                                adapter,
-                                kind,
-                                scope.clone(),
-                                &surface,
-                                env,
-                                &mut provenance,
-                                &mut result,
-                            );
-                        }
+        }
+        Scope::Project { root: project } => {
+            if !project.is_dir() {
+                result.missing_projects.push(project.clone());
+                return;
+            }
+            for adapter in all_adapters() {
+                for kind in kinds.iter().copied() {
+                    for surface in adapter.project_surfaces(kind, project, env) {
+                        scan_surface(
+                            adapter,
+                            kind,
+                            scope.clone(),
+                            &surface,
+                            env,
+                            provenance,
+                            result,
+                        );
                     }
                 }
             }
         }
     }
-
-    result
 }
 
 fn scan_surface(
@@ -200,6 +249,11 @@ fn scan_structured_file(
     match readers::read_structured(path, reader, env) {
         Ok(entries) => {
             for entry in entries {
+                // An entry that resolved to its own directory has an mtime
+                // that describes only itself. One that did not lives inside
+                // a config file shared with every other entry of its kind,
+                // whose mtime would describe all of them at once.
+                let modified_at = entry.source_path.as_deref().and_then(files::mtime_unix);
                 result.items.push(ObservedItem {
                     kind,
                     name: entry.name,
@@ -217,9 +271,7 @@ fn scan_structured_file(
                     // plugin's directory) are not in a format with a header.
                     tags: Vec::new(),
                     description: entry.description,
-                    // One file holds every entry of this kind; its mtime
-                    // would describe all of them at once, not this one.
-                    modified_at: None,
+                    modified_at,
                 });
             }
         }

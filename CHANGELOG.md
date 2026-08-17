@@ -8,6 +8,10 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- A package's description renders light formatting, so a file name or a
+  command an author wrote in backticks reads as one rather than as
+  prose.
+
 - A held-back item can now be accepted from the app. Every serious
   problem the safety check finds shows on the Review & apply page —
   including an install it stopped before anything reached your machine —
@@ -514,6 +518,16 @@ changes carry a **Breaking** call-out with their migration note inline.
   requires a `provider/model` form. Migration: refresh regenerates.
 
 ### Fixed
+
+- A package page can show the files of an item vstack did not install.
+  It read only from the catalog an item was declared in, so every item
+  already on your machine but not managed by vstack — and everything in
+  a project whose `vstack.toml` is still v1 — failed with a message
+  about version holds that had nothing to do with reading a file. It now
+  falls back to the copy on disk, still through the same sealed read. A
+  shared install reached through a symlink, which is how most shared
+  skills are laid out, failed a second way underneath that and now
+  works too.
 
 - **Breaking.** Accepting a problem now covers the exact bytes it was
   shown with. It did not before: the safety check reads a summary of an

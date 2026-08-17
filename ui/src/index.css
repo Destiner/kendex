@@ -224,6 +224,19 @@
     @apply rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em];
     color: var(--code-attr);
   }
+  /* Descriptions rendered inline, inside a line of the app's own layout.
+     Quieter than the preview's: this sits in body copy, not in a document,
+     so the literal is tinted but not boxed. */
+  .prose-inline code {
+    @apply rounded bg-muted/60 px-1 py-px font-mono text-[0.85em];
+    color: var(--code-attr);
+  }
+  .prose-inline strong {
+    @apply font-semibold text-foreground;
+  }
+  .prose-inline em {
+    @apply italic;
+  }
   .prose-preview pre {
     @apply my-3 overflow-x-auto rounded-lg border bg-muted/30 p-3;
   }

@@ -5,6 +5,7 @@ import { DiffView } from "@/components/diff/diff-view";
 import { FilePreview } from "@/components/package/file-preview";
 import { EditedNotice } from "@/components/package/fork-notice";
 import { PackageActions } from "@/components/package/package-actions";
+import { PackageHeader } from "@/components/package/package-header";
 import { PackageSidebar } from "@/components/package/package-sidebar";
 import {
   type PackageView,
@@ -12,11 +13,7 @@ import {
   usePackageData,
   usePackageDiff,
 } from "@/components/package/use-package-data";
-import { PageHeader } from "@/components/page-header";
-import { Badge } from "@/components/ui/badge";
-import { FORKED_BADGE_LABEL } from "@/lib/copy";
 import { groupItems, groupScopes } from "@/lib/derive";
-import { kindIcon } from "@/lib/kind-icon";
 import { packageDisplayName } from "@/lib/labels";
 import { PAGE_GUTTER, WIDE_CONTENT_WIDTH } from "@/lib/layout";
 import { sameScope } from "@/lib/scope";
@@ -89,7 +86,6 @@ export function PackagePage() {
   const primary = group.installations[0];
   if (!primary) return null;
 
-  const Icon = kindIcon(group.kind);
   const displayName = packageDisplayName(ref);
   const installed = installedRow(versions);
   const latest = latestRow(versions);
@@ -127,18 +123,11 @@ export function PackagePage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader
-        wide
-        title={
-          <span className="flex items-center gap-2.5">
-            <Icon className="size-5 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 truncate">{displayName}</span>
-            {meta?.fork != null ? (
-              <Badge variant="outline">{FORKED_BADGE_LABEL}</Badge>
-            ) : null}
-          </span>
-        }
-        subtitle={group.description ?? undefined}
+      <PackageHeader
+        kind={group.kind}
+        displayName={displayName}
+        description={group.description}
+        forked={meta?.fork != null}
         action={
           <PackageActions
             scope={primary.scope}

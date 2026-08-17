@@ -148,6 +148,9 @@ pub enum CoreError {
         harness: HarnessId,
     },
 
+    #[error("no {} named '{name}' found — not declared and nothing installed under that name", kind.name())]
+    PackageNotFound { kind: ItemKind, name: String },
+
     #[error("{command} failed: {stderr}")]
     GitFailed { command: String, stderr: String },
 }
