@@ -53,6 +53,7 @@ export const coreHandlers: Record<string, Handler> = {
     view({ scope: "project", root: path });
     return store.state.settings;
   },
+  install_drift_hook: () => null,
   unregister_project: ({ path }: { path: string }) => {
     store.state.settings.projects = (
       store.state.settings.projects ?? []

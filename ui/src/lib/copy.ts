@@ -187,6 +187,8 @@ export const VERSION_ERROR_TITLE = "Couldn't switch versions";
 export const UPDATES_SUBTITLE =
   "Newer versions of what you have installed. Packages set to update automatically come current when you apply changes.";
 export const UPDATES_EMPTY = "Everything is on its latest version.";
+export const UPDATES_UNCHECKED_TITLE = "Couldn't be checked";
+export const REMOVED_UPSTREAM_TAG = "No longer in its source";
 export const UPDATE_ALL_LABEL = "Update all";
 export const CHECK_FOR_UPDATES_LABEL = "Check for updates";
 export const AUTO_UPDATE_LABEL = "Update automatically";

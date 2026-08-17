@@ -1,6 +1,12 @@
-// The one derivation of "what still needs a person" — Review visibility,
+// The presentation of "what still needs a person" — Review visibility,
 // the sidebar and Home counts, the scope summaries and the finished state
 // all read this, so none of them can quote a different number.
+//
+// The counting semantics are owned by core (`engine/reviewable.rs`), which
+// the drift snapshot and the session-start check read; this file mirrors
+// them for the surfaces that need the groups and tokens, not just the
+// number, and core's tests mirror reviewable.test.ts scenario for scenario
+// so the two can never quietly disagree.
 //
 // Two things need a person: an install the gate is holding back (settled
 // by accepting or removing the item), and a finding on installed content

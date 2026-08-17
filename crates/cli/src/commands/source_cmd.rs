@@ -18,7 +18,12 @@ pub enum SourceCommand {
     /// Disable a source; its installations deactivate but stay declared
     Disable { name: String },
     /// Re-resolve remote source caches
-    Refresh,
+    Refresh {
+        /// Only fetch mirrors whose freshness stamp is old, then re-derive
+        /// the drift snapshot — the detached job `vstack check` spawns
+        #[arg(long)]
+        stale: bool,
+    },
 }
 
 pub fn run(env: &Env, command: SourceCommand, filter: ScopeFilter) -> CliResult {
@@ -61,7 +66,14 @@ pub fn run(env: &Env, command: SourceCommand, filter: ScopeFilter) -> CliResult 
                     if enabled { "enabled" } else { "disabled" }
                 ));
             }
-            SourceCommand::Refresh => {
+            SourceCommand::Refresh { stale: true } => {
+                for note in
+                    vstack_core::drift::refresh::refresh_stale(env, std::slice::from_ref(&scope))
+                {
+                    say(&format!("note: {note}"));
+                }
+            }
+            SourceCommand::Refresh { stale: false } => {
                 let Some(manifest) = vstack_core::manifest::load_for_mutation(
                     &vstack_core::manifest::manifest_path(env, &scope),
                 )?
@@ -70,6 +82,11 @@ pub fn run(env: &Env, command: SourceCommand, filter: ScopeFilter) -> CliResult 
                 };
                 for warning in remote::sync_sources(env, &manifest)? {
                     say(&format!("warning: {warning}"));
+                }
+                // The fetches above stamped every mirror; the snapshot makes
+                // the fresh verdicts what the next session check reads.
+                if let Err(error) = vstack_core::drift::snapshot::record(env, &scope) {
+                    say(&format!("warning: snapshot not derived ({error})"));
                 }
                 say(&format!("{}: sources refreshed", scope.label()));
             }

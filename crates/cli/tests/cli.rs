@@ -68,14 +68,28 @@ fn scope_project_outside_a_project_is_an_error() {
 }
 
 #[test]
-fn check_reports_detection_and_exits_zero() {
+fn check_is_clean_and_quiet_on_a_scope_with_no_drift() {
     let tmp = fixture_home();
     let home = tmp.path();
     let output = vstack(home, &home.join("dev/app"), &["check"]);
     assert!(output.status.success());
-    let report = String::from_utf8_lossy(&output.stderr);
-    assert!(report.contains("claude:"), "{report}");
-    assert!(report.contains("agent"), "{report}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("all clear"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // The hook's mode: silence when clean, on both streams.
+    let quiet = vstack(home, &home.join("dev/app"), &["check", "--quiet"]);
+    assert!(quiet.status.success());
+    assert_eq!(String::from_utf8_lossy(&quiet.stdout).trim(), "");
+    assert_eq!(String::from_utf8_lossy(&quiet.stderr).trim(), "");
+
+    let json = vstack(home, &home.join("dev/app"), &["check", "--json"]);
+    assert!(json.status.success());
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&json.stdout).expect("check --json is valid JSON");
+    assert_eq!(parsed["status"], "clean");
 }
 
 #[test]

@@ -1,149 +1,34 @@
-import {
-  ChevronDown,
-  ChevronRight,
-  MoreHorizontal,
-  RefreshCw,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { UpdateRow } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PageHeader } from "@/components/page-header";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { UpdateRowView } from "@/components/update-row";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Switch } from "@/components/ui/switch";
-import {
-  AUTO_UPDATE_LABEL,
   CHECK_FOR_UPDATES_LABEL,
-  EDITED_UPDATE_TAG,
   hiddenUpdatesLabel,
   IGNORE_CONFIRM_BODY,
   IGNORE_CONFIRM_LABEL,
-  IGNORE_UPDATES_LABEL,
   ignoreConfirmTitle,
-  NOTIFY_AGAIN_LABEL,
-  PINNED_UPDATE_TAG,
-  PREVIEW_CHANGES_LABEL,
   UPDATE_ALL_LABEL,
-  UPDATE_LABEL,
   UPDATES_EMPTY,
   UPDATES_SUBTITLE,
+  UPDATES_UNCHECKED_TITLE,
 } from "@/lib/copy";
-import { kindIcon } from "@/lib/kind-icon";
-import { packageDisplayName } from "@/lib/labels";
 import { CONTENT_WIDTH, PAGE_GUTTER } from "@/lib/layout";
 import { cn } from "@/lib/utils";
-import { versionLabel } from "@/lib/versions";
-import { useNavStore } from "@/stores/nav";
 import {
   hiddenUpdates,
   useUpdatesStore,
   visibleUpdates,
 } from "@/stores/updates";
 
-function UpdateRowView({
-  row,
-  onIgnore,
-}: {
-  row: UpdateRow;
-  onIgnore?: (row: UpdateRow) => void;
-}) {
-  const { busy, updateOne, setAutoUpdate, setIgnored } = useUpdatesStore();
-  const goToPackage = useNavStore((s) => s.goToPackage);
-  const Icon = kindIcon(row.kind);
-  const name = packageDisplayName(row);
-
-  const preview = () => {
-    if (!row.current || !row.latest) return;
-    goToPackage(
-      { kind: row.kind, name: row.name, scope: row.scope },
-      { mode: "diff", from: row.current.commit, to: row.latest.commit },
-    );
-  };
-
-  return (
-    <div className="flex items-center gap-3 py-2.5">
-      <Icon className="size-4 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-2 text-sm font-medium">
-          <span className="truncate">{name}</span>
-          {row.pinned ? (
-            <Badge variant="outline">{PINNED_UPDATE_TAG}</Badge>
-          ) : null}
-          {row.blockedByLocalEdit ? (
-            <Badge variant="outline">{EDITED_UPDATE_TAG}</Badge>
-          ) : null}
-        </p>
-        <p className="font-mono text-xs text-muted-foreground">
-          {row.current ? versionLabel(row.current) : "?"} →{" "}
-          {row.latest ? versionLabel(row.latest) : "?"}
-        </p>
-      </div>
-      {row.ignored ? (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => void setIgnored(row, false)}
-        >
-          {NOTIFY_AGAIN_LABEL}
-        </Button>
-      ) : (
-        <>
-          <span className="flex items-center gap-2 text-xs text-muted-foreground">
-            {AUTO_UPDATE_LABEL}
-            <Switch
-              aria-label={AUTO_UPDATE_LABEL}
-              checked={!row.pinned}
-              disabled={busy}
-              onCheckedChange={(auto) => void setAutoUpdate(row, auto)}
-            />
-          </span>
-          <Button size="sm" variant="ghost" onClick={preview}>
-            {PREVIEW_CHANGES_LABEL}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy || row.blockedByLocalEdit}
-            onClick={() => void updateOne(row)}
-          >
-            {UPDATE_LABEL}
-          </Button>
-          {onIgnore ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    aria-label="More actions"
-                  >
-                    <MoreHorizontal className="size-4" />
-                  </Button>
-                }
-              />
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onIgnore(row)}>
-                  {IGNORE_UPDATES_LABEL}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
-        </>
-      )}
-    </div>
-  );
-}
-
 /** Which packages have newer versions, what changed, and per-package
  *  control over how loudly to hear about it. */
 export function UpdatesPage() {
-  const { rows, busy, checking, check, updateAll } = useUpdatesStore();
+  const { rows, warnings, busy, checking, check, updateAll } =
+    useUpdatesStore();
   const load = useUpdatesStore((s) => s.load);
   const [showHidden, setShowHidden] = useState(false);
   const [confirmIgnore, setConfirmIgnore] = useState<UpdateRow | null>(null);
@@ -203,6 +88,22 @@ export function UpdatesPage() {
               ))}
             </div>
           )}
+          {warnings.length > 0 ? (
+            <div className="mt-8">
+              <p className="text-sm font-medium">{UPDATES_UNCHECKED_TITLE}</p>
+              <div className="mt-1 space-y-1">
+                {warnings.map((warning) => (
+                  <p
+                    key={`${warning.kind}:${warning.name}:${warning.message}`}
+                    className="text-xs text-muted-foreground"
+                  >
+                    {warning.name}: {warning.message}
+                    {warning.remediation ? ` — ${warning.remediation}` : ""}
+                  </p>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {hidden.length > 0 ? (
             <div className="mt-8">
               <button

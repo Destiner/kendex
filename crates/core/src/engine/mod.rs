@@ -37,8 +37,10 @@ mod observed;
 pub mod ops;
 mod owned;
 mod plan_pass;
+mod planned;
 mod removal;
 mod review_hash;
+pub mod reviewable;
 mod scope_writes;
 mod set_change;
 mod targets;
@@ -48,6 +50,7 @@ mod unmanaged;
 pub use gate::{ItemSafety, allow_unsafe_flag};
 pub use item_source::{ItemSource, item_source};
 pub use observed::{observed_rows, observed_safety};
+pub use planned::{PlannedDeclaration, planned_declarations};
 
 /// Whether an installation's disk bytes cannot be proven to be vstack's own
 /// render — the conservative hold used when a full plan is unavailable.
@@ -59,14 +62,23 @@ pub fn edit_holds(
     removal::edit_holds(env, scope, entry)
 }
 
+/// Every file path one lock entry put on this machine — what a cheap
+/// existence check can stat without reading any source.
+pub fn installed_paths(
+    env: &crate::env::Env,
+    scope: &crate::model::Scope,
+    entry: &crate::lock::LockEntry,
+) -> Vec<std::path::PathBuf> {
+    owned::installed(env, scope, entry).files
+}
+
+use desired::desired_state;
 use scope_writes::{
     plan_config_edits, plan_lock_write, plan_schema_upgrade, plan_settings_seed, source_revisions,
 };
 pub use set_change::{KeptInstall, SetChange, SetDirection};
 use set_change::{kept_members, set_changes};
 use unmanaged::unmanaged_rows;
-
-use desired::desired_state;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "kebab-case")]

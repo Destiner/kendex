@@ -1,11 +1,15 @@
 //! Wall-clock timestamps without an external time dependency.
 
-/// Now, as an ISO-8601 UTC timestamp.
-pub fn timestamp() -> String {
-    let secs = std::time::SystemTime::now()
+/// Now, as seconds since the Unix epoch.
+pub fn unix_now() -> u64 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
-        .unwrap_or(0);
+        .unwrap_or(0)
+}
+
+/// Seconds-since-epoch as an ISO-8601 UTC timestamp.
+pub fn iso_from_unix(secs: u64) -> String {
     let days = secs / 86_400;
     let (year, month, day) = civil_from_days(days as i64);
     let rem = secs % 86_400;
@@ -15,6 +19,11 @@ pub fn timestamp() -> String {
         (rem % 3600) / 60,
         rem % 60
     )
+}
+
+/// Now, as an ISO-8601 UTC timestamp.
+pub fn timestamp() -> String {
+    iso_from_unix(unix_now())
 }
 
 /// Howard Hinnant's civil-from-days: days since 1970-01-01 → (y, m, d).

@@ -75,10 +75,12 @@ pub fn run(env: &Env, args: UpdatesArgs) -> CliResult {
     if apply {
         return super::refresh::run(env, filter, false, yes, false);
     }
-    let rows = vstack_core::package::updates::updates(env, &scope)?;
+    let report = vstack_core::package::updates::updates(env, &scope)?;
     let mut shown = 0;
-    for row in &rows {
-        if !row.update_available {
+    for row in &report.rows {
+        // Mixed installs and packages gone upstream are standing facts worth
+        // a line even when no newer version exists to move to.
+        if !row.update_available && !row.mixed && !row.removed_upstream {
             continue;
         }
         shown += 1;
@@ -91,6 +93,9 @@ pub fn run(env: &Env, args: UpdatesArgs) -> CliResult {
         }
         if row.mixed {
             notes.push("mixed installs");
+        }
+        if row.removed_upstream {
+            notes.push("no longer in its source");
         }
         let notes = if notes.is_empty() {
             String::new()
@@ -111,8 +116,21 @@ pub fn run(env: &Env, args: UpdatesArgs) -> CliResult {
                 .unwrap_or_else(|| "?".into()),
         ));
     }
-    if shown == 0 {
+    for warning in &report.warnings {
+        say(&format!(
+            "warning: {} {}: {}",
+            warning.kind.name(),
+            warning.name,
+            warning.message
+        ));
+    }
+    if shown == 0 && report.warnings.is_empty() {
         say("everything is on its latest version");
+    }
+    // The deep work just ran; write it down so the next session-start check
+    // reads verdicts instead of guesses.
+    if let Err(error) = vstack_core::drift::snapshot::record(env, &scope) {
+        say(&format!("warning: snapshot not derived ({error})"));
     }
     Ok(())
 }
@@ -133,7 +151,7 @@ fn set_ignored(
 ) -> CliResult {
     let kind = parse_kind(&kind)?;
     // The ignore is keyed by repository too, so it needs the row's identity.
-    let rows = vstack_core::package::updates::updates(env, scope)?;
+    let rows = vstack_core::package::updates::updates(env, scope)?.rows;
     let Some(row) = rows.iter().find(|row| row.kind == kind && row.name == name) else {
         return Err(format!(
             "no declared {} named '{name}' with a repo source here",

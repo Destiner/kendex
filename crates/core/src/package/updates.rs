@@ -7,8 +7,9 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use crate::engine::ItemWarning;
 use crate::env::Env;
-use crate::error::Result;
+use crate::error::{CoreError, Result};
 use crate::model::{ItemKind, Scope};
 use crate::remote::history;
 use crate::settings;
@@ -39,7 +40,9 @@ pub struct UpdateRow {
     /// The package's files changed between current and latest — a moved
     /// repository that never touched this package is not an update.
     pub update_available: bool,
-    /// Held at a version (`rev` on the declaration) — manual updates.
+    /// Held at a version — the effective installation graph's word, not
+    /// only the item's own `rev`: a pinned source, a pinned bundle, or a
+    /// pinned dependency parent all hold what they carry.
     pub pinned: bool,
     /// The user asked to stop hearing about this package's updates.
     pub ignored: bool,
@@ -50,6 +53,18 @@ pub struct UpdateRow {
     pub forked: bool,
     /// Installations of this package disagree on their source commit.
     pub mixed: bool,
+    /// The source's tracked tip no longer carries this package at all.
+    pub removed_upstream: bool,
+}
+
+/// Update standing for one scope, and every package the standing could not
+/// be computed for. The warnings are the report's honesty: a package whose
+/// mirror cannot be read is listed here, never silently shown as current.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatesReport {
+    pub rows: Vec<UpdateRow>,
+    pub warnings: Vec<ItemWarning>,
 }
 
 /// A package whose update notifications are switched off, by everything
@@ -65,6 +80,9 @@ pub struct IgnoredUpdate {
     pub repo: String,
 }
 
+mod eval;
+use eval::Eval;
+
 pub(crate) fn scope_key(scope: &Scope) -> String {
     match scope.canonical() {
         Scope::Global => "global".to_owned(),
@@ -72,100 +90,42 @@ pub(crate) fn scope_key(scope: &Scope) -> String {
     }
 }
 
-/// Every declared remote package's standing, ignored rows included — they
-/// come back flagged, never filtered, so the surface that hides them can
-/// also offer the way back.
-pub fn updates(env: &Env, scope: &Scope) -> Result<Vec<UpdateRow>> {
+/// Every planned remote package's standing — declared items and derived
+/// bundle members and dependencies alike — ignored rows included: they come
+/// back flagged, never filtered, so the surface that hides them can also
+/// offer the way back.
+pub fn updates(env: &Env, scope: &Scope) -> Result<UpdatesReport> {
     let Some(manifest) = load_current(env, scope)? else {
-        return Ok(Vec::new());
+        return Ok(UpdatesReport {
+            rows: Vec::new(),
+            warnings: Vec::new(),
+        });
     };
     let lock = crate::lock::load_file(&crate::lock::lock_path(env, scope))?;
     let lock = match lock {
         crate::lock::LockFile::Current(lock) => lock,
         _ => crate::lock::Lock::default(),
     };
-    let ignored = settings::load(env)?.ignored_updates;
-    let key = scope_key(scope);
-    // What the planner will actually hold as an edit — the authoritative
-    // signal, so the "edited by you" flag can never disagree with what
-    // clicking Update does. One plan for the whole scope.
-    let edited = edited_items(env, scope, &manifest, &lock);
-    let mut rows = Vec::new();
-    for kind in ItemKind::ALL {
-        for name in manifest.declared(kind).keys() {
-            let forked = manifest
-                .forks
-                .get(&kind)
-                .is_some_and(|forks| forks.contains_key(name));
-            let Ok(package) = crate::package::package_ref(env, scope, &manifest, kind, name) else {
-                // Path and local sources have no versions; a pending remote
-                // has no mirror to ask. Neither is an update row — except a
-                // fork, which the Library still needs to know about: it
-                // rides along with no versions and no update.
-                if forked {
-                    rows.push(fork_row(scope, kind, name, &manifest));
-                }
-                continue;
-            };
-            let log = history::subtree_log(&package.mirror, &package.tip, &package.subtree);
-            let refer = |commit: &str| VersionRef {
-                label: log
-                    .iter()
-                    .find(|row| row.commit == commit)
-                    .and_then(|row| row.tags.first().cloned()),
-                date: log
-                    .iter()
-                    .find(|row| row.commit == commit)
-                    .map(|row| row.date.clone()),
-                commit: commit.to_owned(),
-            };
-            let latest = log.first().map(|row| refer(&row.commit));
-            let commits: Vec<String> = lock
-                .entries
-                .values()
-                .filter(|entry| entry.kind == kind && &entry.name == name)
-                .filter_map(|entry| entry.source_commit.clone())
-                .collect();
-            let mixed = commits.windows(2).any(|pair| pair[0] != pair[1]);
-            let current = commits
-                .last()
-                .and_then(|commit| {
-                    history::last_content_commit(&package.mirror, commit, &package.subtree)
-                })
-                .map(|commit| refer(&commit));
-            let update_available = match (&current, &latest) {
-                (Some(current), Some(latest)) => current.commit != latest.commit,
-                // Nothing installed yet, or a lock predating the record:
-                // there is nothing to honestly compare, and a false "update"
-                // on every legacy install would drown the real ones.
-                _ => false,
-            };
-            rows.push(UpdateRow {
-                scope: scope.clone(),
-                kind,
-                name: name.clone(),
-                source: package.source_name.clone(),
-                pinned: manifest
-                    .declared(kind)
-                    .get(name)
-                    .is_some_and(|decl| decl.rev.is_some()),
-                ignored: ignored.iter().any(|entry| {
-                    entry.scope == key
-                        && entry.kind == kind
-                        && &entry.name == name
-                        && entry.repo == package.repo
-                }),
-                blocked_by_local_edit: edited.contains(&(kind, name.clone())),
-                forked,
-                repo: package.repo,
-                current,
-                latest,
-                update_available,
-                mixed,
-            });
-        }
+    let eval = Eval {
+        env,
+        scope,
+        ignored: settings::load(env)?.ignored_updates,
+        scope_key: scope_key(scope),
+        // What the planner will actually hold as an edit — the
+        // authoritative signal, so the "edited by you" flag can never
+        // disagree with what clicking Update does. One plan for the scope.
+        edited: edited_items(env, scope, &manifest, &lock),
+        manifest: &manifest,
+        lock: &lock,
+    };
+    let mut report = UpdatesReport {
+        rows: Vec::new(),
+        warnings: Vec::new(),
+    };
+    for planned in crate::engine::planned_declarations(env, scope, &manifest) {
+        eval.standing(&planned, &mut report);
     }
-    Ok(rows)
+    Ok(report)
 }
 
 /// The items the planner would hold as hand-edited — read straight from a
@@ -216,17 +176,13 @@ fn fork_row(
     scope: &Scope,
     kind: ItemKind,
     name: &str,
-    manifest: &crate::manifest::Manifest,
+    decl: &crate::manifest::ItemDecl,
 ) -> UpdateRow {
     UpdateRow {
         scope: scope.clone(),
         kind,
         name: name.to_owned(),
-        source: manifest
-            .declared(kind)
-            .get(name)
-            .map(|decl| decl.source.clone())
-            .unwrap_or_default(),
+        source: decl.source.clone(),
         repo: String::new(),
         current: None,
         latest: None,
@@ -236,6 +192,7 @@ fn fork_row(
         blocked_by_local_edit: false,
         forked: true,
         mixed: false,
+        removed_upstream: false,
     }
 }
 

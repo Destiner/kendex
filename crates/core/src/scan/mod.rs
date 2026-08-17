@@ -171,7 +171,7 @@ fn scan_surface(
 ) {
     match surface {
         Surface::FileDir { dir, exts, prefix } => {
-            for found in files::scan_file_dir(dir, exts, *prefix) {
+            for found in files::scan_file_dir(dir, exts, *prefix, &mut result.warnings) {
                 warn_unknown_tags(&found, result);
                 result.items.push(ObservedItem {
                     kind,
@@ -189,7 +189,7 @@ fn scan_surface(
             }
         }
         Surface::SubdirPerItem { dir, marker } => {
-            for found in files::scan_subdirs(dir, marker) {
+            for found in files::scan_subdirs(dir, marker, &mut result.warnings) {
                 warn_unknown_tags(&found, result);
                 result.items.push(ObservedItem {
                     kind,
@@ -212,7 +212,7 @@ fn scan_surface(
             }
         }
         Surface::StructuredDir { dir, ext, reader } => {
-            for path in files::scan_documents(dir, ext) {
+            for path in files::scan_documents(dir, ext, &mut result.warnings) {
                 scan_structured_file(adapter, kind, &scope, &path, reader, env, result);
             }
         }

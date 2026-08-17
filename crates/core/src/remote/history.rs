@@ -4,9 +4,14 @@
 //! [`Hardened`], with full commit ids only, a `--` separator, and literal
 //! pathspecs — a catalog chooses its own directory names, and a name
 //! shaped like git syntax must stay a name.
+//!
+//! A history that cannot be read is an error, never an empty timeline: a
+//! corrupt mirror answering "no commits" would read as "nothing changed",
+//! which is exactly the fail-open a drift report cannot be built on.
 
 use std::path::Path;
 
+use crate::error::{CoreError, Result};
 use crate::process::Hardened;
 
 /// One commit that changed the subtree.
@@ -30,14 +35,18 @@ const MAX_OUTPUT: usize = 1_000_000;
 /// Display bound for one commit subject.
 const MAX_SUMMARY: usize = 200;
 
-fn stdout_capped(git: Hardened) -> Option<String> {
-    let output = git.run().ok()?;
+fn stdout_capped(git: Hardened) -> Result<String> {
+    let command = git.label().to_owned();
+    let output = git.run()?;
     if !output.status.success() {
-        return None;
+        return Err(CoreError::GitFailed {
+            command,
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        });
     }
     let mut bytes = output.stdout;
     bytes.truncate(MAX_OUTPUT);
-    Some(String::from_utf8_lossy(&bytes).into_owned())
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 /// A subtree path as a pathspec git will not interpret.
@@ -57,15 +66,27 @@ fn shown_summary(raw: &str) -> String {
     cleaned.trim().to_owned()
 }
 
+/// A value that is not a full commit id never reaches git as a positional:
+/// it could be read as an option. Commit values arrive from lock files,
+/// which travel inside project repositories and are not trusted — so the
+/// refusal is an error naming the value's shape, not a silent empty answer.
+fn require_commit(value: &str) -> Result<()> {
+    match crate::remote::store::is_pin(value) {
+        true => Ok(()),
+        false => Err(CoreError::GitFailed {
+            command: "reading history".to_owned(),
+            stderr: "not a full commit id".to_owned(),
+        }),
+    }
+}
+
 /// The commits that changed `rel`, newest first, walking first-parent
 /// history from `tip`. Tag names arrive through `%D` decorations so one
 /// invocation answers both "what changed" and "what is it called".
-pub fn subtree_log(mirror: &Path, tip: &str, rel: &Path) -> Vec<CommitRow> {
-    if !commit_only(tip) {
-        return Vec::new();
-    }
+pub fn subtree_log(mirror: &Path, tip: &str, rel: &Path) -> Result<Vec<CommitRow>> {
+    require_commit(tip)?;
     let max = MAX_ROWS.to_string();
-    let Some(text) = stdout_capped(Hardened::git_bare(
+    let text = stdout_capped(Hardened::git_bare(
         mirror,
         &[
             "log",
@@ -78,10 +99,9 @@ pub fn subtree_log(mirror: &Path, tip: &str, rel: &Path) -> Vec<CommitRow> {
             "--",
             &literal(rel),
         ],
-    )) else {
-        return Vec::new();
-    };
-    text.split('\u{1e}')
+    ))?;
+    Ok(text
+        .split('\u{1e}')
         .filter_map(|record| {
             let mut fields = record.trim_start_matches(['\n', ' ']).split('\0');
             let commit = fields.next()?.trim().to_owned();
@@ -107,25 +127,17 @@ pub fn subtree_log(mirror: &Path, tip: &str, rel: &Path) -> Vec<CommitRow> {
                 tags,
             })
         })
-        .collect()
-}
-
-/// Only a full commit id ever reaches git as a positional: anything else
-/// — and in particular anything starting with `-` — could be read as an
-/// option. Commit values arrive from lock files, which travel inside
-/// project repositories and are not trusted.
-fn commit_only(value: &str) -> bool {
-    crate::remote::store::is_pin(value)
+        .collect())
 }
 
 /// The newest commit at-or-before `from` that changed `rel` — the content
 /// revision an installation at `from` actually holds. An installed commit
 /// that merely sat near the package (it changed other files) is not itself
-/// on the package's timeline; this maps it onto the row that is.
-pub fn last_content_commit(mirror: &Path, from: &str, rel: &Path) -> Option<String> {
-    if !commit_only(from) {
-        return None;
-    }
+/// on the package's timeline; this maps it onto the row that is. `None`
+/// means the history genuinely holds no such commit; a history that could
+/// not be read is an error.
+pub fn last_content_commit(mirror: &Path, from: &str, rel: &Path) -> Result<Option<String>> {
+    require_commit(from)?;
     let text = stdout_capped(Hardened::git_bare(
         mirror,
         &[
@@ -140,5 +152,5 @@ pub fn last_content_commit(mirror: &Path, from: &str, rel: &Path) -> Option<Stri
         ],
     ))?;
     let commit = text.trim().to_owned();
-    (commit.len() == 40).then_some(commit)
+    Ok((commit.len() == 40).then_some(commit))
 }

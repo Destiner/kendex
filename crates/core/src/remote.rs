@@ -58,6 +58,7 @@ pub fn sync(env: &Env, repo: &str, rev: Option<&str>) -> Result<Resolution> {
         }
         let _guard = store::lock_repo(env, &key)?;
         let fetched = store::ensure_mirror(&mirror, &url).and_then(|()| store::fetch(&mirror));
+        stamp_fetch(env, &key, &mirror, &fetched);
         if !store::has_commit(&mirror, pin) {
             return Err(CoreError::PinUnavailable {
                 repo: repo.to_owned(),
@@ -76,7 +77,9 @@ pub fn sync(env: &Env, repo: &str, rev: Option<&str>) -> Result<Resolution> {
 
     let selector = rev.unwrap_or("HEAD");
     let _guard = store::lock_repo(env, &key)?;
-    let warning = match store::ensure_mirror(&mirror, &url).and_then(|()| store::fetch(&mirror)) {
+    let fetched = store::ensure_mirror(&mirror, &url).and_then(|()| store::fetch(&mirror));
+    stamp_fetch(env, &key, &mirror, &fetched);
+    let warning = match fetched {
         Ok(()) => None,
         Err(error) => Some(format!("{repo}: using cached version ({error})")),
     };
@@ -146,6 +149,24 @@ pub fn cached(env: &Env, repo: &str, rev: Option<&str>) -> Result<Option<Resolut
     }
 }
 
+/// Every fetch stamps its mirror, success or failure, so freshness and
+/// first-failure age are facts the cheap session check can read without
+/// touching the network. Stamp writes are best-effort by design: a stamp
+/// that cannot be written costs staleness detection, never the fetch —
+/// and an unwritable stamp reads as stale, the conservative state.
+fn stamp_fetch(env: &Env, key: &str, mirror: &std::path::Path, fetched: &Result<()>) {
+    let now = crate::clock::unix_now();
+    let _ = match fetched {
+        Ok(()) => crate::drift::stamps::record_success(
+            env,
+            key,
+            crate::drift::stamps::refs_state(mirror),
+            now,
+        ),
+        Err(error) => crate::drift::stamps::record_failure(env, key, &error.to_string(), now),
+    };
+}
+
 /// The v0.1 mutable clone, read where the new layout has nothing yet: an
 /// offline first run after an update still resolves. Nothing writes to it
 /// and nothing deletes it — the first successful refresh publishes a
@@ -186,8 +207,9 @@ pub fn fetch_all(env: &Env, manifest: &Manifest) -> Vec<String> {
                 continue;
             }
         };
-        if let Err(error) = store::ensure_mirror(&mirror, &url).and_then(|()| store::fetch(&mirror))
-        {
+        let fetched = store::ensure_mirror(&mirror, &url).and_then(|()| store::fetch(&mirror));
+        stamp_fetch(env, &key, &mirror, &fetched);
+        if let Err(error) = fetched {
             warnings.push(format!("{repo}: not checked ({error})"));
         }
         drop(guard);

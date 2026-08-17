@@ -50,7 +50,9 @@ fn fork_keeps_the_name_pauses_updates_and_survives_refresh() {
     assert!(audit(&w.env, &w.scope).unwrap().drift.is_empty());
 
     // The updates projection knows it is a fork now, not an update.
-    let rows = vstack_core::package::updates::updates(&w.env, &w.scope).unwrap();
+    let rows = vstack_core::package::updates::updates(&w.env, &w.scope)
+        .unwrap()
+        .rows;
     let gh = rows.iter().find(|row| row.name == "gh").unwrap();
     assert!(gh.forked);
     assert!(

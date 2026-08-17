@@ -43,8 +43,10 @@ pub fn run(
 ) -> CliResult {
     let mut refreshed_anything = false;
     let mut failures: Vec<String> = Vec::new();
+    let scopes = resolve_scopes(env, filter)?;
 
-    for scope in resolve_scopes(env, filter)? {
+    for scope in &scopes {
+        let scope = scope.clone();
         let manifest_path = vstack_core::manifest::manifest_path(env, &scope);
         if let Ok(vstack_core::manifest::ManifestFile::Current(manifest)) =
             vstack_core::manifest::load(&manifest_path)
@@ -119,6 +121,18 @@ pub fn run(
                 outcome.applied
             )),
             Err(error) => failures.push(error.to_string()),
+        }
+    }
+
+    // The deep work just ran for every scope; the snapshot is what the next
+    // session-start check reads instead of redoing it.
+    for scope in &scopes {
+        if matches!(
+            vstack_core::manifest::load(&vstack_core::manifest::manifest_path(env, scope)),
+            Ok(vstack_core::manifest::ManifestFile::Current(_))
+        ) && let Err(error) = vstack_core::drift::snapshot::record(env, scope)
+        {
+            say(&format!("warning: snapshot not derived ({error})"));
         }
     }
 

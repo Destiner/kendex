@@ -62,6 +62,23 @@ pub fn unregister_project(path: String) -> Result<AppSettings, String> {
     settings::unregister_project(&env()?, path.as_ref()).map_err(|e| e.to_string())
 }
 
+/// Install the session-start drift report hook for a scope: script into the
+/// scope's local source, declaration into its manifest, then the ordinary
+/// apply renders it. The offer surface (project registration) calls this
+/// after the user says yes — the declared, user-approved install per scope.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn install_drift_hook(scope: vstack_core::model::Scope) -> Result<(), String> {
+    let env = env()?;
+    let plan = vstack_core::drift::hook::install_plan(&env, &scope).map_err(|e| e.to_string())?;
+    vstack_core::apply::execute(&env, &plan, None).map_err(|e| e.to_string())?;
+    let report =
+        vstack_core::engine::plan_apply(&env, &scope, &vstack_core::engine::PlanOptions::default())
+            .map_err(|e| e.to_string())?;
+    vstack_core::apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn discover_projects_at(env: &Env, root: &str) -> Result<Vec<String>, String> {
     let expanded = crate::paths::expand_tilde(&env.home, root);
     Ok(discover::discover_projects(&expanded)

@@ -92,7 +92,14 @@ describe("settings store", () => {
       .registerProject("/home/x/acme-web");
 
     expect(ok).toBe(true);
-    expect(toast.success).toHaveBeenCalledWith("Added acme-web");
+    // The success toast also offers the session drift report — an offer at
+    // registration, never an auto-install.
+    expect(toast.success).toHaveBeenCalledWith(
+      "Added acme-web",
+      expect.objectContaining({
+        action: expect.objectContaining({ label: "Add session drift report" }),
+      }),
+    );
   });
 
   it("shows the error modal and resolves false when adding a project fails, without touching settings", async () => {

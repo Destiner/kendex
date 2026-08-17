@@ -131,20 +131,39 @@ enum Command {
         #[arg(long)]
         harness: Option<String>,
     },
-    /// Detection + declaration sanity for this machine, or authoring
-    /// validation over a catalog directory with --catalog
+    /// Drift status for this machine (exit 0 clean / 1 drift / 2 could not
+    /// check), or authoring validation over a catalog directory with
+    /// --catalog
     Check {
         #[arg(short = 'g', long)]
         global: bool,
         /// project | global | all (default all)
         #[arg(long)]
         scope: Option<String>,
+        /// Machine-readable report
+        #[arg(long)]
+        json: bool,
+        /// Bounded plain-text report, silent when clean (the session hook)
+        #[arg(short = 'q', long)]
+        quiet: bool,
         /// Validate this catalog directory instead of this machine
         #[arg(long)]
         catalog: Option<std::path::PathBuf>,
         /// With --catalog, also fail on advisories
         #[arg(long)]
         strict: bool,
+    },
+    /// Install the session-start drift report hook for a scope
+    #[command(name = "drift-hook")]
+    DriftHook {
+        #[arg(short = 'g', long)]
+        global: bool,
+        /// project | global (default project)
+        #[arg(long)]
+        scope: Option<String>,
+        /// Skip confirmation prompts
+        #[arg(short = 'y', long)]
+        yes: bool,
     },
     /// File an issue about an installed asset, routed by ownership
     Report(ReportFlags),
@@ -187,20 +206,40 @@ enum Command {
 /// Sanity for this machine, or for a catalog directory. They answer
 /// different questions — what is installed here, versus what this content
 /// would do anywhere — and only the second one belongs in a repository's CI.
+#[allow(clippy::too_many_arguments)]
 fn check(
     env: &Env,
     global: bool,
     scope: Option<String>,
+    json: bool,
+    quiet: bool,
     catalog: Option<std::path::PathBuf>,
     strict: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<ExitCode, Box<dyn std::error::Error>> {
     match catalog {
-        Some(catalog) => commands::check_catalog::run(&catalog, strict),
+        Some(catalog) => commands::check_catalog::run(&catalog, strict).map(|()| ExitCode::SUCCESS),
         None => {
             let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::All)?;
-            commands::check::run(env, filter)
+            commands::check::run(env, filter, json, quiet)
         }
     }
+}
+
+fn remove(
+    env: &Env,
+    names: Vec<String>,
+    global: bool,
+    scope: Option<String>,
+    sweep: bool,
+    no_sweep: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::Project)?;
+    let sweep = match (sweep, no_sweep) {
+        (true, _) => Some(true),
+        (_, true) => Some(false),
+        _ => None,
+    };
+    commands::remove::run(env, names, filter, sweep)
 }
 
 fn main() -> ExitCode {
@@ -240,15 +279,7 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             scope,
             sweep,
             no_sweep,
-        } => {
-            let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::Project)?;
-            let sweep = match (sweep, no_sweep) {
-                (true, _) => Some(true),
-                (_, true) => Some(false),
-                _ => None,
-            };
-            commands::remove::run(&env, names, filter, sweep)?;
-        }
+        } => remove(&env, names, global, scope, sweep, no_sweep)?,
         Command::Refresh(args) => commands::refresh::run_args(&env, args)?,
         Command::Verify {
             names,
@@ -294,9 +325,15 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
         Command::Check {
             global,
             scope,
+            json,
+            quiet,
             catalog,
             strict,
-        } => check(&env, global, scope, catalog, strict)?,
+        } => return check(&env, global, scope, json, quiet, catalog, strict),
+        Command::DriftHook { global, scope, yes } => {
+            let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::Project)?;
+            commands::drift_hook::run(&env, filter, yes)?;
+        }
         Command::UpdatePi { check, scope } => {
             let filter = ScopeFilter::resolve(scope.as_deref(), false, ScopeFilter::All)?;
             commands::update_pi::run(&env, filter, check)?;

@@ -283,6 +283,23 @@ fn read(pipe: &mut impl Read) -> io::Result<Vec<u8>> {
     Ok(buffer)
 }
 
+/// Re-launch this same binary, detached: no stdio, never waited on. Not a
+/// tool invocation — the one caller is the session check spawning its own
+/// background refresh — so none of [`Hardened`]'s tool posture (timeouts,
+/// captured output) applies; what does apply is living in this file, where
+/// process creation is audited.
+pub fn respawn_detached(args: &[&str]) {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let _ = Command::new(exe)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+}
+
 fn collect(reader: JoinHandle<io::Result<Vec<u8>>>, label: &str) -> Result<Vec<u8>> {
     match reader.join() {
         Ok(Ok(bytes)) => Ok(bytes),

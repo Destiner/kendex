@@ -2,6 +2,7 @@ pub mod apply;
 pub mod clock;
 pub mod configedit;
 pub mod discover;
+pub mod drift;
 pub mod engine;
 pub mod env;
 pub mod error;

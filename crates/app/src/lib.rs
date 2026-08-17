@@ -19,6 +19,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         commands::update_settings,
         commands::register_project,
         commands::unregister_project,
+        commands::install_drift_hook,
         commands::discover_projects,
         commands::capability_table,
         commands::report_route,

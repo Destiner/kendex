@@ -192,7 +192,7 @@ fn updates_report_only_packages_whose_files_moved() {
         .unwrap();
     remote::sync_sources(&w.env, &loaded).unwrap();
 
-    let rows = updates::updates(&w.env, &w.scope).unwrap();
+    let rows = updates::updates(&w.env, &w.scope).unwrap().rows;
     let gh = rows.iter().find(|row| row.name == "gh").unwrap();
     let other = rows.iter().find(|row| row.name == "other").unwrap();
     assert!(
@@ -225,7 +225,7 @@ fn a_held_package_still_reports_its_update_and_holds_on_disk() {
     let report = audit(&w.env, &w.scope).unwrap();
     apply::execute(&w.env, &report.plan, None).unwrap();
 
-    let rows = updates::updates(&w.env, &w.scope).unwrap();
+    let rows = updates::updates(&w.env, &w.scope).unwrap().rows;
     let gh = rows.iter().find(|row| row.name == "gh").unwrap();
     assert!(gh.update_available, "a hold never hides what it holds back");
     assert!(gh.pinned);
@@ -256,13 +256,13 @@ fn ignoring_updates_is_a_settings_write_and_rows_stay_visible() {
         "a notification preference never touches shared intent"
     );
 
-    let rows = updates::updates(&w.env, &w.scope).unwrap();
+    let rows = updates::updates(&w.env, &w.scope).unwrap().rows;
     let gh = rows.iter().find(|row| row.name == "gh").unwrap();
     assert!(gh.ignored, "ignored rows come back flagged, never filtered");
     assert!(gh.update_available);
 
     updates::set_ignored(&w.env, &w.scope, ItemKind::Skill, "gh", REPO, false).unwrap();
-    let rows = updates::updates(&w.env, &w.scope).unwrap();
+    let rows = updates::updates(&w.env, &w.scope).unwrap().rows;
     assert!(!rows.iter().find(|row| row.name == "gh").unwrap().ignored);
 }
 
@@ -314,12 +314,12 @@ fn a_pinned_source_discovers_new_versions_after_fetch_all() {
     // A pinned source's sync skips the network on purpose; the updates
     // check must not inherit that blindness.
     remote::sync_sources(&w.env, &loaded).unwrap();
-    let rows = updates::updates(&w.env, &w.scope).unwrap();
+    let rows = updates::updates(&w.env, &w.scope).unwrap().rows;
     assert!(!rows[0].update_available, "nothing fetched yet");
 
     let warnings = remote::fetch_all(&w.env, &loaded);
     assert_eq!(warnings, Vec::<String>::new());
-    let rows = updates::updates(&w.env, &w.scope).unwrap();
+    let rows = updates::updates(&w.env, &w.scope).unwrap().rows;
     let gh = rows.iter().find(|row| row.name == "gh").unwrap();
     assert!(gh.update_available);
     assert_eq!(gh.latest.as_ref().unwrap().commit, second);

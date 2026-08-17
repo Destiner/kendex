@@ -44,6 +44,7 @@ function updateRows(): UpdateRow[] {
     blockedByLocalEdit: false,
     forked: false,
     mixed: false,
+    removedUpstream: false,
   }));
 }
 
@@ -66,8 +67,8 @@ export const packageHandlers: Record<string, Handler> = {
       newerThanInstalled: false,
     },
   ],
-  updates_overview: () => updateRows(),
-  updates_refresh: () => updateRows(),
+  updates_overview: () => ({ rows: updateRows(), warnings: [] }),
+  updates_refresh: () => ({ rows: updateRows(), warnings: [] }),
   update_set_ignored: ({
     kind,
     name,
@@ -81,7 +82,7 @@ export const packageHandlers: Record<string, Handler> = {
       (entry) => !(entry.kind === kind && entry.name === name),
     );
     if (ignored) store.state.ignored.push({ kind, name });
-    return updateRows();
+    return { rows: updateRows(), warnings: [] };
   },
   package_set_rev: ({ scope }: { scope: Scope }) => view(scope),
   package_diff: ({ from, to }: { from: VersionSel; to: VersionSel }) => ({

@@ -115,6 +115,12 @@ impl Env {
         self.data_dir.join("vstack2/locks")
     }
 
+    /// Per-scope drift snapshots — derived, machine-local, rebuildable. The
+    /// session-start check reads these instead of doing the deep work.
+    pub fn drift_dir(&self) -> PathBuf {
+        self.data_dir.join("vstack2/drift")
+    }
+
     pub fn global_local_source_dir(&self) -> PathBuf {
         self.data_dir.join("vstack2/local-source")
     }

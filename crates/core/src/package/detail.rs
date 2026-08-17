@@ -309,8 +309,11 @@ fn labeled_version(
                 &package.mirror,
                 &commit,
                 &package.subtree,
-            )?;
+            )
+            .ok()
+            .flatten()?;
             crate::remote::history::subtree_log(&package.mirror, &package.tip, &package.subtree)
+                .ok()?
                 .into_iter()
                 .find(|row| row.commit == content)
         });

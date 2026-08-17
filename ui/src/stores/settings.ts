@@ -122,10 +122,35 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   registerProject: async (path) => {
+    const before = get().settings?.projects ?? [];
     const response = await commands.registerProject(path);
     if (response.status === "ok") {
       set({ settings: response.data });
-      toast.success(`Added ${path.split("/").pop()}`);
+      // Registration is where the drift report is offered: agents in this
+      // project start blind until the session-start hook is installed. An
+      // offer, never an auto-install — it injects into agent context.
+      const root =
+        (response.data.projects ?? []).find((p) => !before.includes(p)) ?? path;
+      toast.success(`Added ${path.split("/").pop()}`, {
+        action: {
+          label: "Add session drift report",
+          onClick: () => {
+            void commands
+              .installDriftHook({ scope: "project", root })
+              .then((result) => {
+                if (result.status === "ok") {
+                  toast.success("Drift report installed");
+                  void rescan();
+                } else {
+                  useProblemsStore.getState().showError({
+                    title: "Couldn't install the drift report",
+                    message: result.error,
+                  });
+                }
+              });
+          },
+        },
+      });
       await rescan();
       return true;
     }

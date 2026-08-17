@@ -11,6 +11,13 @@ export const commands = {
 	updateSettings: (settings: AppSettings) => typedError<AppSettings, string>(__TAURI_INVOKE("update_settings", { settings })),
 	registerProject: (path: string) => typedError<AppSettings, string>(__TAURI_INVOKE("register_project", { path })),
 	unregisterProject: (path: string) => typedError<AppSettings, string>(__TAURI_INVOKE("unregister_project", { path })),
+	/**
+	 *  Install the session-start drift report hook for a scope: script into the
+	 *  scope's local source, declaration into its manifest, then the ordinary
+	 *  apply renders it. The offer surface (project registration) calls this
+	 *  after the user says yes — the declared, user-approved install per scope.
+	 */
+	installDriftHook: (scope: Scope) => typedError<null, string>(__TAURI_INVOKE("install_drift_hook", { scope })),
 	discoverProjects: (root: string) => typedError<string[], string>(__TAURI_INVOKE("discover_projects", { root })),
 	/**
 	 *  The full harness × kind capability matrix — the UI gates every action on
@@ -160,16 +167,18 @@ export const commands = {
 	packageVersions: (scope: Scope, kind: ItemKind, name: string) => typedError<VersionRow[], string>(__TAURI_INVOKE("package_versions", { scope, kind, name })),
 	/**
 	 *  Every scope's update standing in one query — the sidebar badge, the
-	 *  Updates page, and the Library's fork/edited flags all read this.
+	 *  Updates page, and the Library's fork/edited flags all read this. Rows
+	 *  carry the facts; warnings carry every package the standing could not be
+	 *  computed for, which is never silently shown as current.
 	 */
-	updatesOverview: () => typedError<UpdateRow[], string>(__TAURI_INVOKE("updates_overview")),
+	updatesOverview: () => typedError<UpdatesReport_Serialize, string>(__TAURI_INVOKE("updates_overview")),
 	/**
 	 *  Fetch every source's mirror — pinned ones included, that is the point —
 	 *  then answer with the fresh standing. Fetch problems degrade to
 	 *  warnings; a check for updates is never worth an error dialog.
 	 */
-	updatesRefresh: () => typedError<UpdateRow[], string>(__TAURI_INVOKE("updates_refresh")),
-	updateSetIgnored: (scope: Scope, kind: ItemKind, name: string, repo: string, ignored: boolean) => typedError<UpdateRow[], string>(__TAURI_INVOKE("update_set_ignored", { scope, kind, name, repo, ignored })),
+	updatesRefresh: () => typedError<UpdatesReport_Serialize, string>(__TAURI_INVOKE("updates_refresh")),
+	updateSetIgnored: (scope: Scope, kind: ItemKind, name: string, repo: string, ignored: boolean) => typedError<UpdatesReport_Serialize, string>(__TAURI_INVOKE("update_set_ignored", { scope, kind, name, repo, ignored })),
 	/**
 	 *  Hold a package at a version (or let it follow again) and apply the
 	 *  change. The plan is whole-scope, like every apply: packages that follow
@@ -1586,7 +1595,11 @@ export type UpdateRow = {
 	 *  repository that never touched this package is not an update.
 	 */
 	updateAvailable: boolean,
-	/**  Held at a version (`rev` on the declaration) — manual updates. */
+	/**
+	 *  Held at a version — the effective installation graph's word, not
+	 *  only the item's own `rev`: a pinned source, a pinned bundle, or a
+	 *  pinned dependency parent all hold what they carry.
+	 */
 	pinned: boolean,
 	/**  The user asked to stop hearing about this package's updates. */
 	ignored: boolean,
@@ -1599,6 +1612,35 @@ export type UpdateRow = {
 	forked: boolean,
 	/**  Installations of this package disagree on their source commit. */
 	mixed: boolean,
+	/**  The source's tracked tip no longer carries this package at all. */
+	removedUpstream: boolean,
+};
+
+/**
+ *  Update standing for one scope, and every package the standing could not
+ *  be computed for. The warnings are the report's honesty: a package whose
+ *  mirror cannot be read is listed here, never silently shown as current.
+ */
+export type UpdatesReport = UpdatesReport_Serialize | UpdatesReport_Deserialize;
+
+/**
+ *  Update standing for one scope, and every package the standing could not
+ *  be computed for. The warnings are the report's honesty: a package whose
+ *  mirror cannot be read is listed here, never silently shown as current.
+ */
+export type UpdatesReport_Deserialize = {
+	rows: UpdateRow[],
+	warnings: ItemWarning_Deserialize[],
+};
+
+/**
+ *  Update standing for one scope, and every package the standing could not
+ *  be computed for. The warnings are the report's honesty: a package whose
+ *  mirror cannot be read is listed here, never silently shown as current.
+ */
+export type UpdatesReport_Serialize = {
+	rows: UpdateRow[],
+	warnings: ItemWarning_Serialize[],
 };
 
 export type Verdict = 

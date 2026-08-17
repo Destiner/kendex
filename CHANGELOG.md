@@ -8,6 +8,29 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- Agents no longer start sessions blind. `vstack check` is now the drift
+  contract: exit 0 when everything is current, 1 when something drifted,
+  2 when the state could not be read — with `--quiet` printing a short,
+  bounded report (silent when clean) and `--json` the machine shape. Each
+  line names its fix from a small fixed set of commands. Held and muted
+  packages stay out of the report — a hold is a decision already made —
+  and holding counts wherever the pin lives: on the item, on its source,
+  or reaching it through a bundle or a dependency. The check itself is
+  instant: it reads a per-project snapshot that the heavy commands
+  (updates, refresh, apply) keep current, and quietly kicks off a
+  background source refresh when the mirrors are older than six hours. A
+  source that has been unreachable for over twelve hours becomes a report
+  line dated from when it first went dark. The report travels into new
+  sessions through a session-start hook — first-party content shipped
+  inside vstack, offered when a project is registered (CLI:
+  `vstack drift-hook`, or `vstack project add --drift-hook`), installed
+  and removed like any other hook, disabled any time with
+  `VSTACK_DRIFT_HOOK=off`, and never able to block a session.
+- The Updates page now says when a package's standing could not be
+  checked — a broken mirror or an unreachable source shows under
+  "Couldn't be checked" instead of silently reading as up to date — and a
+  package deleted from its catalog is flagged **No longer in its source**.
+
 - A safety finding that turns out not to be a problem can now be
   dismissed, so it stops asking. Pick why — **Not actually a problem**,
   **Does this on purpose**, or **From a source I trust** — and the

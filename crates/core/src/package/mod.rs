@@ -50,6 +50,20 @@ pub(crate) fn package_ref(
             name: name.to_owned(),
         });
     };
+    package_ref_for(env, scope, manifest, kind, name, decl)
+}
+
+/// [`package_ref`] for a declaration the caller already holds — a derived
+/// bundle member or dependency has no entry in the manifest's declared map,
+/// but its effective declaration binds to a repository the same way.
+pub(crate) fn package_ref_for(
+    env: &Env,
+    scope: &Scope,
+    manifest: &Manifest,
+    kind: ItemKind,
+    name: &str,
+    decl: &crate::manifest::ItemDecl,
+) -> Result<PackageRef> {
     let source_name = decl.source.clone();
     let Some(repo) = manifest
         .sources
@@ -150,11 +164,12 @@ pub struct VersionRow {
 pub fn versions(env: &Env, scope: &Scope, kind: ItemKind, name: &str) -> Result<Vec<VersionRow>> {
     let manifest = crate::engine::ops::manifest_for_mutation(env, scope)?;
     let package = package_ref(env, scope, &manifest, kind, name)?;
-    let log = history::subtree_log(&package.mirror, &package.tip, &package.subtree);
+    let log = history::subtree_log(&package.mirror, &package.tip, &package.subtree)?;
     let lock = crate::lock::load(&crate::lock::lock_path(env, scope))?;
-    let installed_commit = installed_commit(&lock, kind, name).and_then(|commit| {
-        history::last_content_commit(&package.mirror, &commit, &package.subtree)
-    });
+    let installed_commit = match installed_commit(&lock, kind, name) {
+        Some(commit) => history::last_content_commit(&package.mirror, &commit, &package.subtree)?,
+        None => None,
+    };
     let installed_at = log
         .iter()
         .position(|row| Some(&row.commit) == installed_commit.as_ref());

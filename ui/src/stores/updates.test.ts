@@ -39,6 +39,7 @@ function row(overrides: Partial<UpdateRow>): UpdateRow {
     blockedByLocalEdit: false,
     forked: false,
     mixed: false,
+    removedUpstream: false,
     ...overrides,
   };
 }
@@ -65,7 +66,7 @@ describe("updates store", () => {
     const muted = [row({ ignored: true })];
     vi.mocked(commands.updateSetIgnored).mockResolvedValue({
       status: "ok",
-      data: muted,
+      data: { rows: muted, warnings: [] },
     });
     useUpdatesStore.setState({ rows: [row({})], loaded: true });
 
@@ -98,7 +99,7 @@ describe("updates store", () => {
     });
     vi.mocked(commands.updatesOverview).mockResolvedValue({
       status: "ok",
-      data: [],
+      data: { rows: [], warnings: [] },
     });
     vi.mocked(commands.scanMachine).mockResolvedValue({
       status: "ok",
@@ -133,7 +134,7 @@ describe("updates store", () => {
     });
     vi.mocked(commands.updatesOverview).mockResolvedValue({
       status: "ok",
-      data: [],
+      data: { rows: [], warnings: [] },
     });
     vi.mocked(commands.scanMachine).mockResolvedValue({
       status: "ok",

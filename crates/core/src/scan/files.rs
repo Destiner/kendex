@@ -51,11 +51,25 @@ pub fn state_of(path: &Path) -> FileState {
     }
 }
 
+/// A directory that exists but cannot be listed is truth the scan could not
+/// reach — reported, never silently read as empty. A missing directory is
+/// just a surface nothing installed to.
+fn warn_unreadable(dir: &Path, error: &std::io::Error, warnings: &mut Vec<String>) {
+    if error.kind() != std::io::ErrorKind::NotFound {
+        warnings.push(format!("{}: unreadable — {error}", dir.display()));
+    }
+}
+
 /// `<dir>/<name>.<ext>` items, one folder level of namespacing
 /// (`ns/name.md` → `ns/name`), `.disabled` suffix marks a disabled item.
-pub fn scan_file_dir(dir: &Path, exts: &[&str], prefix: Option<&str>) -> Vec<FoundFile> {
+pub fn scan_file_dir(
+    dir: &Path,
+    exts: &[&str],
+    prefix: Option<&str>,
+    warnings: &mut Vec<String>,
+) -> Vec<FoundFile> {
     let mut found = Vec::new();
-    collect_files(dir, exts, prefix, None, &mut found);
+    collect_files(dir, exts, prefix, None, &mut found, warnings);
     found.sort_by(|a, b| a.name.cmp(&b.name));
     found
 }
@@ -66,9 +80,14 @@ fn collect_files(
     prefix: Option<&str>,
     namespace: Option<&str>,
     found: &mut Vec<FoundFile>,
+    warnings: &mut Vec<String>,
 ) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            warn_unreadable(dir, &error, warnings);
+            return;
+        }
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -76,7 +95,7 @@ fn collect_files(
             continue;
         };
         if path.is_dir() && namespace.is_none() {
-            collect_files(&path, exts, prefix, Some(file_name), found);
+            collect_files(&path, exts, prefix, Some(file_name), found, warnings);
             continue;
         }
         let Some((stem, enabled)) = match_item(file_name, exts) else {
@@ -118,10 +137,14 @@ fn match_item<'a>(file_name: &'a str, exts: &[&str]) -> Option<(&'a str, bool)> 
 }
 
 /// `<dir>/<name>/<marker>` items; `<marker>.disabled` marks a disabled item.
-pub fn scan_subdirs(dir: &Path, marker: &str) -> Vec<FoundFile> {
+pub fn scan_subdirs(dir: &Path, marker: &str, warnings: &mut Vec<String>) -> Vec<FoundFile> {
     let mut found = Vec::new();
-    let Ok(entries) = fs::read_dir(dir) else {
-        return found;
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            warn_unreadable(dir, &error, warnings);
+            return found;
+        }
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -156,9 +179,13 @@ pub fn scan_subdirs(dir: &Path, marker: &str) -> Vec<FoundFile> {
 /// Every `<dir>/*.<ext>` document, sorted by name. A `.disabled` suffix
 /// takes a file out of the list the same way it does everywhere else: the
 /// harness globs one extension, so the renamed file is no longer loaded.
-pub fn scan_documents(dir: &Path, ext: &str) -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return Vec::new();
+pub fn scan_documents(dir: &Path, ext: &str, warnings: &mut Vec<String>) -> Vec<PathBuf> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            warn_unreadable(dir, &error, warnings);
+            return Vec::new();
+        }
     };
     let mut found: Vec<PathBuf> = entries
         .flatten()
@@ -182,10 +209,35 @@ mod tests {
         fs::create_dir(tmp.path().join("ns")).unwrap();
         fs::write(tmp.path().join("ns/c.md"), "").unwrap();
 
-        let found = scan_file_dir(tmp.path(), &["md"], None);
+        let mut warnings = Vec::new();
+        let found = scan_file_dir(tmp.path(), &["md"], None, &mut warnings);
         let names: Vec<_> = found.iter().map(|f| (f.name.as_str(), f.enabled)).collect();
         assert_eq!(names, [("a", true), ("b", false), ("ns/c", true)]);
         assert!(found.iter().all(|f| f.modified_at.is_some()));
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn missing_directory_is_silent_but_unreadable_is_a_warning() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut warnings = Vec::new();
+        assert!(scan_file_dir(&tmp.path().join("absent"), &["md"], None, &mut warnings).is_empty());
+        assert!(scan_subdirs(&tmp.path().join("absent"), "SKILL.md", &mut warnings).is_empty());
+        assert!(scan_documents(&tmp.path().join("absent"), "json", &mut warnings).is_empty());
+        assert!(warnings.is_empty());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let sealed = tmp.path().join("sealed");
+            fs::create_dir(&sealed).unwrap();
+            fs::set_permissions(&sealed, fs::Permissions::from_mode(0o000)).unwrap();
+            let found = scan_file_dir(&sealed, &["md"], None, &mut warnings);
+            fs::set_permissions(&sealed, fs::Permissions::from_mode(0o755)).unwrap();
+            assert!(found.is_empty());
+            assert_eq!(warnings.len(), 1);
+            assert!(warnings[0].contains("unreadable"), "{}", warnings[0]);
+        }
     }
 
     #[test]
@@ -216,7 +268,7 @@ mod tests {
         fs::write(tmp.path().join("off/SKILL.md.disabled"), "").unwrap();
         fs::create_dir(tmp.path().join("junk")).unwrap();
 
-        let found = scan_subdirs(tmp.path(), "SKILL.md");
+        let found = scan_subdirs(tmp.path(), "SKILL.md", &mut Vec::new());
         let names: Vec<_> = found.iter().map(|f| (f.name.as_str(), f.enabled)).collect();
         assert_eq!(names, [("off", false), ("real", true)]);
         assert_eq!(found[1].meta.description.as_deref(), Some("x"));

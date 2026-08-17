@@ -47,6 +47,10 @@ pub fn run(
         print_report(&report);
         if !plan_only {
             confirm_and_execute(env, &report, yes)?;
+            // The deep work just ran; record it for the session-start check.
+            if let Err(error) = vstack_core::drift::snapshot::record(env, &scope) {
+                say(&format!("warning: snapshot not derived ({error})"));
+            }
         }
     }
     Ok(())

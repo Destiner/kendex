@@ -1,0 +1,121 @@
+//! The session-start drift hook: first-party content shipped inside vstack
+//! itself, never fetched from a catalog — it injects into agent context,
+//! and its install must not depend on catalog availability. It is still a
+//! declared, user-approved install per scope: the plan writes the script
+//! into the scope's local source and declares it like any other hook, so
+//! every later refresh, verify, and removal treats it as an ordinary
+//! installation.
+
+use crate::apply::{Op, Plan, PlannedOp, Pre};
+use crate::env::Env;
+use crate::error::Result;
+use crate::manifest::{ItemDecl, LOCAL_SOURCE_NAME};
+use crate::model::{HarnessId, Scope};
+
+pub const HOOK_NAME: &str = "vstack-drift";
+
+/// The hook script, in the catalog hook format. The contract lines are the
+/// v1 fleet's: `VSTACK_DRIFT_HOOK=off` kills it, resumed and compacted
+/// sessions are skipped, a missing binary prints one "skipped" line, a
+/// failed check prints one "drift status unknown" line, and it always
+/// exits 0 — a drift report must never block a session.
+pub const HOOK_SCRIPT: &str = r#"#!/bin/sh
+# ---
+# name: vstack-drift
+# event: SessionStart
+# description: Prints a short drift report at session start, nothing when clean
+# timeout: 20
+# harnesses: [claude-code]
+# ---
+# vstack drift report — what is stale, gone from its source, broken, or
+# awaiting review, each line naming its fix. Silent when everything is
+# current: a clean session starts clean.
+
+[ "${VSTACK_DRIFT_HOOK:-}" = "off" ] && exit 0
+
+# The harness hands session metadata on stdin. Read it (guarded — never
+# hang a session on a pipe), and skip anything that is not a fresh start:
+# a resumed or compacted session already has its context.
+input=""
+if [ ! -t 0 ]; then
+  input=$(cat 2>/dev/null || true)
+fi
+case "$input" in
+  *'"source"'*'"resume"'*) exit 0 ;;
+  *'"source"'*'"compact"'*) exit 0 ;;
+esac
+
+if ! command -v vstack >/dev/null 2>&1; then
+  echo "vstack: drift check skipped (vstack is not on PATH)"
+  exit 0
+fi
+
+report=$(vstack check --quiet 2>/dev/null)
+code=$?
+if [ "$code" -eq 2 ]; then
+  echo "vstack: drift status unknown (the check could not read this machine's state)"
+  exit 0
+fi
+if [ -n "$report" ]; then
+  printf '%s\n' "$report"
+fi
+exit 0
+"#;
+
+/// The relative catalog location the script installs to.
+fn script_path(env: &Env, scope: &Scope) -> std::path::PathBuf {
+    crate::source::local_source_root(env, scope)
+        .join("hooks")
+        .join(format!("{HOOK_NAME}.sh"))
+}
+
+/// The plan that installs (or repairs) the drift hook declaration in one
+/// scope: the script lands in the local source, the manifest declares it
+/// for the harnesses that execute hooks natively. Idempotent — a scope
+/// already carrying both plans nothing. Rendering into the harness's own
+/// directories is the ordinary refresh that follows.
+pub fn install_plan(env: &Env, scope: &Scope) -> Result<Plan> {
+    let scope = scope.canonical();
+    let mut ops = Vec::new();
+
+    let script = script_path(env, &scope);
+    let current = crate::fs::read_if_exists(&script)?;
+    if current.as_deref() != Some(HOOK_SCRIPT) {
+        ops.push(PlannedOp {
+            description: "write the drift hook script into the local source".into(),
+            op: Op::WriteFile {
+                pre: Pre::observed(&script)?,
+                path: script,
+                bytes: HOOK_SCRIPT.as_bytes().to_vec(),
+            },
+        });
+    }
+
+    let mut manifest = crate::engine::ops::manifest_for_mutation(env, &scope)?;
+    let declared = manifest.hooks.get(HOOK_NAME);
+    if declared.is_none() {
+        manifest.hooks.insert(
+            HOOK_NAME.to_owned(),
+            ItemDecl {
+                source: LOCAL_SOURCE_NAME.to_owned(),
+                // Only harnesses that execute hooks: advisory drift prose on
+                // a tool that cannot run the check is worse than none.
+                harnesses: Some(vec![HarnessId::Claude]),
+                method: None,
+                rev: None,
+                enabled: true,
+            },
+        );
+        let path = crate::manifest::manifest_path(env, &scope);
+        ops.push(PlannedOp {
+            description: "declare the drift hook in vstack.toml".into(),
+            op: Op::WriteManifest {
+                pre: Pre::observed(&path)?,
+                path,
+                manifest: Box::new(manifest),
+            },
+        });
+    }
+
+    Ok(Plan { scope, ops })
+}

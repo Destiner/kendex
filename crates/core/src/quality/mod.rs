@@ -30,7 +30,7 @@ mod text;
 
 pub use dimensions::{AntiPattern, DimensionScore, QualityScore};
 pub use score::{Deduction, SafetyScore, Thresholds, Verdict, verdict};
-pub use secret::fingerprint_secret;
+pub use secret::{fingerprint_secret, redact};
 pub use text::{Line, Normalization};
 
 /// The rule set findings were produced by. An override binds to it, so any

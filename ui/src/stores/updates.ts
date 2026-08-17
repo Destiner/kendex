@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 import { create } from "zustand";
-import { commands, type UpdateRow } from "@/bindings";
+import { commands, type ItemWarning, type UpdateRow } from "@/bindings";
 import {
   UPDATE_ERROR_TITLE,
   UPDATED_ALL_TOAST,
@@ -29,6 +29,9 @@ export const hiddenUpdates = (rows: UpdateRow[]): UpdateRow[] =>
 
 interface UpdatesState {
   rows: UpdateRow[];
+  /** Packages whose standing could not be computed — shown, never treated
+   *  as current. */
+  warnings: ItemWarning[];
   busy: boolean;
   /** True while a mirror fetch is running — the explicit "check". */
   checking: boolean;
@@ -71,12 +74,18 @@ export const useUpdatesStore = create<UpdatesState>((set, get) => {
     // leaving the last-good rows trusted — the package page gates the
     // Update button on `loaded`, and acting on rows we could not refresh
     // is exactly the fail-open this closes.
-    if (response.status === "ok") set({ rows: response.data, loaded: true });
+    if (response.status === "ok")
+      set({
+        rows: response.data.rows,
+        warnings: response.data.warnings,
+        loaded: true,
+      });
     else set({ loaded: false });
   };
 
   return {
     rows: [],
+    warnings: [],
     busy: false,
     checking: false,
     loaded: false,
@@ -90,7 +99,11 @@ export const useUpdatesStore = create<UpdatesState>((set, get) => {
       try {
         const response = await commands.updatesRefresh();
         if (response.status === "ok") {
-          set({ rows: response.data, loaded: true });
+          set({
+            rows: response.data.rows,
+            warnings: response.data.warnings,
+            loaded: true,
+          });
         } else {
           set({ loaded: false });
           showError(UPDATE_ERROR_TITLE, response.error);
@@ -181,7 +194,12 @@ export const useUpdatesStore = create<UpdatesState>((set, get) => {
         row.repo,
         ignored,
       );
-      if (response.status === "ok") set({ rows: response.data, loaded: true });
+      if (response.status === "ok")
+        set({
+          rows: response.data.rows,
+          warnings: response.data.warnings,
+          loaded: true,
+        });
       else showError(UPDATE_ERROR_TITLE, response.error);
     },
   };

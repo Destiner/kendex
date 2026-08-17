@@ -391,6 +391,32 @@ lives in one capability table read by core and UI.
   is a permanent non-goal: the managed assets are gitignored there, so
   there is nothing to commit, and the attempt would mean mutating a
   live foreign working tree (invariant 9).
+- **Session start reads a snapshot; the background job earns it.** The
+  drift contract is `vstack check`: exit 0 clean / 1 drift / 2
+  could-not-check (unknown outranks drift — an incomplete report must not
+  claim completeness), `--quiet` bounded and silent when clean, `--json`
+  for machines. The check reads the manifest, the lock, the per-scope
+  drift snapshot (`core/drift/snapshot.rs`), and per-mirror fetch stamps —
+  it materializes no source trees, hashes no catalogs, and fans out no
+  per-package subprocesses. The deep work runs where time is free:
+  `updates`, `refresh`, `apply`, and the detached
+  `vstack source refresh --stale` the check spawns (TTL 6h, per-mirror
+  lock, no stdio, never waited on) all re-derive the snapshot. A mirror
+  that moved since its last evaluation reads as unevaluated — the honest
+  "maybe", never a guessed verdict — and a fetch failure older than twice
+  the TTL is a report line dated from a monotonic first-failure stamp.
+  Held and ignored packages are silent in the agent report: a hold is a
+  decision already made, and re-announcing it every session teaches
+  agents to skim. Held-ness derives from the effective installation
+  graph — an item's own pin, a pinned source, a pinned bundle, or a
+  pinned dependency parent. Every read API under the report says when it
+  cannot answer (typed warnings, never an empty result standing in for
+  failure), because the report is only as honest as its inputs. The
+  session-start hook that relays the report is first-party content
+  shipped inside the binary and offered at project registration — never
+  fetched from a catalog, since it injects into agent context — but still
+  a declared, user-approved install per scope, rendered and removed like
+  any other hook.
 - Non-interactive is a mode, not a fallback. Every CLI verb completes
   without a TTY: selection flags suppress prompts rather than
   pre-filling them, and a verb that would need input on a non-TTY fails
@@ -542,7 +568,13 @@ lives in one capability table read by core and UI.
 - vstack never emits a pasteable command line. Errors, hints, and
   recovery instructions present the verb and its parameters as data —
   cross-platform shell quoting is a cost the product declines to carry,
-  and a hint built by concatenation is an injection surface.
+  and a hint built by concatenation is an injection surface. The one
+  deliberate exception is the session-start drift report: it is written
+  for an agent that can act, so each line may carry a remedy — built only
+  from a fixed template set (refresh, remove, add, fork, findings) with
+  validated identifiers in argument positions, while free text from
+  sources or errors renders in quoted informational positions, never in
+  a command position.
 
 Build sequence and to-build specs: `docs/PLAN.md` — consumed and deleted as
 phases complete; delete this pointer with that file.

@@ -39,16 +39,25 @@ pub fn package_versions(
 }
 
 /// Every scope's update standing in one query — the sidebar badge, the
-/// Updates page, and the Library's fork/edited flags all read this.
+/// Updates page, and the Library's fork/edited flags all read this. Rows
+/// carry the facts; warnings carry every package the standing could not be
+/// computed for, which is never silently shown as current.
 #[tauri::command(async)]
 #[specta::specta]
-pub fn updates_overview() -> Result<Vec<updates::UpdateRow>, String> {
+pub fn updates_overview() -> Result<updates::UpdatesReport, String> {
     let env = env()?;
-    let mut rows = Vec::new();
+    let mut merged = updates::UpdatesReport {
+        rows: Vec::new(),
+        warnings: Vec::new(),
+    };
     for scope in all_scopes(&env)? {
-        rows.extend(updates::updates(&env, &scope).map_err(|e| e.to_string())?);
+        let report = updates::updates(&env, &scope).map_err(|e| e.to_string())?;
+        merged.rows.extend(report.rows);
+        merged.warnings.extend(report.warnings);
+        // The deep work just ran; the session-start check reads this.
+        let _ = vstack_core::drift::snapshot::record(&env, &scope);
     }
-    Ok(rows)
+    Ok(merged)
 }
 
 /// Fetch every source's mirror — pinned ones included, that is the point —
@@ -56,7 +65,7 @@ pub fn updates_overview() -> Result<Vec<updates::UpdateRow>, String> {
 /// warnings; a check for updates is never worth an error dialog.
 #[tauri::command(async)]
 #[specta::specta]
-pub fn updates_refresh() -> Result<Vec<updates::UpdateRow>, String> {
+pub fn updates_refresh() -> Result<updates::UpdatesReport, String> {
     let env = env()?;
     for scope in all_scopes(&env)? {
         let path = manifest::manifest_path(&env, &scope);
@@ -75,7 +84,7 @@ pub fn update_set_ignored(
     name: String,
     repo: String,
     ignored: bool,
-) -> Result<Vec<updates::UpdateRow>, String> {
+) -> Result<updates::UpdatesReport, String> {
     let env = env()?;
     updates::set_ignored(&env, &scope, kind, &name, &repo, ignored).map_err(|e| e.to_string())?;
     updates_overview()

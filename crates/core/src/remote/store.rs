@@ -192,8 +192,13 @@ pub fn ensure_mirror(mirror: &Path, url: &str) -> Result<()> {
 /// half a minute is a link to report rather than keep waiting on. The first
 /// clone keeps the long timeout — that one really can be slow.
 pub fn fetch(mirror: &Path) -> Result<()> {
-    run(Hardened::git_bare(mirror, &["fetch", "--prune", "--quiet"])
-        .timeout(crate::process::INTERACTIVE_TIMEOUT))
+    fetch_within(mirror, crate::process::INTERACTIVE_TIMEOUT)
+}
+
+/// [`fetch`] with the caller's own deadline — the detached background
+/// refresh allows more than an interactive wait but still must finish.
+pub fn fetch_within(mirror: &Path, timeout: Duration) -> Result<()> {
+    run(Hardened::git_bare(mirror, &["fetch", "--prune", "--quiet"]).timeout(timeout))
 }
 
 /// The commit a selector names right now, read from the mirror alone.
