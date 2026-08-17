@@ -13,6 +13,7 @@ export function decisionsFor(
   states: DecisionState[] = [],
 ): FindingDecision[] {
   return findings.map((finding, index) => ({
+    fingerprint: fingerprint(finding, index),
     token: `${key}#${fingerprint(finding, index)}@${hash}`,
     state: states[index] ?? OPEN,
   }));

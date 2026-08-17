@@ -1,0 +1,93 @@
+// The one derivation of "what still needs a person" — Review visibility,
+// the sidebar and Home counts, the scope summaries and the finished state
+// all read this, so none of them can quote a different number.
+//
+// Two things need a person: an install the gate is holding back (settled
+// by accepting or removing the item), and a finding on installed content
+// nobody has ruled on yet (settled by dismissing it). A dismissed or
+// accepted finding is not one of them, and neither is a held-back item's
+// individual finding — that item is counted once, as held back.
+import type {
+  Finding,
+  FindingDecision,
+  HarnessId,
+  ItemKind,
+  ItemSafety,
+} from "@/bindings";
+import { heldBack } from "@/lib/derive";
+
+/** One finding on one installation, with what has been decided about it. */
+export interface Occurrence {
+  row: ItemSafety;
+  finding: Finding;
+  decision: FindingDecision;
+}
+
+function occurrences(row: ItemSafety): Occurrence[] {
+  return row.findings.map((finding, index) => {
+    const decision = row.decisions[index];
+    if (!decision) {
+      throw new Error(
+        `${row.kind} ${row.name}: finding ${index} has no decision beside it`,
+      );
+    }
+    return { row, finding, decision };
+  });
+}
+
+/** Findings still waiting on a person, on items the gate is not holding
+ *  back. A held-back item's findings are decided by accepting or removing
+ *  the item, so they are not offered here. */
+export function openOccurrences(rows: ItemSafety[]): Occurrence[] {
+  return rows
+    .filter((row) => !heldBack(row))
+    .flatMap(occurrences)
+    .filter((occurrence) => occurrence.decision.state.state === "open");
+}
+
+/** Findings a person has already ruled on, one way or the other. */
+export function settledCount(rows: ItemSafety[]): number {
+  return rows
+    .flatMap(occurrences)
+    .filter((occurrence) => occurrence.decision.state.state !== "open").length;
+}
+
+export interface EvidenceItem {
+  kind: ItemKind;
+  name: string;
+  harness: HarnessId;
+}
+
+/** Occurrences that are the same evidence: the same bytes, by review
+ *  hash, carrying the same finding, by fingerprint — one file read through
+ *  several tools. One decision legitimately covers all of them, because no
+ *  rule reads the tool. Anything else is a different question and stays a
+ *  separate group, however alike the sentence looks. */
+export interface EvidenceGroup {
+  finding: Finding;
+  /** The tokens a dismissal of this group sends — one per installation. */
+  tokens: string[];
+  items: EvidenceItem[];
+  /** Whether every installation here can name where its content came
+   *  from — the one thing a trusted-source dismissal needs. */
+  canTrustSource: boolean;
+}
+
+export function evidenceGroups(open: Occurrence[]): EvidenceGroup[] {
+  const ordered: EvidenceGroup[] = [];
+  const byEvidence = new Map<string, EvidenceGroup>();
+  for (const { row, finding, decision } of open) {
+    if (!decision.token) continue;
+    const key = `${row.reviewHash}::${decision.fingerprint}`;
+    let group = byEvidence.get(key);
+    if (!group) {
+      group = { finding, tokens: [], items: [], canTrustSource: true };
+      byEvidence.set(key, group);
+      ordered.push(group);
+    }
+    group.tokens.push(decision.token);
+    group.items.push({ kind: row.kind, name: row.name, harness: row.harness });
+    if (row.provenance == null) group.canTrustSource = false;
+  }
+  return ordered;
+}

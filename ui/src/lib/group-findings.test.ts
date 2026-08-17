@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { Finding, ItemSafety, ItemWarning } from "@/bindings";
+import type { Finding, ItemSafety } from "@/bindings";
 import {
   concernDetails,
   groupByConcern,
-  groupFindings,
-  groupSkipped,
-  groupWarnings,
+  groupFindings as groupOccurrences,
   partitionSafety,
 } from "./group-findings";
+import { openOccurrences } from "./reviewable";
 
 const FINDING: Finding = {
   rule: "dangerous-commands",
@@ -17,7 +16,10 @@ const FINDING: Finding = {
   remediation: "narrow the command to the exact path it needs",
 };
 
+/** A row whose findings each carry an open decision beside them, the way
+ *  the backend issues them. */
 function row(overrides: Partial<ItemSafety>): ItemSafety {
+  const findings = overrides.findings ?? [];
   return {
     kind: "hook",
     name: "a-hook",
@@ -33,33 +35,71 @@ function row(overrides: Partial<ItemSafety>): ItemSafety {
     reviewHash: "review-hash",
     location: "",
     provenance: null,
-    decisions: [],
+    decisions: findings.map((finding, index) => ({
+      fingerprint: `${finding.rule}:${index}`,
+      token: `hook:${overrides.name ?? "a-hook"}:claude#${index}@review-hash`,
+      state: { state: "open", earlier: null },
+    })),
     override: { state: "absent" },
     ...overrides,
   };
 }
 
+const groupFindings = (rows: ItemSafety[]) =>
+  groupOccurrences(openOccurrences(rows));
+
 describe("partitionSafety", () => {
-  it("splits rows into held-back, warn, and clean buckets", () => {
+  it("splits rows into held-back, open, settled and clean buckets", () => {
     const blockedNoOverride = row({ verdict: "block", name: "held" });
     const blockedOverridden = row({
       verdict: "block",
       name: "accepted",
       override: { state: "active" },
     });
-    const warnRow = row({ verdict: "warn", name: "warned" });
+    const warnRow = row({
+      verdict: "warn",
+      name: "warned",
+      findings: [FINDING],
+    });
+    const dismissedRow = row({
+      verdict: "warn",
+      name: "settled",
+      findings: [FINDING],
+    });
+    dismissedRow.decisions[0].state = {
+      state: "dismissed",
+      reason: "intended",
+      dismissedAt: "2026-08-16T00:00:00Z",
+    };
     const cleanRow = row({ verdict: "clean", name: "clean" });
 
     const groups = partitionSafety([
       warnRow,
+      dismissedRow,
       cleanRow,
       blockedOverridden,
       blockedNoOverride,
     ]);
 
-    expect(groups.warn).toEqual([warnRow]);
+    expect(groups.open).toEqual([warnRow]);
+    expect(groups.settled).toEqual([dismissedRow]);
     expect(groups.clean).toEqual([cleanRow]);
     expect(groups.blocked.map((r) => r.name)).toEqual(["held", "accepted"]);
+  });
+
+  it("a row whose every finding is dismissed no longer asks for anything", () => {
+    const settled = row({
+      verdict: "warn",
+      name: "settled",
+      findings: [FINDING],
+    });
+    settled.decisions[0].state = {
+      state: "dismissed",
+      reason: "wrong-call",
+      dismissedAt: "2026-08-16T00:00:00Z",
+    };
+    expect(partitionSafety([settled]).open).toEqual([]);
+    expect(groupFindings([settled])).toEqual([]);
   });
 });
 
@@ -173,72 +213,5 @@ describe("concernDetails", () => {
       ]),
     )[0];
     expect(concernDetails(concern)).toHaveLength(2);
-  });
-});
-
-describe("groupSkipped", () => {
-  it("counts rows sharing a skip reason and tracks a shared kind", () => {
-    const reason = "the plugin's own files are not readable here";
-    const rows = ["p1", "p2", "p3"].map((name) =>
-      row({
-        kind: "plugin",
-        name,
-        verdict: "clean",
-        skipped: [{ rule: "some-rule", reason }],
-      }),
-    );
-    const groups = groupSkipped(rows);
-    expect(groups).toEqual([{ reason, count: 3, kind: "plugin" }]);
-  });
-
-  it("ignores rows with nothing skipped and nulls the kind when it varies", () => {
-    const reason = "shared reason";
-    const rows = [
-      row({ kind: "plugin", verdict: "clean", skipped: [] }),
-      row({
-        kind: "plugin",
-        verdict: "clean",
-        skipped: [{ rule: "r", reason }],
-      }),
-      row({
-        kind: "skill",
-        verdict: "clean",
-        skipped: [{ rule: "r", reason }],
-      }),
-    ];
-    const groups = groupSkipped(rows);
-    expect(groups).toEqual([{ reason, count: 2, kind: null }]);
-  });
-});
-
-describe("groupWarnings", () => {
-  it("dedupes identical message+remediation and lists affected items", () => {
-    const warnings: ItemWarning[] = [
-      {
-        kind: "skill",
-        name: "one",
-        harness: "claude",
-        message: "could not parse frontmatter",
-        remediation: "check the YAML syntax",
-      },
-      {
-        kind: "skill",
-        name: "two",
-        harness: "codex",
-        message: "could not parse frontmatter",
-        remediation: "check the YAML syntax",
-      },
-      {
-        kind: "skill",
-        name: "three",
-        harness: "claude",
-        message: "a different problem",
-        remediation: null,
-      },
-    ];
-    const groups = groupWarnings(warnings);
-    expect(groups).toHaveLength(2);
-    const shared = groups.find((g) => g.items.length === 2);
-    expect(shared?.items.map((i) => i.name)).toEqual(["one", "two"]);
   });
 });

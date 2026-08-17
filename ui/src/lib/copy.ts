@@ -40,7 +40,7 @@ export const REVIEW_ACTION_LABEL = "Open Review & apply";
 export function scopeSummaryLabel(counts: {
   changes: number;
   blocked: number;
-  concerns: number;
+  open: number;
   unmanaged: number;
 }): string | null {
   const parts: string[] = [];
@@ -58,11 +58,11 @@ export function scopeSummaryLabel(counts: {
         : `${counts.changes} changes ready`,
     );
   }
-  if (counts.concerns > 0) {
+  if (counts.open > 0) {
     parts.push(
-      counts.concerns === 1
-        ? "1 thing worth a look"
-        : `${counts.concerns} things worth a look`,
+      counts.open === 1
+        ? "1 needs your decision"
+        : `${counts.open} need your decision`,
     );
   }
   if (counts.unmanaged > 0) {
@@ -152,8 +152,8 @@ export const scanStatusLabel = (scannedAgo: string | null): string =>
 // The status footer's right side: quiet counts that link to Review & apply.
 export const pendingChangesLabel = (count: number): string =>
   count === 1 ? "1 change ready" : `${count} changes ready`;
-export const heldBackFooterLabel = (count: number): string =>
-  count === 1 ? "1 serious problem" : `${count} serious problems`;
+export const decisionsFooterLabel = (count: number): string =>
+  count === 1 ? "1 needs your decision" : `${count} need your decision`;
 
 // Package page: files, versions, and the diff between them.
 export const PACKAGE_FILES_TITLE = "Files";

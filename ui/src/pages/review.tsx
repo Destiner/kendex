@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { ScopeErrorCard } from "@/components/scope-error-card";
 import { StatusNote } from "@/components/status-note";
 import { SyncScopeCard } from "@/components/sync-scope";
+import { blockedCount, openCount } from "@/lib/audit-counts";
 import { REVIEW_SUBTITLE } from "@/lib/copy";
 import { scopeLabel } from "@/lib/derive";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
@@ -12,7 +13,7 @@ import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
 
 export function ReviewPage() {
-  const { views, auditing, error, busy, refresh, applyPlan, adopt } =
+  const { views, auditing, error, busy, refresh, applyPlan, adopt, dismiss } =
     useAuditStore();
   const scope = useNavStore((s) => s.scope);
 
@@ -25,13 +26,17 @@ export function ReviewPage() {
     if (scope === "global") return view.scope.scope === "global";
     return view.scope.scope === "project" && view.scope.root === scope.project;
   });
+  // A scope is finished when nothing in it waits on a person: no change to
+  // apply, no note, and no decision left to make. Findings someone already
+  // ruled on do not keep the page open — that is what ruling on them is for.
   const active = visible.filter(
     (view) =>
       view.error != null ||
       view.drift.length > 0 ||
       view.notes.length > 0 ||
       view.warnings.length > 0 ||
-      view.safety.length > 0,
+      blockedCount(view) > 0 ||
+      openCount(view) > 0,
   );
   const allClean = !auditing && active.length === 0;
 
@@ -76,6 +81,9 @@ export function ReviewPage() {
                   }
                   onAdopt={(kind, name, harness, opts) =>
                     void adopt(view.scope, kind, name, harness, opts)
+                  }
+                  onDismiss={(tokens, reason) =>
+                    void dismiss(view.scope, tokens, reason)
                   }
                 />
               ),

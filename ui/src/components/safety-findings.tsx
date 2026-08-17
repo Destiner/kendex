@@ -1,15 +1,16 @@
 import type { Finding, ItemSafety } from "@/bindings";
 import { Badge } from "@/components/ui/badge";
 import { morePlacesLabel } from "@/lib/copy";
-import { cleanSummaryLead } from "@/lib/copy-safety";
+import { cleanSummaryLead, settledSummaryLead } from "@/lib/copy-safety";
 import { abbreviateHome } from "@/lib/drift-merge";
-import { groupSkipped } from "@/lib/group-findings";
+import { groupSkipped } from "@/lib/group-notes";
 import {
   kindLabel,
   SEVERITY_BADGES,
   SEVERITY_LABELS,
   skipReasonShort,
 } from "@/lib/labels";
+import { settledCount } from "@/lib/reviewable";
 
 /**
  * One finding, read top to bottom as: how bad, what it is, what to do,
@@ -64,11 +65,22 @@ export function FindingLine({
 
 // One quiet line under the safety list — clean items don't get a row of
 // their own, just a tally, so a scan of the section ends on reassurance
-// instead of trailing off after the last warning.
-export function SafetyCleanSummary({ rows }: { rows: ItemSafety[] }) {
-  if (rows.length === 0) return null;
+// instead of trailing off after the last warning. Findings already ruled
+// on are tallied here too: decided is not the same as clean, and a person
+// who dismissed four things yesterday should still see that four things
+// were found.
+export function SafetyCleanSummary({
+  rows,
+  settled = [],
+}: {
+  rows: ItemSafety[];
+  settled?: ItemSafety[];
+}) {
+  const decided = settledCount(settled);
+  if (rows.length === 0 && decided === 0) return null;
   const clauses = [
-    cleanSummaryLead(rows.length),
+    ...(decided > 0 ? [settledSummaryLead(decided)] : []),
+    ...(rows.length > 0 ? [cleanSummaryLead(rows.length)] : []),
     ...groupSkipped(rows).map((group) => {
       const noun = group.kind
         ? kindLabel(group.kind, group.count).toLowerCase()

@@ -484,6 +484,25 @@ lives in one capability table read by core and UI.
   (`vstack decisions`, Recorded decisions) reads every record against what
   is installed now — active, stale with the reason, or obsolete — and takes
   back exactly the record it was shown, never a newer one at the same key.
+  How the two decisions compose, written down so no surface has to guess:
+  a held-back item's findings are decided by accepting or removing the
+  item, so they are never offered for dismissal and the item stays visible
+  with every finding whatever was decided about any of them; an active
+  acceptance covers every finding on its item, so those read as accepted
+  and cannot be dismissed on top; a threshold change that turns a warning
+  into a block leaves the dismissals recorded but the item shows as held
+  back with its findings in full, and one that turns a block into a warning
+  leaves the acceptance covering the findings until it is withdrawn;
+  withdrawing an acceptance uncovers the findings, and any dismissal made
+  before it applies again. What still needs a person is one derivation
+  (`lib/reviewable.ts`): held-back items, counted once each, plus open
+  findings counted once per distinct evidence — the same bytes carrying the
+  same finding through several tools, which one decision legitimately
+  covers because no rule reads the tool. Everything else is presentation.
+  Every count in the app — the sidebar, Home, the footer, a scope's
+  summary, and whether the Review page is finished — reads that one number,
+  so dismissing a finding moves all of them at once, and a scope whose every
+  finding is decided reads as done rather than as warning forever.
 - **Rule severities are calibrated against real catalogs, not inherited.**
   A Critical blocks an install on its own, so the tier is only worth
   something if it is precise. Patterns that fired only on legitimate

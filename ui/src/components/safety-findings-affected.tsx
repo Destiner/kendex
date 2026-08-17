@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import type { ItemSafety } from "@/bindings";
+import type { DismissReason, ItemSafety } from "@/bindings";
+import { DismissButton, EvidenceLine } from "@/components/finding-decide";
 import { FindingLine } from "@/components/safety-findings";
 import { StatusDot } from "@/components/status-dot";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +20,14 @@ import {
   moreItemsLabel,
   SEVERITY_DOT_TONE,
 } from "@/lib/labels";
+import { evidenceGroups, openOccurrences } from "@/lib/reviewable";
+
+/** What a concern row can do: rule on the evidence behind it. */
+interface Decide {
+  projectScope: boolean;
+  busy: boolean;
+  onDismiss: (tokens: string[], reason: DismissReason) => void;
+}
 
 // A finding affecting the collection of hooks in one settings file reads as
 // "N hooks in settings.json"; anything else just gets the plain kind name —
@@ -90,31 +99,61 @@ function AffectedList({ concern }: { concern: ConcernGroup }) {
 // One disclosure row per concern: collapsed to a single plain-English line
 // so the stack reads like a checklist, not a wall of engine text. Opening
 // it says what it means, what to do, and what it touched — in that order,
-// once each.
-function ConcernRow({ concern }: { concern: ConcernGroup }) {
+// once each — and then offers the decision. A concern behind which there
+// is exactly one piece of evidence carries its Dismiss on the row itself;
+// one that spans different content lists each piece with its own button,
+// because one click there would be a rule-level mute across the fleet.
+function ConcernRow({
+  concern,
+  decide,
+}: {
+  concern: ConcernGroup;
+  decide: Decide;
+}) {
   const [open, setOpen] = useState(false);
   const details = concernDetails(concern);
+  const evidence = evidenceGroups(
+    concern.findings.flatMap((group) => group.occurrences),
+  );
+  const single = evidence.length === 1 ? evidence[0] : null;
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2.5 text-left hover:bg-muted/40"
-      >
-        <StatusDot tone={SEVERITY_DOT_TONE[concern.severity]} />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-          {findingHeadline(concern.rule, details[0].finding.message)}
-        </span>
-        <Badge variant="outline" className="shrink-0 font-normal">
-          {scopeChipLabel(concern.items)}
-        </Badge>
-        {open ? (
-          <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-        )}
-      </button>
+      <div className="flex w-full items-center gap-2.5 px-3 py-2.5 hover:bg-muted/40">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left"
+        >
+          <StatusDot tone={SEVERITY_DOT_TONE[concern.severity]} />
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+            {findingHeadline(concern.rule, details[0].finding.message)}
+          </span>
+          <Badge variant="outline" className="shrink-0 font-normal">
+            {scopeChipLabel(concern.items)}
+          </Badge>
+        </button>
+        {single ? (
+          <DismissButton
+            group={single}
+            projectScope={decide.projectScope}
+            busy={decide.busy}
+            onDismiss={decide.onDismiss}
+          />
+        ) : null}
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-label={open ? "Collapse" : "Expand"}
+          className="cursor-pointer"
+        >
+          {open ? (
+            <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+          )}
+        </button>
+      </div>
       {open ? (
         <div className="flex flex-col gap-4 border-t bg-muted/20 px-3 py-3.5">
           {details.map((detail) => (
@@ -125,6 +164,23 @@ function ConcernRow({ concern }: { concern: ConcernGroup }) {
             />
           ))}
           <AffectedList concern={concern} />
+          {single ? null : (
+            <div className="flex flex-col divide-y divide-border text-[13px]">
+              <p className="pb-1.5 font-medium text-foreground/70">
+                Decide each on its own — these are {evidence.length} different
+                pieces of content
+              </p>
+              {evidence.map((group) => (
+                <EvidenceLine
+                  key={group.tokens.join("|")}
+                  group={group}
+                  projectScope={decide.projectScope}
+                  busy={decide.busy}
+                  onDismiss={decide.onDismiss}
+                />
+              ))}
+            </div>
+          )}
         </div>
       ) : null}
     </div>
@@ -135,16 +191,21 @@ function ConcernRow({ concern }: { concern: ConcernGroup }) {
 // section header's same-line count, computed here rather than in
 // group-findings.ts since it's a display concern, not grouping logic.
 export function safetyGroupCount(rows: ItemSafety[]): number {
-  return groupByConcern(groupFindings(rows)).length;
+  return groupByConcern(groupFindings(openOccurrences(rows))).length;
 }
 
-export function SafetyWarnings({ rows }: { rows: ItemSafety[] }) {
-  const concerns = groupByConcern(groupFindings(rows));
+/** The open findings on installed content, one row per concern, each with
+ *  the decision that settles it. */
+export function SafetyWarnings({
+  rows,
+  ...decide
+}: { rows: ItemSafety[] } & Decide) {
+  const concerns = groupByConcern(groupFindings(openOccurrences(rows)));
   if (concerns.length === 0) return null;
   return (
     <div className="divide-y divide-border overflow-hidden rounded-lg border">
       {concerns.map((concern) => (
-        <ConcernRow key={concern.rule} concern={concern} />
+        <ConcernRow key={concern.rule} concern={concern} decide={decide} />
       ))}
     </div>
   );

@@ -2,7 +2,7 @@ import type { ItemWarning } from "@/bindings";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { type MergedDriftRow, mergedDetail } from "@/lib/drift-merge";
-import { groupWarnings } from "@/lib/group-findings";
+import { groupWarnings } from "@/lib/group-notes";
 import {
   driftDetail,
   kindLabel,

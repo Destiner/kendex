@@ -7,8 +7,10 @@
 // thing. Merging happens inside each scope: the same name in two projects
 // is genuinely two items, and folding those together would undercount.
 import type { AuditView, DriftRow } from "@/bindings";
-import { heldBackCount } from "@/lib/derive";
 import { mergeDriftRows } from "@/lib/drift-merge";
+import { partitionSafety } from "@/lib/group-findings";
+import { mergeHeldBack } from "@/lib/group-findings-blocked";
+import { evidenceGroups, openOccurrences } from "@/lib/reviewable";
 
 export interface AuditCounts {
   /** Writes vstack is ready to make: install, update, remove. */
@@ -17,8 +19,13 @@ export interface AuditCounts {
    *  adopting is an offer the user takes up, so it is counted apart from
    *  the work that is actually queued. */
   unmanaged: number;
-  /** Installs the safety gate is holding back until someone rules on them. */
+  /** Installs the safety gate is holding back until someone rules on them —
+   *  one per item, however many tools it is installed for. */
   blocked: number;
+  /** Findings on installed content nobody has ruled on yet — one per
+   *  distinct piece of evidence, so the same file seen through three tools
+   *  is one decision, not three. */
+  open: number;
 }
 
 function countMerged(views: AuditView[], keep: (row: DriftRow) => boolean) {
@@ -28,16 +35,34 @@ function countMerged(views: AuditView[], keep: (row: DriftRow) => boolean) {
   );
 }
 
+/** Held-back items in one scope, as the scope's panel counts them: the
+ *  on-disk blocked rows plus the plan-time refusals that never reached
+ *  disk, one per item. */
+export function blockedCount(view: AuditView): number {
+  return mergeHeldBack(partitionSafety(view.safety).blocked, view.heldBack)
+    .display.length;
+}
+
+export function openCount(view: AuditView): number {
+  return evidenceGroups(openOccurrences(view.safety)).length;
+}
+
 export function auditCounts(views: AuditView[]): AuditCounts {
   return {
     changes: countMerged(views, (row) => row.state !== "unmanaged"),
     unmanaged: countMerged(views, (row) => row.state === "unmanaged"),
-    blocked: heldBackCount(views),
+    blocked: views.reduce((sum, view) => sum + blockedCount(view), 0),
+    open: views.reduce((sum, view) => sum + openCount(view), 0),
   };
 }
 
 /** What the Review page has waiting for a person: work to apply, plus
- *  judgments only they can make. */
+ *  the decisions only they can make — held-back items and open findings. */
 export function needsReviewCount(counts: AuditCounts): number {
-  return counts.changes + counts.blocked;
+  return counts.changes + counts.blocked + counts.open;
+}
+
+/** The decisions alone: what "Needs your decision" holds across scopes. */
+export function decisionsPendingCount(counts: AuditCounts): number {
+  return counts.blocked + counts.open;
 }

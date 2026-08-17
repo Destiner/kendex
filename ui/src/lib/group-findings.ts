@@ -7,10 +7,10 @@ import type {
   HarnessId,
   ItemKind,
   ItemSafety,
-  ItemWarning,
   Severity,
 } from "@/bindings";
 import { heldBack } from "@/lib/derive";
+import { type Occurrence, openOccurrences } from "@/lib/reviewable";
 
 // Shared so a collapsed row can lead with whichever finding or rule-group is
 // most serious, without every caller re-deriving the same ranking.
@@ -22,26 +22,33 @@ export const SEVERITY_RANK: Record<Severity, number> = {
 };
 
 export interface SafetyGroups {
-  /** verdict "block" — held back or overridden; always rendered per item. */
+  /** verdict "block" — held back or overridden; always rendered per item,
+   *  every finding shown whatever was decided about it. */
   blocked: ItemSafety[];
-  /** verdict "warn" — findings get deduped across these before rendering. */
-  warn: ItemSafety[];
+  /** Installed and not held back, with at least one finding nobody has
+   *  ruled on — the rows "Needs your decision" reads its findings from. */
+  open: ItemSafety[];
+  /** Installed with findings, every one of them decided — dismissed, or
+   *  covered by an acceptance. Nothing left to ask, and not clean either. */
+  settled: ItemSafety[];
   /** verdict "clean" — collapsed to a single summary line. */
   clean: ItemSafety[];
 }
 
 export function partitionSafety(rows: ItemSafety[]): SafetyGroups {
   const blocked: ItemSafety[] = [];
-  const warn: ItemSafety[] = [];
+  const open: ItemSafety[] = [];
+  const settled: ItemSafety[] = [];
   const clean: ItemSafety[] = [];
   for (const row of rows) {
     if (row.verdict === "block") blocked.push(row);
-    else if (row.verdict === "warn") warn.push(row);
-    else clean.push(row);
+    else if (row.verdict === "clean") clean.push(row);
+    else if (openOccurrences([row]).length > 0) open.push(row);
+    else settled.push(row);
   }
   // Rows nothing can be done about yet lead; an already-accepted one follows.
   blocked.sort((a, b) => Number(heldBack(b)) - Number(heldBack(a)));
-  return { blocked, warn, clean };
+  return { blocked, open, settled, clean };
 }
 
 export interface FindingItem {
@@ -52,25 +59,28 @@ export interface FindingItem {
 
 export interface FindingGroup extends Finding {
   items: FindingItem[];
+  /** The exact occurrences behind the group — what a decision targets.
+   *  Grouping is presentation; these are the things a person rules on. */
+  occurrences: Occurrence[];
 }
 
-/** Dedupes findings across rows by (rule, location, message). */
-export function groupFindings(rows: ItemSafety[]): FindingGroup[] {
+/** Dedupes open findings by (rule, location, message) for display. */
+export function groupFindings(open: Occurrence[]): FindingGroup[] {
   const groups = new Map<string, FindingGroup>();
-  for (const row of rows) {
-    for (const finding of row.findings) {
-      const key = `${finding.rule}::${finding.location}::${finding.message}`;
-      let group = groups.get(key);
-      if (!group) {
-        group = { ...finding, items: [] };
-        groups.set(key, group);
-      }
-      group.items.push({
-        kind: row.kind,
-        name: row.name,
-        harness: row.harness,
-      });
+  for (const occurrence of open) {
+    const { row, finding } = occurrence;
+    const key = `${finding.rule}::${finding.location}::${finding.message}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = { ...finding, items: [], occurrences: [] };
+      groups.set(key, group);
     }
+    group.items.push({
+      kind: row.kind,
+      name: row.name,
+      harness: row.harness,
+    });
+    group.occurrences.push(occurrence);
   }
   return [...groups.values()];
 }
@@ -146,55 +156,4 @@ export function concernDetails(concern: ConcernGroup): ConcernDetail[] {
     }
   }
   return ordered;
-}
-
-export interface SkipGroup {
-  reason: string;
-  count: number;
-  /** The shared kind, or null when the reason spans more than one kind. */
-  kind: ItemKind | null;
-}
-
-// Every row here already passed with nothing found; a skipped rule only
-// says a rule had no bytes to read, not that anything is wrong. The first
-// skipped rule's reason stands in for the row, matching how a single row
-// already summarizes "not fully checked" today.
-export function groupSkipped(cleanRows: ItemSafety[]): SkipGroup[] {
-  const groups = new Map<string, SkipGroup>();
-  for (const row of cleanRows) {
-    if (row.skipped.length === 0) continue;
-    const reason = row.skipped[0].reason;
-    const group = groups.get(reason);
-    if (!group) groups.set(reason, { reason, count: 1, kind: row.kind });
-    else {
-      group.count += 1;
-      if (group.kind !== row.kind) group.kind = null;
-    }
-  }
-  return [...groups.values()];
-}
-
-export interface WarningGroup {
-  message: string;
-  remediation: string | null;
-  items: { kind: ItemKind; name: string }[];
-}
-
-/** Dedupes render/parse warnings across items by (message, remediation). */
-export function groupWarnings(warnings: ItemWarning[]): WarningGroup[] {
-  const groups = new Map<string, WarningGroup>();
-  for (const warning of warnings) {
-    const key = `${warning.message}::${warning.remediation ?? ""}`;
-    let group = groups.get(key);
-    if (!group) {
-      group = {
-        message: warning.message,
-        remediation: warning.remediation ?? null,
-        items: [],
-      };
-      groups.set(key, group);
-    }
-    group.items.push({ kind: warning.kind, name: warning.name });
-  }
-  return [...groups.values()];
 }

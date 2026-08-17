@@ -45,7 +45,7 @@ function listDecisions(): RecordedDecision[] {
         harness: row.harness,
         record: {
           kind: "dismissed",
-          fingerprint: decision.token.split("#")[1]?.split("@")[0] ?? "",
+          fingerprint: decision.fingerprint,
           reason: decision.state.reason,
           dismissedAt: decision.state.dismissedAt,
           finding: row.findings[index] ?? null,

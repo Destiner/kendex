@@ -68,13 +68,24 @@ pub fn decisions_view(env: &Env) -> Result<DecisionsView, String> {
     Ok(DecisionsView { decisions, errors })
 }
 
-/// What a dismissal came back with: the scope's fresh view, and the exact
-/// record written — an undo takes back this record and no newer one.
+/// One record a dismissal wrote, as an undo names it: the same key and
+/// fingerprint the registry uses, and the timestamp that pins this exact
+/// record so an old undo cannot delete a newer decision at the same key.
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DismissedRecord {
+    pub key: String,
+    pub fingerprint: String,
+    pub dismissed_at: String,
+}
+
+/// What a dismissal came back with: the scope's fresh view, and exactly
+/// what was written.
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Dismissed {
     pub view: AuditView,
-    pub dismissed_at: String,
+    pub records: Vec<DismissedRecord>,
 }
 
 /// Dismiss the findings these tokens name, for one reason, in one scope.
@@ -95,32 +106,42 @@ pub fn dismiss_findings(
         .map_err(|e| e.to_string())?;
     let plan = ops::dismiss(&env, &scope, &targets, reason).map_err(|e| e.to_string())?;
     apply::execute(&env, &plan, None).map_err(|e| e.to_string())?;
-    let dismissed_at = written_at(&env, &scope, &targets)?;
+    let records = written(&env, &scope, &targets)?;
     Ok(Dismissed {
         view: view(&env, &scope),
-        dismissed_at,
+        records,
     })
 }
 
-/// The timestamp the write stamped on these records — read back from the
-/// manifest, so the undo carries what is on disk rather than what the
-/// caller thinks the clock said.
-fn written_at(env: &Env, scope: &Scope, targets: &[DismissTarget]) -> Result<String, String> {
+/// The records as the write left them — read back from the manifest, so an
+/// undo carries what is on disk rather than what the caller thinks the
+/// clock said.
+fn written(
+    env: &Env,
+    scope: &Scope,
+    targets: &[DismissTarget],
+) -> Result<Vec<DismissedRecord>, String> {
     let path = manifest::manifest_path(env, scope);
     let manifest::ManifestFile::Current(manifest) =
         manifest::load(&path).map_err(|e| e.to_string())?
     else {
         return Err("the manifest could not be read back after the write".to_owned());
     };
-    let first = targets
-        .first()
-        .ok_or_else(|| "nothing to dismiss".to_owned())?;
-    manifest
-        .safety_reviews
-        .get(&first.token.key)
-        .and_then(|review| review.dismissed.get(&first.token.fingerprint))
-        .map(|dismissal| dismissal.dismissed_at.clone())
-        .ok_or_else(|| "the dismissal was not found after the write".to_owned())
+    targets
+        .iter()
+        .map(|target| {
+            manifest
+                .safety_reviews
+                .get(&target.token.key)
+                .and_then(|review| review.dismissed.get(&target.token.fingerprint))
+                .map(|dismissal| DismissedRecord {
+                    key: target.token.key.clone(),
+                    fingerprint: target.token.fingerprint.clone(),
+                    dismissed_at: dismissal.dismissed_at.clone(),
+                })
+                .ok_or_else(|| "the dismissal was not found after the write".to_owned())
+        })
+        .collect()
 }
 
 /// Take a dismissal back. `dismissed_at` pins the exact record: a stale undo

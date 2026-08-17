@@ -25,6 +25,15 @@ changes carry a **Breaking** call-out with their migration note inline.
   decision — active, out of date and why, or about an item that is gone
   — and takes one back. `vstack accepted` is folded into `vstack
   decisions`. The project file's format moves to version 5.
+- The Review page's safety warnings each carry **Dismiss…** — one click
+  per finding, or one for the same file seen through several tools, never
+  one for twenty different plugins that happen to trip the same rule. Ask
+  why, and it stops asking. The toast offers Undo, which takes back exactly
+  what was just written. Counts follow: the sidebar badge, Home, the
+  footer and each project's summary all say how many decisions are still
+  waiting, and a project whose every finding is decided reads as in sync
+  instead of warning forever. Findings already decided are tallied under
+  the safety list rather than hidden.
 - Settings' **Accepted findings** grows into **Recorded decisions**: every
   acceptance and dismissal on the machine, each saying what it decided,
   when, and whose file it lives in — yours on this machine, or a

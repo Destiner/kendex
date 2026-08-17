@@ -1,14 +1,13 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { StatusDot } from "@/components/status-dot";
-import { auditCounts } from "@/lib/audit-counts";
+import { auditCounts, decisionsPendingCount } from "@/lib/audit-counts";
 import {
-  heldBackFooterLabel,
+  decisionsFooterLabel,
   pendingChangesLabel,
   SCANNING_LABEL,
   scanStatusLabel,
 } from "@/lib/copy";
-import { heldBackCount } from "@/lib/derive";
 import { problemsFooterLabel } from "@/lib/error-copy";
 import { relativeTime } from "@/lib/relative-time";
 import { useAuditStore } from "@/stores/audit";
@@ -36,8 +35,9 @@ export function StatusFooter() {
     return () => clearInterval(id);
   }, []);
 
-  const pending = auditCounts(views).changes;
-  const held = heldBackCount(views);
+  const counts = auditCounts(views);
+  const pending = counts.changes;
+  const decisions = decisionsPendingCount(counts);
 
   return (
     <footer className="flex h-7 shrink-0 items-center justify-between border-t bg-background px-4 text-xs text-muted-foreground">
@@ -73,13 +73,13 @@ export function StatusFooter() {
             {pendingChangesLabel(pending)}
           </button>
         ) : null}
-        {held > 0 ? (
+        {decisions > 0 ? (
           <button
             type="button"
             className="hover:text-foreground"
             onClick={() => goTo("review")}
           >
-            {heldBackFooterLabel(held)}
+            {decisionsFooterLabel(decisions)}
           </button>
         ) : null}
       </span>

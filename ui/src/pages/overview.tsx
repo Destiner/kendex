@@ -65,6 +65,7 @@ export function OverviewPage() {
     changes: actionableCount,
     unmanaged: unmanagedCount,
     blocked,
+    open,
   } = auditCounts(views);
   const missing = result.missingProjects;
 
@@ -100,6 +101,19 @@ export function OverviewPage() {
           : `${blocked} serious problems found`,
       detail:
         "They're on your machine now. Read what was found before vstack installs or updates them.",
+      action: { label: REVIEW_ACTION_LABEL, onClick: () => setPage("review") },
+    });
+  }
+  if (open > 0) {
+    rows.push({
+      key: "decisions",
+      tone: "warning",
+      title:
+        open === 1
+          ? "1 finding needs your decision"
+          : `${open} findings need your decision`,
+      detail:
+        "The safety check flagged something in content you have installed. Read it and decide whether it is a problem.",
       action: { label: REVIEW_ACTION_LABEL, onClick: () => setPage("review") },
     });
   }

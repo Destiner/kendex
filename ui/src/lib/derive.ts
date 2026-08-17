@@ -1,5 +1,4 @@
 import type {
-  AuditView,
   ItemKind,
   ItemSafety,
   ObservedItem,
@@ -149,13 +148,6 @@ export function projectScopes(result: ScanResult): string[] {
 // with no live acceptance behind it is held back.
 export function heldBack(row: ItemSafety): boolean {
   return row.verdict === "block" && row.override.state !== "active";
-}
-
-export function heldBackCount(views: AuditView[]): number {
-  return views.reduce(
-    (sum, view) => sum + view.safety.filter(heldBack).length,
-    0,
-  );
 }
 
 /** A group known to have a modification time, once {@link recentItems} has

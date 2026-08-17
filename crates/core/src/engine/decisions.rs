@@ -56,6 +56,10 @@ impl DecisionState {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FindingDecision {
+    /// This finding's identity within its item — what a recorded decision
+    /// is keyed by, and what tells one occurrence of a finding from another
+    /// when the same bytes are read through several tools.
+    pub fingerprint: String,
     /// Names exactly this finding on exactly this content. Opaque to the
     /// UI; the only thing a dismiss command accepts. Absent where the
     /// content cannot be read here — there is nothing exact to bind a
@@ -162,7 +166,11 @@ pub fn decisions(
                 }
                 (None, None) => DecisionState::Open { earlier: None },
             };
-            FindingDecision { token, state }
+            FindingDecision {
+                fingerprint,
+                token,
+                state,
+            }
         })
         .collect()
 }

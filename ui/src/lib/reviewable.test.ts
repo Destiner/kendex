@@ -1,0 +1,128 @@
+import { describe, expect, it } from "vitest";
+import type { Finding, FindingDecision, ItemSafety } from "@/bindings";
+import { evidenceGroups, openOccurrences, settledCount } from "./reviewable";
+
+const FINDING: Finding = {
+  rule: "dangerous-commands",
+  severity: "medium",
+  location: "SKILL.md:5",
+  message: "makes files writable by every account",
+  remediation: "narrow the command",
+};
+
+function decision(overrides: Partial<FindingDecision> = {}): FindingDecision {
+  return {
+    fingerprint: "aaaaaaaaaaaaaaaa",
+    token: "skill:mild:claude#aaaaaaaaaaaaaaaa@hash-1",
+    state: { state: "open", earlier: null },
+    ...overrides,
+  };
+}
+
+function row(overrides: Partial<ItemSafety> = {}): ItemSafety {
+  return {
+    kind: "skill",
+    name: "mild",
+    harness: "claude",
+    scope: { scope: "global" },
+    location: "",
+    safety: { score: 92, deductions: [] },
+    quality: null,
+    findings: [FINDING],
+    skipped: [],
+    verdict: "warn",
+    reasons: [],
+    contentHash: "c",
+    reviewHash: "hash-1",
+    provenance: "owner/repo",
+    override: { state: "absent" },
+    decisions: [decision()],
+    ...overrides,
+  };
+}
+
+describe("openOccurrences", () => {
+  it("offers only undecided findings on items the gate is not holding back", () => {
+    const dismissed = row({
+      name: "settled",
+      decisions: [
+        decision({
+          state: {
+            state: "dismissed",
+            reason: "wrong-call",
+            dismissedAt: "2026-08-16T00:00:00Z",
+          },
+        }),
+      ],
+    });
+    const blocked = row({ name: "hostile", verdict: "block" });
+    const open = openOccurrences([row(), dismissed, blocked]);
+    expect(open.map((o) => o.row.name)).toEqual(["mild"]);
+    expect(settledCount([row(), dismissed, blocked])).toBe(1);
+  });
+
+  it("refuses a row whose decisions do not line up with its findings", () => {
+    expect(() => openOccurrences([row({ decisions: [] })])).toThrow(
+      /no decision beside it/,
+    );
+  });
+});
+
+describe("evidenceGroups", () => {
+  it("merges the same bytes seen through several tools into one decision", () => {
+    const codex = row({
+      harness: "codex",
+      decisions: [
+        decision({ token: "skill:mild:codex#aaaaaaaaaaaaaaaa@hash-1" }),
+      ],
+    });
+    const pi = row({
+      harness: "pi",
+      decisions: [decision({ token: "skill:mild:pi#aaaaaaaaaaaaaaaa@hash-1" })],
+    });
+    const groups = evidenceGroups(openOccurrences([codex, pi]));
+    expect(groups).toHaveLength(1);
+    expect(groups[0].tokens).toEqual([
+      "skill:mild:codex#aaaaaaaaaaaaaaaa@hash-1",
+      "skill:mild:pi#aaaaaaaaaaaaaaaa@hash-1",
+    ]);
+    expect(groups[0].items.map((i) => i.harness)).toEqual(["codex", "pi"]);
+  });
+
+  it("keeps different content apart however alike the sentence reads", () => {
+    const one = row({ name: "plugin-a", reviewHash: "hash-a" });
+    const two = row({
+      name: "plugin-b",
+      reviewHash: "hash-b",
+      decisions: [
+        decision({ token: "skill:plugin-b:claude#aaaaaaaaaaaaaaaa@hash-b" }),
+      ],
+    });
+    expect(evidenceGroups(openOccurrences([one, two]))).toHaveLength(2);
+  });
+
+  it("only offers trusting a source when every installation can name one", () => {
+    const named = row();
+    const nameless = row({ name: "loose", provenance: null });
+    const [a, b] = evidenceGroups(
+      openOccurrences([
+        named,
+        {
+          ...nameless,
+          reviewHash: "hash-2",
+          decisions: [decision({ token: "x#y@hash-2" })],
+        },
+      ]),
+    );
+    expect(a.canTrustSource).toBe(true);
+    expect(b.canTrustSource).toBe(false);
+  });
+
+  it("skips a finding that has no token to decide with", () => {
+    const unreadable = row({
+      reviewHash: null,
+      decisions: [decision({ token: null })],
+    });
+    expect(evidenceGroups(openOccurrences([unreadable]))).toHaveLength(0);
+  });
+});

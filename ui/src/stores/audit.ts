@@ -3,11 +3,17 @@ import { create } from "zustand";
 import {
   type AuditView,
   commands,
+  type DismissReason,
   type HarnessId,
   type ItemKind,
   type Scope,
 } from "@/bindings";
 import { adoptedToastLabel } from "@/lib/copy";
+import {
+  dismissedToast,
+  TAKEN_BACK_TOAST,
+  UNDO_LABEL,
+} from "@/lib/copy-decisions";
 import { type ErrorAction, useProblemsStore } from "./problems";
 import { useScanStore } from "./scan";
 
@@ -41,6 +47,13 @@ interface AuditState {
     enabled: boolean,
   ) => Promise<void>;
   removeItem: (scope: Scope, kind: ItemKind, name: string) => Promise<void>;
+  /** Rule that these findings are not problems. The toast offers Undo,
+   *  which takes back exactly the records this call wrote. */
+  dismiss: (
+    scope: Scope,
+    tokens: string[],
+    reason: DismissReason,
+  ) => Promise<void>;
 }
 
 /** How long an audit answers for before a visit pays for a fresh one. */
@@ -162,5 +175,63 @@ export const useAuditStore = create<AuditState>((set, get) => {
         title: `Couldn't remove ${name}`,
         steps: ["Try again"],
       }),
+    // A dismissal is the one action whose success carries a way back on the
+    // toast itself: the undo names the exact records that were written, so
+    // an old toast can never take back a newer decision at the same key.
+    dismiss: async (scope, tokens, reason) => {
+      set({ busy: true });
+      let response: Awaited<ReturnType<typeof commands.dismissFindings>>;
+      try {
+        response = await commands.dismissFindings(scope, tokens, reason);
+      } finally {
+        set({ busy: false });
+      }
+      if (response.status !== "ok") {
+        set({ error: response.error });
+        useProblemsStore.getState().showError({
+          title: "Couldn't dismiss this finding",
+          message: response.error,
+          steps: [
+            "Nothing was changed — read the finding again and decide again",
+          ],
+        });
+        // The refusal usually means the page was showing findings a minute
+        // old; the fresh audit is what the person should decide on.
+        await get().refresh({ force: true });
+        return;
+      }
+      const { view, records } = response.data;
+      set({ views: replaceView(get().views, view), error: null });
+      toast.success(dismissedToast(records.length), {
+        action: {
+          label: UNDO_LABEL,
+          onClick: () =>
+            void run(
+              async () => {
+                let latest: Awaited<
+                  ReturnType<typeof commands.revokeDismissal>
+                > = {
+                  status: "error",
+                  error: "nothing to take back",
+                };
+                for (const record of records) {
+                  latest = await commands.revokeDismissal(
+                    scope,
+                    record.key,
+                    record.fingerprint,
+                    record.dismissedAt,
+                  );
+                  if (latest.status !== "ok") break;
+                }
+                return latest;
+              },
+              {
+                title: "Couldn't take the dismissal back",
+                successMessage: TAKEN_BACK_TOAST,
+              },
+            ),
+        },
+      });
+    },
   };
 });

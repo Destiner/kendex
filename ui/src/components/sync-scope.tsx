@@ -1,12 +1,9 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import type { AuditView, DriftRow } from "@/bindings";
+import type { AuditView, DismissReason, DriftRow } from "@/bindings";
 import { ApplyDialog } from "@/components/apply-dialog";
 import { SafetyCleanSummary } from "@/components/safety-findings";
-import {
-  SafetyWarnings,
-  safetyGroupCount,
-} from "@/components/safety-findings-affected";
+import { SafetyWarnings } from "@/components/safety-findings-affected";
 import { BlockedFindings } from "@/components/safety-findings-blocked";
 import { ScopeChanges, ScopeNotes } from "@/components/scope-details";
 import { Section } from "@/components/section";
@@ -17,11 +14,12 @@ import {
   NOTHING_TO_DO_HERE,
   scopeSummaryLabel,
 } from "@/lib/copy";
-import { safetyGroupCountLabel } from "@/lib/copy-safety";
+import { openDecisionsLabel } from "@/lib/copy-safety";
 import { mergeDriftRows } from "@/lib/drift-merge";
 import { partitionSafety } from "@/lib/group-findings";
 import { mergeHeldBack } from "@/lib/group-findings-blocked";
 import { scopeName, scopePath } from "@/lib/labels";
+import { evidenceGroups, openOccurrences } from "@/lib/reviewable";
 
 /**
  * One project (or Personal), as its own panel.
@@ -37,6 +35,7 @@ export function SyncScopeCard({
   busy,
   onApply,
   onAdopt,
+  onDismiss,
 }: {
   view: AuditView;
   busy: boolean;
@@ -47,6 +46,7 @@ export function SyncScopeCard({
     harness: DriftRow["harness"],
     opts?: { silent?: boolean },
   ) => void;
+  onDismiss: (tokens: string[], reason: DismissReason) => void;
 }) {
   const [applyOpen, setApplyOpen] = useState(false);
   const changes = mergeDriftRows(
@@ -58,11 +58,17 @@ export function SyncScopeCard({
   const orphans = mergeDriftRows(
     view.drift.filter((row) => row.state === "orphaned"),
   );
-  const { blocked, warn, clean } = partitionSafety(view.safety);
+  const {
+    blocked,
+    open: undecided,
+    settled,
+    clean,
+  } = partitionSafety(view.safety);
   // The panel counts what it renders: on-disk blocked rows plus the
-  // plan-time refusals that never reached disk (view.heldBack).
+  // plan-time refusals that never reached disk (view.heldBack), and one
+  // decision per distinct piece of open evidence.
   const blockedCount = mergeHeldBack(blocked, view.heldBack).display.length;
-  const warnGroupCount = safetyGroupCount(warn);
+  const openCount = evidenceGroups(openOccurrences(undecided)).length;
   // With nothing else to fix, removing left-behind items is the only
   // change on offer — defaulting the checkbox on keeps it reachable.
   const orphansOnly = orphans.length > 0 && view.plan.length === 0;
@@ -71,7 +77,7 @@ export function SyncScopeCard({
   const summary = scopeSummaryLabel({
     changes: changes.length,
     blocked: blockedCount,
-    concerns: warnGroupCount,
+    open: openCount,
     unmanaged: unmanaged.length,
   });
   const [open, setOpen] = useState(blockedCount > 0 || canApply);
@@ -133,17 +139,20 @@ export function SyncScopeCard({
           />
           <ScopeChanges changes={changes} />
           <ScopeNotes notes={view.notes} warnings={view.warnings} />
-          {warn.length > 0 || clean.length > 0 ? (
+          {undecided.length > 0 || settled.length > 0 || clean.length > 0 ? (
             <Section
               title="Safety"
               description={
-                warnGroupCount > 0
-                  ? safetyGroupCountLabel(warnGroupCount)
-                  : undefined
+                openCount > 0 ? openDecisionsLabel(openCount) : undefined
               }
             >
-              <SafetyWarnings rows={warn} />
-              <SafetyCleanSummary rows={clean} />
+              <SafetyWarnings
+                rows={undecided}
+                projectScope={view.scope.scope === "project"}
+                busy={busy}
+                onDismiss={onDismiss}
+              />
+              <SafetyCleanSummary rows={clean} settled={settled} />
             </Section>
           ) : null}
           <UnmanagedItems rows={unmanaged} busy={busy} onAdopt={onAdopt} />

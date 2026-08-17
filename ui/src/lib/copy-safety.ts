@@ -4,10 +4,16 @@
 // same rules (see the top of copy.ts).
 
 // "Safety" section label's same-line count and the clean-summary lead.
-export const safetyGroupCountLabel = (count: number): string =>
-  `${count} thing${count === 1 ? "" : "s"} worth a look`;
+export const openDecisionsLabel = (count: number): string =>
+  count === 1
+    ? "1 finding needs your decision"
+    : `${count} findings need your decision`;
 export const cleanSummaryLead = (total: number): string =>
   `${total} other thing${total === 1 ? "" : "s"} checked — nothing to report`;
+export const settledSummaryLead = (count: number): string =>
+  count === 1
+    ? "1 finding already decided"
+    : `${count} findings already decided`;
 
 export const SAFETY_HELP =
   "Strict catches more but sometimes flags things that are actually fine. Lenient trusts more, and only stops the riskiest items.";

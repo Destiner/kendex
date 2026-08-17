@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { AuditView, DriftRow, HarnessId } from "@/bindings";
-import { auditCounts, needsReviewCount } from "./audit-counts";
+import type {
+  AuditView,
+  DriftRow,
+  Finding,
+  HarnessId,
+  ItemSafety,
+} from "@/bindings";
+import {
+  auditCounts,
+  decisionsPendingCount,
+  needsReviewCount,
+} from "./audit-counts";
 
 function drift(
   name: string,
@@ -18,15 +28,66 @@ function drift(
   };
 }
 
-function view(rows: DriftRow[], root?: string): AuditView {
+function view(
+  rows: DriftRow[],
+  root?: string,
+  safety: ItemSafety[] = [],
+): AuditView {
   return {
     scope: root ? { scope: "project", root } : { scope: "global" },
     drift: rows,
     plan: [],
     notes: [],
     warnings: [],
-    safety: [],
+    safety,
     heldBack: [],
+  };
+}
+
+const FINDING: Finding = {
+  rule: "dangerous-commands",
+  severity: "medium",
+  location: "SKILL.md:5",
+  message: "makes files writable by every account",
+  remediation: "narrow the command",
+};
+
+/** One installed item carrying one finding, decided or not. */
+function safety(
+  name: string,
+  harness: HarnessId,
+  decided: boolean,
+  hash = "hash-1",
+): ItemSafety {
+  return {
+    kind: "skill",
+    name,
+    harness,
+    scope: { scope: "global" },
+    location: "",
+    safety: { score: 92, deductions: [] },
+    quality: null,
+    findings: [FINDING],
+    skipped: [],
+    verdict: "warn",
+    reasons: [],
+    contentHash: "c",
+    reviewHash: hash,
+    provenance: null,
+    override: { state: "absent" },
+    decisions: [
+      {
+        fingerprint: "aaaaaaaaaaaaaaaa",
+        token: `skill:${name}:${harness}#aaaaaaaaaaaaaaaa@${hash}`,
+        state: decided
+          ? {
+              state: "dismissed",
+              reason: "wrong-call",
+              dismissedAt: "2026-08-16T00:00:00Z",
+            }
+          : { state: "open", earlier: null },
+      },
+    ],
   };
 }
 
@@ -68,5 +129,24 @@ describe("auditCounts", () => {
     ];
 
     expect(needsReviewCount(auditCounts([view(rows)]))).toBe(1);
+  });
+
+  it("counts an open finding once per piece of evidence and a dismissed one never", () => {
+    const rows = [
+      safety("mild", "claude", false),
+      safety("mild", "codex", false),
+      safety("other", "claude", false, "hash-2"),
+      safety("done", "claude", true, "hash-3"),
+    ];
+    const counts = auditCounts([view([], undefined, rows)]);
+    expect(counts.open).toBe(2);
+    expect(counts.blocked).toBe(0);
+    expect(needsReviewCount(counts)).toBe(2);
+    expect(decisionsPendingCount(counts)).toBe(2);
+  });
+
+  it("stops asking once every finding is decided", () => {
+    const rows = [safety("done", "claude", true)];
+    expect(needsReviewCount(auditCounts([view([], undefined, rows)]))).toBe(0);
   });
 });

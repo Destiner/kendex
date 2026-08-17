@@ -517,27 +517,38 @@ export type Dismissal_Serialize = {
 };
 
 /**
- *  What a dismissal came back with: the scope's fresh view, and the exact
- *  record written — an undo takes back this record and no newer one.
+ *  What a dismissal came back with: the scope's fresh view, and exactly
+ *  what was written.
  */
 export type Dismissed = Dismissed_Serialize | Dismissed_Deserialize;
 
 /**
- *  What a dismissal came back with: the scope's fresh view, and the exact
- *  record written — an undo takes back this record and no newer one.
+ *  One record a dismissal wrote, as an undo names it: the same key and
+ *  fingerprint the registry uses, and the timestamp that pins this exact
+ *  record so an old undo cannot delete a newer decision at the same key.
  */
-export type Dismissed_Deserialize = {
-	view: AuditView_Deserialize,
+export type DismissedRecord = {
+	key: string,
+	fingerprint: string,
 	dismissedAt: string,
 };
 
 /**
- *  What a dismissal came back with: the scope's fresh view, and the exact
- *  record written — an undo takes back this record and no newer one.
+ *  What a dismissal came back with: the scope's fresh view, and exactly
+ *  what was written.
+ */
+export type Dismissed_Deserialize = {
+	view: AuditView_Deserialize,
+	records: DismissedRecord[],
+};
+
+/**
+ *  What a dismissal came back with: the scope's fresh view, and exactly
+ *  what was written.
  */
 export type Dismissed_Serialize = {
 	view: AuditView_Serialize,
-	dismissedAt: string,
+	records: DismissedRecord[],
 };
 
 /**
@@ -658,6 +669,12 @@ export type FindingDecision = FindingDecision_Serialize | FindingDecision_Deseri
  */
 export type FindingDecision_Deserialize = {
 	/**
+	 *  This finding's identity within its item — what a recorded decision
+	 *  is keyed by, and what tells one occurrence of a finding from another
+	 *  when the same bytes are read through several tools.
+	 */
+	fingerprint: string,
+	/**
 	 *  Names exactly this finding on exactly this content. Opaque to the
 	 *  UI; the only thing a dismiss command accepts. Absent where the
 	 *  content cannot be read here — there is nothing exact to bind a
@@ -672,6 +689,12 @@ export type FindingDecision_Deserialize = {
  *  is about — `ItemSafety.decisions[i]` speaks for `ItemSafety.findings[i]`.
  */
 export type FindingDecision_Serialize = {
+	/**
+	 *  This finding's identity within its item — what a recorded decision
+	 *  is keyed by, and what tells one occurrence of a finding from another
+	 *  when the same bytes are read through several tools.
+	 */
+	fingerprint: string,
 	/**
 	 *  Names exactly this finding on exactly this content. Opaque to the
 	 *  UI; the only thing a dismiss command accepts. Absent where the
