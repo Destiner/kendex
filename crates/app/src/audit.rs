@@ -59,14 +59,23 @@ pub struct AuditView {
     pub error: Option<ScopeError>,
 }
 
-impl AuditView {
-    fn failed(scope: &Scope, error: &CoreError) -> Self {
+impl From<&CoreError> for ScopeError {
+    fn from(error: &CoreError) -> Self {
         let kind = match error {
             CoreError::LockCorrupt { .. } => ScopeErrorKind::LockCorrupt,
             CoreError::SchemaTooNew { .. } => ScopeErrorKind::SchemaTooNew,
             CoreError::ManifestInvalid { .. } => ScopeErrorKind::ManifestInvalid,
             _ => ScopeErrorKind::Other,
         };
+        ScopeError {
+            kind,
+            message: error.to_string(),
+        }
+    }
+}
+
+impl AuditView {
+    fn failed(scope: &Scope, error: &CoreError) -> Self {
         AuditView {
             scope: scope.clone(),
             drift: Vec::new(),
@@ -75,10 +84,7 @@ impl AuditView {
             warnings: Vec::new(),
             safety: Vec::new(),
             held_back: Vec::new(),
-            error: Some(ScopeError {
-                kind,
-                message: error.to_string(),
-            }),
+            error: Some(ScopeError::from(error)),
         }
     }
 }
@@ -243,83 +249,5 @@ pub fn remove_item(scope: Scope, kind: ItemKind, name: String) -> Result<AuditVi
     let report = ops::remove(&env, &scope, std::slice::from_ref(&name), Some(kind), false)
         .map_err(|e| e.to_string())?;
     apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
-    Ok(view(&env, &scope))
-}
-
-/// One recorded acceptance, as the Settings page lists it. `key` is the
-/// manifest's own spelling and is what revoke takes back, so even an entry
-/// a hand edit mangled can still be withdrawn; the typed fields are parsed
-/// from it for display and are absent where the key does not parse.
-#[derive(Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct AcceptedOverride {
-    pub scope: Scope,
-    pub key: String,
-    pub kind: Option<ItemKind>,
-    pub name: String,
-    pub harness: Option<HarnessId>,
-    pub granted_at: String,
-    /// How many findings the acceptance covered.
-    pub findings: u32,
-}
-
-fn parse_override_key(key: &str) -> (Option<ItemKind>, String, Option<HarnessId>) {
-    let Some((kind_str, rest)) = key.split_once(':') else {
-        return (None, key.to_owned(), None);
-    };
-    let Some((name, harness_str)) = rest.rsplit_once(':') else {
-        return (None, key.to_owned(), None);
-    };
-    let kind = ItemKind::ALL.iter().copied().find(|k| k.name() == kind_str);
-    let harness = HarnessId::parse(harness_str);
-    match (kind, harness) {
-        (Some(kind), Some(harness)) => (Some(kind), name.to_owned(), Some(harness)),
-        _ => (None, key.to_owned(), None),
-    }
-}
-
-#[tauri::command(async)]
-#[specta::specta]
-pub fn list_safety_overrides() -> Result<Vec<AcceptedOverride>, String> {
-    let env = env()?;
-    let settings = vstack_core::settings::load(&env).map_err(|e| e.to_string())?;
-    let mut scopes = vec![Scope::Global];
-    scopes.extend(
-        settings
-            .projects
-            .iter()
-            .cloned()
-            .map(|root| Scope::Project { root }),
-    );
-    let mut accepted = Vec::new();
-    for scope in scopes {
-        let path = manifest::manifest_path(&env, &scope);
-        // A scope whose manifest is unreadable is reported on the audit
-        // pages; the acceptances list simply has nothing to say for it.
-        let Ok(manifest::ManifestFile::Current(m)) = manifest::load(&path) else {
-            continue;
-        };
-        for (key, recorded) in &m.safety_overrides {
-            let (kind, name, harness) = parse_override_key(key);
-            accepted.push(AcceptedOverride {
-                scope: scope.clone(),
-                key: key.clone(),
-                kind,
-                name,
-                harness,
-                granted_at: recorded.granted_at.clone(),
-                findings: u32::try_from(recorded.findings.len()).unwrap_or(u32::MAX),
-            });
-        }
-    }
-    Ok(accepted)
-}
-
-#[tauri::command(async)]
-#[specta::specta]
-pub fn revoke_safety_override(scope: Scope, key: String) -> Result<AuditView, String> {
-    let env = env()?;
-    let plan = ops::revoke_override(&env, &scope, &key).map_err(|e| e.to_string())?;
-    apply::execute(&env, &plan, None).map_err(|e| e.to_string())?;
     Ok(view(&env, &scope))
 }

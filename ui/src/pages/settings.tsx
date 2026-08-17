@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Appearance, HarnessId } from "@/bindings";
 import { commands } from "@/bindings";
-import { AcceptedOverrides } from "@/components/accepted-overrides";
 import { PageHeader } from "@/components/page-header";
+import { RecordedDecisions } from "@/components/recorded-decisions";
 import { Section, SettingRow } from "@/components/section";
 import { ToolOverrideRow } from "@/components/tools/tool-override-row";
 import {
@@ -123,7 +123,7 @@ export function SettingsPage() {
             </SettingRow>
           </Section>
 
-          <AcceptedOverrides />
+          <RecordedDecisions />
 
           <Section
             title="Projects"

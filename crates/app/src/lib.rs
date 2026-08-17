@@ -1,5 +1,6 @@
 pub mod audit;
 mod commands;
+pub mod decisions;
 mod editor;
 mod native;
 mod packages;
@@ -26,8 +27,10 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         audit::adopt_item,
         audit::toggle_item,
         audit::remove_item,
-        audit::list_safety_overrides,
-        audit::revoke_safety_override,
+        decisions::list_decisions,
+        decisions::dismiss_findings,
+        decisions::revoke_dismissal,
+        decisions::revoke_safety_override,
         editor::get_manifest,
         editor::update_manifest,
         editor::editor_inventory,

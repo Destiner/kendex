@@ -4,6 +4,7 @@
 // this bridge instead.
 import { auditHandlers } from "./mock-audit";
 import { coreHandlers } from "./mock-core";
+import { decisionHandlers } from "./mock-decisions";
 import { packageHandlers } from "./mock-packages";
 import { sourceHandlers } from "./mock-sources";
 import { type Handler, resetState } from "./mock-state";
@@ -11,6 +12,7 @@ import { type Handler, resetState } from "./mock-state";
 export const handlers: Record<string, Handler> = {
   ...coreHandlers,
   ...auditHandlers,
+  ...decisionHandlers,
   ...sourceHandlers,
   ...packageHandlers,
 };

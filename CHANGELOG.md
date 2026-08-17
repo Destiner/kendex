@@ -25,6 +25,14 @@ changes carry a **Breaking** call-out with their migration note inline.
   decision — active, out of date and why, or about an item that is gone
   — and takes one back. `vstack accepted` is folded into `vstack
   decisions`. The project file's format moves to version 5.
+- Settings' **Accepted findings** grows into **Recorded decisions**: every
+  acceptance and dismissal on the machine, each saying what it decided,
+  when, and whose file it lives in — yours on this machine, or a
+  project's shared `vstack.toml` — so a decision a teammate made is
+  inherited in plain sight. A decision that no longer applies says why;
+  one about an item that is gone says so; each has a way out. A project
+  whose file cannot be read is named there with the error, never
+  silently left off the list.
 - A package's description renders light formatting, so a file name or a
   command an author wrote in backticks reads as one rather than as
   prose.

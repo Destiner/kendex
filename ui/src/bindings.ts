@@ -27,7 +27,23 @@ export const commands = {
 	adoptItem: (scope: Scope, kind: ItemKind, name: string, harness: HarnessId) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("adopt_item", { scope, kind, name, harness })),
 	toggleItem: (scope: Scope, kind: ItemKind, name: string, enabled: boolean) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("toggle_item", { scope, kind, name, enabled })),
 	removeItem: (scope: Scope, kind: ItemKind, name: string) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("remove_item", { scope, kind, name })),
-	listSafetyOverrides: () => typedError<AcceptedOverride[], string>(__TAURI_INVOKE("list_safety_overrides")),
+	/**
+	 *  Every recorded decision across every scope, each read against what is
+	 *  installed there now.
+	 */
+	listDecisions: () => typedError<DecisionsView_Serialize, string>(__TAURI_INVOKE("list_decisions")),
+	/**
+	 *  Dismiss the findings these tokens name, for one reason, in one scope.
+	 *  The tokens are re-read against a fresh audit before anything is written;
+	 *  one that no longer names what is installed stops the whole call.
+	 */
+	dismissFindings: (scope: Scope, tokens: string[], reason: DismissReason) => typedError<Dismissed_Serialize, string>(__TAURI_INVOKE("dismiss_findings", { scope, tokens, reason })),
+	/**
+	 *  Take a dismissal back. `dismissed_at` pins the exact record: a stale undo
+	 *  finding a newer dismissal at the same key refuses rather than deleting
+	 *  somebody's later decision.
+	 */
+	revokeDismissal: (scope: Scope, key: string, fingerprint: string, dismissedAt: string) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("revoke_dismissal", { scope, key, fingerprint, dismissedAt })),
 	revokeSafetyOverride: (scope: Scope, key: string) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("revoke_safety_override", { scope, key })),
 	getManifest: (scope: Scope) => typedError<{
 	schema: number,
@@ -185,23 +201,6 @@ export const commands = {
 };
 
 /* Types */
-/**
- *  One recorded acceptance, as the Settings page lists it. `key` is the
- *  manifest's own spelling and is what revoke takes back, so even an entry
- *  a hand edit mangled can still be withdrawn; the typed fields are parsed
- *  from it for display and are absent where the key does not parse.
- */
-export type AcceptedOverride = {
-	scope: Scope,
-	key: string,
-	kind: ItemKind | null,
-	name: string,
-	harness: HarnessId | null,
-	grantedAt: string,
-	/**  How many findings the acceptance covered. */
-	findings: number,
-};
-
 export type AntiPattern = {
 	flag: string,
 	detail: string,
@@ -352,6 +351,29 @@ export type CustomHook_Serialize = {
 	agents: HookAgents,
 };
 
+/**  What one record decided. */
+export type DecisionRecord = DecisionRecord_Serialize | DecisionRecord_Deserialize;
+
+/**  What one record decided. */
+export type DecisionRecord_Deserialize = 
+/**  A whole item's findings, read and accepted. */
+({ kind: "accepted"; findings: number; grantedAt: string }) & { dismissedAt?: never; finding?: never; fingerprint?: never; reason?: never } | 
+/**
+ *  One finding, judged not to be a problem. `finding` is the current
+ *  text of what it dismissed, present while that finding is still there.
+ */
+({ kind: "dismissed"; fingerprint: string; reason: DismissReason; dismissedAt: string; finding: Finding | null }) & { findings?: never; grantedAt?: never };
+
+/**  What one record decided. */
+export type DecisionRecord_Serialize = 
+/**  A whole item's findings, read and accepted. */
+({ kind: "accepted"; findings: number; grantedAt: string }) & { dismissedAt?: never; finding?: never; fingerprint?: never; reason?: never } | 
+/**
+ *  One finding, judged not to be a problem. `finding` is the current
+ *  text of what it dismissed, present while that finding is still there.
+ */
+({ kind: "dismissed"; fingerprint: string; reason: DismissReason; dismissedAt: string; finding?: Finding | null }) & { findings?: never; grantedAt?: never };
+
 /**
  *  What is recorded about one finding, read against the content in front
  *  of us now.
@@ -393,6 +415,28 @@ export type DecisionState_Serialize =
  *  read and the item installed anyway.
  */
 ({ state: "accepted"; grantedAt: string }) & { dismissedAt?: never; earlier?: never; reason?: never };
+
+/**
+ *  A scope whose decisions could not be read, carried as data beside the
+ *  ones that could. A view promising every decision must say which
+ *  scopes it is not speaking for, never silently skip them.
+ */
+export type DecisionsScopeError = {
+	scope: Scope,
+	error: ScopeError,
+};
+
+export type DecisionsView = DecisionsView_Serialize | DecisionsView_Deserialize;
+
+export type DecisionsView_Deserialize = {
+	decisions: RecordedDecision_Deserialize[],
+	errors: DecisionsScopeError[],
+};
+
+export type DecisionsView_Serialize = {
+	decisions: RecordedDecision_Serialize[],
+	errors: DecisionsScopeError[],
+};
 
 /**  One rule firing once, and what it cost. */
 export type Deduction = {
@@ -470,6 +514,30 @@ export type Dismissal_Serialize = {
 	 *  unmanaged item's files. Absent for the other reasons.
 	 */
 	source?: string | null,
+};
+
+/**
+ *  What a dismissal came back with: the scope's fresh view, and the exact
+ *  record written — an undo takes back this record and no newer one.
+ */
+export type Dismissed = Dismissed_Serialize | Dismissed_Deserialize;
+
+/**
+ *  What a dismissal came back with: the scope's fresh view, and the exact
+ *  record written — an undo takes back this record and no newer one.
+ */
+export type Dismissed_Deserialize = {
+	view: AuditView_Deserialize,
+	dismissedAt: string,
+};
+
+/**
+ *  What a dismissal came back with: the scope's fresh view, and the exact
+ *  record written — an undo takes back this record and no newer one.
+ */
+export type Dismissed_Serialize = {
+	view: AuditView_Serialize,
+	dismissedAt: string,
 };
 
 /**
@@ -1200,6 +1268,55 @@ export type QualityScore = {
 	 *  replace it.
 	 */
 	penaltyPercent: number,
+};
+
+/**  Whether a recorded decision still speaks for anything. */
+export type RecordState = 
+/**  Describing exactly what is installed now. */
+{ state: "active" } | 
+/**  Recorded, but what it was made against has changed since. */
+{ state: "stale"; why: string } | 
+/**  The item it was about is no longer installed here. */
+{ state: "obsolete" };
+
+/**
+ *  One recorded decision, as the registry lists it. `key` is the manifest's
+ *  own spelling and is what revoke takes back, so even an entry a hand edit
+ *  mangled can still be withdrawn; the typed fields are parsed from it for
+ *  display and absent where it does not parse.
+ */
+export type RecordedDecision = RecordedDecision_Serialize | RecordedDecision_Deserialize;
+
+/**
+ *  One recorded decision, as the registry lists it. `key` is the manifest's
+ *  own spelling and is what revoke takes back, so even an entry a hand edit
+ *  mangled can still be withdrawn; the typed fields are parsed from it for
+ *  display and absent where it does not parse.
+ */
+export type RecordedDecision_Deserialize = {
+	scope: Scope,
+	key: string,
+	kind: ItemKind | null,
+	name: string,
+	harness: HarnessId | null,
+	record: DecisionRecord_Deserialize,
+	state: RecordState,
+};
+
+/**
+ *  One recorded decision, as the registry lists it. `key` is the manifest's
+ *  own spelling and is what revoke takes back, so even an entry a hand edit
+ *  mangled can still be withdrawn; the typed fields are parsed from it for
+ *  display and absent where it does not parse.
+ */
+export type RecordedDecision_Serialize = {
+	scope: Scope,
+	key: string,
+	kind: ItemKind | null,
+	name: string,
+	harness: HarnessId | null,
+	record: DecisionRecord_Serialize,
+	state: RecordState,
 };
 
 export type ReportRouteView = {

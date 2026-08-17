@@ -35,13 +35,8 @@ export const acceptBlockedBody = (projectScope: boolean): string =>
     : "Your acceptance is saved in your personal manifest on this machine. It covers exactly this version of the content — if the file changes, the block comes back.";
 export const ACCEPT_BLOCKED_CONFIRM = "Accept and install";
 
-// The Settings list of recorded acceptances, and the way out of one.
-export const ACCEPTED_SECTION_TITLE = "Accepted findings";
-export const ACCEPTED_SECTION_EXPLAINER =
-  "Serious findings someone read and accepted, so the item installs anyway. Withdrawing one holds the item back again — the next apply moves vstack's installed copy to the trash.";
+// Withdrawing an acceptance, from the recorded-decisions list.
 export const WITHDRAW_LABEL = "Withdraw";
-export const acceptedFindingsCountLabel = (count: number): string =>
-  `${count} finding${count === 1 ? "" : "s"} accepted`;
 
 // Taking over a folder that several tools read through links. The dialog
 // names the real folder and every tool vstack knows is reading it; the

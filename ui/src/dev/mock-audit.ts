@@ -43,8 +43,6 @@ export const auditHandlers: Record<string, Handler> = {
     }
     return v;
   },
-  list_safety_overrides: () => [],
-  revoke_safety_override: ({ scope }: { scope: Scope }) => view(scope),
   adopt_item: (args: {
     scope: Scope;
     kind: ItemKind;
