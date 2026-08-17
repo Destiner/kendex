@@ -1,11 +1,9 @@
-import { Trash2 } from "lucide-react";
+import { FolderPlus, FolderSearch, Trash2 } from "lucide-react";
 import { useState } from "react";
-import type { ItemKind } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { KindCountBadges } from "@/components/kind-count-badges";
-import { AddProjectCard } from "@/components/tools/add-project-card";
-import { ScopeCard } from "@/components/tools/scope-card";
-import { Badge } from "@/components/ui/badge";
+import { AddProjectDialog } from "@/components/tools/add-project-dialog";
+import { ProjectCard } from "@/components/tools/project-card";
+import { ScanFolderDialog } from "@/components/tools/scan-folder-dialog";
 import { Button } from "@/components/ui/button";
 import { countByKind } from "@/lib/derive";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
@@ -14,58 +12,7 @@ import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 import { useSettingsStore } from "@/stores/settings";
 
-function ProjectRow({
-  root,
-  counts,
-  missing,
-  onRemove,
-}: {
-  root: string;
-  counts: [ItemKind, number][];
-  missing: boolean;
-  onRemove: () => void;
-}) {
-  const setScope = useNavStore((s) => s.setScope);
-  const goToLibrary = useNavStore((s) => s.goToLibrary);
-  const name = root.split("/").pop() ?? root;
-
-  return (
-    <div className="flex items-start justify-between gap-3 py-2.5">
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-medium text-foreground">
-            {name}
-          </span>
-          {missing ? (
-            <Badge variant="destructive">Folder not found</Badge>
-          ) : null}
-        </div>
-        <p className="truncate font-mono text-xs text-muted-foreground">
-          {root}
-        </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        <KindCountBadges
-          counts={counts}
-          onKindClick={(kind) => {
-            setScope({ project: root });
-            goToLibrary({ kind });
-          }}
-        />
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={`Stop tracking ${name}`}
-          onClick={onRemove}
-        >
-          <Trash2 className="size-4" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/** "Projects": personal plus every registered project, with the add/scan tools. */
+/** "Projects": personal plus every registered project, one card each. */
 export function ProjectList() {
   const result = useScanStore((s) => s.result);
   const setScope = useNavStore((s) => s.setScope);
@@ -73,6 +20,8 @@ export function ProjectList() {
   const { settings, registerProject, unregisterProject, discoverProjects } =
     useSettingsStore();
   const [removeTarget, setRemoveTarget] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   const globalItems =
     result?.items.filter((i) => i.scope.scope === "global") ?? [];
@@ -80,11 +29,24 @@ export function ProjectList() {
 
   return (
     <div className={PAGE_BODY}>
-      <div className={cn("flex flex-col gap-10", CONTENT_WIDTH)}>
-        <ScopeCard
-          title="Personal"
+      <div className={cn("flex flex-col gap-4", CONTENT_WIDTH)}>
+        {/* Adding a project is a short errand, not part of reading the list
+            — as a form pinned under the cards it took more of the page than
+            the projects themselves. */}
+        <div className="flex justify-end gap-2">
+          <Button onClick={() => setAdding(true)}>
+            <FolderPlus className="size-4" /> Add a project
+          </Button>
+          <Button variant="outline" onClick={() => setScanning(true)}>
+            <FolderSearch className="size-4" /> Scan a folder
+          </Button>
+        </div>
+
+        <ProjectCard
+          name="Personal"
           subtitle="Just for you — works in every project on this computer"
           counts={[...countByKind(globalItems).entries()]}
+          emptyLabel="Nothing from vstack yet."
           onKindClick={(kind) => {
             setScope("global");
             goToLibrary({ kind });
@@ -92,36 +54,60 @@ export function ProjectList() {
         />
 
         {projects.length === 0 ? (
-          <p className="py-3.5 text-sm text-muted-foreground">
-            No projects yet — add one below to manage its tools.
+          <p className="py-2 text-sm text-muted-foreground">
+            No projects yet — add one to manage its tools.
           </p>
         ) : (
-          <div className="flex flex-col">
-            {projects.map((root) => {
-              const items =
-                result?.items.filter(
-                  (i) => i.scope.scope === "project" && i.scope.root === root,
-                ) ?? [];
-              const missing = result?.missingProjects.includes(root) ?? false;
-              return (
-                <ProjectRow
-                  key={root}
-                  root={root}
-                  counts={[...countByKind(items).entries()]}
-                  missing={missing}
-                  onRemove={() => setRemoveTarget(root)}
-                />
-              );
-            })}
-          </div>
+          projects.map((root) => {
+            const items =
+              result?.items.filter(
+                (i) => i.scope.scope === "project" && i.scope.root === root,
+              ) ?? [];
+            const name = root.split("/").pop() ?? root;
+            return (
+              <ProjectCard
+                key={root}
+                name={name}
+                subtitle={root}
+                counts={[...countByKind(items).entries()]}
+                emptyLabel="Nothing from vstack yet."
+                badge={
+                  result?.missingProjects.includes(root)
+                    ? "Folder not found"
+                    : undefined
+                }
+                onKindClick={(kind) => {
+                  setScope({ project: root });
+                  goToLibrary({ kind });
+                }}
+                action={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Stop tracking ${name}`}
+                    title={`Stop tracking ${name}`}
+                    onClick={() => setRemoveTarget(root)}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                }
+              />
+            );
+          })
         )}
 
-        <AddProjectCard
+        <AddProjectDialog
+          open={adding}
+          onOpenChange={setAdding}
+          registerProject={registerProject}
+        />
+        <ScanFolderDialog
+          open={scanning}
+          onOpenChange={setScanning}
           projects={projects}
           registerProject={registerProject}
           discoverProjects={discoverProjects}
         />
-
         <ConfirmDialog
           open={removeTarget !== null}
           onOpenChange={(open) => {

@@ -283,6 +283,14 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Changed
 
+- Projects are cards, and adding one is a dialog. Personal and each
+  project now use the same card, so the item counts sit in the same
+  place on both — they used to be laid out differently, which made two
+  identical facts look like two different ones. **Add a project** and
+  **Scan a folder** are buttons at the top that open a dialog, rather
+  than two stacked forms that took up more of the page than the projects
+  did.
+
 - The Library has its own search box, above the table it filters. It
   used to sit in the sidebar, where it did nothing at all on six of the
   seven pages — typing into it on Home changed nothing. `/` still
