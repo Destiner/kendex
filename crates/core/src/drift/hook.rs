@@ -25,7 +25,7 @@ pub const HOOK_SCRIPT: &str = r#"#!/bin/sh
 # event: SessionStart
 # description: Prints a short drift report at session start, nothing when clean
 # timeout: 20
-# harnesses: [claude-code]
+# harnesses: [claude-code, pi]
 # ---
 # vstack drift report — what is stale, gone from its source, broken, or
 # awaiting review, each line naming its fix. Silent when everything is
@@ -43,6 +43,7 @@ fi
 case "$input" in
   *'"source"'*'"resume"'*) exit 0 ;;
   *'"source"'*'"compact"'*) exit 0 ;;
+  *'"source"'*'"reload"'*) exit 0 ;;
 esac
 
 if ! command -v vstack >/dev/null 2>&1; then
@@ -116,9 +117,11 @@ pub fn install_plan(env: &Env, scope: &Scope) -> Result<Plan> {
             HOOK_NAME.to_owned(),
             ItemDecl {
                 source: LOCAL_SOURCE_NAME.to_owned(),
-                // Only harnesses that execute hooks: advisory drift prose on
-                // a tool that cannot run the check is worse than none.
-                harnesses: Some(vec![HarnessId::Claude]),
+                // Only harnesses that execute hooks: advisory drift prose
+                // on a tool that cannot run the check is worse than none.
+                // Pi executes through the pi-hooks carrier — same script,
+                // same kill-switch, fire-and-forget into session start.
+                harnesses: Some(vec![HarnessId::Claude, HarnessId::Pi]),
                 method: None,
                 rev: None,
                 enabled: true,

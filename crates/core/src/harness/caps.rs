@@ -244,6 +244,20 @@ pub fn installable(harness: HarnessId) -> bool {
     })
 }
 
+/// The listeners Pi's runtime actually fires, and the registry key each
+/// hook event maps onto. Pi has no per-hook artifact — a carrier package
+/// hosts these native listeners — and an event outside this map cannot
+/// fire on Pi, so it stays honestly unsupported in every label.
+pub fn pi_listener(event: &str) -> Option<&'static str> {
+    match event {
+        "PreToolUse" => Some("tool_call"),
+        "PostToolUse" => Some("tool_result"),
+        "Stop" | "TaskCompleted" => Some("turn_end"),
+        "SessionStart" => Some("session_start"),
+        _ => None,
+    }
+}
+
 pub fn capabilities(harness: HarnessId, kind: ItemKind) -> KindCaps {
     use HarnessId::*;
     use ItemKind::*;
@@ -308,8 +322,13 @@ pub fn capabilities(harness: HarnessId, kind: ItemKind) -> KindCaps {
         (Cursor, PiExtension) => unsupported(),
 
         (Pi, Agent | Skill) => managed(BOTH),
-        // pi hooks belong to the pi-hooks extension, not to files we manage.
-        (Pi, Hook) => unsupported(),
+        // Enforced through the carrier: the pi-hooks extension hosts the
+        // native listeners and hook content rides in the registry vstack
+        // renders. The static row says what the mechanism supports; the
+        // surfaces that label an installation read carrier reality through
+        // `pi_ext::carrier::enforcement`, which downgrades to advisory
+        // wherever no settings layer Pi loads registers the carrier.
+        (Pi, Hook) => enforced(managed(BOTH)),
         (Pi, Command) => observe_only(BOTH),
         (Pi, McpServer) => unsupported(),
         (Pi, Plugin) => unsupported(),

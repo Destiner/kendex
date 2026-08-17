@@ -75,6 +75,15 @@ fn the_hook_script_honors_its_contract() {
         Some("#!/bin/sh\necho drift\nexit 1\n"),
     );
     assert_eq!((out.as_str(), code), ("", 0));
+    // Pi's carrier re-runs extensions in place on reload — an already
+    // delivered report must not repeat.
+    let (out, code) = run_hook(
+        dir,
+        r#"{"source":"reload"}"#,
+        &[],
+        Some("#!/bin/sh\necho drift\nexit 1\n"),
+    );
+    assert_eq!((out.as_str(), code), ("", 0));
 
     // Missing binary: exactly one "skipped" line, exit 0.
     let (out, code) = run_hook(dir, "{}", &[], None);

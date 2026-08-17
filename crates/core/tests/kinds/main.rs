@@ -173,8 +173,13 @@ fn one_hook_reaches_each_harness_in_its_own_native_form() {
     let rule = fs::read_to_string(at(".cursor/rules/safety-audit.mdc")).unwrap();
     assert!(rule.contains("alwaysApply: true") && rule.contains("log shell commands"));
 
-    // pi hooks belong to the pi-hooks extension: nothing is written for it.
-    assert!(!at(".pi").exists());
+    // Pi rides the pi-hooks carrier: the script lands beside a registry
+    // spoken in pi's own listener names.
+    assert!(at(".pi/hooks/audit.sh").is_file());
+    assert_eq!(
+        json(&at(".pi/hooks.json"))["hooks"]["tool_call"][0]["hooks"][0]["command"],
+        "bash \"$(git rev-parse --show-toplevel)/.pi/hooks/audit.sh\""
+    );
     assert!(is_clean(&f));
 }
 

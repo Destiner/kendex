@@ -31,8 +31,13 @@ impl HarnessAdapter for Pi {
                 dir: root.join("skills"),
                 marker: "SKILL.md",
             }],
-            // pi hooks belong to the pi-hooks extension; pi has no MCP.
-            ItemKind::Hook | ItemKind::McpServer | ItemKind::Plugin => vec![],
+            // Hooks ride the pi-hooks carrier: the registry vstack renders
+            // is what the carrier's listeners execute. pi has no MCP.
+            ItemKind::Hook => vec![Surface::Structured {
+                path: root.join("hooks.json"),
+                reader: Reader::HooksObject,
+            }],
+            ItemKind::McpServer | ItemKind::Plugin => vec![],
             ItemKind::Command => vec![Surface::files(root.join("prompts"), &["md"])],
             ItemKind::PiExtension => vec![
                 Surface::Structured {
@@ -57,7 +62,11 @@ impl HarnessAdapter for Pi {
                 dir: project.join(".agents/skills"),
                 marker: "SKILL.md",
             }],
-            ItemKind::Hook | ItemKind::McpServer | ItemKind::Plugin => vec![],
+            ItemKind::Hook => vec![Surface::Structured {
+                path: dot.join("hooks.json"),
+                reader: Reader::HooksObject,
+            }],
+            ItemKind::McpServer | ItemKind::Plugin => vec![],
             ItemKind::Command => vec![Surface::files(dot.join("prompts"), &["md"])],
             ItemKind::PiExtension => vec![
                 Surface::Structured {

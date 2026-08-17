@@ -30,6 +30,16 @@ changes carry a **Breaking** call-out with their migration note inline.
   checked — a broken mirror or an unreachable source shows under
   "Couldn't be checked" instead of silently reading as up to date — and a
   package deleted from its catalog is flagged **No longer in its source**.
+- Hooks now work on Pi, through the pi-hooks carrier. Installing a hook
+  for Pi writes its script and a registry spoken in Pi's own event names,
+  which the carrier extension executes — and every label tells the truth
+  about it: an event Pi cannot fire installs nothing there, and a hook
+  whose carrier isn't installed anywhere Pi looks is flagged as inert
+  with the fix named, instead of quietly claiming protection. A carrier
+  installed globally covers project hooks too, since Pi reads both. The
+  session-start drift report rides along: Pi sessions get the same
+  report, the same `VSTACK_DRIFT_HOOK=off` switch, and no repeats on
+  resume or reload.
 - Commit checks now guard every commit, whatever tool makes it. `vstack
   guard install` puts a vstack-owned hooks directory in front of git for a
   repository, so Claude Code, Codex, Cursor, and a plain terminal all walk

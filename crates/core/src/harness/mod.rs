@@ -15,7 +15,8 @@ mod caps;
 pub mod models;
 pub use caps::{
     CANONICAL_SEPARATOR, Enforcement, FormatCaps, KindCaps, McpTransport, NameRule, OpSupport,
-    canonical_name, capabilities, format_caps, installable, namespace_separator, rendered_name,
+    canonical_name, capabilities, format_caps, installable, namespace_separator, pi_listener,
+    rendered_name,
 };
 
 /// What marks a directory as a project for this harness during discovery.

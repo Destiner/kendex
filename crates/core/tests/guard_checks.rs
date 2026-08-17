@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use vstack_core::guard::{self, GuardCtx, patterns, settings::Policy, size_ratchet};
+use vstack_core::guard::{self, GuardCtx, settings::Policy, size_ratchet};
 use vstack_core::process::Hardened;
 
 struct Repo {

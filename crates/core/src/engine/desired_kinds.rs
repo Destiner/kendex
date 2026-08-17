@@ -77,6 +77,41 @@ pub(super) fn desired_hook(ctx: &ItemCtx, state: &mut DesiredState) -> Result<()
             ));
             continue;
         }
+        // Pi fires a fixed set of listeners through the pi-hooks carrier;
+        // an event outside that set cannot run there and installs nothing —
+        // honesty over prose (a stale advisory drift claim is worse than
+        // none). A mappable event is restated in the listener's name, and
+        // a scope with no carrier registered anywhere Pi loads gets the
+        // downgrade said per item, because the rendered registry is prose
+        // until something executes it.
+        let hook = match harness {
+            HarnessId::Pi => {
+                let Some(listener) = crate::harness::pi_listener(&hook.event) else {
+                    state.notes.push(format!(
+                        "hook {}: event {} unsupported on pi — pi fires no such listener",
+                        ctx.name, hook.event
+                    ));
+                    continue;
+                };
+                if !crate::pi_ext::carrier::presence(ctx.env, ctx.scope).anywhere() {
+                    state.warnings.push(super::ItemWarning {
+                        kind: ItemKind::Hook,
+                        name: ctx.name.to_owned(),
+                        harness: Some(HarnessId::Pi),
+                        message: "the pi-hooks carrier is not registered in any settings pi loads here — the hook is written but nothing will run it".into(),
+                        remediation: Some(format!(
+                            "install the {} extension at either scope",
+                            crate::pi_ext::carrier::CARRIER
+                        )),
+                    });
+                }
+                crate::hook::HookSource {
+                    event: listener.to_owned(),
+                    ..hook.clone()
+                }
+            }
+            _ => hook.clone(),
+        };
         // Gemini and Copilot each name the lifecycle events their own way,
         // so the hook is restated in the reader's words — and whatever their
         // configuration already says about hooks is said now, before

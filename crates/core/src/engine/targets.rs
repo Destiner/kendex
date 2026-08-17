@@ -140,31 +140,59 @@ pub(super) fn hook_target(
         // same matcher-plus-handlers shape claude's takes (matrix §1). The
         // script is ours to place; `.gemini/hooks` is not a surface Gemini
         // scans, so nothing reads it except the command we register.
-        HarnessId::Gemini => {
-            let root = match scope {
-                Scope::Global => adapter(harness).default_global_root(env),
-                Scope::Project { root } => root.join(".gemini"),
-            };
-            let path = root.join("hooks").join(format!("{name}.sh"));
-            let command = match scope {
-                Scope::Global => format!("bash \"{}\"", path.display()),
-                // Gemini documents no project-directory variable, so the
-                // path resolves through the repo root itself.
-                Scope::Project { .. } => {
-                    format!("bash \"$(git rev-parse --show-toplevel)/.gemini/hooks/{name}.sh\"")
-                }
-            };
-            Some(HookTarget::Script {
-                path,
-                command,
-                registry: root.join("settings.json"),
-                format: HookFormat::Nested,
-                feature: None,
-            })
-        }
-        // pi hooks belong to the pi-hooks extension, not to files we manage.
-        HarnessId::Pi => None,
+        // Gemini documents no project-directory variable, so the project
+        // command resolves through the repo root itself.
+        HarnessId::Gemini => Some(dotted_script_hook(
+            env,
+            scope,
+            harness,
+            name,
+            ".gemini",
+            "settings.json",
+        )),
+        // Pi executes nothing per hook itself: the pi-hooks carrier's
+        // listeners read the registry rendered here and run the scripts.
+        // The registry keys are Pi's own listener names — the event was
+        // restated before this target is asked for.
+        HarnessId::Pi => Some(dotted_script_hook(
+            env,
+            scope,
+            harness,
+            name,
+            ".pi",
+            "hooks.json",
+        )),
         HarnessId::Copilot => Some(copilot_hook(env, scope, name)),
+    }
+}
+
+/// The shape Gemini and Pi share: a script under the harness's dot-dir,
+/// registered in a claude-nested JSON file beside it.
+fn dotted_script_hook(
+    env: &Env,
+    scope: &Scope,
+    harness: HarnessId,
+    name: &str,
+    dot: &str,
+    registry_file: &str,
+) -> HookTarget {
+    let root = match scope {
+        Scope::Global => adapter(harness).default_global_root(env),
+        Scope::Project { root } => root.join(dot),
+    };
+    let path = root.join("hooks").join(format!("{name}.sh"));
+    let command = match scope {
+        Scope::Global => format!("bash \"{}\"", path.display()),
+        Scope::Project { .. } => {
+            format!("bash \"$(git rev-parse --show-toplevel)/{dot}/hooks/{name}.sh\"")
+        }
+    };
+    HookTarget::Script {
+        path,
+        command,
+        registry: root.join(registry_file),
+        format: HookFormat::Nested,
+        feature: None,
     }
 }
 
@@ -247,137 +275,4 @@ pub(super) fn disabled_name(path: &std::path::Path) -> PathBuf {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::env::FakeOs;
-
-    #[test]
-    fn claude_hooks_use_the_project_dir_variable_and_absolute_global_paths() {
-        let env = Env::fake("/h", FakeOs::Linux);
-        let scope = Scope::Project {
-            root: PathBuf::from("/p"),
-        };
-        let Some(HookTarget::Script {
-            path,
-            command,
-            registry,
-            feature,
-            ..
-        }) = hook_target(&env, &scope, HarnessId::Claude, "guard")
-        else {
-            panic!("claude hooks are script targets");
-        };
-        assert_eq!(path, PathBuf::from("/p/.claude/hooks/guard.sh"));
-        assert_eq!(
-            command,
-            "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard.sh\""
-        );
-        assert_eq!(registry, PathBuf::from("/p/.claude/settings.json"));
-        assert_eq!(feature, None);
-
-        let Some(HookTarget::Script { command, .. }) =
-            hook_target(&env, &Scope::Global, HarnessId::Claude, "guard")
-        else {
-            panic!("claude hooks are script targets");
-        };
-        assert_eq!(command, "bash \"/h/.claude/hooks/guard.sh\"");
-    }
-
-    #[test]
-    fn codex_registers_in_hooks_json_and_enables_the_feature() {
-        let env = Env::fake("/h", FakeOs::Linux);
-        let scope = Scope::Project {
-            root: PathBuf::from("/p"),
-        };
-        let Some(HookTarget::Script {
-            command,
-            registry,
-            feature,
-            ..
-        }) = hook_target(&env, &scope, HarnessId::Codex, "guard")
-        else {
-            panic!("codex hooks are script targets");
-        };
-        assert_eq!(
-            command,
-            "bash \"$(git rev-parse --show-toplevel)/.codex/hooks/guard.sh\""
-        );
-        assert_eq!(registry, PathBuf::from("/p/.codex/hooks.json"));
-        assert_eq!(feature, Some(PathBuf::from("/p/.codex/config.toml")));
-    }
-
-    #[test]
-    fn instruction_references_are_scope_relative_and_cursor_is_project_only() {
-        let env = Env::fake("/h", FakeOs::Linux);
-        let scope = Scope::Project {
-            root: PathBuf::from("/p"),
-        };
-        let Some(HookTarget::Instruction {
-            path, reference, ..
-        }) = hook_target(&env, &scope, HarnessId::Opencode, "guard")
-        else {
-            panic!("opencode hooks are instruction targets");
-        };
-        assert_eq!(
-            path,
-            PathBuf::from("/p/.opencode/instructions/vstack-hook-guard.md")
-        );
-        assert_eq!(reference, ".opencode/instructions/vstack-hook-guard.md");
-
-        let Some(HookTarget::Instruction { reference, .. }) =
-            hook_target(&env, &Scope::Global, HarnessId::Opencode, "guard")
-        else {
-            panic!("opencode hooks are instruction targets");
-        };
-        assert_eq!(reference, "instructions/vstack-hook-guard.md");
-
-        assert_eq!(
-            hook_target(&env, &scope, HarnessId::Cursor, "guard"),
-            Some(HookTarget::Rule {
-                path: PathBuf::from("/p/.cursor/rules/safety-guard.mdc"),
-            })
-        );
-        assert_eq!(
-            hook_target(&env, &Scope::Global, HarnessId::Cursor, "guard"),
-            None
-        );
-        assert_eq!(hook_target(&env, &scope, HarnessId::Pi, "guard"), None);
-    }
-
-    /// Copilot's hook file and the script it runs sit side by side, and the
-    /// file is the one its loader globs for.
-    #[test]
-    fn a_copilot_hook_gets_a_document_of_its_own_beside_its_script() {
-        let env = Env::fake("/h", FakeOs::Linux);
-        let scope = Scope::Project {
-            root: PathBuf::from("/p"),
-        };
-        let Some(HookTarget::Script {
-            path,
-            command,
-            registry,
-            format,
-            feature,
-        }) = hook_target(&env, &scope, HarnessId::Copilot, "audit")
-        else {
-            panic!("copilot hooks are script targets");
-        };
-        assert_eq!(path, PathBuf::from("/p/.github/hooks/audit.sh"));
-        assert_eq!(
-            command,
-            "bash \"$(git rev-parse --show-toplevel)/.github/hooks/audit.sh\""
-        );
-        assert_eq!(registry, PathBuf::from("/p/.github/hooks/audit.json"));
-        assert_eq!(format, HookFormat::Copilot);
-        assert_eq!(feature, None);
-
-        let Some(HookTarget::Script {
-            command, registry, ..
-        }) = hook_target(&env, &Scope::Global, HarnessId::Copilot, "audit")
-        else {
-            panic!("copilot hooks are script targets");
-        };
-        assert_eq!(command, "bash \"/h/.copilot/hooks/audit.sh\"");
-        assert_eq!(registry, PathBuf::from("/h/.copilot/hooks/audit.json"));
-    }
-}
+mod tests;

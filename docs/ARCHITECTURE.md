@@ -258,6 +258,21 @@ lives in one capability table read by core and UI.
   journal every common-lock holder recovers before mutating. A missing
   binary at commit time fails closed, naming the one-commit bypass and
   the two-step manual removal — no vendored runner, because copies drift.
+- **Pi hooks are enforced through the carrier.** Pi has no per-hook
+  artifact: the `pi-hooks` extension package hosts native listeners, and
+  hook content rides in the registry vstack renders beside them
+  (`hooks/<name>.sh` plus `hooks.json`, keyed by Pi's own listener names —
+  tool call, tool result, turn end, session start). An event outside that
+  map cannot fire on Pi and installs nothing there, said as a note —
+  honesty over stale advisory prose. The capability row says what the
+  mechanism supports; the surfaces that label an installation read carrier
+  reality (`pi_ext::carrier`), and Pi loads project and global settings
+  both, so a project-installed hook with only a global carrier is still
+  enforced — the v1 #1407 lesson, carried as behavior. A scope with no
+  carrier registered anywhere Pi loads gets the downgrade said per item.
+  The session-start drift report rides the same mechanism: same script,
+  same kill-switch, fire-and-forget into session start, and a reloaded or
+  resumed session never repeats it.
 - **A seeded settings comment refreshes only while provably unedited.**
   Skills seed `[env]` defaults into `vstack.settings.toml` write-if-absent;
   the lock keeps, per key, which skill seeded it and the FNV-1a hash of

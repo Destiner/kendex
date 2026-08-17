@@ -18,6 +18,7 @@ use crate::error::{CoreError, Result};
 use crate::fs::{atomic_write, read_if_exists};
 use crate::process::Hardened;
 
+pub mod carrier;
 mod files;
 mod renames;
 mod settings;
