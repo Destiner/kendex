@@ -519,6 +519,14 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Fixed
 
+- A Pi extension installed as a package shows what it is. The scan used
+  the raw install spec as the description, so twenty extensions read as
+  twenty near-identical folder paths — `./packages/@you/pi-caveman` —
+  while the real description sat unread in the package's own
+  `package.json`. Those packages now report their description, resolve
+  to their own folder rather than to the settings file that lists them,
+  and carry a real modification time instead of a dash.
+
 - A package page can show the files of an item vstack did not install.
   It read only from the catalog an item was declared in, so every item
   already on your machine but not managed by vstack — and everything in

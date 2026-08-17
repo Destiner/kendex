@@ -16,15 +16,13 @@ pub fn claude_registry(path: &Path, env: &Env) -> Result<Vec<RawEntry>, String> 
     let enabled_map = claude_enabled_map(&env.home.join(".claude/settings.json"));
     Ok(registry
         .iter()
-        .map(|(name, entry)| RawEntry {
+        .map(|(name, _)| RawEntry {
             name: name.clone(),
             enabled: enabled_map
                 .as_ref()
                 .and_then(|m| m.get(name).and_then(|v| v.as_bool())),
-            description: entry
-                .get("version")
-                .and_then(|v| v.as_str())
-                .map(str::to_owned),
+            // A version is not a description: see the note below.
+            description: None,
             source_path: None,
         })
         .collect())
@@ -81,7 +79,11 @@ pub fn codex_cache(plugins_dir: &Path) -> Result<Vec<RawEntry>, String> {
                 enabled: Some(!disabled.contains(&key)),
                 name: key,
                 source_path: Some(plugin.join(&newest)),
-                description: Some(newest),
+                // A version folder name is not a description of anything.
+                // Nobody recognises a plugin by "1.2.0", and putting it where
+                // a description goes makes a list of plugins read as a list
+                // of numbers.
+                description: None,
             });
         }
     }
@@ -121,7 +123,7 @@ pub fn cursor_dirs(plugins_dir: &Path) -> Vec<RawEntry> {
             entries.push(RawEntry {
                 name,
                 enabled: Some(true),
-                description: Some("local".to_owned()),
+                description: None,
                 source_path: Some(plugin.clone()),
             });
         }
@@ -203,8 +205,10 @@ mod tests {
         let entries = codex_cache(&root.join("plugins")).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, "tool@mkt");
-        assert_eq!(entries[0].description.as_deref(), Some("1.10.0"));
         assert_eq!(entries[0].enabled, Some(false));
+        // The version identifies a build, not the plugin — it belongs in the
+        // path below, never in the line a person reads to tell plugins apart.
+        assert_eq!(entries[0].description, None);
         // Its own version directory, not the shared cache the entry was
         // read from — every plugin in that cache would otherwise be scored
         // on every other plugin's files.
@@ -258,7 +262,7 @@ mod tests {
         entries.sort_by(|a, b| a.name.cmp(&b.name));
         assert_eq!(entries[0].name, "fmt@main");
         assert_eq!(entries[0].enabled, Some(false));
-        assert_eq!(entries[0].description.as_deref(), Some("2.0.0"));
+        assert_eq!(entries[0].description, None);
         assert_eq!(entries[1].enabled, None);
     }
 }

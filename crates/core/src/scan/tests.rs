@@ -219,3 +219,44 @@ fn a_skill_s_tags_are_scanned_and_a_bad_one_is_reported() {
         .expect("nothing said the tag was wrong");
     assert!(warning.contains("did you mean `testing`?"), "{warning}");
 }
+
+/// A pi package registered by a relative spec is a folder of its own, so it
+/// can say what it is and when it changed. One registered by name is only a
+/// line in a shared config file, and has neither.
+#[test]
+fn a_local_pi_package_reports_its_own_description_and_mtime() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let env = Env::fake(home, FakeOs::Linux);
+
+    let package = home.join(".pi/agent/packages/@vg/caveman");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("package.json"),
+        r#"{"description": "Caveman mode"}"#,
+    )
+    .unwrap();
+    fs::write(
+        home.join(".pi/agent/settings.json"),
+        r#"{"packages":["./packages/@vg/caveman","npm:@vg/remote@1.0"]}"#,
+    )
+    .unwrap();
+
+    let result = scan_scopes(&env, &BTreeMap::new(), &[Scope::Global]);
+    let find = |name: &str| {
+        result
+            .items
+            .iter()
+            .find(|i| i.kind == ItemKind::PiExtension && i.name == name)
+            .expect("the extension was not scanned")
+    };
+
+    let local = find("caveman");
+    assert_eq!(local.description.as_deref(), Some("Caveman mode"));
+    assert_eq!(local.path, package);
+    assert!(local.modified_at.is_some(), "no mtime for a real folder");
+
+    let remote = find("@vg/remote");
+    assert_eq!(remote.description.as_deref(), Some("npm:@vg/remote@1.0"));
+    assert_eq!(remote.modified_at, None);
+}

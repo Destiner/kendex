@@ -29,7 +29,7 @@ pub fn read_structured(path: &Path, reader: &Reader, env: &Env) -> Result<Vec<Ra
         Reader::ClaudeSettingsPlugins => plugins::claude_settings(path),
         Reader::CodexPluginCache => plugins::codex_cache(path),
         Reader::CursorPluginDirs => Ok(plugins::cursor_dirs(path)),
-        Reader::PiPackages => pi_packages(path),
+        Reader::PiPackages => super::pi_packages::pi_packages(path),
     }
 }
 
@@ -174,66 +174,9 @@ fn opencode_plugin_refs(path: &Path) -> Result<Vec<RawEntry>, String> {
         .collect())
 }
 
-fn pi_packages(path: &Path) -> Result<Vec<RawEntry>, String> {
-    let value = read_json(path)?;
-    let Some(packages) = value.get("packages").and_then(|p| p.as_array()) else {
-        return Ok(Vec::new());
-    };
-    Ok(packages
-        .iter()
-        .filter_map(|entry| match entry {
-            serde_json::Value::String(spec) => Some(spec.clone()),
-            other => other
-                .get("source")
-                .and_then(|s| s.as_str())
-                .map(str::to_owned),
-        })
-        .map(|spec| RawEntry {
-            name: pi_package_name(&spec),
-            enabled: None,
-            description: Some(spec),
-            source_path: None,
-        })
-        .collect())
-}
-
-/// `npm:@scope/pkg@1.0` → `@scope/pkg`, `./packages/x` → `x`,
-/// `https://host/a/b` → `b`, anything else verbatim.
-fn pi_package_name(spec: &str) -> String {
-    if let Some(rest) = spec.strip_prefix("npm:") {
-        let version_at = match rest.strip_prefix('@') {
-            Some(scoped) => scoped.find('@').map(|i| i + 1),
-            None => rest.find('@'),
-        };
-        return match version_at {
-            Some(i) => rest[..i].to_owned(),
-            None => rest.to_owned(),
-        };
-    }
-    if spec.contains('/')
-        && let Some(last) = spec.trim_end_matches('/').rsplit('/').next()
-    {
-        return last.to_owned();
-    }
-    spec.to_owned()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn pi_package_names_cover_every_spec_shape() {
-        assert_eq!(
-            pi_package_name("npm:@vanillagreen/pi-hooks@1.2.0"),
-            "@vanillagreen/pi-hooks"
-        );
-        assert_eq!(pi_package_name("npm:plain@2"), "plain");
-        assert_eq!(pi_package_name("npm:plain"), "plain");
-        assert_eq!(pi_package_name("./packages/pi-tmux"), "pi-tmux");
-        assert_eq!(pi_package_name("https://github.com/a/b"), "b");
-        assert_eq!(pi_package_name("odd"), "odd");
-    }
 
     #[test]
     fn codex_mcp_toml_lists_server_names() {
