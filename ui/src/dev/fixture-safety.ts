@@ -3,6 +3,7 @@
 // hooks and plugins to design triage at real scale. The ACME project's
 // blocked items live next door in fixture-safety-acme.ts.
 import type { DriftRow, ItemSafety } from "@/bindings";
+import { decisionsFor } from "./fixture-decisions";
 import {
   CLAUDE_HOOK_IDS,
   CLEAN_PLUGINS,
@@ -30,6 +31,11 @@ const hookSafety = (name: string, index: number): ItemSafety => ({
   ],
   contentHash: `hook-${index}`,
   reviewHash: `hook-${index}`,
+  location: "",
+  provenance: null,
+  decisions: decisionsFor(`hook:${name}:claude`, `hook-${index}`, [
+    HOOK_FINDING,
+  ]),
   override: { state: "absent" },
 });
 
@@ -49,6 +55,9 @@ const cleanPluginSafety = (name: string, index: number): ItemSafety => ({
   reasons: ["Nothing found, though its own files could not be read yet."],
   contentHash: `clean-plugin-${index}`,
   reviewHash: `clean-plugin-${index}`,
+  location: "",
+  provenance: null,
+  decisions: [],
   override: { state: "absent" },
 });
 
@@ -65,6 +74,13 @@ const codexPluginSafety = (name: string, index: number): ItemSafety => ({
   reasons: ["Nothing serious, but worth a look before you rely on it."],
   contentHash: `codex-plugin-${index}`,
   reviewHash: `codex-plugin-${index}`,
+  location: "",
+  provenance: null,
+  decisions: decisionsFor(
+    `plugin:${name}:codex`,
+    `codex-plugin-${index}`,
+    CODEX_FINDINGS,
+  ),
   override: { state: "absent" },
 });
 

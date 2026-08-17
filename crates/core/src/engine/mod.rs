@@ -17,6 +17,7 @@ mod bundles;
 mod catalog;
 mod config_edits;
 mod copilot;
+pub mod decisions;
 pub mod deps;
 pub mod desired;
 mod desired_agent;
@@ -46,7 +47,7 @@ mod unmanaged;
 
 pub use gate::{ItemSafety, allow_unsafe_flag};
 pub use item_source::{ItemSource, item_source};
-pub use observed::observed_safety;
+pub use observed::{observed_rows, observed_safety};
 
 /// Whether an installation's disk bytes cannot be proven to be vstack's own
 /// render — the conservative hold used when a full plan is unavailable.

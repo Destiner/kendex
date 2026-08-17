@@ -104,7 +104,7 @@ fn a_marketplace_plugin_installs_as_a_bundle() {
         &f.project,
         "vstack.toml",
         &format!(
-            "schema = 4\n\n[sources.market]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[bundles.\"data-science\"]\nsource = \"market\"\n",
+            "schema = 5\n\n[sources.market]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[bundles.\"data-science\"]\nsource = \"market\"\n",
             market.display()
         ),
     );

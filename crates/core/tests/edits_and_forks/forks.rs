@@ -107,7 +107,7 @@ fn forking_a_codex_agent_is_refused_with_the_fix_named() {
     fs::write(
         &path,
         format!(
-            "schema = 4\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"codex\"]\nmethod = \"copy\"\n\n[agents.rev]\nsource = \"cat\"\n"
+            "schema = 5\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"codex\"]\nmethod = \"copy\"\n\n[agents.rev]\nsource = \"cat\"\n"
         ),
     )
     .unwrap();

@@ -458,6 +458,32 @@ lives in one capability table read by core and UI.
   they belong: they bound what is read for scoring, never what a decision
   covers, so content past a budget going unreviewable is said out loud
   instead of waved through.
+- **A dismissal settles one finding and unblocks nothing.** Beside the
+  item-level acceptance sits the smaller decision: this one finding, on
+  this one installation, is not the problem the rule says it is. It binds
+  the same way — review hash and rule set — and it lives in the same place,
+  the manifest of the scope the item belongs to: a personal decision stays
+  on this machine, a project decision is committed and shows up in code
+  review, which is what a security judgment should do. Because a project's
+  file travels, a dismissal carries a reason from a closed vocabulary and
+  never free text (`wrong-call`, `intended`, `trusted-source`) — every
+  reason is a claim about the content that means the same thing to whoever
+  reads it next, and none is one person's tolerance for risk. Trusting a
+  source binds the source: the record names the provenance it trusted and
+  goes stale when the same bytes arrive from anywhere else, a fork
+  included. One snapshot per installation holds the proof once with each
+  dismissal beneath it; a decision on newer content replaces the snapshot,
+  since the older dismissals spoke for bytes that are gone. A held-back
+  item cannot be dismissed into silence — it is decided by accepting or
+  removing it — and an accepted item's findings already read as accepted.
+  The UI never spells a decision key: the backend issues a token per
+  finding (`kind:name:harness#fingerprint@review-hash`), and a dismiss
+  re-audits before it writes, refusing the whole batch if any token no
+  longer names what is installed. Every write is one journaled manifest
+  op for one scope. Removing an item reaps its decisions; the registry
+  (`vstack decisions`, Recorded decisions) reads every record against what
+  is installed now — active, stale with the reason, or obsolete — and takes
+  back exactly the record it was shown, never a newer one at the same key.
 - **Rule severities are calibrated against real catalogs, not inherited.**
   A Critical blocks an install on its own, so the tier is only worth
   something if it is precise. Patterns that fired only on legitimate

@@ -37,6 +37,9 @@ pub struct ItemSafety {
     pub name: String,
     pub harness: HarnessId,
     pub scope: Scope,
+    /// The artifact's path, or the config file holding the entry — what
+    /// every finding's location is relative to.
+    pub location: String,
     pub safety: SafetyScore,
     /// Advisory only, and absent for kinds with no authored prose.
     pub quality: Option<QualityScore>,
@@ -54,8 +57,14 @@ pub struct ItemSafety {
     /// is what a reviewer is accepting. `None` where the bytes cannot be
     /// reached from here at all.
     pub review_hash: Option<String>,
+    /// Where the bytes came from: the resolved provenance the lock records,
+    /// or the git origin of an unmanaged item's files. What a trusted-source
+    /// dismissal binds to. `None` where nothing on this machine says.
+    pub provenance: Option<String>,
     #[serde(rename = "override")]
     pub override_state: OverrideState,
+    /// What has been decided about each finding, in the findings' order.
+    pub decisions: Vec<super::decisions::FindingDecision>,
 }
 
 impl ItemSafety {
@@ -103,11 +112,21 @@ pub(super) fn run(
         }
         let override_state =
             overrides::state(recorded, review_hash.as_deref(), &result.findings, &root);
+        let decisions = super::decisions::decisions(
+            state.manifest_update.as_ref().unwrap_or(manifest),
+            &item.key,
+            &root,
+            review_hash.as_deref(),
+            Some(&item.provenance),
+            &override_state,
+            &result.findings,
+        );
         let row = ItemSafety {
             kind: item.kind,
             name: item.name.clone(),
             harness: item.harness,
             scope: scope.clone(),
+            location: root,
             safety: result.safety,
             quality: result.quality,
             findings: result.findings,
@@ -116,7 +135,9 @@ pub(super) fn run(
             reasons,
             content_hash,
             review_hash,
+            provenance: Some(item.provenance.clone()),
             override_state,
+            decisions,
         };
         match row.blocked() {
             true => state.refused.push(refusal(&item, &row)),

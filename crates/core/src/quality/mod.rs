@@ -22,6 +22,7 @@ pub mod dimensions;
 mod homoglyph;
 pub mod observe;
 pub mod overrides;
+pub mod reviews;
 mod rules;
 mod score;
 mod secret;

@@ -28,7 +28,7 @@ fn an_edit_made_while_disabled_survives_being_re_enabled() {
     fs::write(
         &toggled,
         format!(
-            "schema = 4\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\nenabled = false\n"
+            "schema = 5\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\nenabled = false\n"
         ),
     )
     .unwrap();
@@ -41,7 +41,7 @@ fn an_edit_made_while_disabled_survives_being_re_enabled() {
     fs::write(
         &toggled,
         format!(
-            "schema = 4\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\n"
+            "schema = 5\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\n"
         ),
     )
     .unwrap();
@@ -78,7 +78,7 @@ fn upstream_changing_while_disabled_is_not_a_false_edit() {
     fs::write(
         &path,
         format!(
-            "schema = 4\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\nenabled = false\n"
+            "schema = 5\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\nenabled = false\n"
         ),
     )
     .unwrap();

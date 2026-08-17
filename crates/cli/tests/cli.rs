@@ -127,7 +127,7 @@ fn verify_names_an_installation_that_cannot_act() {
     fs::write(
         project.join("vstack.toml"),
         format!(
-            "schema = 4\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"copilot\"]\nmethod = \"copy\"\n\n[hooks.audit]\nsource = \"cat\"\n",
+            "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"copilot\"]\nmethod = \"copy\"\n\n[hooks.audit]\nsource = \"cat\"\n",
             catalog.display()
         ),
     )

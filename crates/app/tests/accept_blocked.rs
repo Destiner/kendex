@@ -38,7 +38,7 @@ fn fixture() -> Fixture {
     fs::write(
         project.join("vstack.toml"),
         format!(
-            "schema = 4\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.hostile]\nsource = \"cat\"\n",
+            "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.hostile]\nsource = \"cat\"\n",
             source.display()
         ),
     )

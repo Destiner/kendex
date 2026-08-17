@@ -47,7 +47,7 @@ fn declare(f: &Fixture, declarations: &str) {
     put(
         &f.project.join("vstack.toml"),
         &format!(
-            "schema = 4\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"codex\"]\nmethod = \"symlink\"\n\n{declarations}",
+            "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"codex\"]\nmethod = \"symlink\"\n\n{declarations}",
             f.source.display()
         ),
     );

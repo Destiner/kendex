@@ -31,6 +31,7 @@ const TOP_LEVEL: &[&str] = &[
     "bundles",
     "suppressed",
     "safety-overrides",
+    "safety-reviews",
     "optional-dependencies",
     "agent-skills",
     "agent-launch-instructions",

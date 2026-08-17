@@ -18,8 +18,10 @@ pub use validate::{Finding, validate};
 /// protects. Schema 4 binds a recorded acceptance to the complete bytes
 /// that were reviewed rather than to the audit's reduced reading of them —
 /// an older build would read the new record as covering content nobody
-/// looked at.
-pub const MANIFEST_SCHEMA: u32 = 4;
+/// looked at. Schema 5 added `[safety-reviews]`, the dismissed findings —
+/// dropped by an older build's next write, which is what the refusal
+/// protects.
+pub const MANIFEST_SCHEMA: u32 = 5;
 pub const OLDEST_READABLE_SCHEMA: u32 = 1;
 pub const DEFAULT_SOURCE_NAME: &str = "vstack";
 pub const DEFAULT_SOURCE_REPO: &str = "vanillagreencom/vstack";
@@ -254,6 +256,16 @@ pub struct Manifest {
         rename = "safety-overrides"
     )]
     pub safety_overrides: BTreeMap<String, crate::quality::overrides::SafetyOverride>,
+    /// Findings judged not to be problems, keyed by installation, one
+    /// snapshot of the reviewed content per installation with each
+    /// dismissal beneath it. A dismissal settles a question and never
+    /// unblocks anything.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        rename = "safety-reviews"
+    )]
+    pub safety_reviews: BTreeMap<String, crate::quality::reviews::SafetyReview>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub agent_skills: BTreeMap<String, Vec<String>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -318,6 +330,19 @@ impl Manifest {
         let names = self.suppressed.entry(kind).or_default();
         names.push(name.to_owned());
         names.sort();
+    }
+
+    /// Forget every safety decision recorded for this item, whatever tool it
+    /// was installed for. Removing an item is removing what the decisions
+    /// were about; a record left behind would speak for a reinstall of the
+    /// same name that nobody has looked at.
+    pub fn reap_decisions(&mut self, kind: crate::model::ItemKind, name: &str) {
+        let about_item = |key: &str| {
+            crate::lock::parse_entry_key(key)
+                .is_some_and(|(key_kind, key_name, _)| key_kind == kind && key_name == name)
+        };
+        self.safety_overrides.retain(|key, _| !about_item(key));
+        self.safety_reviews.retain(|key, _| !about_item(key));
     }
 
     pub fn declared_mut(

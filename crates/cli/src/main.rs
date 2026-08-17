@@ -94,8 +94,14 @@ enum Command {
         #[arg(long)]
         discard_edits: bool,
     },
-    /// Recorded acceptances of serious safety findings; withdraw one
-    Accepted(commands::accepted_cmd::AcceptedArgs),
+    /// What the safety check found in installed content, with the token
+    /// each finding is dismissed by
+    Findings(commands::decisions_cmd::FindingsArgs),
+    /// Record that a finding is not a problem, by its token
+    Dismiss(commands::decisions_cmd::DismissArgs),
+    /// Every recorded safety decision — acceptances and dismissals — and
+    /// whether each still applies; take one back with --revoke
+    Decisions(commands::decisions_cmd::DecisionsArgs),
     /// Record an observed item into the manifest (content moves to the
     /// local source)
     Adopt {
@@ -263,7 +269,9 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::Project)?;
             commands::apply_cmd::run(&env, filter, plan, yes, allow_unsafe, discard_edits)?;
         }
-        Command::Accepted(args) => commands::accepted_cmd::run(&env, args)?,
+        Command::Findings(args) => commands::decisions_cmd::findings(&env, args)?,
+        Command::Dismiss(args) => commands::decisions_cmd::dismiss_cmd(&env, args)?,
+        Command::Decisions(args) => commands::decisions_cmd::decisions(&env, args)?,
         Command::Adopt {
             kind,
             name,

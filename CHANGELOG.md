@@ -8,6 +8,23 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- A safety finding that turns out not to be a problem can now be
+  dismissed, so it stops asking. Pick why — **Not actually a problem**,
+  **Does this on purpose**, or **Comes from a source I trust** — and the
+  decision is recorded against exactly that version of the content: any
+  change to the file, or to the safety rules, brings the finding back.
+  Trusting a source binds to that source, so the same content arriving
+  from anywhere else asks again. Dismissing never unblocks a held-back
+  item; those are settled by accepting or removing them. Decisions live
+  in the same file as acceptances — your personal ones on this machine,
+  a project's in its `vstack.toml`, where a teammate inherits them in
+  plain sight. Removing an item takes its decisions with it. On the
+  command line: `vstack findings` prints each finding with the token
+  that dismisses it, `vstack dismiss <token> --reason …` records the
+  decision, and `vstack decisions [--revoke <id>]` lists every recorded
+  decision — active, out of date and why, or about an item that is gone
+  — and takes one back. `vstack accepted` is folded into `vstack
+  decisions`. The project file's format moves to version 5.
 - A package's description renders light formatting, so a file name or a
   command an author wrote in backticks reads as one rather than as
   prose.
@@ -23,7 +40,7 @@ changes carry a **Breaking** call-out with their migration note inline.
   acceptance that no longer matches (the content changed after you read
   it) stops the whole apply out loud rather than quietly installing
   everything else. Settings lists every recorded acceptance with a
-  **Withdraw** button; the CLI mirrors it as `vstack accepted
+  **Withdraw** button; the CLI mirrors it as `vstack decisions
   [--revoke]`.
 - Taking over a skill that several tools share through links now works.
   When tools read one folder through symlinks, **Start managing** shows

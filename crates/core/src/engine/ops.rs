@@ -8,8 +8,13 @@ use crate::manifest::{self, Manifest};
 use crate::model::{HarnessId, ItemKind, Scope};
 
 mod add;
+mod decisions;
 mod persist;
 pub use add::{AddRequest, add};
+pub use decisions::{
+    DecisionRecord, DismissTarget, RecordState, RecordedDecision, dismiss, list_decisions,
+    revoke_dismissal, revoke_override,
+};
 use persist::ensure_manifest_persisted;
 
 /// Every kind a manifest declares by name. Plugins are excluded: they carry
@@ -78,6 +83,12 @@ pub fn remove(
     let mut removing = names.to_vec();
     removing.extend(super::bundles::recorded_members(&lock, &bundles));
     for name in names {
+        // A removed item takes its safety decisions with it: they were about
+        // this content under this name, and a record left behind would speak
+        // for a reinstall nobody has looked at.
+        for reaped in kind.map_or_else(|| ItemKind::ALL.to_vec(), |kind| vec![kind]) {
+            manifest.reap_decisions(reaped, name);
+        }
         // Plugin has no declared-items table — it lives in `plugins` and
         // is removed there, never through `declared_mut` (which panics on
         // it). A bare-name removal reaches both.
@@ -287,30 +298,4 @@ pub fn toggle(
     let mut report = plan_scope(env, scope, &manifest, &lock, &PlanOptions::default())?;
     ensure_manifest_persisted(env, scope, &manifest, &mut report)?;
     Ok(report)
-}
-
-/// Withdraw a recorded safety review. The override leaves the manifest by
-/// a planned, journaled write and nothing else moves: the next previewed
-/// apply is where the item goes back to being held and its installed copy
-/// goes to the trash — a revoke from a settings page must not carry a
-/// scope's unrelated pending changes with it.
-pub fn revoke_override(env: &Env, scope: &Scope, key: &str) -> Result<crate::apply::Plan> {
-    let mut manifest = manifest_for_mutation(env, scope)?;
-    if manifest.safety_overrides.remove(key).is_none() {
-        return Err(crate::error::CoreError::OverrideNotFound {
-            key: key.to_owned(),
-        });
-    }
-    let manifest_path = manifest::manifest_path(env, scope);
-    Ok(crate::apply::Plan {
-        scope: scope.clone(),
-        ops: vec![crate::apply::PlannedOp {
-            description: format!("withdraw the accepted safety findings recorded under {key}"),
-            op: crate::apply::Op::WriteManifest {
-                pre: crate::apply::Pre::observed(&manifest_path)?,
-                path: manifest_path,
-                manifest: Box::new(manifest),
-            },
-        }],
-    })
 }

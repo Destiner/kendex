@@ -93,7 +93,7 @@ fn declare(w: &World, body: &str) {
     fs::write(
         &path,
         format!(
-            "schema = 4\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n{body}"
+            "schema = 5\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n{body}"
         ),
     )
     .unwrap();

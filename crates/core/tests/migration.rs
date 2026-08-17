@@ -8,6 +8,7 @@ use vstack_core::engine::audit;
 use vstack_core::env::{Env, FakeOs};
 use vstack_core::error::CoreError;
 use vstack_core::lock::{load as load_lock, lock_path};
+use vstack_core::manifest::MANIFEST_SCHEMA;
 use vstack_core::model::Scope;
 
 struct Fixture {
@@ -74,7 +75,11 @@ fn a_v01_scope_upgrades_in_place_changing_only_the_schema_line() {
     apply::execute(&f.env, &report.plan, None).unwrap();
 
     let migrated = fs::read_to_string(&f.manifest_path).unwrap();
-    assert_eq!(migrated, f.original.replacen("schema = 1", "schema = 4", 1));
+    assert_eq!(
+        migrated,
+        f.original
+            .replacen("schema = 1", &format!("schema = {MANIFEST_SCHEMA}"), 1)
+    );
     let lock = load_lock(&lock_path(&f.env, &f.scope)).unwrap();
     assert_eq!(lock.version, vstack_core::lock::LOCK_VERSION);
     assert!(lock.entries.contains_key("skill:gh:claude"));
@@ -121,7 +126,10 @@ fn a_comment_mentioning_the_schema_line_is_not_the_schema_line() {
     apply::execute(&f.env, &report.plan, None).unwrap();
 
     let migrated = fs::read_to_string(&f.manifest_path).unwrap();
-    assert_eq!(migrated, tricky.replace("schema = 1\n", "schema = 4\n"));
+    assert_eq!(
+        migrated,
+        tricky.replace("schema = 1\n", &format!("schema = {MANIFEST_SCHEMA}\n"))
+    );
     assert!(migrated.contains("# was schema = 1 before the migration"));
 }
 
@@ -132,18 +140,21 @@ fn a_comment_mentioning_the_schema_line_is_not_the_schema_line() {
 #[allow(clippy::unwrap_used)]
 fn unusual_schema_spellings_upgrade_in_place() {
     for (spelling, upgraded) in [
-        ("schema=1", "schema=4"),
-        ("schema = 1   # v0.1", "schema = 4   # v0.1"),
+        ("schema=1".to_owned(), format!("schema={MANIFEST_SCHEMA}")),
+        (
+            "schema = 1   # v0.1".to_owned(),
+            format!("schema = {MANIFEST_SCHEMA}   # v0.1"),
+        ),
     ] {
         let f = fixture();
-        let variant = f.original.replacen("schema = 1", spelling, 1);
+        let variant = f.original.replacen("schema = 1", &spelling, 1);
         fs::write(&f.manifest_path, &variant).unwrap();
 
         let report = audit(&f.env, &f.scope).unwrap();
         apply::execute(&f.env, &report.plan, None).unwrap();
 
         let migrated = fs::read_to_string(&f.manifest_path).unwrap();
-        assert_eq!(migrated, variant.replacen(spelling, upgraded, 1));
+        assert_eq!(migrated, variant.replacen(&spelling, &upgraded, 1));
     }
 }
 

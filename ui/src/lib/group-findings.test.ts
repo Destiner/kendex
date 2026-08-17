@@ -31,6 +31,9 @@ function row(overrides: Partial<ItemSafety>): ItemSafety {
     reasons: [],
     contentHash: "hash",
     reviewHash: "review-hash",
+    location: "",
+    provenance: null,
+    decisions: [],
     override: { state: "absent" },
     ...overrides,
   };

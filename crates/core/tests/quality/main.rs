@@ -3,6 +3,8 @@
 //! buy.
 #![cfg(unix)]
 
+mod decisions;
+mod decisions_refuse;
 mod fixture;
 mod gate;
 mod kinds;

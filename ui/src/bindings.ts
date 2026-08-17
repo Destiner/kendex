@@ -70,6 +70,13 @@ export const commands = {
 	 *  granted against, so it stops applying the moment any of them moves.
 	 */
 	"safety-overrides"?: { [key in string]: SafetyOverride_Serialize },
+	/**
+	 *  Findings judged not to be problems, keyed by installation, one
+	 *  snapshot of the reviewed content per installation with each
+	 *  dismissal beneath it. A dismissal settles a question and never
+	 *  unblocks anything.
+	 */
+	"safety-reviews"?: { [key in string]: SafetyReview_Serialize },
 	"agent-skills"?: { [key in string]: string[] },
 	"agent-launch-instructions"?: { [key in string]: string },
 	"agent-additional-instructions"?: { [key in string]: string },
@@ -246,14 +253,14 @@ export type AuditView_Deserialize = {
 	 *  carries two scores that are never combined: safety, which can hold an
 	 *  install back, and quality, which only ever informs.
 	 */
-	safety: ItemSafety[],
+	safety: ItemSafety_Deserialize[],
 	/**
 	 *  Installations the plan would write but the safety gate holds back.
 	 *  Kept apart from `safety` (which scores what is on disk) because the
 	 *  two describe different bytes: an accept has to name the hash of what
 	 *  apply would write, and only these rows carry it.
 	 */
-	heldBack: ItemSafety[],
+	heldBack: ItemSafety_Deserialize[],
 	/**
 	 *  Set when this one scope couldn't be read at all — a corrupt or
 	 *  future-version lock or manifest. Carried as data so one scope's
@@ -278,14 +285,14 @@ export type AuditView_Serialize = {
 	 *  carries two scores that are never combined: safety, which can hold an
 	 *  install back, and quality, which only ever informs.
 	 */
-	safety: ItemSafety[],
+	safety: ItemSafety_Serialize[],
 	/**
 	 *  Installations the plan would write but the safety gate holds back.
 	 *  Kept apart from `safety` (which scores what is on disk) because the
 	 *  two describe different bytes: an accept has to name the hash of what
 	 *  apply would write, and only these rows carry it.
 	 */
-	heldBack: ItemSafety[],
+	heldBack: ItemSafety_Serialize[],
 	/**
 	 *  Set when this one scope couldn't be read at all — a corrupt or
 	 *  future-version lock or manifest. Carried as data so one scope's
@@ -345,6 +352,48 @@ export type CustomHook_Serialize = {
 	agents: HookAgents,
 };
 
+/**
+ *  What is recorded about one finding, read against the content in front
+ *  of us now.
+ */
+export type DecisionState = DecisionState_Serialize | DecisionState_Deserialize;
+
+/**
+ *  What is recorded about one finding, read against the content in front
+ *  of us now.
+ */
+export type DecisionState_Deserialize = 
+/**
+ *  Nobody has ruled on this finding for this content. `earlier` says why
+ *  a previous ruling no longer applies, when there was one.
+ */
+({ state: "open"; earlier: string | null }) & { dismissedAt?: never; grantedAt?: never; reason?: never } | 
+/**  Judged not to be a problem, for exactly this content. */
+({ state: "dismissed"; reason: DismissReason; dismissedAt: string }) & { earlier?: never; grantedAt?: never } | 
+/**
+ *  Covered by an acceptance of the whole item: every finding on it was
+ *  read and the item installed anyway.
+ */
+({ state: "accepted"; grantedAt: string }) & { dismissedAt?: never; earlier?: never; reason?: never };
+
+/**
+ *  What is recorded about one finding, read against the content in front
+ *  of us now.
+ */
+export type DecisionState_Serialize = 
+/**
+ *  Nobody has ruled on this finding for this content. `earlier` says why
+ *  a previous ruling no longer applies, when there was one.
+ */
+({ state: "open"; earlier?: string | null }) & { dismissedAt?: never; grantedAt?: never; reason?: never } | 
+/**  Judged not to be a problem, for exactly this content. */
+({ state: "dismissed"; reason: DismissReason; dismissedAt: string }) & { earlier?: never; grantedAt?: never } | 
+/**
+ *  Covered by an acceptance of the whole item: every finding on it was
+ *  read and the item installed anyway.
+ */
+({ state: "accepted"; grantedAt: string }) & { dismissedAt?: never; earlier?: never; reason?: never };
+
 /**  One rule firing once, and what it cost. */
 export type Deduction = {
 	rule: string,
@@ -367,6 +416,60 @@ export type DimensionScore = {
 	dimension: string,
 	weightPercent: number,
 	scorePercent: number,
+};
+
+/**
+ *  Why a finding was dismissed. Every reason is a claim about the content
+ *  — a project's dismissals travel with the repository, so a reason must
+ *  mean the same thing to whoever reads it next, and none of them may be
+ *  one person's tolerance for risk.
+ */
+export type DismissReason = 
+/**  The rule misread this: nothing here does what the finding says. */
+"wrong-call" | 
+/**  The flagged behaviour is what this item is for. */
+"intended" | 
+/**
+ *  The content is from a source the reviewer trusts. Bound to that
+ *  source's identity: the same bytes from somewhere else are a
+ *  different question.
+ */
+"trusted-source";
+
+/**
+ *  One dismissed finding, keyed in its snapshot by the finding's
+ *  fingerprint.
+ */
+export type Dismissal = Dismissal_Serialize | Dismissal_Deserialize;
+
+/**
+ *  One dismissed finding, keyed in its snapshot by the finding's
+ *  fingerprint.
+ */
+export type Dismissal_Deserialize = {
+	reason: DismissReason,
+	"dismissed-at": string,
+	/**
+	 *  The source identity a `TrustedSource` dismissal trusted — the
+	 *  resolved provenance the lock records, or the git origin of an
+	 *  unmanaged item's files. Absent for the other reasons.
+	 */
+	source?: string | null,
+};
+
+/**
+ *  One dismissed finding, keyed in its snapshot by the finding's
+ *  fingerprint.
+ */
+export type Dismissal_Serialize = {
+	reason: DismissReason,
+	"dismissed-at": string,
+	/**
+	 *  The source identity a `TrustedSource` dismissal trusted — the
+	 *  resolved provenance the lock records, or the git origin of an
+	 *  unmanaged item's files. Absent for the other reasons.
+	 */
+	source?: string | null,
 };
 
 /**
@@ -473,6 +576,42 @@ export type Finding = {
 	location: string,
 	message: string,
 	remediation: string,
+};
+
+/**
+ *  One finding as a thing a person can rule on. Sits beside the finding it
+ *  is about — `ItemSafety.decisions[i]` speaks for `ItemSafety.findings[i]`.
+ */
+export type FindingDecision = FindingDecision_Serialize | FindingDecision_Deserialize;
+
+/**
+ *  One finding as a thing a person can rule on. Sits beside the finding it
+ *  is about — `ItemSafety.decisions[i]` speaks for `ItemSafety.findings[i]`.
+ */
+export type FindingDecision_Deserialize = {
+	/**
+	 *  Names exactly this finding on exactly this content. Opaque to the
+	 *  UI; the only thing a dismiss command accepts. Absent where the
+	 *  content cannot be read here — there is nothing exact to bind a
+	 *  decision to, so none can be made.
+	 */
+	token: string | null,
+	state: DecisionState_Deserialize,
+};
+
+/**
+ *  One finding as a thing a person can rule on. Sits beside the finding it
+ *  is about — `ItemSafety.decisions[i]` speaks for `ItemSafety.findings[i]`.
+ */
+export type FindingDecision_Serialize = {
+	/**
+	 *  Names exactly this finding on exactly this content. Opaque to the
+	 *  UI; the only thing a dismiss command accepts. Absent where the
+	 *  content cannot be read here — there is nothing exact to bind a
+	 *  decision to, so none can be made.
+	 */
+	token: string | null,
+	state: DecisionState_Serialize,
 };
 
 /**
@@ -632,11 +771,24 @@ export type ItemKind = "agent" | "skill" | "hook" | "command" | "mcp-server" | "
  *  content is dangerous, the other whether it is any good, and averaging
  *  them would let a well-written attack outscore a clumsy honest skill.
  */
-export type ItemSafety = {
+export type ItemSafety = ItemSafety_Serialize | ItemSafety_Deserialize;
+
+/**
+ *  One installation's two scores and everything behind them. Safety and
+ *  quality sit side by side and are never combined: one answers whether the
+ *  content is dangerous, the other whether it is any good, and averaging
+ *  them would let a well-written attack outscore a clumsy honest skill.
+ */
+export type ItemSafety_Deserialize = {
 	kind: ItemKind,
 	name: string,
 	harness: HarnessId,
 	scope: Scope,
+	/**
+	 *  The artifact's path, or the config file holding the entry — what
+	 *  every finding's location is relative to.
+	 */
+	location: string,
 	safety: SafetyScore,
 	/**  Advisory only, and absent for kinds with no authored prose. */
 	quality: QualityScore | null,
@@ -658,7 +810,63 @@ export type ItemSafety = {
 	 *  reached from here at all.
 	 */
 	reviewHash: string | null,
+	/**
+	 *  Where the bytes came from: the resolved provenance the lock records,
+	 *  or the git origin of an unmanaged item's files. What a trusted-source
+	 *  dismissal binds to. `None` where nothing on this machine says.
+	 */
+	provenance: string | null,
 	override: OverrideState,
+	/**  What has been decided about each finding, in the findings' order. */
+	decisions: FindingDecision_Deserialize[],
+};
+
+/**
+ *  One installation's two scores and everything behind them. Safety and
+ *  quality sit side by side and are never combined: one answers whether the
+ *  content is dangerous, the other whether it is any good, and averaging
+ *  them would let a well-written attack outscore a clumsy honest skill.
+ */
+export type ItemSafety_Serialize = {
+	kind: ItemKind,
+	name: string,
+	harness: HarnessId,
+	scope: Scope,
+	/**
+	 *  The artifact's path, or the config file holding the entry — what
+	 *  every finding's location is relative to.
+	 */
+	location: string,
+	safety: SafetyScore,
+	/**  Advisory only, and absent for kinds with no authored prose. */
+	quality: QualityScore | null,
+	findings: Finding[],
+	/**  Rules that apply to this kind but had no bytes to read here. */
+	skipped: SkippedRule[],
+	verdict: Verdict,
+	/**  Why the verdict is what it is, in sentences. */
+	reasons: string[],
+	/**
+	 *  The identity of the bytes the rules read — the reduced input the
+	 *  findings came out of, budgets and lossy decoding included.
+	 */
+	contentHash: string,
+	/**
+	 *  The identity of the complete bytes, or of the exact config entry. A
+	 *  decision binds to this and the flag that grants one carries it, so it
+	 *  is what a reviewer is accepting. `None` where the bytes cannot be
+	 *  reached from here at all.
+	 */
+	reviewHash: string | null,
+	/**
+	 *  Where the bytes came from: the resolved provenance the lock records,
+	 *  or the git origin of an unmanaged item's files. What a trusted-source
+	 *  dismissal binds to. `None` where nothing on this machine says.
+	 */
+	provenance: string | null,
+	override: OverrideState,
+	/**  What has been decided about each finding, in the findings' order. */
+	decisions: FindingDecision_Serialize[],
 };
 
 export type ItemSource = {
@@ -775,6 +983,13 @@ export type Manifest_Deserialize = {
 	 *  granted against, so it stops applying the moment any of them moves.
 	 */
 	"safety-overrides"?: { [key in string]: SafetyOverride_Deserialize },
+	/**
+	 *  Findings judged not to be problems, keyed by installation, one
+	 *  snapshot of the reviewed content per installation with each
+	 *  dismissal beneath it. A dismissal settles a question and never
+	 *  unblocks anything.
+	 */
+	"safety-reviews"?: { [key in string]: SafetyReview_Deserialize },
 	"agent-skills"?: { [key in string]: string[] },
 	"agent-launch-instructions"?: { [key in string]: string },
 	"agent-additional-instructions"?: { [key in string]: string },
@@ -831,6 +1046,13 @@ export type Manifest_Serialize = {
 	 *  granted against, so it stops applying the moment any of them moves.
 	 */
 	"safety-overrides"?: { [key in string]: SafetyOverride_Serialize },
+	/**
+	 *  Findings judged not to be problems, keyed by installation, one
+	 *  snapshot of the reviewed content per installation with each
+	 *  dismissal beneath it. A dismissal settles a question and never
+	 *  unblocks anything.
+	 */
+	"safety-reviews"?: { [key in string]: SafetyReview_Serialize },
 	"agent-skills"?: { [key in string]: string[] },
 	"agent-launch-instructions"?: { [key in string]: string },
 	"agent-additional-instructions"?: { [key in string]: string },
@@ -1032,6 +1254,32 @@ export type SafetyOverride_Serialize = {
 	findings: string[],
 	"granted-at": string,
 	note?: string | null,
+};
+
+/**
+ *  Every dismissal for one installation, and the content they were made
+ *  against. Stored under the installation's key: kind, name and harness.
+ */
+export type SafetyReview = SafetyReview_Serialize | SafetyReview_Deserialize;
+
+/**
+ *  Every dismissal for one installation, and the content they were made
+ *  against. Stored under the installation's key: kind, name and harness.
+ */
+export type SafetyReview_Deserialize = {
+	"review-hash": string,
+	ruleset: number,
+	dismissed?: { [key in string]: Dismissal_Deserialize },
+};
+
+/**
+ *  Every dismissal for one installation, and the content they were made
+ *  against. Stored under the installation's key: kind, name and harness.
+ */
+export type SafetyReview_Serialize = {
+	"review-hash": string,
+	ruleset: number,
+	dismissed?: { [key in string]: Dismissal_Serialize },
 };
 
 export type SafetyScore = {
