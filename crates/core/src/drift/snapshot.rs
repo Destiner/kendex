@@ -83,11 +83,35 @@ pub fn store(env: &Env, scope: &Scope, snapshot: &ScopeSnapshot) -> Result<()> {
     atomic_write(&snapshot_path(env, scope), &text)
 }
 
+/// Drop the scope's snapshot: the state it described just changed. The
+/// check then reports "not yet evaluated" — the honest maybe — until the
+/// next deep pass re-derives it.
+pub fn invalidate(env: &Env, scope: &Scope) -> Result<()> {
+    match std::fs::remove_file(snapshot_path(env, scope)) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(crate::error::CoreError::io(
+            snapshot_path(env, scope),
+            error,
+        )),
+    }
+}
+
 /// Derive the scope's snapshot from the deep reads and store it. This is
 /// the expensive path — mirrors, plans, scoring — and it belongs exactly
 /// where callers are already paying for that work.
 pub fn record(env: &Env, scope: &Scope) -> Result<ScopeSnapshot> {
     let report = crate::package::updates::updates(env, scope)?;
+    record_with(env, scope, &report)
+}
+
+/// [`record`] for a caller that already computed the update standings —
+/// the app's overview query, which must not pay the mirror walk twice.
+pub fn record_with(
+    env: &Env,
+    scope: &Scope,
+    report: &crate::package::updates::UpdatesReport,
+) -> Result<ScopeSnapshot> {
     let scored = crate::engine::observed_rows(env, scope)?;
     let summary = crate::engine::reviewable::review_summary(&scored);
     let open = crate::engine::reviewable::open_by_package(&scored);

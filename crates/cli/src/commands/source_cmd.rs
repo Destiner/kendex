@@ -27,6 +27,16 @@ pub enum SourceCommand {
 }
 
 pub fn run(env: &Env, command: SourceCommand, filter: ScopeFilter) -> CliResult {
+    // The stale refresh serves the session check, which reads project AND
+    // global — a project-scoped default here would leave global mirrors
+    // stale forever (and die outright when run outside a project).
+    if let SourceCommand::Refresh { stale: true } = &command {
+        let scopes = resolve_scopes(env, ScopeFilter::All)?;
+        for note in vstack_core::drift::refresh::refresh_stale(env, &scopes) {
+            say(&format!("note: {note}"));
+        }
+        return Ok(());
+    }
     for scope in resolve_scopes(env, filter)? {
         match &command {
             SourceCommand::List => {
@@ -66,13 +76,7 @@ pub fn run(env: &Env, command: SourceCommand, filter: ScopeFilter) -> CliResult 
                     if enabled { "enabled" } else { "disabled" }
                 ));
             }
-            SourceCommand::Refresh { stale: true } => {
-                for note in
-                    vstack_core::drift::refresh::refresh_stale(env, std::slice::from_ref(&scope))
-                {
-                    say(&format!("note: {note}"));
-                }
-            }
+            SourceCommand::Refresh { stale: true } => unreachable!("handled above the scope loop"),
             SourceCommand::Refresh { stale: false } => {
                 let Some(manifest) = vstack_core::manifest::load_for_mutation(
                     &vstack_core::manifest::manifest_path(env, &scope),

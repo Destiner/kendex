@@ -226,15 +226,25 @@ fn an_unreadable_history_is_a_warning_never_current() {
     declare(&w, "", "[skills.gh]\nsource = \"cat\"\n");
     sync_and_apply(&w);
 
-    // Break the mirror: its objects are gone, so history cannot answer.
-    let key = vstack_core::remote::store::repo_key(&remote::clone_url(&w.env, REPO));
-    let mirror = vstack_core::remote::store::mirror_dir(&w.env, &key);
-    fs::remove_dir_all(mirror.join("objects")).unwrap();
+    // A recorded commit the mirror does not hold — a force-pushed source,
+    // or a hand-edited lock — makes the installed version unreadable.
+    let lock_path = vstack_core::lock::lock_path(&w.env, &w.scope);
+    let mut lock = vstack_core::lock::load(&lock_path).unwrap();
+    for entry in lock.entries.values_mut() {
+        entry.source_commit = Some("f".repeat(40));
+    }
+    vstack_core::lock::save(&lock_path, &lock).unwrap();
 
     let report = updates::updates(&w.env, &w.scope).unwrap();
+    let gh = row(&report.rows, "gh");
+    assert_eq!(
+        (gh.current.as_ref(), gh.update_available),
+        (None, false),
+        "an unevaluable installed version keeps its row and claims no verdict: {report:?}"
+    );
     assert!(
-        !report.rows.iter().any(|row| row.name == "gh"),
-        "an unevaluable package must not appear as a fact row: {report:?}"
+        gh.latest.is_some(),
+        "the mirror's own history still renders"
     );
     assert!(
         report.warnings.iter().any(|warning| warning.name == "gh"),

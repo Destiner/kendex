@@ -166,10 +166,14 @@ pub fn versions(env: &Env, scope: &Scope, kind: ItemKind, name: &str) -> Result<
     let package = package_ref(env, scope, &manifest, kind, name)?;
     let log = history::subtree_log(&package.mirror, &package.tip, &package.subtree)?;
     let lock = crate::lock::load(&crate::lock::lock_path(env, scope))?;
-    let installed_commit = match installed_commit(&lock, kind, name) {
-        Some(commit) => history::last_content_commit(&package.mirror, &commit, &package.subtree)?,
-        None => None,
-    };
+    // The mirror just proved readable; a lock commit that still cannot be
+    // mapped (v1-imported, hand-edited) costs the installed marker, never
+    // the timeline the mirror can perfectly well render.
+    let installed_commit = installed_commit(&lock, kind, name).and_then(|commit| {
+        history::last_content_commit(&package.mirror, &commit, &package.subtree)
+            .ok()
+            .flatten()
+    });
     let installed_at = log
         .iter()
         .position(|row| Some(&row.commit) == installed_commit.as_ref());

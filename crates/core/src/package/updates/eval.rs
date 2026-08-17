@@ -81,28 +81,32 @@ impl Eval<'_> {
                 Some("refresh sources to evaluate it".into()),
             )),
             // The tip no longer carries the package: a fact with its own
-            // remedy.
-            CoreError::ItemNotInSource { .. } => report.rows.push(UpdateRow {
-                scope: self.scope.clone(),
-                kind,
-                name: name.clone(),
-                source: decl.source.clone(),
-                repo: self
+            // remedy — and a mute on it still mutes, or the report would
+            // nag about it every session with no way to silence it.
+            CoreError::ItemNotInSource { .. } => {
+                let repo = self
                     .manifest
                     .sources
                     .get(&decl.source)
                     .and_then(|s| s.repo.clone())
-                    .unwrap_or_default(),
-                current: None,
-                latest: None,
-                update_available: false,
-                pinned,
-                ignored: false,
-                blocked_by_local_edit: self.edited.contains(&(kind, name.clone())),
-                forked,
-                mixed: false,
-                removed_upstream: true,
-            }),
+                    .unwrap_or_default();
+                report.rows.push(UpdateRow {
+                    scope: self.scope.clone(),
+                    kind,
+                    name: name.clone(),
+                    source: decl.source.clone(),
+                    current: None,
+                    latest: None,
+                    update_available: false,
+                    pinned,
+                    ignored: self.is_ignored(kind, name, &repo),
+                    blocked_by_local_edit: self.edited.contains(&(kind, name.clone())),
+                    forked,
+                    mixed: false,
+                    removed_upstream: true,
+                    repo,
+                });
+            }
             _ => report
                 .warnings
                 .push(warn(format!("could not be evaluated: {error}"), None)),
@@ -110,8 +114,9 @@ impl Eval<'_> {
     }
 
     /// The bound package's standing, from its mirror's history. A history
-    /// that cannot be read is a warning and no row — an unevaluable package
-    /// must never appear current.
+    /// that cannot be read surfaces as a warning while the row survives
+    /// with no versions — the package keeps its identity, flags, and
+    /// controls, and never appears as having an update it may not have.
     fn evaluated(
         &self,
         planned: &crate::engine::PlannedDeclaration,
@@ -135,7 +140,7 @@ impl Eval<'_> {
             Ok(log) => log,
             Err(error) => {
                 warn(report, format!("history could not be read: {error}"));
-                return;
+                Vec::new()
             }
         };
         let refer = |commit: &str| VersionRef {
@@ -158,9 +163,12 @@ impl Eval<'_> {
             .filter_map(|entry| entry.source_commit.clone())
             .collect();
         let mixed = commits.windows(2).any(|pair| pair[0] != pair[1]);
-        let current = match commits.last() {
-            None => None,
-            Some(commit) => {
+        let current = match (latest.is_some(), commits.last()) {
+            (false, _) | (_, None) => None,
+            (true, Some(commit)) => {
+                // A recorded commit that cannot be mapped onto the timeline
+                // (a v1-imported or hand-edited lock value, a force-pushed
+                // mirror) costs the "current" marker, never the row.
                 match history::last_content_commit(&package.mirror, commit, &package.subtree) {
                     Ok(mapped) => mapped.map(|commit| refer(&commit)),
                     Err(error) => {
@@ -168,7 +176,7 @@ impl Eval<'_> {
                             report,
                             format!("installed version could not be read: {error}"),
                         );
-                        return;
+                        None
                     }
                 }
             }
@@ -186,12 +194,7 @@ impl Eval<'_> {
             name: name.clone(),
             source: package.source_name.clone(),
             pinned,
-            ignored: self.ignored.iter().any(|entry| {
-                entry.scope == self.scope_key
-                    && entry.kind == kind
-                    && &entry.name == name
-                    && entry.repo == package.repo
-            }),
+            ignored: self.is_ignored(kind, name, &package.repo),
             blocked_by_local_edit: self.edited.contains(&(kind, name.clone())),
             forked,
             repo: package.repo.clone(),
@@ -201,5 +204,14 @@ impl Eval<'_> {
             mixed,
             removed_upstream: false,
         });
+    }
+
+    fn is_ignored(&self, kind: ItemKind, name: &str, repo: &str) -> bool {
+        self.ignored.iter().any(|entry| {
+            entry.scope == self.scope_key
+                && entry.kind == kind
+                && entry.name == name
+                && entry.repo == repo
+        })
     }
 }

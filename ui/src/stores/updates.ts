@@ -11,21 +11,27 @@ import { useAuditStore } from "./audit";
 import { useProblemsStore } from "./problems";
 import { useScanStore } from "./scan";
 
-/** The sidebar badge's number: packages with an update someone would want
- *  to hear about. Ignored ones asked not to be counted; held ones still
- *  count — a hold is "not yet", not "never tell me". */
+/** A row worth a line on the page: a newer version, a package gone from
+ *  its source, or installs disagreeing on their version — each a standing
+ *  fact someone can act on. */
+const noteworthy = (row: UpdateRow): boolean =>
+  row.updateAvailable || row.removedUpstream || row.mixed;
+
+/** The sidebar badge's number: packages with news someone would want to
+ *  hear. Ignored ones asked not to be counted; held ones still count — a
+ *  hold is "not yet", not "never tell me". */
 export const visibleUpdateCount = (rows: UpdateRow[]): number =>
-  rows.filter((row) => row.updateAvailable && !row.ignored).length;
+  rows.filter((row) => noteworthy(row) && !row.ignored).length;
 
-/** The Updates page's main list: everything with an update that has not
- *  been muted. */
+/** The Updates page's main list: everything noteworthy that has not been
+ *  muted. */
 export const visibleUpdates = (rows: UpdateRow[]): UpdateRow[] =>
-  rows.filter((row) => row.updateAvailable && !row.ignored);
+  rows.filter((row) => noteworthy(row) && !row.ignored);
 
-/** The collapsed "hidden updates" section: muted packages whose update is
+/** The collapsed "hidden updates" section: muted packages whose news is
  *  still real — with the way back out. */
 export const hiddenUpdates = (rows: UpdateRow[]): UpdateRow[] =>
-  rows.filter((row) => row.updateAvailable && row.ignored);
+  rows.filter((row) => noteworthy(row) && row.ignored);
 
 interface UpdatesState {
   rows: UpdateRow[];
@@ -132,9 +138,11 @@ export const useUpdatesStore = create<UpdatesState>((set, get) => {
       try {
         // Edited packages are held by the engine and cannot be updated
         // this way — they need the fork decision first, so they are left
-        // out of "update all" rather than silently surviving it.
+        // out of "update all" rather than silently surviving it. Rows that
+        // are news without an update (gone upstream, mixed installs) have
+        // nothing for this button to do.
         const rows = visibleUpdates(get().rows).filter(
-          (row) => !row.blockedByLocalEdit,
+          (row) => row.updateAvailable && !row.blockedByLocalEdit,
         );
         // Move every hold first, then one apply per scope brings the
         // followers current — never two applies for one scope.

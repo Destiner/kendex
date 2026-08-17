@@ -139,7 +139,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
               .installDriftHook({ scope: "project", root })
               .then((result) => {
                 if (result.status === "ok") {
-                  toast.success("Drift report installed");
+                  // False: the scope had other pending changes, so only the
+                  // declaration landed — nothing is applied unreviewed.
+                  toast.success(
+                    result.data
+                      ? "Drift report installed"
+                      : "Drift report added — finish by applying changes in Review",
+                  );
                   void rescan();
                 } else {
                   useProblemsStore.getState().showError({

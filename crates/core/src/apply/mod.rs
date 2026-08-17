@@ -123,6 +123,16 @@ pub fn execute(env: &Env, plan: &Plan, fail_after: Option<usize>) -> Result<Appl
         }
     }
     journal::clear(&journal_dir)?;
+    // The scope just changed; a drift snapshot describing the old state
+    // would send the next session chasing drift that no longer exists.
+    // Invalidation is the cheap honest move: the check reads "not yet
+    // evaluated" and its background job re-derives. Verbs that already do
+    // the deep work re-record right after this returns. Best-effort — a
+    // failure here leaves a stale snapshot, which the refs-state check and
+    // the next deep pass both correct.
+    if !plan.ops.is_empty() {
+        let _ = crate::drift::snapshot::invalidate(env, &plan.scope);
+    }
     Ok(ApplyOutcome {
         applied: plan.ops.len(),
         recovered_first,

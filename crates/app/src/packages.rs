@@ -52,10 +52,20 @@ pub fn updates_overview() -> Result<updates::UpdatesReport, String> {
     };
     for scope in all_scopes(&env)? {
         let report = updates::updates(&env, &scope).map_err(|e| e.to_string())?;
+        // The deep work just ran; the session-start check reads this. A
+        // failure is a warning on the page, never silence — the CLI paths
+        // say the same thing.
+        if let Err(error) = vstack_core::drift::snapshot::record_with(&env, &scope, &report) {
+            merged.warnings.push(vstack_core::engine::ItemWarning {
+                kind: vstack_core::model::ItemKind::Skill,
+                name: scope.label(),
+                harness: None,
+                message: format!("drift snapshot not derived: {error}"),
+                remediation: None,
+            });
+        }
         merged.rows.extend(report.rows);
         merged.warnings.extend(report.warnings);
-        // The deep work just ran; the session-start check reads this.
-        let _ = vstack_core::drift::snapshot::record(&env, &scope);
     }
     Ok(merged)
 }

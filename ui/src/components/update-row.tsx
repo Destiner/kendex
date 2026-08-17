@@ -91,7 +91,7 @@ export function UpdateRowView({
           <Button
             size="sm"
             variant="outline"
-            disabled={busy || row.blockedByLocalEdit}
+            disabled={busy || row.blockedByLocalEdit || !row.updateAvailable}
             onClick={() => void updateOne(row)}
           >
             {UPDATE_LABEL}

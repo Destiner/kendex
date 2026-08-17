@@ -62,6 +62,22 @@ describe("updates store", () => {
     expect(hiddenUpdates(rows).map((r) => r.name)).toEqual(["c"]);
   });
 
+  it("a package gone from its source or with mixed installs is news even without an update", () => {
+    const rows = [
+      row({ name: "gone", updateAvailable: false, removedUpstream: true }),
+      row({ name: "split", updateAvailable: false, mixed: true }),
+      row({
+        name: "muted-gone",
+        updateAvailable: false,
+        removedUpstream: true,
+        ignored: true,
+      }),
+    ];
+    expect(visibleUpdates(rows).map((r) => r.name)).toEqual(["gone", "split"]);
+    expect(hiddenUpdates(rows).map((r) => r.name)).toEqual(["muted-gone"]);
+    expect(visibleUpdateCount(rows)).toBe(2);
+  });
+
   it("muting keeps the row, flagged — and unmuting brings it back", async () => {
     const muted = [row({ ignored: true })];
     vi.mocked(commands.updateSetIgnored).mockResolvedValue({

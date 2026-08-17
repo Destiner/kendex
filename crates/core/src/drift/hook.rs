@@ -69,6 +69,24 @@ fn script_path(env: &Env, scope: &Scope) -> std::path::PathBuf {
         .join(format!("{HOOK_NAME}.sh"))
 }
 
+/// Whether the scope's installed script is this binary's copy — `None`
+/// when the scope does not declare the hook or the script cannot be read.
+/// The session check reads this: nothing else ever compares disk to the
+/// embedded script, so without it a release that fixes the script would
+/// leave every existing install running the old one forever.
+pub fn script_current(
+    env: &Env,
+    scope: &Scope,
+    manifest: &crate::manifest::Manifest,
+) -> Option<bool> {
+    let decl = manifest.hooks.get(HOOK_NAME)?;
+    if decl.source != LOCAL_SOURCE_NAME {
+        return None;
+    }
+    let text = crate::fs::read_if_exists(&script_path(env, &scope.canonical())).ok()??;
+    Some(text == HOOK_SCRIPT)
+}
+
 /// The plan that installs (or repairs) the drift hook declaration in one
 /// scope: the script lands in the local source, the manifest declares it
 /// for the harnesses that execute hooks natively. Idempotent — a scope

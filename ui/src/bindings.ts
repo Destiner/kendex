@@ -16,8 +16,12 @@ export const commands = {
 	 *  scope's local source, declaration into its manifest, then the ordinary
 	 *  apply renders it. The offer surface (project registration) calls this
 	 *  after the user says yes — the declared, user-approved install per scope.
+	 *  Returns whether the hook was fully rendered. The user approved the hook
+	 *  and nothing else, so the rendering apply runs only when the scope had no
+	 *  other pending work; otherwise the declaration lands and `false` says the
+	 *  Review page's ordinary preview-and-apply finishes the job.
 	 */
-	installDriftHook: (scope: Scope) => typedError<null, string>(__TAURI_INVOKE("install_drift_hook", { scope })),
+	installDriftHook: (scope: Scope) => typedError<boolean, string>(__TAURI_INVOKE("install_drift_hook", { scope })),
 	discoverProjects: (root: string) => typedError<string[], string>(__TAURI_INVOKE("discover_projects", { root })),
 	/**
 	 *  The full harness × kind capability matrix — the UI gates every action on

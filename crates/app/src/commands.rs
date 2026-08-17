@@ -66,17 +66,27 @@ pub fn unregister_project(path: String) -> Result<AppSettings, String> {
 /// scope's local source, declaration into its manifest, then the ordinary
 /// apply renders it. The offer surface (project registration) calls this
 /// after the user says yes — the declared, user-approved install per scope.
+/// Returns whether the hook was fully rendered. The user approved the hook
+/// and nothing else, so the rendering apply runs only when the scope had no
+/// other pending work; otherwise the declaration lands and `false` says the
+/// Review page's ordinary preview-and-apply finishes the job.
 #[tauri::command(async)]
 #[specta::specta]
-pub fn install_drift_hook(scope: vstack_core::model::Scope) -> Result<(), String> {
+pub fn install_drift_hook(scope: vstack_core::model::Scope) -> Result<bool, String> {
     let env = env()?;
+    let options = vstack_core::engine::PlanOptions::default();
+    let pending = vstack_core::engine::plan_apply(&env, &scope, &options)
+        .map_err(|e| e.to_string())?
+        .plan;
     let plan = vstack_core::drift::hook::install_plan(&env, &scope).map_err(|e| e.to_string())?;
     vstack_core::apply::execute(&env, &plan, None).map_err(|e| e.to_string())?;
+    if !pending.is_empty() {
+        return Ok(false);
+    }
     let report =
-        vstack_core::engine::plan_apply(&env, &scope, &vstack_core::engine::PlanOptions::default())
-            .map_err(|e| e.to_string())?;
+        vstack_core::engine::plan_apply(&env, &scope, &options).map_err(|e| e.to_string())?;
     vstack_core::apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
-    Ok(())
+    Ok(true)
 }
 
 fn discover_projects_at(env: &Env, root: &str) -> Result<Vec<String>, String> {

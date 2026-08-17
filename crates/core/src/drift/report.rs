@@ -304,9 +304,11 @@ fn stamp_for(env: &Env, repo: &str) -> Option<super::stamps::FetchStamp> {
     Some(super::stamps::load(env, &key))
 }
 
-/// Whether any enabled remote source's mirror is stale — what tells the
-/// check to spawn the detached background refresh.
-pub fn stale_mirrors(env: &Env, scopes: &[Scope]) -> bool {
+/// Whether the check should spawn the detached background refresh: a
+/// stale mirror needs fetching, or a scope with remote sources has no
+/// snapshot (a mutation just invalidated it, or nothing ever evaluated) —
+/// either way the deep pass is what turns "maybe" back into verdicts.
+pub fn wants_background_refresh(env: &Env, scopes: &[Scope]) -> bool {
     let now = crate::clock::unix_now();
     scopes.iter().any(|scope| {
         let Ok(crate::manifest::ManifestFile::Current(manifest)) =
@@ -314,6 +316,16 @@ pub fn stale_mirrors(env: &Env, scopes: &[Scope]) -> bool {
         else {
             return false;
         };
+        let remotes = manifest
+            .sources
+            .values()
+            .any(|decl| decl.enabled && decl.repo.is_some());
+        if !remotes {
+            return false;
+        }
+        if super::snapshot::load(env, scope).is_none() {
+            return true;
+        }
         manifest.sources.values().any(|decl| {
             decl.enabled
                 && decl

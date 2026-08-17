@@ -59,6 +59,17 @@ impl ScopeCheck<'_> {
                 }
             };
         if let Some(manifest) = &manifest {
+            // A drift hook running an older release's script: the one
+            // comparison of disk to the embedded copy, or upgrades would
+            // strand every existing install on the old script forever.
+            if crate::drift::hook::script_current(self.env, self.scope, manifest) == Some(false) {
+                sections.stale.push(drift(
+                    format!(
+                        "{prefix}the session drift hook script is from an older vstack — reinstall it with the drift-hook command, or fork it to keep your changes"
+                    ),
+                    None,
+                ));
+            }
             for (agent, skills) in &manifest.agent_skills {
                 for skill in skills {
                     if !manifest.skills.contains_key(skill) {

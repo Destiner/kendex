@@ -244,11 +244,19 @@ fn remove(
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    // The machine check's whole contract is its exit code: 1 means "drift,
+    // report on stdout". A failure before the check could run — settings
+    // unreadable, scope unresolvable — must exit 2 (could not check), or
+    // the session hook reads the empty report as a clean machine.
+    let machine_check = matches!(&cli.command, Some(Command::Check { catalog: None, .. }));
     match run(cli) {
         Ok(code) => code,
         Err(e) => {
             let _ = writeln!(std::io::stderr(), "Error: {e}");
-            ExitCode::FAILURE
+            match machine_check {
+                true => ExitCode::from(2),
+                false => ExitCode::FAILURE,
+            }
         }
     }
 }

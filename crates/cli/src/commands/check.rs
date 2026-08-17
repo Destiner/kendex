@@ -25,7 +25,7 @@ pub fn run(
     // detached with no stdio; a busy or failing refresh writes stamps and
     // the next check reads them. `VSTACK_BACKGROUND_REFRESH=off` keeps the
     // check strictly read-only (tests, CI).
-    if report::stale_mirrors(env, &scopes)
+    if report::wants_background_refresh(env, &scopes)
         && std::env::var("VSTACK_BACKGROUND_REFRESH").as_deref() != Ok("off")
     {
         vstack_core::process::respawn_detached(&["source", "refresh", "--stale"]);
