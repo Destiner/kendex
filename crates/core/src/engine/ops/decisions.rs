@@ -110,7 +110,9 @@ pub fn dismiss(
 /// from a toast must never delete a newer dismissal that replaced the one
 /// the toast was about, so an undo passes the timestamp it was given and is
 /// refused if the record has moved on. A caller acting on the live list
-/// passes what the list showed.
+/// passes what the list showed. The pin is as fine as the clock — whole
+/// seconds — so two decisions on one finding inside a single second read as
+/// one record; the window is the width of a click, not of a stale toast.
 pub fn revoke_dismissal(
     env: &Env,
     scope: &Scope,
