@@ -62,7 +62,8 @@ changes carry a **Breaking** call-out with their migration note inline.
   inherited in plain sight. A decision that no longer applies says why;
   one about an item that is gone says so; each has a way out. A project
   whose file cannot be read is named there with the error, never
-  silently left off the list.
+  silently left off the list. A project's safety tally on the Review page
+  links straight to it once anything there has been decided.
 - A package's description renders light formatting, so a file name or a
   command an author wrote in backticks reads as one rather than as
   prose.

@@ -1,6 +1,7 @@
 import type { Finding, ItemSafety } from "@/bindings";
 import { Badge } from "@/components/ui/badge";
 import { morePlacesLabel } from "@/lib/copy";
+import { RECORDED_DECISIONS_LINK } from "@/lib/copy-decisions";
 import { cleanSummaryLead, settledSummaryLead } from "@/lib/copy-safety";
 import { abbreviateHome } from "@/lib/drift-merge";
 import { groupSkipped } from "@/lib/group-notes";
@@ -11,6 +12,7 @@ import {
   skipReasonShort,
 } from "@/lib/labels";
 import { settledCount } from "@/lib/reviewable";
+import { useNavStore } from "@/stores/nav";
 
 /**
  * One finding, read top to bottom as: how bad, what it is, what to do,
@@ -76,6 +78,7 @@ export function SafetyCleanSummary({
   rows: ItemSafety[];
   settled?: ItemSafety[];
 }) {
+  const goTo = useNavStore((s) => s.goTo);
   const decided = settledCount(settled);
   if (rows.length === 0 && decided === 0) return null;
   const clauses = [
@@ -91,6 +94,18 @@ export function SafetyCleanSummary({
   return (
     <p className="pt-2 text-[13px] text-muted-foreground">
       {clauses.join(" · ")}.
+      {decided > 0 ? (
+        <>
+          {" "}
+          <button
+            type="button"
+            className="underline underline-offset-2 hover:text-foreground"
+            onClick={() => goTo("settings")}
+          >
+            {RECORDED_DECISIONS_LINK}
+          </button>
+        </>
+      ) : null}
     </p>
   );
 }

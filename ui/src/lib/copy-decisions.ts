@@ -83,6 +83,7 @@ export const queuedDecisionsLabel = (count: number): string =>
 // The Settings list of every recorded decision — acceptances and
 // dismissals — with the way out of each.
 export const DECISIONS_SECTION_TITLE = "Recorded decisions";
+export const RECORDED_DECISIONS_LINK = "See recorded decisions";
 export const DECISIONS_SECTION_EXPLAINER =
   "Findings you accepted or dismissed. Each covers exactly the content it was made for — if that changes, it stops applying and the finding comes back. A project's decisions live in its vstack.toml, so anyone using the repository inherits them.";
 export const TAKE_BACK_LABEL = "Take back";
