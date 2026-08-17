@@ -7,6 +7,7 @@
 // thing. Merging happens inside each scope: the same name in two projects
 // is genuinely two items, and folding those together would undercount.
 import type { AuditView, DriftRow } from "@/bindings";
+import { heldBack } from "@/lib/derive";
 import { mergeDriftRows } from "@/lib/drift-merge";
 import { partitionSafety } from "@/lib/group-findings";
 import { mergeHeldBack } from "@/lib/group-findings-blocked";
@@ -35,12 +36,19 @@ function countMerged(views: AuditView[], keep: (row: DriftRow) => boolean) {
   );
 }
 
-/** Held-back items in one scope, as the scope's panel counts them: the
- *  on-disk blocked rows plus the plan-time refusals that never reached
- *  disk, one per item. */
+/** Held-back items in one scope: the on-disk blocked rows plus the
+ *  plan-time refusals that never reached disk, one per item however many
+ *  tools it targets. An item whose findings someone accepted is installed
+ *  and staying — it is shown in the panel with a note, but nobody is
+ *  waiting on it, so it is not counted. */
 export function blockedCount(view: AuditView): number {
-  return mergeHeldBack(partitionSafety(view.safety).blocked, view.heldBack)
-    .display.length;
+  const { display } = mergeHeldBack(
+    partitionSafety(view.safety).blocked,
+    view.heldBack,
+  );
+  return new Set(
+    display.filter(heldBack).map((row) => `${row.kind}::${row.name}`),
+  ).size;
 }
 
 export function openCount(view: AuditView): number {

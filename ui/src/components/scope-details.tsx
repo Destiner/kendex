@@ -15,7 +15,7 @@ import {
 export function ScopeChanges({ changes }: { changes: MergedDriftRow[] }) {
   if (changes.length === 0) return null;
   return (
-    <Section title="Changes">
+    <Section title="Ready to apply">
       <div className="divide-y divide-border">
         {changes.map((group) => {
           const detail = mergedDetail(group.installations.map(driftDetail));

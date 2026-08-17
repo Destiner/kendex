@@ -34,6 +34,11 @@ changes carry a **Breaking** call-out with their migration note inline.
   waiting, and a project whose every finding is decided reads as in sync
   instead of warning forever. Findings already decided are tallied under
   the safety list rather than hidden.
+- The Review page reads as two zones per project: **Needs your decision**
+  — installs held back by the safety check, then findings waiting for a
+  call — and **Ready to apply**, what the button does. An item you already
+  accepted stays listed with its note but no longer counts as waiting on
+  you, so the caption, the project summary and the sidebar badge agree.
 - Applying something the safety check flagged but did not hold back used
   to look like a clean install, with the findings only turning up under
   review afterwards. The apply preview now says how many things will be

@@ -163,8 +163,9 @@ function ConcernRow({
               locations={detail.locations}
             />
           ))}
-          <AffectedList concern={concern} />
-          {single ? null : (
+          {single ? (
+            <AffectedList concern={concern} />
+          ) : (
             <div className="flex flex-col divide-y divide-border text-[13px]">
               <p className="pb-1.5 font-medium text-foreground/70">
                 Decide each on its own — these are {evidence.length} different

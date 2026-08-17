@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DISMISS_LABEL } from "@/lib/copy-decisions";
 import { abbreviateHome } from "@/lib/drift-merge";
-import { hookDisplayName, toolName } from "@/lib/labels";
+import { toolName } from "@/lib/labels";
 import type { EvidenceGroup } from "@/lib/reviewable";
 
 /**
@@ -70,8 +70,10 @@ export function EvidenceLine({
   busy: boolean;
   onDismiss: (tokens: string[], reason: DismissReason) => void;
 }) {
+  // A hook's full id — event, matcher, script — is what tells seven hooks
+  // in one settings file apart; the short display name would not.
   const first = group.items[0];
-  const name = first.kind === "hook" ? hookDisplayName(first.name) : first.name;
+  const name = first.name;
   const tools = [...new Set(group.items.map((item) => toolName(item.harness)))];
   return (
     <div className="flex items-center gap-2.5 py-1.5">

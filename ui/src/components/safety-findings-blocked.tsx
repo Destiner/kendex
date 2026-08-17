@@ -12,7 +12,6 @@ import {
   ACCEPT_BLOCKED_TITLE,
   acceptBlockedBody,
   BLOCKED_SECTION_EXPLAINER,
-  BLOCKED_SECTION_TITLE,
   HELD_BACK_NOT_ON_DISK_NOTE,
 } from "@/lib/copy-safety";
 import { findingHeadline } from "@/lib/finding-headlines";
@@ -209,14 +208,9 @@ export function BlockedFindings({
   if (groups.length === 0) return null;
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-critical/30 bg-critical/5 p-3">
-      <div className="flex flex-col gap-1">
-        <h3 className="text-[13px] font-semibold text-critical">
-          {BLOCKED_SECTION_TITLE}
-        </h3>
-        <p className="text-[13px] text-muted-foreground">
-          {BLOCKED_SECTION_EXPLAINER}
-        </p>
-      </div>
+      <p className="text-[13px] text-muted-foreground">
+        {BLOCKED_SECTION_EXPLAINER}
+      </p>
       <div className="divide-y divide-critical/20 rounded-md border border-critical/20 bg-background/40">
         {groups.map((group) => (
           <BlockedGroupRow

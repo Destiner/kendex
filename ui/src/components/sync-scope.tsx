@@ -9,15 +9,15 @@ import { ScopeChanges, ScopeNotes } from "@/components/scope-details";
 import { Section } from "@/components/section";
 import { Button } from "@/components/ui/button";
 import { UnmanagedItems } from "@/components/unmanaged-items";
+import { blockedCount as countBlocked } from "@/lib/audit-counts";
 import {
   APPLY_BUTTON_LABEL,
   NOTHING_TO_DO_HERE,
   scopeSummaryLabel,
 } from "@/lib/copy";
-import { openDecisionsLabel } from "@/lib/copy-safety";
+import { DECISION_ZONE_TITLE, decisionZoneLabel } from "@/lib/copy-safety";
 import { mergeDriftRows } from "@/lib/drift-merge";
 import { partitionSafety } from "@/lib/group-findings";
-import { mergeHeldBack } from "@/lib/group-findings-blocked";
 import { scopeName, scopePath } from "@/lib/labels";
 import { evidenceGroups, openOccurrences } from "@/lib/reviewable";
 
@@ -64,10 +64,9 @@ export function SyncScopeCard({
     settled,
     clean,
   } = partitionSafety(view.safety);
-  // The panel counts what it renders: on-disk blocked rows plus the
-  // plan-time refusals that never reached disk (view.heldBack), and one
-  // decision per distinct piece of open evidence.
-  const blockedCount = mergeHeldBack(blocked, view.heldBack).display.length;
+  // The same numbers the sidebar and Home read, so the card can never say
+  // one thing and the badge another.
+  const blockedCount = countBlocked(view);
   const openCount = evidenceGroups(openOccurrences(undecided)).length;
   // With nothing else to fix, removing left-behind items is the only
   // change on offer — defaulting the checkbox on keeps it reachable.
@@ -80,7 +79,9 @@ export function SyncScopeCard({
     open: openCount,
     unmanaged: unmanaged.length,
   });
-  const [open, setOpen] = useState(blockedCount > 0 || canApply);
+  const [open, setOpen] = useState(
+    blockedCount > 0 || openCount > 0 || canApply,
+  );
   const path = scopePath(view.scope);
 
   return (
@@ -124,37 +125,39 @@ export function SyncScopeCard({
           </Button>
         ) : null}
       </div>
-      {/* Sections read top to bottom in order of urgency: serious findings
-          can't be worked around, so they lead; changes are what applying
-          does; safety warnings install anyway but deserve a look;
-          not-managed items are pure housekeeping. */}
+      {/* Two zones, in the order a person works them. Needs your decision
+          holds everything only they can settle: installs the gate is holding
+          back, then findings nobody has ruled on. Ready to apply is what the
+          button does. Notes and the safety tally follow; items vstack does
+          not manage are a footnote pointing at the Library, where adopting
+          them lives. */}
       {open ? (
         <div className="flex flex-col gap-6 border-t px-4 py-4">
-          <BlockedFindings
-            rows={blocked}
-            heldBack={view.heldBack}
-            busy={busy}
-            projectScope={view.scope.scope === "project"}
-            onAccept={(tokens) => onApply(false, tokens)}
-          />
-          <ScopeChanges changes={changes} />
-          <ScopeNotes notes={view.notes} warnings={view.warnings} />
-          {undecided.length > 0 || settled.length > 0 || clean.length > 0 ? (
+          {blockedCount > 0 || openCount > 0 ? (
             <Section
-              title="Safety"
-              description={
-                openCount > 0 ? openDecisionsLabel(openCount) : undefined
-              }
+              title={DECISION_ZONE_TITLE}
+              description={decisionZoneLabel(blockedCount, openCount)}
             >
-              <SafetyWarnings
-                rows={undecided}
-                projectScope={view.scope.scope === "project"}
-                busy={busy}
-                onDismiss={onDismiss}
-              />
-              <SafetyCleanSummary rows={clean} settled={settled} />
+              <div className="flex flex-col gap-3">
+                <BlockedFindings
+                  rows={blocked}
+                  heldBack={view.heldBack}
+                  busy={busy}
+                  projectScope={view.scope.scope === "project"}
+                  onAccept={(tokens) => onApply(false, tokens)}
+                />
+                <SafetyWarnings
+                  rows={undecided}
+                  projectScope={view.scope.scope === "project"}
+                  busy={busy}
+                  onDismiss={onDismiss}
+                />
+              </div>
             </Section>
           ) : null}
+          <ScopeChanges changes={changes} />
+          <ScopeNotes notes={view.notes} warnings={view.warnings} />
+          <SafetyCleanSummary rows={clean} settled={settled} />
           <UnmanagedItems rows={unmanaged} busy={busy} onAdopt={onAdopt} />
         </div>
       ) : null}
