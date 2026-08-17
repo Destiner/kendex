@@ -352,6 +352,20 @@ fn the_drift_hook_installs_as_a_declared_item_and_is_idempotent() {
         .unwrap();
     let decl = loaded.hooks.get(drift::hook::HOOK_NAME).unwrap();
     assert_eq!(decl.source, "local");
+    // The report rides Pi's carrier too: same script, declared for both.
+    assert_eq!(
+        decl.harnesses.as_deref(),
+        Some(
+            &[
+                vstack_core::model::HarnessId::Claude,
+                vstack_core::model::HarnessId::Pi
+            ][..]
+        )
+    );
+    assert!(
+        drift::hook::HOOK_SCRIPT.contains("harnesses: [claude-code, pi]"),
+        "the script itself must apply to pi"
+    );
 
     // The ordinary refresh renders it.
     let report = audit(&w.env, &w.scope).unwrap();

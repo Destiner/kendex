@@ -19,6 +19,21 @@ pub use caps::{
     rendered_name,
 };
 
+/// What a hook label may claim for this harness at this scope. The static
+/// row says what the mechanism supports; Pi's enforcement is real only
+/// while the pi-hooks carrier is registered somewhere Pi loads, so every
+/// surface that labels an installation reads this instead of the row.
+pub fn hook_enforcement(
+    env: &crate::env::Env,
+    scope: &crate::model::Scope,
+    harness: HarnessId,
+) -> Enforcement {
+    match harness {
+        HarnessId::Pi => crate::pi_ext::carrier::enforcement(env, scope),
+        _ => capabilities(harness, crate::model::ItemKind::Hook).enforcement,
+    }
+}
+
 /// What marks a directory as a project for this harness during discovery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProjectMarker {

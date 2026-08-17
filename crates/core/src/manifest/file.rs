@@ -34,6 +34,12 @@ pub fn load(path: &Path) -> Result<ManifestFile> {
     let Some(text) = read_if_exists(path)? else {
         return Ok(ManifestFile::Absent);
     };
+    parse_text(path, &text)
+}
+
+/// [`load`] for text the caller already read — the importer classifies the
+/// exact bytes its preconditions bind to.
+pub fn parse_text(path: &Path, text: &str) -> Result<ManifestFile> {
     let table: toml::Table = text
         .parse()
         .map_err(|e: toml::de::Error| CoreError::TomlParse {
@@ -41,7 +47,9 @@ pub fn load(path: &Path) -> Result<ManifestFile> {
             message: e.to_string(),
         })?;
     if !table.contains_key("schema") {
-        return Ok(ManifestFile::Legacy { raw: text });
+        return Ok(ManifestFile::Legacy {
+            raw: text.to_owned(),
+        });
     }
     if let Some(schema) = table.get("schema").and_then(toml::Value::as_integer)
         && schema > i64::from(MANIFEST_SCHEMA)
@@ -59,7 +67,7 @@ pub fn load(path: &Path) -> Result<ManifestFile> {
         });
     }
     let manifest: Manifest =
-        toml::from_str(&text).map_err(|e: toml::de::Error| CoreError::TomlParse {
+        toml::from_str(text).map_err(|e: toml::de::Error| CoreError::TomlParse {
             path: path.to_path_buf(),
             message: e.to_string(),
         })?;

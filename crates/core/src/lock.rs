@@ -230,8 +230,15 @@ pub fn load_file(path: &Path) -> Result<LockFile> {
     let Some(text) = read_if_exists(path)? else {
         return Ok(LockFile::Absent);
     };
+    parse_text(path, &text)
+}
+
+/// [`load_file`] for text the caller already read — the importer binds its
+/// preconditions to the exact bytes it classified, so it must classify the
+/// bytes it read rather than a later re-read.
+pub fn parse_text(path: &Path, text: &str) -> Result<LockFile> {
     let value: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| CoreError::LockCorrupt {
+        serde_json::from_str(text).map_err(|e| CoreError::LockCorrupt {
             path: path.to_path_buf(),
             message: e.to_string(),
         })?;
@@ -244,7 +251,9 @@ pub fn load_file(path: &Path) -> Result<LockFile> {
         });
     }
     if is_v1(&value) {
-        return Ok(LockFile::Legacy { raw: text });
+        return Ok(LockFile::Legacy {
+            raw: text.to_owned(),
+        });
     }
     let mut lock: Lock = serde_json::from_value(value).map_err(|e| CoreError::LockCorrupt {
         path: path.to_path_buf(),

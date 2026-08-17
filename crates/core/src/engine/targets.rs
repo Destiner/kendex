@@ -1,26 +1,44 @@
 use std::path::PathBuf;
 
 use crate::env::Env;
-use crate::harness::{Enforcement, adapter, capabilities};
+use crate::harness::{Enforcement, adapter};
 use crate::model::{HarnessId, ItemKind, Scope};
 
 /// What installing a hook on this harness actually buys. A tool that only
 /// reads the file must never be presented as one that acts on it: the
-/// warning travels with the plan, the preview, and the audit page.
-pub(super) fn advisory_notice(harness: HarnessId, name: &str) -> Option<super::ItemWarning> {
+/// warning travels with the plan, the preview, and the audit page. Read
+/// through `hook_enforcement`, so a Pi hook with no carrier registered
+/// anywhere Pi loads gets its downgrade said here, per item.
+pub(super) fn advisory_notice(
+    env: &Env,
+    scope: &Scope,
+    harness: HarnessId,
+    name: &str,
+) -> Option<super::ItemWarning> {
     let tool = harness.display_name();
-    (capabilities(harness, ItemKind::Hook).enforcement == Enforcement::Advisory).then(|| {
-        super::ItemWarning {
-            kind: ItemKind::Hook,
-            name: name.to_owned(),
-            harness: Some(harness),
-            message: format!(
+    if crate::harness::hook_enforcement(env, scope, harness) != Enforcement::Advisory {
+        return None;
+    }
+    let (message, remediation) = match harness {
+        HarnessId::Pi => (
+            "the pi-hooks carrier is not registered in any settings pi loads here — the hook is written but nothing will run it".to_owned(),
+            format!("install the {} extension at either scope", crate::pi_ext::carrier::CARRIER),
+        ),
+        _ => (
+            format!(
                 "this protection is advisory on {tool} — it installs as text the model may ignore, not a check the tool runs"
             ),
-            remediation: Some(format!(
+            format!(
                 "keep it for the tools that run hooks — Claude Code, Codex, Gemini CLI, GitHub Copilot — or accept it as guidance on {tool}"
-            )),
-        }
+            ),
+        ),
+    };
+    Some(super::ItemWarning {
+        kind: ItemKind::Hook,
+        name: name.to_owned(),
+        harness: Some(harness),
+        message,
+        remediation: Some(remediation),
     })
 }
 

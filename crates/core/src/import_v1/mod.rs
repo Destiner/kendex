@@ -9,6 +9,8 @@ use crate::manifest::{
 };
 use crate::model::{HarnessId, ItemKind};
 
+pub mod migrate;
+
 #[derive(Debug)]
 pub struct ImportOutcome {
     pub manifest: Manifest,

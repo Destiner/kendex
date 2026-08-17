@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use super::{DriftRow, DriftState};
 use crate::apply::{Op, PlannedOp, Pre};
 use crate::clock::timestamp;
+use crate::env::Env;
 use crate::error::Result;
 use crate::hash::hash_tree;
 use crate::lock::{Lock, LockEntry};
@@ -26,6 +27,7 @@ pub(super) struct PlanSink<'a> {
 /// name: a codex command lands as a skill tree, and the skill that later
 /// claims that name is replacing our own output, not adopting a stranger's.
 pub(super) fn plan_item(
+    env: &Env,
     item: &Desired,
     scope: &Scope,
     lock: &Lock,
@@ -70,10 +72,10 @@ pub(super) fn plan_item(
     }
 
     let planned = match &item.artifact {
-        Artifact::File { .. } => plan_file(item, existing.is_some(), ops),
+        Artifact::File { .. } => plan_file(env, scope, item, existing.is_some(), ops),
         Artifact::Tree { .. } => plan_tree(item, existing.is_some(), owned, written, ops),
         Artifact::Registration { .. } => {
-            plan_registration(item, existing.is_some(), ops, config_edits)
+            plan_registration(env, scope, item, existing.is_some(), ops, config_edits)
         }
     }?;
     let dirty = !matches!(planned, Planned::Clean);
@@ -144,10 +146,14 @@ fn rendered_hash(artifact: &Artifact) -> Option<String> {
 
 /// A hook the tool only reads is named as such wherever the plan is shown.
 /// An op that reads like protection must not hide that this tool is free to
-/// ignore what it installs.
-fn advisory(item: &Desired) -> &'static str {
+/// ignore what it installs. Read through `hook_enforcement`, so a Pi hook
+/// with no carrier registered anywhere is labeled advisory, not enforced.
+fn advisory(env: &Env, scope: &Scope, item: &Desired) -> &'static str {
     use crate::harness::Enforcement;
-    match crate::harness::capabilities(item.harness, item.kind).enforcement {
+    if item.kind != crate::model::ItemKind::Hook {
+        return "";
+    }
+    match crate::harness::hook_enforcement(env, scope, item.harness) {
         Enforcement::Advisory => " (advisory)",
         Enforcement::Enforced | Enforcement::NotApplicable => "",
     }
@@ -160,14 +166,23 @@ pub(super) enum Planned {
     Conflict(String),
 }
 
-fn plan_file(item: &Desired, locked: bool, ops: &mut Vec<PlannedOp>) -> Result<Planned> {
+fn plan_file(
+    env: &Env,
+    scope: &Scope,
+    item: &Desired,
+    locked: bool,
+    ops: &mut Vec<PlannedOp>,
+) -> Result<Planned> {
     let Artifact::File { path, bytes } = &item.artifact else {
         return Ok(Planned::Clean);
     };
-    plan_written_file(item, path, bytes, locked, ops)
+    plan_written_file(env, scope, item, path, bytes, locked, ops)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn plan_written_file(
+    env: &Env,
+    scope: &Scope,
     item: &Desired,
     path: &std::path::Path,
     bytes: &[u8],
@@ -213,7 +228,7 @@ fn plan_written_file(
                     item.kind.name(),
                     item.name,
                     item.harness.display_name(),
-                    advisory(item)
+                    advisory(env, scope, item)
                 ),
                 op: Op::WriteFile {
                     path: path.to_path_buf(),
@@ -226,14 +241,17 @@ fn plan_written_file(
                 "newer content is available".into(),
             ))
         }
-        None => Ok(plan_absent_file(item, path, bytes, locked, ops)),
+        None => Ok(plan_absent_file(env, scope, item, path, bytes, locked, ops)),
     }
 }
 
 /// Nothing at the target: our own content may be waiting under the toggled
 /// name, otherwise this is a fresh install. Anything else occupying the
 /// toggled name belongs to someone else and is never written through.
+#[allow(clippy::too_many_arguments)]
 fn plan_absent_file(
+    env: &Env,
+    scope: &Scope,
     item: &Desired,
     path: &std::path::Path,
     bytes: &[u8],
@@ -269,7 +287,7 @@ fn plan_absent_file(
                 item.kind.name(),
                 item.name,
                 item.harness.display_name(),
-                advisory(item)
+                advisory(env, scope, item)
             ),
             op: Op::WriteFile {
                 path: path.to_path_buf(),
@@ -285,7 +303,7 @@ fn plan_absent_file(
             item.kind.name(),
             item.name,
             item.harness.display_name(),
-            advisory(item)
+            advisory(env, scope, item)
         ),
         op: Op::WriteFile {
             path: path.to_path_buf(),
@@ -302,6 +320,8 @@ fn plan_absent_file(
 /// Edits that would change the file go to the per-file collector, not
 /// straight to ops.
 fn plan_registration(
+    env: &Env,
+    scope: &Scope,
     item: &Desired,
     locked: bool,
     ops: &mut Vec<PlannedOp>,
@@ -328,7 +348,7 @@ fn plan_registration(
         }
     }
     let mut planned = match script {
-        Some((path, bytes)) => plan_written_file(item, path, bytes, locked, ops)?,
+        Some((path, bytes)) => plan_written_file(env, scope, item, path, bytes, locked, ops)?,
         None => Planned::Clean,
     };
     if matches!(planned, Planned::Conflict(_)) {

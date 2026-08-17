@@ -79,6 +79,9 @@ const KIND_CAPS: Record<HarnessId, Partial<Record<ItemKind, KindCaps>>> = {
   pi: {
     agent: cap(PG, PG),
     skill: cap(PG, PG),
+    // Enforced through the pi-hooks carrier; per-item labels downgrade
+    // when no settings layer Pi loads registers it.
+    hook: enforcedHook(PG, PG),
     command: cap(PG, NO),
     "pi-extension": cap(PG, PG),
   },

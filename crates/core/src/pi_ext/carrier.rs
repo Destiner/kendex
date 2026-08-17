@@ -16,7 +16,19 @@ use crate::model::{HarnessId, Scope};
 /// The carrier package's name, as its directory and npm name both end.
 pub const CARRIER: &str = "pi-hooks";
 
-fn names_carrier(text: &str) -> bool {
+/// Whether a settings entry's text names the carrier, in any of the
+/// spellings Pi loads: a relative or absolute path ending in the package
+/// directory, a bare or scoped npm name, an `npm:` spec, with or without
+/// a version suffix or trailing slash.
+fn names_carrier(raw: &str) -> bool {
+    let text = raw.strip_prefix("npm:").unwrap_or(raw);
+    let text = text.trim_end_matches('/');
+    // A version suffix is the last `@` past position 0 — a scoped name's
+    // leading `@` is identity, not version.
+    let text = match text.rfind('@') {
+        Some(at) if at > 0 => &text[..at],
+        _ => text,
+    };
     text == CARRIER || text.ends_with(&format!("/{CARRIER}"))
 }
 
@@ -82,5 +94,32 @@ pub fn enforcement(env: &Env, scope: &Scope) -> Enforcement {
     match presence(env, scope).anywhere() {
         true => Enforcement::Enforced,
         false => Enforcement::Advisory,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::names_carrier;
+
+    #[test]
+    fn every_spelling_pi_loads_counts_and_lookalikes_do_not() {
+        for entry in [
+            "pi-hooks",
+            "./packages/pi-hooks",
+            "/abs/path/packages/pi-hooks",
+            "@vanillagreen/pi-hooks",
+            "npm:@vanillagreen/pi-hooks@0.4.0",
+            "npm:pi-hooks@1.2.3",
+            "./packages/pi-hooks/",
+        ] {
+            assert!(names_carrier(entry), "{entry}");
+        }
+        for entry in [
+            "pi-hooks-extra",
+            "other-hooks",
+            "./packages/my-pi-hooks-fork",
+        ] {
+            assert!(!names_carrier(entry), "{entry}");
+        }
     }
 }

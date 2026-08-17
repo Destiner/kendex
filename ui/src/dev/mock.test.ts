@@ -117,6 +117,10 @@ describe("mock capability table", () => {
       expect(caps("copilot", kind as ItemKind)?.toggle).toEqual(BOTH);
     }
     expect(caps("copilot", "hook")?.enforcement).toBe("enforced");
+
+    // Pi hooks are enforced through the pi-hooks carrier.
+    expect(caps("pi", "hook")?.install).toEqual(BOTH);
+    expect(caps("pi", "hook")?.enforcement).toBe("enforced");
     // Copilot has no file-backed slash commands at all, and installing a
     // plugin needs a marketplace vstack cannot resolve yet.
     expect(caps("copilot", "command")?.observe).toEqual(NEITHER);

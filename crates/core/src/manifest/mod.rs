@@ -8,7 +8,7 @@ use crate::model::HarnessId;
 mod decisions;
 mod file;
 mod validate;
-pub use file::{ManifestFile, load, load_for_mutation, manifest_path, save, seed};
+pub use file::{ManifestFile, load, load_for_mutation, manifest_path, parse_text, save, seed};
 pub use validate::{Finding, validate};
 
 /// Current manifest schema. Schema 1 (v0.1) still loads; the first apply

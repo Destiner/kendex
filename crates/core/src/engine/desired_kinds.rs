@@ -93,18 +93,6 @@ pub(super) fn desired_hook(ctx: &ItemCtx, state: &mut DesiredState) -> Result<()
                     ));
                     continue;
                 };
-                if !crate::pi_ext::carrier::presence(ctx.env, ctx.scope).anywhere() {
-                    state.warnings.push(super::ItemWarning {
-                        kind: ItemKind::Hook,
-                        name: ctx.name.to_owned(),
-                        harness: Some(HarnessId::Pi),
-                        message: "the pi-hooks carrier is not registered in any settings pi loads here — the hook is written but nothing will run it".into(),
-                        remediation: Some(format!(
-                            "install the {} extension at either scope",
-                            crate::pi_ext::carrier::CARRIER
-                        )),
-                    });
-                }
                 crate::hook::HookSource {
                     event: listener.to_owned(),
                     ..hook.clone()
@@ -130,7 +118,9 @@ pub(super) fn desired_hook(ctx: &ItemCtx, state: &mut DesiredState) -> Result<()
         let Some(target) = hook_target(ctx.env, ctx.scope, harness, ctx.name) else {
             continue;
         };
-        state.warnings.extend(advisory_notice(harness, ctx.name));
+        state
+            .warnings
+            .extend(advisory_notice(ctx.env, ctx.scope, harness, ctx.name));
         let artifact = hook_artifact(&target, &hook, ctx.name, ctx.decl.enabled);
         state
             .items
