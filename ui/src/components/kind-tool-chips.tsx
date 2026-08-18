@@ -6,8 +6,8 @@ import { kindLabel } from "@/lib/labels";
 /**
  * What a thing is, and which tools load it — the Library's treatment,
  * reused anywhere a row needs to say the same two facts. One grey chip for
- * the kind and a tinted chip per tool, so the tools stay pickable out of a
- * row at a glance instead of hiding inside "Skill · Codex, Pi".
+ * the kind, then a mark per tool, so the tools stay pickable out of a row at
+ * a glance instead of hiding inside "Skill · Codex, Pi".
  */
 export function KindToolChips({
   kind,
@@ -20,7 +20,7 @@ export function KindToolChips({
     <span className="flex shrink-0 items-center gap-1.5">
       <Badge variant="outline">{kindLabel(kind)}</Badge>
       {harnesses.map((harness) => (
-        <ToolBadge key={harness} harness={harness} />
+        <ToolBadge key={harness} harness={harness} compact />
       ))}
     </span>
   );

@@ -460,6 +460,11 @@ changes carry a **Breaking** call-out with their migration note inline.
   customized, each row opening that package's page. The agent-by-skill
   grid and the stack of per-agent text boxes are gone; an agent's skills
   and settings are edited on the agent.
+- Tools are marks rather than names wherever a row lists several of them —
+  the Library's table and the not-managed-yet list. Six chips reading
+  "Claude Code Codex OpenCode Cursor Pi" on every row pushed the columns
+  that actually differ off the screen; the logo carries the tool, and the
+  name is on hover. A package's own details still spell them out.
 - The Library's status column is a dot — green active, amber switched
   off, red for a broken link — with the words on hover instead of in
   every row.

@@ -174,6 +174,12 @@ lives in one capability table read by core and UI.
   when you have changed that package, and the table prints the key above
   itself. A colour that means something has to say what, on the same
   screen as the thing it marks.
+- In a table, a tool is its mark, not its name. Every row carries the
+  same five or six tools, so spelling them out is a column of repeated
+  words crowding out the columns that differ; the logo and its hue tell
+  them apart and the name arrives on hover and for screen readers. Where
+  a tool is stated once rather than listed — a package's own details —
+  the name stays written out.
 - A status a colour can carry is a dot, and the words arrive on hover.
   Seven rows reading "Active" spend a column on a sentence the colour
   already told; the tooltip and a screen-reader line keep the words for

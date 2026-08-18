@@ -119,7 +119,7 @@ export function InstalledRow({
       <TableCell>
         <span className="flex flex-wrap gap-1">
           {group.harnesses.map((h) => (
-            <ToolBadge key={h} harness={h as HarnessId} />
+            <ToolBadge key={h} harness={h as HarnessId} compact />
           ))}
           {group.shared ? (
             <Badge variant="secondary">Shared files</Badge>
