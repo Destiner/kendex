@@ -182,6 +182,19 @@ impl GuardCtx {
             .map_err(|_| guard_err(check, format!("unparseable blob size for '{path_shown}'")))
     }
 
+    /// Whether HEAD carries a file at `path`. An unborn HEAD carries
+    /// nothing; any other failure to ask is an error, never "no".
+    pub fn head_has(&self, check: &str, path: &str) -> Result<bool> {
+        let head = self
+            .git(&["rev-parse", "--verify", "--quiet", "HEAD"])
+            .run()?;
+        if !head.status.success() {
+            return Ok(false);
+        }
+        let listing = self.git_ok(check, &["ls-tree", "-z", "HEAD", "--", path])?;
+        Ok(!listing.is_empty())
+    }
+
     /// One tracked file's content as the commit would record it.
     pub fn index_content(&self, _check: &str, path: &str) -> Result<Option<Vec<u8>>> {
         let output = self.git(&["show", &format!(":{path}")]).run()?;

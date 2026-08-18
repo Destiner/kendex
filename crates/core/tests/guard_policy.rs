@@ -198,3 +198,72 @@ fn a_users_color_config_cannot_garble_what_the_guards_parse() {
         out.lines
     );
 }
+
+/// A reviewed ratchet lives in HEAD as much as in the index or on disk:
+/// staging the baseline's deletion must not unlock a re-seed that would
+/// recreate every row enlarged.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn seed_refuses_while_head_still_carries_a_baseline() {
+    let r = repo();
+    let long: String = (0..30).map(|i| format!("line {i}\n")).collect();
+    stage(&r, "src/long.rs", &long);
+    stage(
+        &r,
+        "vstack.settings.toml",
+        "[guards.size-ratchet]\nthreshold = 20\n",
+    );
+    stage(&r, "tools/size-ratchet-baseline.tsv", "src/long.rs\t30\n");
+    git(&r.root, &["commit", "--quiet", "-m", "feat: base"]);
+    git(
+        &r.root,
+        &[
+            "rm",
+            "--quiet",
+            "--cached",
+            "tools/size-ratchet-baseline.tsv",
+        ],
+    );
+    std::fs::remove_file(r.root.join("tools/size-ratchet-baseline.tsv")).unwrap();
+    let error = size_ratchet::run(&ctx(&r), &policy(&r), size_ratchet::Mode::Seed).unwrap_err();
+    assert!(error.to_string().contains("already exists"), "{error}");
+    assert!(!r.root.join("tools/size-ratchet-baseline.tsv").exists());
+}
+
+/// The baseline is a tracked file too; `--update` changes its length, so
+/// its own row must describe the file it is about to become — one run
+/// settles, not two.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn update_settles_the_baselines_own_row_in_one_run() {
+    let r = repo();
+    stage(
+        &r,
+        "vstack.settings.toml",
+        "[guards.size-ratchet]\nthreshold = 3\n",
+    );
+    let long: String = (0..6).map(|i| format!("line {i}\n")).collect();
+    let mut rows = String::new();
+    for name in ["a", "b", "c", "d", "e", "f", "g", "h"] {
+        stage(&r, &format!("src/{name}.rs"), &long);
+        rows.push_str(&format!("src/{name}.rs\t6\n"));
+    }
+    rows.push_str("tools/size-ratchet-baseline.tsv\t9\n");
+    stage(&r, "tools/size-ratchet-baseline.tsv", &rows);
+    let out = size_ratchet::run(&ctx(&r), &policy(&r), size_ratchet::Mode::Check).unwrap();
+    assert_eq!(out.violations, 0, "{:?}", out.lines);
+
+    for name in ["a", "b", "c", "d"] {
+        stage(&r, &format!("src/{name}.rs"), "fn main() {}\n");
+    }
+    let out = size_ratchet::run(&ctx(&r), &policy(&r), size_ratchet::Mode::Update).unwrap();
+    assert_eq!(out.violations, 0, "{:?}", out.lines);
+    let written = std::fs::read_to_string(r.root.join("tools/size-ratchet-baseline.tsv")).unwrap();
+    assert!(
+        written.ends_with("tools/size-ratchet-baseline.tsv\t5\n"),
+        "the row names the file's new length: {written}"
+    );
+    git(&r.root, &["add", "--", "tools/size-ratchet-baseline.tsv"]);
+    let out = size_ratchet::run(&ctx(&r), &policy(&r), size_ratchet::Mode::Check).unwrap();
+    assert_eq!(out.violations, 0, "settled in one run: {:?}", out.lines);
+}

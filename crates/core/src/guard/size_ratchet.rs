@@ -126,6 +126,34 @@ fn evaluate(
     }
 }
 
+/// The baseline is a tracked file too, and `--update` is about to change
+/// its length: its own row must describe the file it is about to become,
+/// or the next run finds it looser than reality and needs a second pass
+/// to settle. Rows are lines, so the rendered length is the row count;
+/// the verdict below judges the file at that length.
+fn reconcile_own_row(
+    baseline_file: &str,
+    thresholds: &Thresholds,
+    updated: &mut BTreeMap<String, u64>,
+    counts: &mut BTreeMap<String, u64>,
+    out: &mut Outcome,
+) {
+    let Some(frozen) = updated.get(baseline_file).copied() else {
+        return;
+    };
+    let length = updated.len() as u64;
+    if length <= thresholds.for_path(baseline_file) {
+        updated.remove(baseline_file);
+        out.say(format!(
+            "removed: {baseline_file} (now at/under its threshold)"
+        ));
+    } else if length < frozen {
+        updated.insert(baseline_file.to_owned(), length);
+        out.say(format!("tightened: {baseline_file} {frozen} -> {length}"));
+    }
+    counts.insert(baseline_file.to_owned(), updated.len() as u64);
+}
+
 pub fn run(ctx: &GuardCtx, policy: &Policy, mode: Mode) -> Result<Outcome> {
     let thresholds = thresholds(policy)?;
     let baseline_file = config_path(
@@ -137,14 +165,18 @@ pub fn run(ctx: &GuardCtx, policy: &Policy, mode: Mode) -> Result<Outcome> {
         &policy.string(CHECK, "excludes", "tools/size-ratchet-excludes")?,
     )?;
     let excludes = patterns::load_excludes(ctx, CHECK, &excludes_file)?;
-    let counts = line_counts(ctx, &excludes)?;
+    let mut counts = line_counts(ctx, &excludes)?;
 
     let mut out = Outcome::default();
     let target = ctx.root.join(&baseline_file);
     let baseline = match mode {
         Mode::Seed => {
+            // A reviewed ratchet lives in HEAD as much as in the index or
+            // on disk: staging its deletion must not unlock a re-seed that
+            // recreates every row enlarged.
             let existing = target.is_file()
-                || super::settings::policy_content(ctx, CHECK, &baseline_file)?.is_some();
+                || super::settings::policy_content(ctx, CHECK, &baseline_file)?.is_some()
+                || ctx.head_has(CHECK, &baseline_file)?;
             if existing {
                 return Err(guard_err(
                     CHECK,
@@ -167,13 +199,20 @@ pub fn run(ctx: &GuardCtx, policy: &Policy, mode: Mode) -> Result<Outcome> {
         }
         Mode::Update => {
             let current = baseline::load_worktree_baseline(ctx, CHECK, &baseline_file)?;
-            let updated = baseline::tighten(
+            let mut updated = baseline::tighten(
                 &current,
                 &counts,
                 |path, count| {
                     (count <= thresholds.for_path(path))
                         .then(|| "now at/under its threshold".to_owned())
                 },
+                &mut out,
+            );
+            reconcile_own_row(
+                &baseline_file,
+                &thresholds,
+                &mut updated,
+                &mut counts,
                 &mut out,
             );
             if target.is_file() || !updated.is_empty() {
