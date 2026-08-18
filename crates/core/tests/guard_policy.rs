@@ -96,6 +96,42 @@ fn an_untracked_policy_file_on_disk_is_not_policy() {
     assert!(!policy(&r).enabled("todo-ban").unwrap());
 }
 
+/// A repository committed before the product rename keeps governing under
+/// its old file names, and when both generations are present the current
+/// name outranks the old one.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_settings_file_governs_under_every_generation_of_its_name() {
+    for file in [
+        ".kendex/settings.toml",
+        "kendex.settings.toml",
+        ".vstack/settings.toml",
+        "vstack.settings.toml",
+    ] {
+        let r = repo();
+        stage(&r, "a.txt", "a\n");
+        stage(&r, file, "[guards.todo-ban]\nenabled = false\n");
+        assert!(!policy(&r).enabled("todo-ban").unwrap(), "{file}");
+    }
+
+    let r = repo();
+    stage(&r, "a.txt", "a\n");
+    stage(
+        &r,
+        "vstack.settings.toml",
+        "[guards.todo-ban]\nenabled = true\n",
+    );
+    stage(
+        &r,
+        "kendex.settings.toml",
+        "[guards.todo-ban]\nenabled = false\n",
+    );
+    assert!(
+        !policy(&r).enabled("todo-ban").unwrap(),
+        "the current file name outranks the old one"
+    );
+}
+
 #[test]
 #[allow(clippy::unwrap_used)]
 fn the_commit_msg_hook_lane_honors_its_enabled_switch() {

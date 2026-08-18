@@ -97,7 +97,9 @@ fn surfaces(kind: ItemKind, base: &Path, config: PathBuf) -> Vec<Surface> {
         ItemKind::Hook => vec![Surface::FileDir {
             dir: base.join("instructions"),
             exts: &["md"],
-            prefix: Some("vstack-hook-"),
+            // New renders use the kendex prefix; instruction files written
+            // under the old product name must stay observed as ours.
+            prefixes: &["kendex-hook-", "vstack-hook-"],
         }],
         ItemKind::Command => vec![
             Surface::files(base.join("commands"), &["md"]),
@@ -111,7 +113,7 @@ fn surfaces(kind: ItemKind, base: &Path, config: PathBuf) -> Vec<Surface> {
             Surface::FileDir {
                 dir: base.join("plugins"),
                 exts: PLUGIN_EXTS,
-                prefix: None,
+                prefixes: &[],
             },
             Surface::Structured {
                 path: config,

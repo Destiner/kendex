@@ -81,7 +81,7 @@ fn world() -> World {
     fs::create_dir_all(home.join("app/.claude")).unwrap();
     let base = format!("file://{}", home.join("git").display());
     World {
-        env: Env::fake(&home, FakeOs::Linux).with_var("VSTACK_GIT_BASE", &base),
+        env: Env::fake(&home, FakeOs::Linux).with_var("KENDEX_GIT_BASE", &base),
         scope: Scope::Project {
             root: home.join("app"),
         },
@@ -334,50 +334,4 @@ fn installations_disagreeing_on_their_commit_read_as_mixed() {
 
     let report = updates::updates(&w.env, &w.scope).unwrap();
     assert!(row(&report.rows, "gh").mixed, "{report:?}");
-}
-
-#[test]
-#[allow(clippy::unwrap_used)]
-fn the_drift_hook_installs_as_a_declared_item_and_is_idempotent() {
-    let w = world();
-    declare(&w, "", "");
-
-    let plan = drift::hook::install_plan(&w.env, &w.scope).unwrap();
-    assert!(!plan.is_empty());
-    apply::execute(&w.env, &plan, None).unwrap();
-
-    // Declared like any other hook, from the local source.
-    let loaded = manifest::load_for_mutation(&manifest::manifest_path(&w.env, &w.scope))
-        .unwrap()
-        .unwrap();
-    let decl = loaded.hooks.get(drift::hook::HOOK_NAME).unwrap();
-    assert_eq!(decl.source, "local");
-    // The report rides Pi's carrier too: same script, declared for both.
-    assert_eq!(
-        decl.harnesses.as_deref(),
-        Some(
-            &[
-                kendex_core::model::HarnessId::Claude,
-                kendex_core::model::HarnessId::Pi
-            ][..]
-        )
-    );
-    assert!(
-        drift::hook::HOOK_SCRIPT.contains("harnesses: [claude-code, pi]"),
-        "the script itself must apply to pi"
-    );
-
-    // The ordinary refresh renders it.
-    let report = audit(&w.env, &w.scope).unwrap();
-    apply::execute(&w.env, &report.plan, None).unwrap();
-    let report = audit(&w.env, &w.scope).unwrap();
-    assert!(
-        report.drift.is_empty(),
-        "the rendered hook audits clean: {:?}",
-        report.drift
-    );
-
-    // Installing again plans nothing.
-    let plan = drift::hook::install_plan(&w.env, &w.scope).unwrap();
-    assert!(plan.is_empty(), "{plan:?}");
 }

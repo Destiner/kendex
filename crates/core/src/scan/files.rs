@@ -65,11 +65,11 @@ fn warn_unreadable(dir: &Path, error: &std::io::Error, warnings: &mut Vec<String
 pub fn scan_file_dir(
     dir: &Path,
     exts: &[&str],
-    prefix: Option<&str>,
+    prefixes: &[&str],
     warnings: &mut Vec<String>,
 ) -> Vec<FoundFile> {
     let mut found = Vec::new();
-    collect_files(dir, exts, prefix, None, &mut found, warnings);
+    collect_files(dir, exts, prefixes, None, &mut found, warnings);
     found.sort_by(|a, b| a.name.cmp(&b.name));
     found
 }
@@ -77,7 +77,7 @@ pub fn scan_file_dir(
 fn collect_files(
     dir: &Path,
     exts: &[&str],
-    prefix: Option<&str>,
+    prefixes: &[&str],
     namespace: Option<&str>,
     found: &mut Vec<FoundFile>,
     warnings: &mut Vec<String>,
@@ -95,13 +95,13 @@ fn collect_files(
             continue;
         };
         if path.is_dir() && namespace.is_none() {
-            collect_files(&path, exts, prefix, Some(file_name), found, warnings);
+            collect_files(&path, exts, prefixes, Some(file_name), found, warnings);
             continue;
         }
         let Some((stem, enabled)) = match_item(file_name, exts) else {
             continue;
         };
-        if prefix.is_some_and(|p| !stem.starts_with(p)) {
+        if !prefixes.is_empty() && !prefixes.iter().any(|p| stem.starts_with(p)) {
             continue;
         }
         let name = match namespace {
@@ -210,10 +210,32 @@ mod tests {
         fs::write(tmp.path().join("ns/c.md"), "").unwrap();
 
         let mut warnings = Vec::new();
-        let found = scan_file_dir(tmp.path(), &["md"], None, &mut warnings);
+        let found = scan_file_dir(tmp.path(), &["md"], &[], &mut warnings);
         let names: Vec<_> = found.iter().map(|f| (f.name.as_str(), f.enabled)).collect();
         assert_eq!(names, [("a", true), ("b", false), ("ns/c", true)]);
         assert!(found.iter().all(|f| f.modified_at.is_some()));
+        assert!(warnings.is_empty());
+    }
+
+    /// The opencode hook surface restricts by prefix, and instruction files
+    /// written under the old product name must keep counting as ours: a
+    /// scan that dropped them would strand every existing install.
+    #[test]
+    fn a_prefix_restricted_scan_accepts_every_listed_generation() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("kendex-hook-a.md"), "").unwrap();
+        fs::write(tmp.path().join("vstack-hook-b.md"), "").unwrap();
+        fs::write(tmp.path().join("unrelated.md"), "").unwrap();
+
+        let mut warnings = Vec::new();
+        let found = scan_file_dir(
+            tmp.path(),
+            &["md"],
+            &["kendex-hook-", "vstack-hook-"],
+            &mut warnings,
+        );
+        let names: Vec<_> = found.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["kendex-hook-a", "vstack-hook-b"]);
         assert!(warnings.is_empty());
     }
 
@@ -221,7 +243,7 @@ mod tests {
     fn missing_directory_is_silent_but_unreadable_is_a_warning() {
         let tmp = tempfile::tempdir().unwrap();
         let mut warnings = Vec::new();
-        assert!(scan_file_dir(&tmp.path().join("absent"), &["md"], None, &mut warnings).is_empty());
+        assert!(scan_file_dir(&tmp.path().join("absent"), &["md"], &[], &mut warnings).is_empty());
         assert!(scan_subdirs(&tmp.path().join("absent"), "SKILL.md", &mut warnings).is_empty());
         assert!(scan_documents(&tmp.path().join("absent"), "json", &mut warnings).is_empty());
         assert!(warnings.is_empty());
@@ -232,7 +254,7 @@ mod tests {
             let sealed = tmp.path().join("sealed");
             fs::create_dir(&sealed).unwrap();
             fs::set_permissions(&sealed, fs::Permissions::from_mode(0o000)).unwrap();
-            let found = scan_file_dir(&sealed, &["md"], None, &mut warnings);
+            let found = scan_file_dir(&sealed, &["md"], &[], &mut warnings);
             fs::set_permissions(&sealed, fs::Permissions::from_mode(0o755)).unwrap();
             assert!(found.is_empty());
             assert_eq!(warnings.len(), 1);

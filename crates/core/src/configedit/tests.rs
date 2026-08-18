@@ -83,10 +83,31 @@ fn opencode_instruction_and_codex_feature_edits() {
 fn marker_blocks_upsert_and_strip_cleanly() {
     let base = "# My notes\n";
     let once = upsert_marker_block(base, "pi-hooks", "hook system text");
-    assert!(once.starts_with("# My notes\n\n<!-- vstack:append-system pi-hooks begin -->"));
+    assert!(once.starts_with("# My notes\n\n<!-- kendex:append-system pi-hooks begin -->"));
     let twice = upsert_marker_block(&once, "pi-hooks", "hook system text");
     assert_eq!(once, twice);
     assert_eq!(remove_marker_block(&once, "pi-hooks"), base);
+}
+
+/// A block written before the product rename is replaced under the new
+/// markers, never left to stack beside a second copy — and removal finds it.
+#[test]
+fn an_old_generation_marker_block_upserts_and_removes_cleanly() {
+    let base = "# My notes\n";
+    let old = format!(
+        "{base}\n<!-- vstack:append-system pi-hooks begin -->\nold text\n<!-- vstack:append-system pi-hooks end -->\n"
+    );
+    let refreshed = upsert_marker_block(&old, "pi-hooks", "new text");
+    assert!(!refreshed.contains("vstack:append-system"), "{refreshed}");
+    assert!(!refreshed.contains("old text"), "{refreshed}");
+    assert_eq!(
+        refreshed
+            .matches("kendex:append-system pi-hooks begin")
+            .count(),
+        1,
+        "{refreshed}"
+    );
+    assert_eq!(remove_marker_block(&old, "pi-hooks"), base);
 }
 
 /// Another tool wrote keys after ours and a handler after ours: a re-apply

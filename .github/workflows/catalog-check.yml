@@ -88,5 +88,5 @@ jobs:
             @anthropic-ai/claude-code
       - name: Round-trip the emitted trees
         env:
-          VSTACK_CLI_SMOKE: "1"
+          KENDEX_CLI_SMOKE: "1"
         run: cargo test -p vstack-cli --test cli_smoke -- --nocapture

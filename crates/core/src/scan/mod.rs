@@ -170,8 +170,12 @@ fn scan_surface(
     result: &mut ScanResult,
 ) {
     match surface {
-        Surface::FileDir { dir, exts, prefix } => {
-            for found in files::scan_file_dir(dir, exts, *prefix, &mut result.warnings) {
+        Surface::FileDir {
+            dir,
+            exts,
+            prefixes,
+        } => {
+            for found in files::scan_file_dir(dir, exts, prefixes, &mut result.warnings) {
                 warn_unknown_tags(&found, result);
                 result.items.push(ObservedItem {
                     kind,

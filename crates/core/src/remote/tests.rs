@@ -32,7 +32,7 @@ fn fixture() -> Fixture {
     commit(&upstream, "one");
     git(&upstream, &["tag", "release"]);
     let base = format!("file://{}", tmp.path().join("base").display());
-    let env = Env::fake(tmp.path(), FakeOs::Linux).with_var("VSTACK_GIT_BASE", &base);
+    let env = Env::fake(tmp.path(), FakeOs::Linux).with_var("KENDEX_GIT_BASE", &base);
     Fixture {
         _tmp: tmp,
         env,
@@ -98,7 +98,7 @@ fn shorthand_becomes_a_github_url_and_urls_pass_through() {
         clone_url(&env, "git@github.com:a/b.git"),
         "git@github.com:a/b.git"
     );
-    let rebased = env.with_var("VSTACK_GIT_BASE", "file:///fixtures/");
+    let rebased = env.with_var("KENDEX_GIT_BASE", "file:///fixtures/");
     assert_eq!(clone_url(&rebased, "a/b"), "file:///fixtures/a/b");
     assert_eq!(clone_url(&rebased, "https://x/y.git"), "https://x/y.git");
 }

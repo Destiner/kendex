@@ -1,6 +1,6 @@
 //! Phase 5 end to end: a fresh consuming repo installs from the DEFAULT
 //! remote catalog, customizes it, and refreshes clean — the GitHub host
-//! swapped for a local file:// git fixture via VSTACK_GIT_BASE.
+//! swapped for a local file:// git fixture via KENDEX_GIT_BASE.
 #![cfg(unix)]
 
 use std::fs;
@@ -15,7 +15,7 @@ fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
         .env_clear()
         .env("HOME", home)
         .env("PATH", std::env::var("PATH").unwrap_or_default())
-        .env("VSTACK_GIT_BASE", format!("file://{}/git", home.display()))
+        .env("KENDEX_GIT_BASE", format!("file://{}/git", home.display()))
         .output()
         .expect("vstack binary runs")
 }

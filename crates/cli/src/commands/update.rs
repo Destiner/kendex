@@ -6,10 +6,10 @@ use kendex_core::process::Hardened;
 use super::{CliResult, out, say};
 
 /// The release feed: `{"version": "1.2.3", "assets": {"<target>": "<url>"}}`.
-/// `VSTACK_UPDATE_FEED` overrides the URL so compat tests run against a
+/// `KENDEX_UPDATE_FEED` overrides the URL so compat tests run against a
 /// local fixture instead of the network.
 fn feed_url() -> String {
-    std::env::var("VSTACK_UPDATE_FEED").unwrap_or_else(|_| {
+    std::env::var("KENDEX_UPDATE_FEED").unwrap_or_else(|_| {
         "https://github.com/vanillagreencom/vstack2/releases/latest/download/feed.json".to_owned()
     })
 }

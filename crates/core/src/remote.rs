@@ -8,12 +8,12 @@ pub mod history;
 pub mod store;
 
 /// `owner/repo` → clone URL. Full URLs pass through untouched;
-/// `VSTACK_GIT_BASE` rebases shorthands onto another host (test fixtures).
+/// `KENDEX_GIT_BASE` rebases shorthands onto another host (test fixtures).
 pub fn clone_url(env: &Env, repo: &str) -> String {
     if repo.contains("://") || repo.starts_with("git@") {
         return repo.to_owned();
     }
-    match env.var("VSTACK_GIT_BASE") {
+    match env.var("KENDEX_GIT_BASE") {
         Some(base) => format!("{}/{repo}", base.trim_end_matches('/')),
         None => format!("https://github.com/{repo}.git"),
     }

@@ -207,7 +207,7 @@ fn convert_sections(
     }
     if flat.contains_key("GROWTH_GUARDS_PRE_COMMIT_LOCAL") {
         report.lines.push(
-            "GROWTH_GUARDS_PRE_COMMIT_LOCAL was not converted: a repository file must never name the executable the chain runs — set VSTACK_GUARD_PRE_COMMIT_LOCAL in your machine's environment instead"
+            "GROWTH_GUARDS_PRE_COMMIT_LOCAL was not converted: a repository file must never name the executable the chain runs — set KENDEX_GUARD_PRE_COMMIT_LOCAL in your machine's environment instead"
                 .into(),
         );
     }
@@ -221,7 +221,7 @@ fn mark_excludes_imported(ctx: &GuardCtx, file: &str, report: &mut ImportReport)
     let Some(text) = crate::fs::read_if_exists(&path)? else {
         return Ok(());
     };
-    if text.lines().next().map(str::trim) == Some(patterns::LEGACY_DIALECT_MARKER) {
+    if patterns::marked_legacy_dialect(&text) {
         return Ok(());
     }
     let updated = format!("{}\n{text}", patterns::LEGACY_DIALECT_MARKER);

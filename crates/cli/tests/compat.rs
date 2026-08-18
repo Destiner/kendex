@@ -170,7 +170,7 @@ fn report_files_through_a_stubbed_gh() {
     let args = fs::read_to_string(home.join("gh-args.txt")).unwrap();
     assert!(args.contains("vanillagreencom/vstack"));
     assert!(args.contains("harness"));
-    assert!(args.contains("vstack-report:v1 asset=guard kind=hook"));
+    assert!(args.contains("kendex-report:v1 asset=guard kind=hook"));
 }
 
 #[test]
@@ -205,7 +205,7 @@ fn update_replaces_the_binary_from_a_local_feed() {
         .env("HOME", home)
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .env(
-            "VSTACK_UPDATE_FEED",
+            "KENDEX_UPDATE_FEED",
             format!("file://{}/feed.json", home.display()),
         )
         .output()
@@ -227,7 +227,7 @@ fn update_replaces_the_binary_from_a_local_feed() {
         home,
         &["update"],
         &[(
-            "VSTACK_UPDATE_FEED",
+            "KENDEX_UPDATE_FEED",
             format!("file://{}/feed.json", home.display()),
         )],
     );

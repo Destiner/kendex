@@ -15,7 +15,20 @@ use super::guard_err;
 use super::settings::policy_content;
 
 /// The marker line the importer writes at the top of a v1 excludes file.
-pub const LEGACY_DIALECT_MARKER: &str = "# vstack-guard-dialect: legacy-glob";
+pub const LEGACY_DIALECT_MARKER: &str = "# kendex-guard-dialect: legacy-glob";
+
+/// The same marker under the old product name; files marked before the
+/// rename keep the dialect they were imported with.
+const LEGACY_DIALECT_MARKER_OLD: &str = "# vstack-guard-dialect: legacy-glob";
+
+/// Whether the file's first line is the imported-dialect marker, either
+/// spelling.
+pub fn marked_legacy_dialect(text: &str) -> bool {
+    matches!(
+        text.lines().next().map(str::trim),
+        Some(LEGACY_DIALECT_MARKER | LEGACY_DIALECT_MARKER_OLD)
+    )
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dialect {
@@ -175,7 +188,7 @@ pub fn load_excludes(ctx: &GuardCtx, check: &str, file: &str) -> Result<Excludes
         return Ok(excludes);
     };
     let text = String::from_utf8_lossy(&bytes);
-    if text.lines().next().map(str::trim) == Some(LEGACY_DIALECT_MARKER) {
+    if marked_legacy_dialect(&text) {
         excludes.dialect = Dialect::LegacyGlob;
     }
     for (number, line) in text.lines().enumerate() {
@@ -237,6 +250,20 @@ mod tests {
             validate_pattern("t", "a[]").is_err(),
             "the ] is a member, not the close"
         );
+    }
+
+    /// An excludes file marked before the product rename keeps its
+    /// legacy-glob semantics: the old marker spelling reads the same as the
+    /// one the importer writes today.
+    #[test]
+    fn both_dialect_marker_spellings_mark_a_file_imported() {
+        assert!(marked_legacy_dialect(
+            "# kendex-guard-dialect: legacy-glob\n*.ts\tnope\n"
+        ));
+        assert!(marked_legacy_dialect(
+            "# vstack-guard-dialect: legacy-glob\n*.ts\tnope\n"
+        ));
+        assert!(!marked_legacy_dialect("*.ts\tnope\n"));
     }
 
     /// sh reads a `]` in first position as a member of the class, and the

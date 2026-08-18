@@ -63,7 +63,10 @@ fn is_vstack_owned(
     frontmatter_repo: Option<&str>,
     upstream: &str,
 ) -> bool {
-    if frontmatter_source == Some("vstack") || frontmatter_repo == Some(DEFAULT_UPSTREAM) {
+    // Catalog content of both product-name generations opts in.
+    if matches!(frontmatter_source, Some("kendex" | "vstack"))
+        || frontmatter_repo == Some(DEFAULT_UPSTREAM)
+    {
         return true;
     }
     lock.entries.values().any(|entry| {
@@ -95,4 +98,24 @@ fn installed_frontmatter(env: &Env, scope: &Scope, name: &str) -> (Option<String
         })
     };
     (field("source:"), field("repository:"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A skill's frontmatter opts into upstream routing under either
+    /// product-name token: catalogs rendered before the rename say
+    /// `source: vstack` and must keep filing upstream.
+    #[test]
+    fn both_source_tokens_claim_ownership() {
+        let lock = Lock::default();
+        let owned = |source: Option<&str>| {
+            is_vstack_owned(&lock, "s", None, source, None, DEFAULT_UPSTREAM)
+        };
+        assert!(owned(Some("kendex")));
+        assert!(owned(Some("vstack")));
+        assert!(!owned(Some("someone-else")));
+        assert!(!owned(None));
+    }
 }

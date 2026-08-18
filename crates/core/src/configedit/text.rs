@@ -52,6 +52,16 @@ pub(super) fn codex_enable_hooks(current: &str) -> String {
 
 fn marker_bounds(name: &str) -> (String, String) {
     (
+        format!("<!-- kendex:append-system {name} begin -->"),
+        format!("<!-- kendex:append-system {name} end -->"),
+    )
+}
+
+/// Blocks written before the product rename carry this spelling; removal
+/// finds them too, so an upsert replaces an old block instead of stacking a
+/// second one under the new markers.
+fn legacy_marker_bounds(name: &str) -> (String, String) {
+    (
         format!("<!-- vstack:append-system {name} begin -->"),
         format!("<!-- vstack:append-system {name} end -->"),
     )
@@ -70,10 +80,16 @@ pub fn upsert_marker_block(current: &str, name: &str, block: &str) -> String {
 
 pub fn remove_marker_block(current: &str, name: &str) -> String {
     let (begin, end) = marker_bounds(name);
-    let Some(start) = current.find(&begin) else {
+    let removed = remove_between(current, &begin, &end);
+    let (begin, end) = legacy_marker_bounds(name);
+    remove_between(&removed, &begin, &end)
+}
+
+fn remove_between(current: &str, begin: &str, end: &str) -> String {
+    let Some(start) = current.find(begin) else {
         return current.to_owned();
     };
-    let Some(stop) = current[start..].find(&end) else {
+    let Some(stop) = current[start..].find(end) else {
         // Unterminated markers are user damage; leave them untouched.
         return current.to_owned();
     };

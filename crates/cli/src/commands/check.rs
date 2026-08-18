@@ -23,10 +23,10 @@ pub fn run(
 
     // Freshness is earned in the background, never waited on. The spawn is
     // detached with no stdio; a busy or failing refresh writes stamps and
-    // the next check reads them. `VSTACK_BACKGROUND_REFRESH=off` keeps the
+    // the next check reads them. `KENDEX_BACKGROUND_REFRESH=off` keeps the
     // check strictly read-only (tests, CI).
     if report::wants_background_refresh(env, &scopes)
-        && std::env::var("VSTACK_BACKGROUND_REFRESH").as_deref() != Ok("off")
+        && std::env::var("KENDEX_BACKGROUND_REFRESH").as_deref() != Ok("off")
     {
         kendex_core::process::respawn_detached(&["source", "refresh", "--stale"]);
     }

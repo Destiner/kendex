@@ -46,12 +46,14 @@ pub enum ProjectMarker {
 pub enum Surface {
     /// `<dir>/<name>.<ext>` — one item per file, one folder level of
     /// namespacing included (`ns/name.md` → item `ns/name`). A `.disabled`
-    /// suffix on the full filename marks a disabled item. `prefix` restricts
-    /// to filenames starting with it (opencode hook instructions).
+    /// suffix on the full filename marks a disabled item. A non-empty
+    /// `prefixes` restricts to filenames starting with one of them —
+    /// opencode hook instructions, where files written before the product
+    /// rename carry the old spelling and must stay owned.
     FileDir {
         dir: PathBuf,
         exts: &'static [&'static str],
-        prefix: Option<&'static str>,
+        prefixes: &'static [&'static str],
     },
     /// `<dir>/<name>/<marker>` — one item per subdirectory holding the
     /// marker file (`<marker>.disabled` marks a disabled item).
@@ -75,7 +77,7 @@ impl Surface {
         Surface::FileDir {
             dir,
             exts,
-            prefix: None,
+            prefixes: &[],
         }
     }
 }

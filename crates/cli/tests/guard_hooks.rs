@@ -282,7 +282,9 @@ fn the_local_extension_point_is_environment_only_and_judged_on_the_contract() {
         "a repository file never names the executable"
     );
 
-    // Named in the environment: runs, and its verdict counts.
+    // Named in the environment: runs, and its verdict counts. The old
+    // variable spelling still reads — machine-local chain hooks are set
+    // once and forgotten.
     let script_text = script.display().to_string();
     let local = run_with(
         home,
@@ -304,6 +306,35 @@ fn the_local_extension_point_is_environment_only_and_judged_on_the_contract() {
         "{said}"
     );
 
+    // The current variable name works too, and outranks the old one when
+    // both are set: here it names a passing script while the old name
+    // still points at the failing one.
+    let passing = home.join("local-pass");
+    let pass_marker = home.join("local-pass-ran");
+    std::fs::write(
+        &passing,
+        format!("#!/bin/sh\ntouch {}\nexit 0\n", pass_marker.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&passing, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let passing_text = passing.display().to_string();
+    let precedence = run_with(
+        home,
+        &root,
+        "vstack",
+        &["guard", "run", "pre-commit"],
+        &[
+            ("KENDEX_GUARD_PRE_COMMIT_LOCAL", passing_text.as_str()),
+            ("VSTACK_GUARD_PRE_COMMIT_LOCAL", script_text.as_str()),
+        ],
+    );
+    assert!(
+        precedence.status.success(),
+        "the current name must win: {}",
+        String::from_utf8_lossy(&precedence.stdout)
+    );
+    assert!(pass_marker.exists());
+
     // Any other failure is "could not complete": exit 2.
     std::fs::write(&script, "#!/bin/sh\nexit 7\n").unwrap();
     let broken = run_with(
@@ -311,7 +342,7 @@ fn the_local_extension_point_is_environment_only_and_judged_on_the_contract() {
         &root,
         "vstack",
         &["guard", "run", "pre-commit"],
-        &[("VSTACK_GUARD_PRE_COMMIT_LOCAL", script_text.as_str())],
+        &[("KENDEX_GUARD_PRE_COMMIT_LOCAL", script_text.as_str())],
     );
     assert_eq!(
         broken.status.code(),

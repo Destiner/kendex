@@ -157,7 +157,7 @@ fn one_hook_reaches_each_harness_in_its_own_native_form() {
             .contains("[features]\nhooks = true")
     );
 
-    let instruction = at(".opencode/instructions/vstack-hook-audit.md");
+    let instruction = at(".opencode/instructions/kendex-hook-audit.md");
     assert!(
         fs::read_to_string(&instruction)
             .unwrap()
@@ -166,7 +166,7 @@ fn one_hook_reaches_each_harness_in_its_own_native_form() {
     let opencode = json(&at("opencode.json"));
     assert_eq!(
         opencode["instructions"][0],
-        ".opencode/instructions/vstack-hook-audit.md"
+        ".opencode/instructions/kendex-hook-audit.md"
     );
     assert_eq!(opencode["permission"]["bash"]["*"], "ask");
 

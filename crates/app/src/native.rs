@@ -35,10 +35,10 @@ pub fn reveal_path(path: String) -> Result<(), String> {
     tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| e.to_string())
 }
 
-/// Editors vstack looks for, in preference order, after `VSTACK_EDITOR`.
+/// Editors vstack looks for, in preference order, after `KENDEX_EDITOR`.
 const EDITOR_CANDIDATES: [&str; 5] = ["codium", "code", "cursor", "zed", "subl"];
 
-/// Ordered list of editor names or paths to try: the `VSTACK_EDITOR`
+/// Ordered list of editor names or paths to try: the `KENDEX_EDITOR`
 /// override first when set, then the built-in candidates.
 fn editor_candidates(editor_override: Option<&str>) -> Vec<&str> {
     editor_override
@@ -119,9 +119,9 @@ pub fn open_in_editor(path: String) -> Result<(), String> {
         return Err(format!("{path} does not exist"));
     }
     let path_var = std::env::var("PATH").unwrap_or_default();
-    let editor_override = std::env::var("VSTACK_EDITOR").ok();
+    let editor_override = std::env::var("KENDEX_EDITOR").ok();
     let editor = resolve_editor_at(&path_var, editor_override.as_deref()).ok_or_else(|| {
-        "No code editor found — install one (VSCodium, VS Code, Cursor, Zed, Sublime) or set VSTACK_EDITOR".to_string()
+        "No code editor found — install one (VSCodium, VS Code, Cursor, Zed, Sublime) or set KENDEX_EDITOR".to_string()
     })?;
     Command::new(editor)
         .arg(&path)

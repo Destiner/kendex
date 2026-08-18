@@ -7,7 +7,7 @@
 //! passed unit tests. This is the only check in the suite where something
 //! other than vstack reads vstack's output.
 //!
-//! Opt-in: set `VSTACK_CLI_SMOKE=1`. Without it the test does nothing and
+//! Opt-in: set `KENDEX_CLI_SMOKE=1`. Without it the test does nothing and
 //! says so, because installing seven CLIs is not a precondition for
 //! running the suite. With it, a run where *every* harness was absent is a
 //! failure, not a pass: a gate that skips everything and reports green is
@@ -163,8 +163,8 @@ fn stage(home: &Path) -> PathBuf {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn every_harness_cli_reads_what_vstack_wrote() {
-    if std::env::var("VSTACK_CLI_SMOKE").as_deref() != Ok("1") {
-        note("not run — set VSTACK_CLI_SMOKE=1 with the harness CLIs installed");
+    if std::env::var("KENDEX_CLI_SMOKE").as_deref() != Ok("1") {
+        note("not run — set KENDEX_CLI_SMOKE=1 with the harness CLIs installed");
         return;
     }
     let tmp = tempfile::tempdir().unwrap();

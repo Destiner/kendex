@@ -116,7 +116,7 @@ pub fn run(env: &Env, args: ReportArgs) -> CliResult {
             .unwrap_or(("unknown", None));
         let kind_label = kind.map(ItemKind::name).unwrap_or("asset");
         sent_body.push_str(&format!(
-            "\n\n<!-- vstack-report:v1 asset={name} kind={kind_label} ownership=vstack -->"
+            "\n\n<!-- kendex-report:v1 asset={name} kind={kind_label} ownership=kendex -->"
         ));
         gh_args.extend(["--repo".to_owned(), upstream.clone()]);
         // Routing labels exist only on the canonical repo; a fork override

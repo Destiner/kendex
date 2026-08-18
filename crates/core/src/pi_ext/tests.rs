@@ -81,7 +81,7 @@ fn install_copies_registers_links_and_mirrors_append_system() {
     );
 
     let append = std::fs::read_to_string(append_system_path(&f.scope)).unwrap();
-    assert!(append.contains("<!-- vstack:append-system pi-widgets begin -->"));
+    assert!(append.contains("<!-- kendex:append-system pi-widgets begin -->"));
     assert!(append.contains("Use the widget tool."));
 }
 

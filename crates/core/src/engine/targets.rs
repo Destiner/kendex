@@ -129,7 +129,7 @@ pub(crate) fn hook_target(
             })
         }
         HarnessId::Opencode => {
-            let file = format!("vstack-hook-{name}.md");
+            let file = format!("kendex-hook-{name}.md");
             let (base, reference) = match scope {
                 Scope::Global => (
                     adapter(harness).default_global_root(env),

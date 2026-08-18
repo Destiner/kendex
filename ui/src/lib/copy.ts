@@ -126,7 +126,7 @@ export const OPEN_IN_FILE_BROWSER_LABEL = "File browser";
 export const OPEN_IN_EDITOR_LABEL = "Editor";
 export const EDITOR_ERROR_TITLE = "Couldn't open the editor";
 export const EDITOR_ERROR_STEPS = [
-  "Install VSCodium, VS Code, Cursor, Zed, or Sublime — or set VSTACK_EDITOR",
+  "Install VSCodium, VS Code, Cursor, Zed, or Sublime — or set KENDEX_EDITOR",
 ];
 export const FILE_BROWSER_ERROR_TITLE = "Couldn't open the file browser";
 

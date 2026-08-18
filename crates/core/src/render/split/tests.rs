@@ -1,4 +1,5 @@
 use super::*;
+use crate::render::skill::{INSTRUCTIONS_END, INSTRUCTIONS_START};
 
 const NOTE: &str = "\n> Continued in references/details.md — read it for the remaining sections.\n";
 

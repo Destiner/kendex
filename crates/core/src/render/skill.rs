@@ -5,8 +5,36 @@ use crate::error::Result;
 use crate::manifest::Manifest;
 use crate::source_read::SealedSource;
 
-pub const INSTRUCTIONS_START: &str = "<!-- vstack:project-instructions:start -->";
-pub const INSTRUCTIONS_END: &str = "<!-- vstack:project-instructions:end -->";
+pub const INSTRUCTIONS_START: &str = "<!-- kendex:project-instructions:start -->";
+pub const INSTRUCTIONS_END: &str = "<!-- kendex:project-instructions:end -->";
+
+// Files rendered before the product rename carry these markers; readers
+// accept both generations so an old block is refreshed in place instead of
+// reading as a hand edit.
+const LEGACY_INSTRUCTIONS_START: &str = "<!-- vstack:project-instructions:start -->";
+const LEGACY_INSTRUCTIONS_END: &str = "<!-- vstack:project-instructions:end -->";
+
+/// Byte range of the injected block, either marker generation: from the
+/// start marker through the end marker and its trailing newline. `None`
+/// when there is no block — or when a start marker has no matching end,
+/// which is user damage we leave in place rather than guess at.
+pub(crate) fn instructions_block_range(text: &str) -> Option<(usize, usize)> {
+    for (start_marker, end_marker) in [
+        (INSTRUCTIONS_START, INSTRUCTIONS_END),
+        (LEGACY_INSTRUCTIONS_START, LEGACY_INSTRUCTIONS_END),
+    ] {
+        let Some(start) = text.find(start_marker) else {
+            continue;
+        };
+        let end = text[start..].find(end_marker)?;
+        let mut end = start + end + end_marker.len();
+        if text.as_bytes().get(end) == Some(&b'\n') {
+            end += 1;
+        }
+        return Some((start, end));
+    }
+    None
+}
 
 /// The rendered skill: every file of the source tree — read through the
 /// sealed source, so a hostile catalog cannot smuggle host files in — with
@@ -93,12 +121,7 @@ pub fn inject_instructions(skill_md: &str, instructions: Option<&str>) -> String
 }
 
 fn strip_block(text: &str) -> String {
-    let Some(start) = text.find(INSTRUCTIONS_START) else {
-        return text.to_owned();
-    };
-    let Some(end) = text[start..].find(INSTRUCTIONS_END) else {
-        // An unterminated marker is user damage; leave it alone rather than
-        // guessing at boundaries.
+    let Some((start, cut_to)) = instructions_block_range(text) else {
         return text.to_owned();
     };
     // Remove exactly what inject added: the separator newline before the
@@ -108,10 +131,6 @@ fn strip_block(text: &str) -> String {
     } else {
         start
     };
-    let mut cut_to = start + end + INSTRUCTIONS_END.len();
-    if text.as_bytes().get(cut_to) == Some(&b'\n') {
-        cut_to += 1;
-    }
     format!("{}{}", &text[..cut_from], &text[cut_to..])
 }
 
@@ -151,6 +170,27 @@ mod tests {
 
         let removed = inject_instructions(&once, None);
         assert_eq!(removed, SKILL);
+    }
+
+    /// A skill rendered before the product rename carries the old marker
+    /// spelling; re-rendering replaces that block in place under the new
+    /// markers instead of treating it as the author's text.
+    #[test]
+    fn an_old_generation_block_is_replaced_not_kept() {
+        let old = format!(
+            "---\nname: github\n---\n\n{LEGACY_INSTRUCTIONS_START}\n## Project Instructions\n\nold text\n{LEGACY_INSTRUCTIONS_END}\n\nAuthor text.\n"
+        );
+        let refreshed = inject_instructions(&old, Some("new text"));
+        assert!(refreshed.contains(INSTRUCTIONS_START), "{refreshed}");
+        assert!(
+            !refreshed.contains(LEGACY_INSTRUCTIONS_START),
+            "{refreshed}"
+        );
+        assert!(refreshed.contains("new text") && !refreshed.contains("old text"));
+
+        let removed = inject_instructions(&old, None);
+        assert!(!removed.contains("Project Instructions"), "{removed}");
+        assert!(removed.contains("Author text."));
     }
 
     #[test]

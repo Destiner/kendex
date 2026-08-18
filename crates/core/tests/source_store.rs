@@ -79,7 +79,7 @@ fn world() -> World {
     fs::create_dir_all(home.join("app/.claude")).unwrap();
     let base = format!("file://{}", home.join("git").display());
     World {
-        env: Env::fake(&home, FakeOs::Linux).with_var("VSTACK_GIT_BASE", &base),
+        env: Env::fake(&home, FakeOs::Linux).with_var("KENDEX_GIT_BASE", &base),
         home,
         upstream,
         _tmp: tmp,

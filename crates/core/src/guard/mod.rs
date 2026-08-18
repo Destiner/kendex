@@ -202,7 +202,10 @@ pub fn run_pre_commit(ctx: &GuardCtx) -> ChainReport {
     report.step(&policy, "suppression-ban", |policy| {
         suppression_ban::run(ctx, policy, false)
     });
-    if let Ok(local) = std::env::var("VSTACK_GUARD_PRE_COMMIT_LOCAL")
+    // The old spelling stays readable: machine-local chain hooks are set
+    // once and forgotten. The current name wins when both are set.
+    if let Ok(local) = std::env::var("KENDEX_GUARD_PRE_COMMIT_LOCAL")
+        .or_else(|_| std::env::var("VSTACK_GUARD_PRE_COMMIT_LOCAL"))
         && !local.trim().is_empty()
     {
         report.fold("repo-local", run_local_entry(ctx, &local));

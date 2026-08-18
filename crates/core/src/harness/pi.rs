@@ -47,7 +47,7 @@ impl HarnessAdapter for Pi {
                 Surface::FileDir {
                     dir: root.join("extensions"),
                     exts: EXTENSION_EXTS,
-                    prefix: None,
+                    prefixes: &[],
                 },
             ],
         }
@@ -76,7 +76,7 @@ impl HarnessAdapter for Pi {
                 Surface::FileDir {
                     dir: dot.join("extensions"),
                     exts: EXTENSION_EXTS,
-                    prefix: None,
+                    prefixes: &[],
                 },
             ],
         }
@@ -118,7 +118,7 @@ mod tests {
                     Surface::FileDir {
                         dir: PathBuf::from("/p/.pi/extensions"),
                         exts: EXTENSION_EXTS,
-                        prefix: None,
+                        prefixes: &[],
                     },
                 ]
             );

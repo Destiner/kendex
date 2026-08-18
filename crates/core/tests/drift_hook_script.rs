@@ -9,7 +9,7 @@ use std::path::Path;
 use kendex_core::drift;
 
 /// The hook script's contract, exercised against /bin/sh with a stub
-/// `vstack` on PATH: every failure path emits exactly one line, and the
+/// `kendex` on PATH: every failure path emits exactly one line, and the
 /// hook never exits non-zero.
 #[allow(clippy::unwrap_used)]
 fn run_hook(dir: &Path, stdin: &str, env: &[(&str, &str)], stub: Option<&str>) -> (String, i32) {
@@ -18,7 +18,7 @@ fn run_hook(dir: &Path, stdin: &str, env: &[(&str, &str)], stub: Option<&str>) -
     fs::write(&script, drift::hook::HOOK_SCRIPT).unwrap();
     let bin = dir.join("bin");
     fs::create_dir_all(&bin).unwrap();
-    let stub_path = bin.join("vstack");
+    let stub_path = bin.join("kendex");
     let _ = fs::remove_file(&stub_path);
     if let Some(stub) = stub {
         fs::write(&stub_path, stub).unwrap();
@@ -57,7 +57,7 @@ fn the_hook_script_honors_its_contract() {
     let dir = tmp.path();
 
     // Kill switch: silent, exit 0.
-    let (out, code) = run_hook(dir, "{}", &[("VSTACK_DRIFT_HOOK", "off")], None);
+    let (out, code) = run_hook(dir, "{}", &[("KENDEX_DRIFT_HOOK", "off")], None);
     assert_eq!((out.as_str(), code), ("", 0));
 
     // Resumed and compacted sessions are skipped.

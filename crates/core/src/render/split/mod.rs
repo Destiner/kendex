@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 
 use super::RenderWarning;
 use super::fences::fenced_ranges;
-use super::skill::{INSTRUCTIONS_END, INSTRUCTIONS_START};
 
 const SKILL_FILE: &str = "SKILL.md";
 const PROVENANCE: &str = "<!-- continued from SKILL.md -->\n";
@@ -143,18 +142,7 @@ pub fn enforce_body_cap(mut files: Vec<(PathBuf, Vec<u8>)>, max_bytes: usize) ->
 /// unterminated marker is user damage — as in `inject_instructions`, we take
 /// the file as it stands rather than guessing where the block ends.
 fn protected_range(body: &str) -> (usize, usize) {
-    let absent = (body.len(), body.len());
-    let Some(start) = body.find(INSTRUCTIONS_START) else {
-        return absent;
-    };
-    let Some(end) = body[start..].find(INSTRUCTIONS_END) else {
-        return absent;
-    };
-    let mut end = start + end + INSTRUCTIONS_END.len();
-    if body.as_bytes().get(end) == Some(&b'\n') {
-        end += 1;
-    }
-    (start, end)
+    crate::render::skill::instructions_block_range(body).unwrap_or((body.len(), body.len()))
 }
 
 /// The first free overflow name. Never overwrite a file the skill author

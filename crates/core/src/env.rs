@@ -16,7 +16,7 @@ const HARNESS_VARS: [&str; 7] = [
     "GEMINI_CLI_SYSTEM_SETTINGS_PATH",
     // Rebases `owner/repo` source shorthands onto another git host —
     // release smokes and tests point it at a file:// fixture tree.
-    "VSTACK_GIT_BASE",
+    "KENDEX_GIT_BASE",
 ];
 
 /// Every filesystem root the app reads or writes flows through here so tests

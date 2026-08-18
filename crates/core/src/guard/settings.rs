@@ -1,8 +1,11 @@
 //! The project settings resolver the guards read — built once, in core.
 //!
 //! Precedence per key: the process environment
-//! (`VSTACK_GUARDS_<CHECK>_<KEY>`), then `.vstack/settings.toml`, then the
-//! committed `vstack.settings.toml`, then the built-in default. Everything
+//! (`KENDEX_GUARDS_<CHECK>_<KEY>`, falling back to the old
+//! `VSTACK_GUARDS_*` spelling — machine-local overrides are set once and
+//! forgotten), then `.kendex/settings.toml` (or the old `.vstack/`), then
+//! the committed `kendex.settings.toml` (or `vstack.settings.toml`), then
+//! the built-in default. Everything
 //! that decides a verdict is read from the index (settled decision 5): a
 //! settings file resolves from its staged copy and nothing else — one
 //! staged for deletion, or never staged at all, governs as absent. The
@@ -14,8 +17,14 @@ use crate::error::Result;
 use super::ctx::GuardCtx;
 use super::guard_err;
 
-/// The two settings files, in precedence order.
-const SETTINGS_FILES: [&str; 2] = [".vstack/settings.toml", "vstack.settings.toml"];
+/// The settings files, in precedence order — the current names ahead of
+/// the ones repositories committed before the product rename.
+const SETTINGS_FILES: [&str; 4] = [
+    ".kendex/settings.toml",
+    "kendex.settings.toml",
+    ".vstack/settings.toml",
+    "vstack.settings.toml",
+];
 
 /// A policy file's content as the commit carries it: the index copy, or
 /// `None` when the index has no such path. Any git failure other than
@@ -113,12 +122,16 @@ impl Policy {
     }
 
     fn env_override(check: &str, key: &str) -> Option<String> {
-        let name = format!(
-            "VSTACK_GUARDS_{}_{}",
+        let suffix = format!(
+            "GUARDS_{}_{}",
             check.replace('-', "_").to_ascii_uppercase(),
             key.replace('-', "_").to_ascii_uppercase()
         );
-        std::env::var(&name).ok()
+        // The old spelling stays readable: machine-local overrides are set
+        // once and forgotten. The current name wins when both are set.
+        std::env::var(format!("KENDEX_{suffix}"))
+            .or_else(|_| std::env::var(format!("VSTACK_{suffix}")))
+            .ok()
     }
 
     fn file_value(&self, check: &str, key: &str) -> Option<&toml::Value> {

@@ -70,16 +70,16 @@ fn instruction_references_are_scope_relative_and_cursor_is_project_only() {
     };
     assert_eq!(
         path,
-        PathBuf::from("/p/.opencode/instructions/vstack-hook-guard.md")
+        PathBuf::from("/p/.opencode/instructions/kendex-hook-guard.md")
     );
-    assert_eq!(reference, ".opencode/instructions/vstack-hook-guard.md");
+    assert_eq!(reference, ".opencode/instructions/kendex-hook-guard.md");
 
     let Some(HookTarget::Instruction { reference, .. }) =
         hook_target(&env, &Scope::Global, HarnessId::Opencode, "guard")
     else {
         panic!("opencode hooks are instruction targets");
     };
-    assert_eq!(reference, "instructions/vstack-hook-guard.md");
+    assert_eq!(reference, "instructions/kendex-hook-guard.md");
 
     assert_eq!(
         hook_target(&env, &scope, HarnessId::Cursor, "guard"),
