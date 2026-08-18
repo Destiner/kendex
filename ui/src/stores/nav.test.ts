@@ -66,7 +66,7 @@ describe("nav store", () => {
     useNavStore.getState().back();
     expect(useNavStore.getState().future).toHaveLength(1);
 
-    useNavStore.getState().goTo("tools");
+    useNavStore.getState().goTo("harnesses");
     expect(useNavStore.getState().future).toEqual([]);
   });
 
@@ -118,12 +118,12 @@ describe("nav store", () => {
   });
 
   it("hands off a tool + kind filter to Library and clears it on request", () => {
-    useNavStore.getState().goToLibrary({ tool: "claude", kind: "hook" });
+    useNavStore.getState().goToLibrary({ harness: "claude", kind: "hook" });
 
     const state = useNavStore.getState();
     expect(state.page).toBe("library");
     expect(state.libraryTab).toBe("installed");
-    expect(state.libraryFilter).toEqual({ tool: "claude", kind: "hook" });
+    expect(state.libraryFilter).toEqual({ harness: "claude", kind: "hook" });
 
     state.clearLibraryFilter();
     expect(useNavStore.getState().libraryFilter).toBeNull();
@@ -165,7 +165,7 @@ describe("nav store", () => {
 
   it("back() pops history and restores the prior page and tab", () => {
     useNavStore.setState({ libraryTab: "add" });
-    useNavStore.getState().goTo("tools");
+    useNavStore.getState().goTo("harnesses");
     useNavStore.getState().back();
 
     const state = useNavStore.getState();
@@ -175,8 +175,8 @@ describe("nav store", () => {
   });
 
   it("back() clears any pending library filter", () => {
-    useNavStore.getState().goTo("tools");
-    useNavStore.getState().goToLibrary({ tool: "claude", kind: "hook" });
+    useNavStore.getState().goTo("harnesses");
+    useNavStore.getState().goToLibrary({ harness: "claude", kind: "hook" });
     useNavStore.getState().back();
 
     expect(useNavStore.getState().libraryFilter).toBeNull();
@@ -189,7 +189,7 @@ describe("nav store", () => {
   });
 
   it("setPage resets the history stack and clears any pending filter", () => {
-    useNavStore.getState().goToLibrary({ tool: "claude", kind: "hook" });
+    useNavStore.getState().goToLibrary({ harness: "claude", kind: "hook" });
     useNavStore.getState().setPage("settings");
 
     const state = useNavStore.getState();
@@ -222,7 +222,7 @@ describe("nav store", () => {
   it("caps the history stack so it never grows without bound", () => {
     for (let i = 0; i < 25; i++) {
       useNavStore.getState().goToLibrary();
-      useNavStore.getState().goTo("tools");
+      useNavStore.getState().goTo("harnesses");
     }
 
     expect(useNavStore.getState().history.length).toBeLessThanOrEqual(20);

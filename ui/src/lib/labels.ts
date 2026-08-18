@@ -12,7 +12,7 @@ import type {
 } from "@/bindings";
 import type { LibraryTab, Page } from "@/stores/nav";
 
-export const TOOL_NAMES: Record<HarnessId, string> = {
+export const HARNESS_NAMES: Record<HarnessId, string> = {
   claude: "Claude Code",
   codex: "Codex",
   opencode: "OpenCode",
@@ -22,7 +22,7 @@ export const TOOL_NAMES: Record<HarnessId, string> = {
   copilot: "GitHub Copilot",
 };
 
-export const toolName = (id: HarnessId): string => TOOL_NAMES[id];
+export const harnessName = (id: HarnessId): string => HARNESS_NAMES[id];
 
 const KIND_LABELS: Record<ItemKind, { one: string; many: string }> = {
   agent: { one: "Agent", many: "Agents" },
@@ -195,7 +195,7 @@ export const PAGE_LABELS: Record<Page, string> = {
   review: "Review & apply",
   library: "Library",
   updates: "Updates",
-  tools: "Tools",
+  harnesses: "Harnesses",
   projects: "Projects",
   unmanaged: "Unmanaged items",
   customize: "Customize",

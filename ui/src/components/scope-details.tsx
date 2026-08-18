@@ -3,10 +3,10 @@ import { Badge } from "@/components/ui/badge";
 import { type MergedDriftRow, mergedDetail } from "@/lib/drift-merge";
 import {
   driftDetail,
+  harnessName,
   kindLabel,
   STATE_BADGES,
   STATE_LABELS,
-  toolName,
 } from "@/lib/labels";
 
 /** What applying this project would do, one line per thing it touches. */
@@ -18,7 +18,7 @@ export function ScopeChanges({ changes }: { changes: MergedDriftRow[] }) {
         {changes.map((group) => {
           const detail = mergedDetail(group.installations.map(driftDetail));
           const tools = group.installations
-            .map((row) => toolName(row.harness))
+            .map((row) => harnessName(row.harness))
             .join(", ");
           return (
             <div

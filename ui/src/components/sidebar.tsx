@@ -32,7 +32,7 @@ const NAV: { page: Page; label: string; icon: typeof Home }[] = [
   { page: "review", label: "Review & apply", icon: CircleCheck },
   { page: "library", label: "Library", icon: Library },
   { page: "updates", label: "Updates", icon: ArrowUpCircle },
-  { page: "tools", label: "Tools", icon: TerminalSquare },
+  { page: "harnesses", label: "Harnesses", icon: TerminalSquare },
   { page: "projects", label: "Projects", icon: FolderGit2 },
   { page: "customize", label: "Customize", icon: SlidersHorizontal },
   { page: "settings", label: "Settings", icon: Settings },

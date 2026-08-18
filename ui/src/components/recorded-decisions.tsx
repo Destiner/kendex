@@ -20,7 +20,7 @@ import {
   revokeLabel,
   sortDecisions,
 } from "@/lib/decisions";
-import { kindLabel, scopeName, toolName } from "@/lib/labels";
+import { harnessName, kindLabel, scopeName } from "@/lib/labels";
 import { useAuditStore } from "@/stores/audit";
 import { useProblemsStore } from "@/stores/problems";
 
@@ -30,7 +30,7 @@ import { useProblemsStore } from "@/stores/problems";
 function rowTitle(row: RecordedDecision): string {
   const name = row.name;
   const kind = row.kind ? kindLabel(row.kind) : null;
-  const tool = row.harness ? toolName(row.harness) : null;
+  const tool = row.harness ? harnessName(row.harness) : null;
   return [name, [kind, tool].filter(Boolean).join(" · ")]
     .filter(Boolean)
     .join(" — ");

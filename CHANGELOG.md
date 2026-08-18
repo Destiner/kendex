@@ -440,6 +440,15 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Changed
 
+- The coding tools vstack writes to are called **harnesses** now, in the
+  sidebar, the Library's filter and column, and everywhere the words
+  appeared. "Tool" was doing two jobs at once — Claude Code is one, and so
+  is a thing an agent is allowed to call, which agent settings also list.
+- Loading states are the shape of what's coming rather than grey slabs: the
+  Library draws rows, Home draws its attention list, its recent items and
+  its three tiles, and a wait with no shape to borrow gets a small spinner.
+  Excess copy is gone with them — a count is a count, and the Review page
+  no longer opens by explaining itself.
 - The safety check got about seven times faster: a large project that took
   0.8 s to score now takes 0.11 s, and spends less processor time doing it.
   Each distinct file is read once and scored on its own core, phrase

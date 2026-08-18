@@ -3,6 +3,7 @@ import { CustomHooks } from "@/components/customize/custom-hooks";
 import { CustomizedIndex } from "@/components/customize/customized-index";
 import { SaveBar } from "@/components/customize/save-bar";
 import { SharedInstructions } from "@/components/customize/shared-instructions";
+import { DotSpinner } from "@/components/loading";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { StatusNote } from "@/components/status-note";
@@ -106,7 +107,10 @@ export function CustomizePage() {
             </StatusNote>
           ) : null}
           {loading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <DotSpinner />
+              Loading…
+            </p>
           ) : null}
           {draft ? (
             <>

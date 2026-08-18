@@ -1,5 +1,5 @@
 import type { HarnessId, ItemKind } from "@/bindings";
-import { ToolBadge } from "@/components/tool-badge";
+import { HarnessBadge } from "@/components/harness-badge";
 import { Badge } from "@/components/ui/badge";
 import { kindLabel } from "@/lib/labels";
 
@@ -9,7 +9,7 @@ import { kindLabel } from "@/lib/labels";
  * the kind, then a mark per tool, so the tools stay pickable out of a row at
  * a glance instead of hiding inside "Skill · Codex, Pi".
  */
-export function KindToolChips({
+export function KindHarnessChips({
   kind,
   harnesses,
 }: {
@@ -20,7 +20,7 @@ export function KindToolChips({
     <span className="flex shrink-0 items-center gap-1.5">
       <Badge variant="outline">{kindLabel(kind)}</Badge>
       {harnesses.map((harness) => (
-        <ToolBadge key={harness} harness={harness} compact />
+        <HarnessBadge key={harness} harness={harness} compact />
       ))}
     </span>
   );

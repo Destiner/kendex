@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { DriftRow, ItemKind } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { KindToolChips } from "@/components/kind-tool-chips";
+import { KindHarnessChips } from "@/components/kind-harness-chips";
 import { Button } from "@/components/ui/button";
 import { type SharedLink, sharedLinkOf } from "@/lib/adopt-shared";
 import {
@@ -32,7 +32,7 @@ function kindCounts(rows: MergedDriftRow[]): [ItemKind, number][] {
 }
 
 // A skill installed by hand for two harnesses is one thing to adopt, not
-// two — so one row carries every tool badge and one button adopts every
+// two — so one row carries every harness mark and one button adopts every
 // installation at once.
 export function UnmanagedItems({
   rows,
@@ -166,7 +166,7 @@ export function UnmanagedItems({
                       </span>
                     ) : null}
                   </span>
-                  <KindToolChips kind={group.kind} harnesses={harnesses} />
+                  <KindHarnessChips kind={group.kind} harnesses={harnesses} />
                   <Button
                     size="sm"
                     variant="outline"

@@ -1,5 +1,5 @@
 import type { HarnessId } from "@/bindings";
-import { HarnessRow } from "@/components/tools/harness-row";
+import { HarnessRow } from "@/components/harnesses/harness-row";
 import { Button } from "@/components/ui/button";
 import { countByKind } from "@/lib/derive";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
@@ -16,7 +16,7 @@ const ALL_HARNESSES: HarnessId[] = [
   "copilot",
 ];
 
-/** "Tools": the AI coding tools this machine has, one row each. */
+/** "Harnesses": the AI coding tools this machine has, one row each. */
 export function HarnessList() {
   const result = useScanStore((s) => s.result);
   const refreshScan = useScanStore((s) => s.refresh);

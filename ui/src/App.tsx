@@ -8,6 +8,7 @@ import { StatusFooter } from "@/components/status-footer";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { WindowControls } from "@/components/window-controls";
 import { CustomizePage } from "@/pages/customize";
+import { HarnessesPage } from "@/pages/harnesses";
 import { LibraryPage } from "@/pages/library";
 import { OverviewPage } from "@/pages/overview";
 import { PackagePage } from "@/pages/package";
@@ -15,7 +16,6 @@ import { ProblemsPage } from "@/pages/problems";
 import { ProjectsPage } from "@/pages/projects";
 import { ReviewPage } from "@/pages/review";
 import { SettingsPage } from "@/pages/settings";
-import { ToolsPage } from "@/pages/tools";
 import { UnmanagedPage } from "@/pages/unmanaged";
 import { UpdatesPage } from "@/pages/updates";
 import { useAuditStore } from "@/stores/audit";
@@ -148,7 +148,7 @@ export default function App() {
                 {page === "library" && <LibraryPage />}
                 {page === "package" && <PackagePage key={packageKey} />}
                 {page === "updates" && <UpdatesPage />}
-                {page === "tools" && <ToolsPage />}
+                {page === "harnesses" && <HarnessesPage />}
                 {page === "projects" && <ProjectsPage />}
                 {page === "unmanaged" && <UnmanagedPage />}
                 {page === "review" && <ReviewPage />}

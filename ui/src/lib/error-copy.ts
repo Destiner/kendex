@@ -32,7 +32,7 @@ export const PROBLEM_STEPS: Record<ProblemKind, string[]> = {
   ],
   "scan-failure": [
     "Try scanning again",
-    "Check that vstack can still read your tool folders",
+    "Check that vstack can still read your harness folders",
   ],
 };
 

@@ -13,7 +13,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { TAGS_ROW_LABEL } from "@/lib/copy";
 import type { ScopeSelection } from "@/lib/derive";
-import { kindLabel, TAG_LABELS, toolName } from "@/lib/labels";
+import { harnessName, kindLabel, TAG_LABELS } from "@/lib/labels";
 import { PAGE_GUTTER, WIDE_CONTENT_WIDTH } from "@/lib/layout";
 import { cn } from "@/lib/utils";
 import { useNavStore } from "@/stores/nav";
@@ -135,11 +135,11 @@ export function LibraryFilters({
             options={TAGS.map((t) => [t, TAG_LABELS[t]])}
           />
           <FacetSelect
-            label="Tool"
-            empty="All tools"
+            label="Harness"
+            empty="All harnesses"
             value={harness}
             onChange={onHarnessChange}
-            options={HARNESSES.map((h) => [h, toolName(h)])}
+            options={HARNESSES.map((h) => [h, harnessName(h)])}
           />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">

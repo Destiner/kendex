@@ -1,7 +1,7 @@
 import type { HarnessId } from "@/bindings";
+import { HarnessBadge } from "@/components/harness-badge";
 import { StatusDot } from "@/components/status-dot";
 import { TagBadges } from "@/components/tag-badge";
-import { ToolBadge } from "@/components/tool-badge";
 import { Badge } from "@/components/ui/badge";
 import { TableCell, TableRow } from "@/components/ui/table";
 import {
@@ -119,7 +119,7 @@ export function InstalledRow({
       <TableCell>
         <span className="flex flex-wrap gap-1">
           {group.harnesses.map((h) => (
-            <ToolBadge key={h} harness={h as HarnessId} compact />
+            <HarnessBadge key={h} harness={h as HarnessId} compact />
           ))}
           {group.shared ? (
             <Badge variant="secondary">Shared files</Badge>

@@ -1,5 +1,5 @@
 import type { HarnessId } from "@/bindings";
-import { toolName } from "@/lib/labels";
+import { harnessName } from "@/lib/labels";
 // Product prose: the sentences a person reads, as opposed to the vocabulary
 // in labels.ts that names things. Kept apart so wording can be reviewed as
 // writing, in one place, without wading through id-to-name maps.
@@ -13,16 +13,14 @@ export const morePlacesLabel = (count: number): string =>
   `+${count} more place${count === 1 ? "" : "s"}`;
 export const AFFECTS_LABEL = "Affects";
 
-// Review & apply page copy: what the page is, and what "managing" an item
-// buys you — said once here so "Start managing" doesn't need to explain
-// itself on every row.
-export const REVIEW_SUBTITLE = "Nothing is written until you apply.";
+// Review & apply page copy: what "managing" an item buys you, said once
+// here so "Start managing" doesn't need to explain itself on every row.
 export const ALL_IN_SYNC_TITLE = "Everything is in sync";
 export const ALL_IN_SYNC_BODY =
   "Changes from Customize or your catalogs show up here.";
 // Says what you get, not what the app calls the state you'd be leaving.
 export const UNMANAGED_SECTION_EXPLAINER =
-  "vstack didn't install these. Hand one over and it gets kept updated, checked, and copied to every tool.";
+  "Hand one over and vstack keeps it updated, checked and copied to every harness.";
 export const START_MANAGING_LABEL = "Start managing";
 // The apply flow, said as what will happen rather than as what the engine
 // calls it. "Orphan" is a word for whoever wrote the planner; the person
@@ -64,20 +62,20 @@ export const ALL_MANAGED_TITLE = "Everything is managed";
 export const ALL_MANAGED_BODY =
   "vstack looks after every skill, agent and hook it can see.";
 export const SEE_IN_LIBRARY_LABEL = "See them in the Library";
-// Where a tool keeps its files — only worth setting for a tool that was
+// Where a harness keeps its files — only worth setting for one that was
 // moved somewhere other than its usual place.
-// Content a tool ships with itself. It is named, never nagged about: the
+// Content a harness ships with itself. It is named, never nagged about: the
 // person never chose it and cannot change it from here.
 export const bundledWithLabel = (harness: HarnessId): string =>
-  `Bundled with ${toolName(harness)}`;
+  `Bundled with ${harnessName(harness)}`;
 export const vendorHelp = (vendor: string): string =>
-  `${vendor} ships and updates this with the tool. vstack lists it, but doesn't manage or check it.`;
+  `${vendor} ships and updates this with the harness. vstack lists it, but doesn't manage or check it.`;
 export const BROWSE_LABEL = "Choose a folder…";
-export const TOOL_FOLDER_HELP = "Change where this tool keeps its files";
-export const toolFolderTitle = (tool: string): string =>
-  `Where does ${tool} keep its files?`;
-export const TOOL_FOLDER_BODY =
-  "Only worth setting if you moved the tool. Leave it empty to let vstack find it.";
+export const HARNESS_FOLDER_HELP = "Change where this harness keeps its files";
+export const harnessFolderTitle = (harness: string): string =>
+  `Where does ${harness} keep its files?`;
+export const HARNESS_FOLDER_BODY =
+  "Only worth setting if you moved the harness. Leave it empty to let vstack find it.";
 export const NOT_INSTALLED_LABEL = "Not installed";
 export const removeLeftBehindLabel = (count: number): string =>
   count === 1
@@ -95,7 +93,7 @@ export const RECENT_ACTIVITY_EMPTY = "Nothing on this machine has changed yet.";
 export const TAGS_ROW_LABEL = "For";
 
 export const ADD_PROJECT_HELP =
-  "Point vstack at a repository and it keeps that project's tools in sync too.";
+  "Point vstack at a repository and it keeps that project's harnesses in sync too.";
 export const SCAN_FOLDER_HELP =
   "Look inside a folder for repositories, then add the ones you want.";
 export const NO_PROJECTS_FOUND = "Nothing that looks like a project in there.";
@@ -118,7 +116,7 @@ export const NO_CATALOGS_YET =
 // files stay put.
 export const ENABLED_LABEL = "Enabled";
 export const ENABLED_HELP =
-  "Your tools load this. Switch it off and the files stay where they are — the tools just stop reading them.";
+  "Your harnesses load this. Switch it off and the files stay where they are — they just stop reading them.";
 
 // Library flyout's open-actions menu.
 export const OPEN_IN_LABEL = "Open in…";

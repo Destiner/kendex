@@ -78,13 +78,13 @@ export function InstalledView() {
     );
 
   // The filter is a one-time handoff from wherever the link was clicked
-  // (Tools, Projects); once applied, further tab visits start from the
+  // (Harnesses, Projects); once applied, further tab visits start from the
   // stored view again rather than reapplying a stale filter.
   useEffect(() => {
     const handoff = useNavStore.getState().libraryFilter;
     if (handoff) {
       setKind(handoff.kind ?? "any");
-      setHarness(handoff.tool ?? "any");
+      setHarness(handoff.harness ?? "any");
     }
     clearLibraryFilter();
   }, [clearLibraryFilter, setKind, setHarness]);
@@ -166,7 +166,7 @@ export function InstalledView() {
                   <TableHead>Name</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>{TAGS_ROW_LABEL}</TableHead>
-                  <TableHead>Tools</TableHead>
+                  <TableHead>Harnesses</TableHead>
                   <TableHead>Where</TableHead>
                   <TableHead className="text-right">Updated</TableHead>
                   <TableHead>Status</TableHead>

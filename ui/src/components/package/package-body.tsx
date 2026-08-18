@@ -6,6 +6,7 @@ import type {
   VersionRow,
 } from "@/bindings";
 import { DiffView } from "@/components/diff/diff-view";
+import { DotSpinner } from "@/components/loading";
 import { FilePreview } from "@/components/package/file-preview";
 import { EditedNotice } from "@/components/package/fork-notice";
 import { PackageSidebar } from "@/components/package/package-sidebar";
@@ -80,7 +81,10 @@ export function PackageBody({
             onClose={() => setView({ mode: "files", file: null })}
           />
         ) : (
-          <p className="text-sm text-muted-foreground">Comparing…</p>
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <DotSpinner />
+            Comparing…
+          </p>
         )
       ) : (
         <div className="flex flex-col gap-8 lg:flex-row">

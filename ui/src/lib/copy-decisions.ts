@@ -43,7 +43,7 @@ export const IGNORE_CONFIRM = "Ignore";
 export const ignoreManyTitle = (count: number): string =>
   `Ignore ${count} findings?`;
 export const ignoreManyBody =
-  "These are the same content seen through several tools, so one decision covers all of them.";
+  "These are the same content seen through several harnesses, so one decision covers all of them.";
 export const UNDO_LABEL = "Undo";
 export const ignoredToast = (count: number): string =>
   count === 1 ? "Finding ignored" : `${count} findings ignored`;

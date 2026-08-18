@@ -12,7 +12,7 @@ import type { ItemKind } from "@/bindings";
 
 // One icon per kind, shared by every page that lists items — a skill
 // should look like the same thing whether you're on Library, Review, or
-// Tools, so the mapping lives here instead of being redrawn per screen.
+// Harnesses, so the mapping lives here instead of being redrawn per screen.
 const KIND_ICONS: Record<ItemKind, LucideIcon> = {
   skill: BookOpen,
   agent: Bot,

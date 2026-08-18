@@ -166,7 +166,11 @@ lives in one capability table read by core and UI.
 - Vercel-inspired design language: monochrome, high contrast, minimal
   chrome. Light/dark/system only — no themes. Every color, space, and
   radius flows through design tokens (guard bans raw hex in UI code).
-- Hue carries exactly one meaning: **which tool** an item belongs to
+- A coding tool vstack writes to is a **harness**, in the code and on
+  screen alike (`HarnessId` in core, "Harnesses" in the sidebar). "Tool"
+  on screen would collide with the tools a model is allowed to call,
+  which agent settings also name.
+- Hue carries exactly one meaning: **which harness** an item belongs to
   (`--tool-*`, one per harness). Status keeps the semantic tokens it
   always had, and item kinds are told apart by icon — so no surface ever
   asks a reader to decode two colour languages at once. The Library's
@@ -174,8 +178,8 @@ lives in one capability table read by core and UI.
   when you have changed that package, and the table prints the key above
   itself. A colour that means something has to say what, on the same
   screen as the thing it marks.
-- In a table, a tool is its mark, not its name. Every row carries the
-  same five or six tools, so spelling them out is a column of repeated
+- In a table, a harness is its mark, not its name. Every row carries the
+  same five or six harnesses, so spelling them out is a column of repeated
   words crowding out the columns that differ; the logo and its hue tell
   them apart and the name arrives on hover and for screen readers. Where
   a tool is stated once rather than listed — a package's own details —
@@ -215,10 +219,10 @@ lives in one capability table read by core and UI.
   app-wide picker in the chrome silently narrowed pages that state each
   row's location anyway — a count that disagreed with the page under it,
   with no visible cause. Every other page shows every scope.
-- Tools and Projects are two sidebar destinations, not two tabs on one
+- Harnesses and Projects are two sidebar destinations, not two tabs on one
   page: they answer different questions and neither is a mode of the
-  other. Where a tool keeps its files is edited on the tool's own row,
-  not in a second list of the same tools.
+  other. Where a harness keeps its files is edited on that harness's own
+  row, not in a second list of the same harnesses.
 - Content a tool ships with itself — Codex's bundled plugins, Claude
   Code's — belongs to that tool, not to the person running vstack.
   `core/vendor.rs` reads ownership off the marketplace a plugin names, an

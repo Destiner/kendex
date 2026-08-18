@@ -1,20 +1,20 @@
 import { Pencil } from "lucide-react";
 import { useState } from "react";
 import type { HarnessId, ItemKind } from "@/bindings";
+import { HarnessIcon } from "@/components/harness-icon";
+import { HarnessFolderDialog } from "@/components/harnesses/harness-folder-dialog";
 import { KindCountBadges } from "@/components/kind-count-badges";
-import { ToolIcon } from "@/components/tool-icon";
-import { ToolFolderDialog } from "@/components/tools/tool-folder-dialog";
 import { Button } from "@/components/ui/button";
-import { NOT_INSTALLED_LABEL, TOOL_FOLDER_HELP } from "@/lib/copy";
-import { toolName } from "@/lib/labels";
+import { HARNESS_FOLDER_HELP, NOT_INSTALLED_LABEL } from "@/lib/copy";
+import { harnessName } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 import { useNavStore } from "@/stores/nav";
 
-/** One detected (or missing) AI coding tool, as a single compact row.
+/** One detected (or missing) harness, as a single compact row.
  *
- * Where the tool keeps its files is the row's second line, and changing it
+ * Where the harness keeps its files is the row's second line, and changing it
  * is a pencil on that line — a page-long second list of the same seven
- * tools, one "Set folder" button each, said the same thing twice and buried
+ * harnesses, one "Set folder" button each, said the same thing twice and buried
  * the fact that almost nobody needs it. */
 export function HarnessRow({
   id,
@@ -28,19 +28,19 @@ export function HarnessRow({
   detectedRoot: string | null;
   version: string | null;
   counts: [ItemKind, number][];
-  /** The folder this tool was pointed at by hand, when it was. */
+  /** The folder this harness was pointed at by hand, when it was. */
   folder: string;
   onFolderChange: (root: string) => void;
 }) {
   const goToLibrary = useNavStore((s) => s.goToLibrary);
   const [editing, setEditing] = useState(false);
-  const name = toolName(id);
+  const name = harnessName(id);
 
   return (
     <div className="group flex items-start justify-between gap-6 py-3.5">
       <div className="flex min-w-0 flex-col gap-1">
         <span className="flex items-center gap-2">
-          <ToolIcon harness={id} muted={!detectedRoot} className="size-5" />
+          <HarnessIcon harness={id} muted={!detectedRoot} className="size-5" />
           <span
             className={cn(
               "text-sm font-medium",
@@ -72,17 +72,17 @@ export function HarnessRow({
             size="icon-xs"
             className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
             aria-label={`Change where ${name} keeps its files`}
-            title={TOOL_FOLDER_HELP}
+            title={HARNESS_FOLDER_HELP}
             onClick={() => setEditing(true)}
           >
             <Pencil className="size-3" />
           </Button>
         </span>
       </div>
-      <ToolFolderDialog
+      <HarnessFolderDialog
         open={editing}
         onOpenChange={setEditing}
-        tool={name}
+        harness={name}
         folder={folder}
         detectedRoot={detectedRoot}
         onSave={onFolderChange}
@@ -91,7 +91,7 @@ export function HarnessRow({
         <div className="flex shrink-0 flex-wrap justify-end gap-1.5 pt-0.5">
           <KindCountBadges
             counts={counts}
-            onKindClick={(kind) => goToLibrary({ tool: id, kind })}
+            onKindClick={(kind) => goToLibrary({ harness: id, kind })}
           />
         </div>
       ) : null}

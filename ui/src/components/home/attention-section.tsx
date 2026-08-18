@@ -5,7 +5,8 @@ export interface AttentionRow {
   key: string;
   tone: "critical" | "warning" | "info" | "muted";
   title: string;
-  detail: string;
+  /** Only where it says something the title does not. */
+  detail?: string;
   action?: { label: string; onClick: () => void };
 }
 
@@ -34,7 +35,11 @@ function AttentionLine({ row }: { row: AttentionRow }) {
       <StatusDot tone={row.tone} className="mt-1.5 self-start" />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="text-sm font-medium">{row.title}</span>
-        <span className="text-[13px] text-muted-foreground">{row.detail}</span>
+        {row.detail ? (
+          <span className="text-[13px] text-muted-foreground">
+            {row.detail}
+          </span>
+        ) : null}
       </span>
       {row.action ? (
         // Centred against the whole row, not its first line: a destination

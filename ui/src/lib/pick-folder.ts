@@ -3,7 +3,7 @@ import { commands } from "@/bindings";
 
 /**
  * Opens the native folder picker and returns the chosen path, or null if
- * the user cancelled — every path-typing input on Settings and Tools &
+ * the user cancelled — every path-typing input on Settings and Harnesses &
  * Projects wires its Browse… button through this so cancel silently does
  * nothing and a real failure still surfaces as a toast.
  */

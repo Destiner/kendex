@@ -27,7 +27,7 @@ export interface ItemCustomization {
   instructions: string | null;
   /** Agents: the skills this agent gets, or null while vstack picks them. */
   skills: string[] | null;
-  /** Agents: per-tool settings, only for tools that have any set. */
+  /** Agents: per-harness settings, only where any are set. */
   frontmatter: [HarnessId, DraftFrontmatter][];
 }
 
@@ -123,7 +123,7 @@ export function customizedItems(draft: Draft | null): CustomizedItem[] {
   return [...named("agent", agents), ...named("skill", skills)];
 }
 
-/** The settings a tool has for one agent, ready to render — an unset tool
+/** The settings a harness has for one agent, ready to render — an unset one
  *  reads as every field blank rather than as a missing row. */
 export function frontmatterFor(
   one: ItemCustomization,

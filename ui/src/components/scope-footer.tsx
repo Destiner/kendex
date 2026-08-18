@@ -116,7 +116,7 @@ export function ScopeFooter({
       {unmanaged > 0 ? (
         <Fact label="Not managed">
           <p>
-            {unmanaged} item{unmanaged === 1 ? "" : "s"} vstack didn't install ·{" "}
+            {unmanaged} item{unmanaged === 1 ? "" : "s"} ·{" "}
             <button type="button" className={LINK} onClick={onSeeUnmanaged}>
               Review them
             </button>

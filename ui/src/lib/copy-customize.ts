@@ -1,24 +1,24 @@
 import type { ItemCustomization } from "@/lib/customization";
 import type { GroupStatus } from "@/lib/derive";
-import { toolName } from "@/lib/labels";
+import { harnessName } from "@/lib/labels";
 
 // Product prose for customizing: the words on a package's Customize tab,
 // on the Customize page, and the marks the Library draws for both. Same
 // house style as copy.ts — split out for the file line cap.
 
-// Per-tool settings. What a value here does, and the one case where it does
+// Per-harness settings. What a value here does, and the one case where it does
 // nothing at all.
 export const FRONTMATTER_HELP =
   "Your value wins over the catalog's. Leave a field blank to keep the catalog's.";
-export const FRONTMATTER_IGNORED = (tool: string): string =>
-  `${tool} doesn't read agent settings — anything saved here is kept, but has no effect.`;
+export const FRONTMATTER_IGNORED = (harness: string): string =>
+  `${harness} doesn't read agent settings — anything saved here is kept, but has no effect.`;
 
 // A package's own Customize tab.
 export const CUSTOMIZE_TAB = "Customize";
 export const OVERVIEW_TAB = "Overview";
 export const CUSTOMIZED_BADGE = "Customized";
 export const WRITTEN_INTO =
-  "Written into every tool's copy, alongside what the author wrote.";
+  "Written into every harness's copy, alongside what the author wrote.";
 export const LAUNCH_LABEL = "Launch instructions";
 export const LAUNCH_HELP = "Added at the start of this agent's file.";
 export const ADDITIONAL_LABEL = "Extra instructions";
@@ -39,7 +39,7 @@ export const SKILLS_NONE_AVAILABLE =
 export const SKILLS_BACK_TO_AUTOMATIC = "Back to automatic";
 export const SETTINGS_SECTION = "Settings";
 export const SAVE_NOTE =
-  "Saving writes these changes into every tool that reads them.";
+  "Saving writes these changes into every harness that reads them.";
 export const SAVE_FIRST = "Save your changes before switching location.";
 
 // The Customize page: what belongs to everything rather than to one package.
@@ -54,10 +54,10 @@ export const SHARED_ADDITIONAL_HELP = "Added at the end of every agent's file.";
 export const SHARED_SKILL_HELP = "Added to every skill's instructions.";
 export const HOOKS_SECTION = "Custom hooks";
 export const HOOKS_HELP =
-  "Written straight into each tool's configuration when you save.";
+  "Written straight into each harness's configuration when you save.";
 export const SKILLS_DIR_SECTION = "Project skills folder";
 export const SKILLS_DIR_HELP =
-  "Skills you own live here, then get linked into each tool's own skill folder, so the generated copies don't need to be committed.";
+  "Skills you own live here, then get linked into each harness's own skill folder, so the generated copies don't need to be committed.";
 export const CUSTOMIZED_SECTION = "Customized packages";
 export const CUSTOMIZED_SECTION_HELP =
   "Each one is edited on its own page, where you can see what it ships with.";
@@ -87,7 +87,7 @@ export function customizationSummary(one: ItemCustomization): string {
     );
   }
   for (const [harness] of one.frontmatter) {
-    parts.push(`${toolName(harness)} settings`);
+    parts.push(`${harnessName(harness)} settings`);
   }
   return parts.join(" · ");
 }

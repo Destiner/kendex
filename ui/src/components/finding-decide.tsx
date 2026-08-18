@@ -13,7 +13,7 @@ import {
   UNDECIDABLE_HERE,
 } from "@/lib/copy-decisions";
 import { abbreviateHome } from "@/lib/drift-merge";
-import { moreItemsLabel, toolName } from "@/lib/labels";
+import { harnessName, moreItemsLabel } from "@/lib/labels";
 import type { EvidenceGroup } from "@/lib/reviewable";
 
 /**
@@ -92,7 +92,9 @@ export function EvidenceLine({
   // in one settings file apart; the short display name would not.
   const first = group.items[0];
   const name = first.name;
-  const tools = [...new Set(group.items.map((item) => toolName(item.harness)))];
+  const tools = [
+    ...new Set(group.items.map((item) => harnessName(item.harness))),
+  ];
   return (
     <div className="flex items-center gap-2.5 py-1.5">
       <Badge

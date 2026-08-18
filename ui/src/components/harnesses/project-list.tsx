@@ -1,9 +1,9 @@
 import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { AddProjectDialog } from "@/components/tools/add-project-dialog";
-import { ProjectCard } from "@/components/tools/project-card";
-import { ScanFolderDialog } from "@/components/tools/scan-folder-dialog";
+import { AddProjectDialog } from "@/components/harnesses/add-project-dialog";
+import { ProjectCard } from "@/components/harnesses/project-card";
+import { ScanFolderDialog } from "@/components/harnesses/scan-folder-dialog";
 import { Button } from "@/components/ui/button";
 import { countByKind } from "@/lib/derive";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";

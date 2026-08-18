@@ -2,11 +2,15 @@ import {
   type AttentionRow,
   AttentionSection,
 } from "@/components/home/attention-section";
+import {
+  AttentionSkeleton,
+  RecentSkeleton,
+  StatsSkeleton,
+} from "@/components/home/home-skeletons";
 import { RecentActivity } from "@/components/home/recent-activity";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { StatTile } from "@/components/stat-tile";
-import { Skeleton } from "@/components/ui/skeleton";
 import { auditCounts } from "@/lib/audit-counts";
 import {
   FORKED_ATTENTION_DETAIL,
@@ -14,7 +18,7 @@ import {
   REVIEW_ACTION_LABEL,
 } from "@/lib/copy";
 import { groupItems, recentItems } from "@/lib/derive";
-import { toolName } from "@/lib/labels";
+import { harnessName } from "@/lib/labels";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
 import { cn } from "@/lib/utils";
 import { useAuditStore } from "@/stores/audit";
@@ -42,34 +46,13 @@ export function OverviewPage() {
   const goTo = useNavStore((s) => s.goTo);
   const goToLibrary = useNavStore((s) => s.goToLibrary);
 
-  if (!result) {
-    return (
-      <div>
-        <PageHeader title="Home" />
-        <div className={PAGE_BODY}>
-          <div className={cn("space-y-6", CONTENT_WIDTH)}>
-            <div className="space-y-3">
-              <Skeleton className="h-16 w-full rounded-lg" />
-              <Skeleton className="h-16 w-full rounded-lg" />
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <Skeleton className="h-20 rounded-lg" />
-              <Skeleton className="h-20 rounded-lg" />
-              <Skeleton className="h-20 rounded-lg" />
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const {
     changes: actionableCount,
     unmanaged: unmanagedCount,
     blocked,
     open,
   } = auditCounts(views);
-  const missing = result.missingProjects;
+  const missing = result?.missingProjects ?? [];
 
   const rows: AttentionRow[] = [];
   if (editedPackages.length > 0) {
@@ -98,7 +81,7 @@ export function OverviewPage() {
       key: "safety",
       tone: "critical",
       title: blocked === 1 ? "1 problem found" : `${blocked} problems found`,
-      detail: "Held back until you read the findings and accept them.",
+      detail: "Held back until you accept them.",
       action: { label: REVIEW_ACTION_LABEL, onClick: () => setPage("review") },
     });
   }
@@ -107,7 +90,7 @@ export function OverviewPage() {
       key: "decisions",
       tone: "warning",
       title: open === 1 ? "1 finding to review" : `${open} findings to review`,
-      detail: "Flagged in content you already have installed.",
+      detail: "In content already installed.",
       action: { label: REVIEW_ACTION_LABEL, onClick: () => setPage("review") },
     });
   }
@@ -119,7 +102,6 @@ export function OverviewPage() {
         actionableCount === 1
           ? "1 change ready to apply"
           : `${actionableCount} changes ready to apply`,
-      detail: "Nothing is written until you apply them.",
       action: { label: REVIEW_ACTION_LABEL, onClick: () => setPage("review") },
     });
   }
@@ -131,7 +113,7 @@ export function OverviewPage() {
         unmanagedCount === 1
           ? "1 unmanaged item"
           : `${unmanagedCount} unmanaged items`,
-      detail: "Already on your machine, but vstack didn't put them there.",
+      detail: "vstack didn't put them there.",
       action: { label: "Review", onClick: () => goTo("unmanaged") },
     });
   }
@@ -146,14 +128,14 @@ export function OverviewPage() {
       detail:
         missing.length === 1
           ? `We can't find ${missing[0]}. If you moved it, add it again.`
-          : "If you moved these, add them again from Tools & Projects.",
+          : "If you moved these, add them again from Harnesses & Projects.",
       action: {
         label: "Projects",
         onClick: () => goTo("projects"),
       },
     });
   }
-  if (result.warnings.length > 0) {
+  if (result && result.warnings.length > 0) {
     rows.push({
       key: "warnings",
       tone: "warning",
@@ -165,8 +147,12 @@ export function OverviewPage() {
     });
   }
 
-  const toolNames = result.harnesses.map((h) => toolName(h.harness)).join(", ");
-  const recent = recentItems(groupItems(result.items), RECENT_ACTIVITY_LIMIT);
+  const harnessNames = (result?.harnesses ?? [])
+    .map((h) => harnessName(h.harness))
+    .join(", ");
+  const recent = result
+    ? recentItems(groupItems(result.items), RECENT_ACTIVITY_LIMIT)
+    : [];
 
   return (
     <div>
@@ -175,12 +161,9 @@ export function OverviewPage() {
         <div className={cn("flex flex-col gap-10", CONTENT_WIDTH)}>
           {/* Nothing to decide means nothing to say: the section is gone
               rather than standing there reporting its own emptiness. */}
-          {stillChecking ? (
+          {!result || stillChecking ? (
             <Section title="Needs attention">
-              <div className="flex flex-col gap-px overflow-hidden rounded-xl border bg-card">
-                <Skeleton className="h-[3.75rem] rounded-none" />
-                <Skeleton className="h-[3.75rem] rounded-none" />
-              </div>
+              <AttentionSkeleton />
             </Section>
           ) : rows.length > 0 ? (
             <Section title="Needs attention">
@@ -189,28 +172,32 @@ export function OverviewPage() {
           ) : null}
 
           <Section title="Recently changed">
-            <RecentActivity groups={recent} />
+            {result ? <RecentActivity groups={recent} /> : <RecentSkeleton />}
           </Section>
 
           <Section title="At a glance">
-            <div className="grid grid-cols-3 gap-3">
-              <StatTile
-                label="Tools"
-                value={result.harnesses.length}
-                detail={toolNames || undefined}
-                onClick={() => goTo("tools")}
-              />
-              <StatTile
-                label="Installed"
-                value={result.items.length}
-                onClick={() => goToLibrary()}
-              />
-              <StatTile
-                label="Projects"
-                value={projectCount}
-                onClick={() => goTo("projects")}
-              />
-            </div>
+            {result ? (
+              <div className="grid grid-cols-3 gap-3">
+                <StatTile
+                  label="Harnesses"
+                  value={result.harnesses.length}
+                  detail={harnessNames || undefined}
+                  onClick={() => goTo("harnesses")}
+                />
+                <StatTile
+                  label="Installed"
+                  value={result.items.length}
+                  onClick={() => goToLibrary()}
+                />
+                <StatTile
+                  label="Projects"
+                  value={projectCount}
+                  onClick={() => goTo("projects")}
+                />
+              </div>
+            ) : (
+              <StatsSkeleton />
+            )}
           </Section>
         </div>
       </div>

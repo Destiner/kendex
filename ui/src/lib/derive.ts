@@ -113,8 +113,8 @@ export function groupItems(items: ObservedItem[]): ItemGroup[] {
     }
   }
   for (const group of groups.values()) {
-    // Where the bytes actually are, not where the tool looks for them: two
-    // tools linking to one shared folder are sharing a file, even though
+    // Where the bytes actually are, not where the harness looks for them: two
+    // harnesses linking to one shared folder are sharing a file, even though
     // each has a path of its own pointing at it.
     const byPath = new Map<string, Set<string>>();
     for (const install of group.installations) {

@@ -3,28 +3,32 @@ import { useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { BROWSE_LABEL, TOOL_FOLDER_BODY, toolFolderTitle } from "@/lib/copy";
+import {
+  BROWSE_LABEL,
+  HARNESS_FOLDER_BODY,
+  harnessFolderTitle,
+} from "@/lib/copy";
 import { pickFolder } from "@/lib/pick-folder";
 
 /**
- * Where one tool keeps its files. Type the path or pick it with the system's
+ * Where one harness keeps its files. Type the path or pick it with the system's
  * own folder chooser — the same question either way, so it is one dialog
  * with two ways in rather than two controls that mean different things.
  */
-export function ToolFolderDialog({
+export function HarnessFolderDialog({
   open,
   onOpenChange,
-  tool,
+  harness,
   folder,
   detectedRoot,
   onSave,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  tool: string;
+  harness: string;
   /** The folder set by hand, when one was — otherwise empty. */
   folder: string;
-  /** Where the tool was actually found, shown as the placeholder so the
+  /** Where the harness was actually found, shown as the placeholder so the
    *  field says what leaving it empty means. */
   detectedRoot: string | null;
   onSave: (root: string) => void;
@@ -37,8 +41,8 @@ export function ToolFolderDialog({
         if (next) setDraft(folder);
         onOpenChange(next);
       }}
-      title={toolFolderTitle(tool)}
-      description={TOOL_FOLDER_BODY}
+      title={harnessFolderTitle(harness)}
+      description={HARNESS_FOLDER_BODY}
       confirmLabel="Save"
       onConfirm={() => {
         onSave(draft.trim());

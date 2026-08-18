@@ -36,11 +36,14 @@ export function FindingLine({
         className="mt-[7px]"
         title={SEVERITY_LABELS[finding.severity]}
       />
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
         <p className="text-sm break-words">
           <InlineMarkdown source={sentence(finding.message)} />
         </p>
-        <p className="text-[13px] break-words text-muted-foreground">
+        {/* The fix and the places sit on the claim's own left edge, not
+            stepped in from it: an indent would read as a sub-list of the
+            sentence rather than the rest of the same thought. */}
+        <p className="pt-0.5 text-[13px] break-words text-foreground/70">
           <span className="font-medium text-foreground">Fix: </span>
           {finding.remediation}
         </p>

@@ -6,7 +6,7 @@ export type Page =
   | "home"
   | "review"
   | "library"
-  | "tools"
+  | "harnesses"
   | "projects"
   | "customize"
   // Reached from Home's attention list and the Review card's footnote —
@@ -27,7 +27,7 @@ export type LibraryTab = "installed" | "add";
 
 /** What Library's Installed view should filter to when it first opens. */
 export interface LibraryFilter {
-  tool?: HarnessId;
+  harness?: HarnessId;
   kind?: ItemKind;
 }
 
@@ -138,11 +138,11 @@ export const useNavStore = create<NavState>((set) => ({
           : pushHistory(state, "library"),
       future: state.page === "library" ? state.future : [],
     })),
-  goToLibrary: ({ tab = "installed", tool, kind } = {}) =>
+  goToLibrary: ({ tab = "installed", harness, kind } = {}) =>
     set((state) => ({
       page: "library",
       libraryTab: tab,
-      libraryFilter: tool || kind ? { tool, kind } : null,
+      libraryFilter: harness || kind ? { harness, kind } : null,
       history: pushHistory(state, "library"),
       future: [],
     })),

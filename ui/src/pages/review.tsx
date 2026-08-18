@@ -1,16 +1,13 @@
 import { CheckCircle2 } from "lucide-react";
 import { useEffect } from "react";
 import { EmptyState } from "@/components/empty-state";
+import { DotSpinner } from "@/components/loading";
 import { PageHeader } from "@/components/page-header";
 import { ScopeErrorCard } from "@/components/scope-error-card";
 import { StatusNote } from "@/components/status-note";
 import { SyncScopeCard } from "@/components/sync-scope";
 import { blockedCount, openCount } from "@/lib/audit-counts";
-import {
-  ALL_IN_SYNC_BODY,
-  ALL_IN_SYNC_TITLE,
-  REVIEW_SUBTITLE,
-} from "@/lib/copy";
+import { ALL_IN_SYNC_BODY, ALL_IN_SYNC_TITLE } from "@/lib/copy";
 import { scopeLabel } from "@/lib/derive";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
 import { cn } from "@/lib/utils";
@@ -42,7 +39,7 @@ export function ReviewPage() {
 
   return (
     <div>
-      <PageHeader title="Review & apply" subtitle={REVIEW_SUBTITLE} />
+      <PageHeader title="Review & apply" />
       <div className={PAGE_BODY}>
         <div className={cn("flex flex-col gap-12", CONTENT_WIDTH)}>
           {error ? (
@@ -51,7 +48,8 @@ export function ReviewPage() {
             </StatusNote>
           ) : null}
           {auditing && views.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <DotSpinner />
               Checking for changes…
             </p>
           ) : null}

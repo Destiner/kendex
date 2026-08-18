@@ -14,11 +14,11 @@ export const SAFETY_HELP =
   "Strict catches more, and flags more things that turn out fine. Lenient stops only the riskiest.";
 
 // This list scores what is on disk right now, not what a plan would write —
-// so every row here is a thing the tools will load the next time they start.
+// so every row here is a thing the harnesses will load the next time they start.
 // "Held back" describes what vstack refuses to do with it, and must never be
 // read as "this isn't on your machine".
 export const BLOCKED_SECTION_EXPLAINER =
-  "vstack won't install or update these. Open one, read what was found, then Accept to let it through. Copies already on your machine keep running.";
+  "Not installed or updated until you accept what was found. Copies already on your machine keep running.";
 // The row for an install the gate stopped before it ever reached disk.
 export const HELD_BACK_NOT_ON_DISK_NOTE =
   "Not installed — vstack stopped this one before it landed.";
@@ -31,7 +31,7 @@ export const ACCEPT_BLOCKED_LABEL = "Accept and install…";
 // A held-back row the next apply would not write — an item already on the
 // machine that vstack does not install. There is nothing to let through.
 export const NOTHING_TO_ACCEPT =
-  "Nothing to accept here — vstack isn't installing this one. It's already on your machine; remove it from the Library if you don't want it.";
+  "Nothing to accept — vstack isn't installing this one. Remove it from the Library if you don't want it.";
 export const ACCEPT_BLOCKED_TITLE = "Accept these findings?";
 export const acceptBlockedBody = (projectScope: boolean): string =>
   projectScope
@@ -42,11 +42,11 @@ export const ACCEPT_BLOCKED_CONFIRM = "Accept and install";
 // Withdrawing an acceptance, from the recorded-decisions list.
 export const WITHDRAW_LABEL = "Withdraw";
 
-// Taking over a folder that several tools read through links. The dialog
-// names the real folder and every tool vstack knows is reading it; the
+// Taking over a folder that several harnesses read through links. The dialog
+// names the real folder and every harness vstack knows is reading it; the
 // last sentence is the one honest warning — links vstack cannot see will
 // break, and there is no way to list them.
 export const ADOPT_SHARED_TITLE = "Take over this shared folder?";
-export const adoptSharedBody = (target: string, tools: string[]): string =>
-  `${tools.join(" and ")} read this skill from ${target}. vstack moves the folder's content into its own keeping (the folder goes to the trash, recoverable) and gives each tool listed a link to vstack's copy, so they stay in sync. Anything else that points at the old folder will stop working.`;
+export const adoptSharedBody = (target: string, harnesses: string[]): string =>
+  `${harnesses.join(" and ")} read this skill from ${target}. vstack moves the folder's content into its own keeping (the folder goes to the trash, recoverable) and gives each harness listed a link to vstack's copy, so they stay in sync. Anything else that points at the old folder will stop working.`;
 export const ADOPT_SHARED_CONFIRM = "Take it over";

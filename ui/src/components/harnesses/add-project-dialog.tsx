@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { PathField } from "@/components/tools/path-field";
+import { PathField } from "@/components/harnesses/path-field";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

@@ -2,7 +2,7 @@ import type { HarnessId } from "@/bindings";
 import { RECENT_ACTIVITY_EMPTY } from "@/lib/copy";
 import type { RecentGroup } from "@/lib/derive";
 import { kindIcon } from "@/lib/kind-icon";
-import { hookDisplayName, kindLabel, toolName } from "@/lib/labels";
+import { harnessName, hookDisplayName, kindLabel } from "@/lib/labels";
 import { relativeTime } from "@/lib/relative-time";
 import { useNavStore } from "@/stores/nav";
 
@@ -25,7 +25,7 @@ export function RecentActivity({ groups }: { groups: RecentGroup[] }) {
         const name =
           group.kind === "hook" ? hookDisplayName(group.name) : group.name;
         const tools = group.harnesses
-          .map((h) => toolName(h as HarnessId))
+          .map((h) => harnessName(h as HarnessId))
           .join(", ");
         return (
           <button

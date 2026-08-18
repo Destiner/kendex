@@ -5,6 +5,8 @@ import {
   breadcrumbLabel,
   describesItself,
   driftDetail,
+  HARNESS_NAMES,
+  harnessName,
   hookDisplayName,
   kindLabel,
   packageDisplayName,
@@ -14,8 +16,6 @@ import {
   scopeName,
   scopePath,
   skipReasonShort,
-  TOOL_NAMES,
-  toolName,
   VERDICT_BADGES,
 } from "./labels";
 
@@ -38,13 +38,16 @@ describe("labels", () => {
   });
 
   it("keeps human copy free of internal jargon", () => {
-    const copy = [...Object.values(STATE_LABELS), ...Object.values(TOOL_NAMES)]
+    const copy = [
+      ...Object.values(STATE_LABELS),
+      ...Object.values(HARNESS_NAMES),
+    ]
       .join(" ")
       .toLowerCase();
     for (const banned of ["drift", "unmanaged", "orphan", "harness", "scope"]) {
       expect(copy).not.toContain(banned);
     }
-    expect(toolName("claude")).toBe("Claude Code");
+    expect(harnessName("claude")).toBe("Claude Code");
   });
 
   it("maps drift states to the badge tone that matches their urgency", () => {

@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { ItemSafety } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { KindToolChips } from "@/components/kind-tool-chips";
+import { KindHarnessChips } from "@/components/kind-harness-chips";
 import { FindingLine } from "@/components/safety-findings";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,7 @@ import {
   mergeHeldBack,
   ruleGroupAsFinding,
 } from "@/lib/group-findings-blocked";
-import { hookDisplayName, moreItemsLabel, toolName } from "@/lib/labels";
+import { harnessName, hookDisplayName, moreItemsLabel } from "@/lib/labels";
 
 // A row where every rule was skipped has not been audited, and showing
 // nothing would read as an audit that passed. It gets a line of its own
@@ -43,24 +43,24 @@ function BlockedRowNotes({
   return (
     <>
       {!onDisk ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-foreground/70">
           {harnessPrefix}
           {HELD_BACK_NOT_ON_DISK_NOTE}
         </p>
       ) : null}
       {row.override.state === "stale" ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-foreground/70">
           {harnessPrefix}This was accepted before, but {row.override.why}.
         </p>
       ) : null}
       {row.override.state === "active" ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-foreground/70">
           {harnessPrefix}These findings were read and accepted, so this stays
           installed.
         </p>
       ) : null}
       {row.skipped.length > 0 ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-foreground/70">
           {harnessPrefix}Not fully checked here: {row.skipped.length} rule
           {row.skipped.length === 1 ? "" : "s"} had nothing to read —{" "}
           {row.skipped[0].reason}
@@ -121,7 +121,7 @@ function BlockedGroupRow({
             </span>
           ) : null}
         </span>
-        <KindToolChips kind={group.kind} harnesses={harnesses} />
+        <KindHarnessChips kind={group.kind} harnesses={harnesses} />
         {open ? (
           <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
         ) : (
@@ -136,7 +136,7 @@ function BlockedGroupRow({
               row={row}
               onDisk={onDisk.has(`${row.kind}::${row.name}::${row.harness}`)}
               harnessPrefix={
-                harnesses.length > 1 ? `${toolName(row.harness)}: ` : ""
+                harnesses.length > 1 ? `${harnessName(row.harness)}: ` : ""
               }
             />
           ))}
@@ -158,7 +158,7 @@ function BlockedGroupRow({
               </Button>
             </div>
           ) : (
-            <p className="text-[13px] text-muted-foreground">
+            <p className="text-[13px] text-foreground/70">
               {NOTHING_TO_ACCEPT}
             </p>
           )}
@@ -205,7 +205,7 @@ export function BlockedFindings({
   if (groups.length === 0) return null;
   return (
     <div className="overflow-hidden rounded-lg border border-critical/30">
-      <p className="border-b border-critical/20 bg-critical/5 px-3 py-2 text-[13px] text-muted-foreground">
+      <p className="border-b border-critical/20 bg-critical/5 px-3 py-2 text-[13px] text-foreground/75">
         {BLOCKED_SECTION_EXPLAINER}
       </p>
       <div className="divide-y divide-critical/15">

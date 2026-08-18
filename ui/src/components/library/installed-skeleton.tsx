@@ -40,7 +40,10 @@ export function InstalledSkeleton() {
             <Skeleton className="h-3.5 w-16" />
           </TableCell>
           <TableCell>
-            <Skeleton className="h-4 w-24 rounded-md" />
+            <span className="flex gap-1">
+              <Skeleton className="h-5 w-6 rounded-md" />
+              <Skeleton className="h-5 w-6 rounded-md" />
+            </span>
           </TableCell>
           <TableCell>
             <Skeleton className="h-3.5 w-16" />

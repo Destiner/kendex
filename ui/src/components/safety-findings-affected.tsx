@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { DismissReason, HarnessId, ItemSafety } from "@/bindings";
 import { EvidenceList, IgnoreButton } from "@/components/finding-decide";
-import { KindToolChips } from "@/components/kind-tool-chips";
+import { KindHarnessChips } from "@/components/kind-harness-chips";
 import { FindingLine } from "@/components/safety-findings";
 import { StatusDot } from "@/components/status-dot";
 import { StatusLine } from "@/components/status-note";
@@ -105,7 +105,7 @@ function AffectedList({ concern }: { concern: ConcernGroup }) {
             <span className="truncate">
               {item.kind === "hook" ? hookDisplayName(item.name) : item.name}
             </span>
-            <KindToolChips kind={item.kind} harnesses={item.harnesses} />
+            <KindHarnessChips kind={item.kind} harnesses={item.harnesses} />
           </div>
         ))}
         {items.length > COLLAPSE_THRESHOLD ? (

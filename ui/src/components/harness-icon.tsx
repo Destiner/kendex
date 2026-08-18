@@ -25,13 +25,13 @@ const MARKS: Record<HarnessId, React.FC<React.SVGProps<SVGSVGElement>>> = {
 };
 
 const TINT: Record<HarnessId, string> = {
-  claude: "text-tool-claude",
-  codex: "text-tool-codex",
-  opencode: "text-tool-opencode",
-  cursor: "text-tool-cursor",
-  pi: "text-tool-pi",
-  gemini: "text-tool-gemini",
-  copilot: "text-tool-copilot",
+  claude: "text-harness-claude",
+  codex: "text-harness-codex",
+  opencode: "text-harness-opencode",
+  cursor: "text-harness-cursor",
+  pi: "text-harness-pi",
+  gemini: "text-harness-gemini",
+  copilot: "text-harness-copilot",
 };
 
 // Each vendor draws its mark with its own padding and its own weight, so
@@ -50,7 +50,7 @@ const OPTICAL: Record<HarnessId, string> = {
 
 /** A tool's mark, in the tool's own colour. Decorative — every place this
  *  appears also names the tool in text. */
-export function ToolIcon({
+export function HarnessIcon({
   harness,
   className,
   muted = false,

@@ -28,6 +28,11 @@
   --warning: oklch(0.6 0.13 70);
   --critical: oklch(0.55 0.2 25);
   --info: oklch(0.5 0.19 255);
+  /* The label on a chip that is switched on. Its fill is the primary hue at
+     low opacity, and primary itself sitting on that fill is too close to it
+     to read — this is the same hue pushed away from the fill in lightness,
+     in whichever direction the theme leaves room for. */
+  --selected: oklch(0.42 0.2 255);
   /* "You changed this." Its own hue rather than a borrowed one: an edit a
      person made on purpose is not a warning, and the Library's legend has
      to be able to say what the colour means in three words. */
@@ -50,18 +55,18 @@
   --code-attr: oklch(0.55 0.15 340);
   --code-type: oklch(0.5 0.13 190);
   --code-comment: oklch(0.55 0.02 260);
-  /* One hue per coding tool, spaced evenly around the wheel so no two read
-     as the same colour at a glance, and landing near each tool's own brand
-     where that was possible. Colour in this app means "which tool" and
+  /* One hue per harness, spaced evenly around the wheel so no two read as
+     the same colour at a glance, and landing near each one's own brand
+     where that was possible. Colour in this app means "which harness" and
      nothing else — item kinds are told apart by their icon, so a row never
      asks you to decode two colour languages at once. */
-  --tool-claude: oklch(0.55 0.16 45);
-  --tool-copilot: oklch(0.52 0.14 96);
-  --tool-codex: oklch(0.52 0.13 147);
-  --tool-cursor: oklch(0.52 0.13 198);
-  --tool-gemini: oklch(0.53 0.16 249);
-  --tool-opencode: oklch(0.53 0.16 300);
-  --tool-pi: oklch(0.55 0.16 351);
+  --harness-claude: oklch(0.55 0.16 45);
+  --harness-copilot: oklch(0.52 0.14 96);
+  --harness-codex: oklch(0.52 0.13 147);
+  --harness-cursor: oklch(0.52 0.13 198);
+  --harness-gemini: oklch(0.53 0.16 249);
+  --harness-opencode: oklch(0.53 0.16 300);
+  --harness-pi: oklch(0.55 0.16 351);
 }
 
 .dark {
@@ -89,6 +94,7 @@
   --critical: oklch(0.62 0.19 25);
   --customized: oklch(0.74 0.15 58);
   --info: oklch(0.62 0.16 255);
+  --selected: oklch(0.84 0.11 255);
   --sidebar: oklch(0.115 0.005 260);
   --sidebar-foreground: oklch(0.97 0 0);
   --sidebar-primary: oklch(0.55 0.18 255);
@@ -104,13 +110,13 @@
   --code-attr: oklch(0.72 0.14 340);
   --code-type: oklch(0.7 0.12 190);
   --code-comment: oklch(0.6 0.02 260);
-  --tool-claude: oklch(0.76 0.13 45);
-  --tool-copilot: oklch(0.76 0.12 96);
-  --tool-codex: oklch(0.76 0.11 147);
-  --tool-cursor: oklch(0.76 0.11 198);
-  --tool-gemini: oklch(0.74 0.13 249);
-  --tool-opencode: oklch(0.74 0.13 300);
-  --tool-pi: oklch(0.76 0.13 351);
+  --harness-claude: oklch(0.76 0.13 45);
+  --harness-copilot: oklch(0.76 0.12 96);
+  --harness-codex: oklch(0.76 0.11 147);
+  --harness-cursor: oklch(0.76 0.11 198);
+  --harness-gemini: oklch(0.74 0.13 249);
+  --harness-opencode: oklch(0.74 0.13 300);
+  --harness-pi: oklch(0.76 0.13 351);
 }
 
 @theme inline {
@@ -142,6 +148,7 @@
   --color-critical: var(--critical);
   --color-info: var(--info);
   --color-customized: var(--customized);
+  --color-selected: var(--selected);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -150,13 +157,13 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --color-tool-claude: var(--tool-claude);
-  --color-tool-codex: var(--tool-codex);
-  --color-tool-opencode: var(--tool-opencode);
-  --color-tool-cursor: var(--tool-cursor);
-  --color-tool-pi: var(--tool-pi);
-  --color-tool-gemini: var(--tool-gemini);
-  --color-tool-copilot: var(--tool-copilot);
+  --color-harness-claude: var(--harness-claude);
+  --color-harness-codex: var(--harness-codex);
+  --color-harness-opencode: var(--harness-opencode);
+  --color-harness-cursor: var(--harness-cursor);
+  --color-harness-pi: var(--harness-pi);
+  --color-harness-gemini: var(--harness-gemini);
+  --color-harness-copilot: var(--harness-copilot);
 }
 
 @layer base {

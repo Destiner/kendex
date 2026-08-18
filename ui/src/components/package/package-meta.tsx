@@ -4,10 +4,10 @@ import type {
   ObservedItem,
   PackageMeta_Serialize,
 } from "@/bindings";
+import { HarnessBadge } from "@/components/harness-badge";
 import { SectionHeading } from "@/components/section";
 import { StatusLine } from "@/components/status-note";
 import { TagBadges } from "@/components/tag-badge";
-import { ToolBadge } from "@/components/tool-badge";
 import { Badge } from "@/components/ui/badge";
 import { TAGS_ROW_LABEL } from "@/lib/copy";
 import type { ItemGroup } from "@/lib/derive";
@@ -46,10 +46,10 @@ export function PackageMetaBlock({
             <TagBadges tags={group.tags} />
           </Row>
         ) : null}
-        <Row label="Tools">
+        <Row label="Harnesses">
           <span className="flex flex-wrap gap-1">
             {group.harnesses.map((h) => (
-              <ToolBadge key={h} harness={h as HarnessId} />
+              <HarnessBadge key={h} harness={h as HarnessId} />
             ))}
             {group.shared ? (
               <Badge variant="secondary">Shared files</Badge>

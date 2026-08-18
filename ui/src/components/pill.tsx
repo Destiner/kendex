@@ -32,7 +32,7 @@ export function Pill({
         // shade lighter than the page, against an outlined neighbour, reads
         // backwards.
         selected
-          ? "border-transparent bg-primary/20 text-primary"
+          ? "border-transparent bg-primary/20 text-selected"
           : "border-border text-muted-foreground hover:border-input hover:text-foreground",
         "disabled:pointer-events-none disabled:opacity-50",
       )}
