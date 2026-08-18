@@ -6,7 +6,6 @@ import {
   emptyDraft,
   emptyHook,
   formatHookAgents,
-  orderedKeys,
   parseHookAgents,
   parseList,
   removeCustomHook,
@@ -15,7 +14,6 @@ import {
   setFrontmatterField,
   setInstruction,
   setProjectSkillsDir,
-  skillColumns,
   toDraft,
 } from "./editor-draft";
 
@@ -175,17 +173,5 @@ describe("field parsing", () => {
     expect(
       setProjectSkillsDir(draft(), " .skills ")["project-skills-dir"],
     ).toBe(".skills");
-  });
-});
-
-describe("derived lists", () => {
-  it("pins the shared key first and merges known with declared skills", () => {
-    expect(orderedKeys(["review", "all", "github"])).toEqual([
-      "all",
-      "github",
-      "review",
-    ]);
-    const withRow = setAgentSkill(draft(), "orch", "legacy", true);
-    expect(skillColumns(withRow, ["github"])).toEqual(["github", "legacy"]);
   });
 });

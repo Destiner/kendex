@@ -130,6 +130,16 @@ export function setAgentSkill(
   return { ...draft, "agent-skills": rows };
 }
 
+/** Hand the agent back to automatic assignment by dropping its row. */
+export function clearAgentSkills(draft: Draft, agent: string): Draft {
+  const rows = { ...(draft["agent-skills"] ?? {}) };
+  delete rows[agent];
+  const next = { ...draft };
+  if (Object.keys(rows).length === 0) delete next["agent-skills"];
+  else next["agent-skills"] = rows;
+  return next;
+}
+
 export function setInstruction(
   draft: Draft,
   table: InstructionTable,
@@ -225,21 +235,4 @@ export function parseHookAgents(text: string): HookAgents {
 
 export function formatHookAgents(agents: HookAgents | undefined): string {
   return typeof agents === "string" ? agents : formatList(agents);
-}
-
-/** "all" reads first everywhere it appears — it is what the rest inherits. */
-export function orderedKeys(keys: string[]): string[] {
-  const rest = keys.filter((key) => key !== SHARED_KEY).sort();
-  return keys.includes(SHARED_KEY) ? [SHARED_KEY, ...rest] : rest;
-}
-
-export function agentRows(draft: Draft, declared: string[]): string[] {
-  return [
-    ...new Set([...declared, ...Object.keys(draft["agent-skills"] ?? {})]),
-  ].sort();
-}
-
-export function skillColumns(draft: Draft, known: string[]): string[] {
-  const rows = Object.values(draft["agent-skills"] ?? {}).flat();
-  return [...new Set([...known, ...rows])].sort();
 }

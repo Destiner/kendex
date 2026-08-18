@@ -21,6 +21,8 @@ const badgeVariants = cva(
         warning: "bg-warning/15 text-warning [a&]:hover:bg-warning/25",
         critical: "bg-critical/15 text-critical [a&]:hover:bg-critical/25",
         info: "bg-info/15 text-info [a&]:hover:bg-info/25",
+        customized:
+          "bg-customized/15 text-customized [a&]:hover:bg-customized/25",
       },
     },
     defaultVariants: {

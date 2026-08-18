@@ -28,6 +28,10 @@
   --warning: oklch(0.6 0.13 70);
   --critical: oklch(0.55 0.2 25);
   --info: oklch(0.5 0.19 255);
+  /* "You changed this." Its own hue rather than a borrowed one: an edit a
+     person made on purpose is not a warning, and the Library's legend has
+     to be able to say what the colour means in three words. */
+  --customized: oklch(0.58 0.15 55);
   --sidebar: oklch(0.975 0.003 260);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.5 0.19 255);
@@ -83,6 +87,7 @@
   --good: oklch(0.72 0.17 155);
   --warning: oklch(0.75 0.15 75);
   --critical: oklch(0.62 0.19 25);
+  --customized: oklch(0.74 0.15 58);
   --info: oklch(0.62 0.16 255);
   --sidebar: oklch(0.115 0.005 260);
   --sidebar-foreground: oklch(0.97 0 0);
@@ -136,6 +141,7 @@
   --color-warning: var(--warning);
   --color-critical: var(--critical);
   --color-info: var(--info);
+  --color-customized: var(--customized);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);

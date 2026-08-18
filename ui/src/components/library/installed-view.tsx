@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { ItemKind, Tag } from "@/bindings";
 import { InstalledRow } from "@/components/library/installed-row";
 import { LibraryFilters } from "@/components/library/library-filters";
+import { LibraryLegend } from "@/components/library/library-legend";
 import { NotManagedPanel } from "@/components/library/not-managed";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,9 +14,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TAGS_ROW_LABEL } from "@/lib/copy";
-import { filterItems, groupItems, projectScopes } from "@/lib/derive";
+import { customizedItems } from "@/lib/customization";
+import {
+  filterItems,
+  groupItems,
+  groupScopes,
+  projectScopes,
+} from "@/lib/derive";
 import { PAGE_GUTTER, WIDE_CONTENT_WIDTH } from "@/lib/layout";
+import { scopeKey } from "@/lib/scope";
 import { cn } from "@/lib/utils";
+import { useEditorStore } from "@/stores/editor";
 import { useLibraryViewStore } from "@/stores/library-view";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
@@ -46,6 +55,26 @@ export function InstalledView() {
   const setSearch = useNavStore((s) => s.setSearch);
   const projects = result ? projectScopes(result) : [];
   const scroller = useRef<HTMLDivElement | null>(null);
+  // Every scope's manifest, so a row can say whether you have changed the
+  // package wherever it is installed — not only in the scope last edited.
+  const saved = useEditorStore((s) => s.saved);
+  const loadAll = useEditorStore((s) => s.loadAll);
+  useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
+  const customizedKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const [where, draft] of Object.entries(saved)) {
+      for (const item of customizedItems(draft)) {
+        keys.add(`${where}|${item.kind}:${item.name}`);
+      }
+    }
+    return keys;
+  }, [saved]);
+  const isCustomizedHere = (group: ReturnType<typeof groupItems>[number]) =>
+    groupScopes(group).some((scope) =>
+      customizedKeys.has(`${scopeKey(scope)}|${group.kind}:${group.name}`),
+    );
 
   // The filter is a one-time handoff from wherever the link was clicked
   // (Tools, Projects); once applied, further tab visits start from the
@@ -126,6 +155,7 @@ export function InstalledView() {
             className="min-w-0 flex-1 overflow-y-auto pr-2 [scrollbar-gutter:stable]"
           >
             <NotManagedPanel />
+            {groups.some(isCustomizedHere) ? <LibraryLegend /> : null}
             <Table>
               <TableHeader>
                 <TableRow>
@@ -145,6 +175,7 @@ export function InstalledView() {
                     <InstalledRow
                       key={group.key}
                       group={group}
+                      customized={isCustomizedHere(group)}
                       onOpen={() => {
                         if (!primary) return;
                         goToPackage({

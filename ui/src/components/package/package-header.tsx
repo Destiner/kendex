@@ -4,6 +4,7 @@ import { InlineMarkdown } from "@/components/inline-markdown";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { FORKED_BADGE_LABEL } from "@/lib/copy";
+import { CUSTOMIZED_BADGE } from "@/lib/copy-customize";
 import { kindIcon } from "@/lib/kind-icon";
 
 /** The package page's title block: what this is, what it says about itself,
@@ -13,12 +14,14 @@ export function PackageHeader({
   displayName,
   description,
   forked,
+  customized,
   action,
 }: {
   kind: ItemKind;
   displayName: string;
   description: string | null;
   forked: boolean;
+  customized: boolean;
   action: ReactNode;
 }) {
   const Icon = kindIcon(kind);
@@ -34,6 +37,9 @@ export function PackageHeader({
           <span className="min-w-0 truncate">{displayName}</span>
           {forked ? (
             <Badge variant="outline">{FORKED_BADGE_LABEL}</Badge>
+          ) : null}
+          {customized ? (
+            <Badge variant="customized">{CUSTOMIZED_BADGE}</Badge>
           ) : null}
         </span>
       }

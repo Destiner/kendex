@@ -4,8 +4,20 @@ import { TagBadges } from "@/components/tag-badge";
 import { ToolBadge } from "@/components/tool-badge";
 import { Badge } from "@/components/ui/badge";
 import { TableCell, TableRow } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { bundledWithLabel, FORKED_BADGE_LABEL, vendorHelp } from "@/lib/copy";
-import { groupScopes, groupVendor, type ItemGroup } from "@/lib/derive";
+import { CUSTOMIZED_MARK, STATUS_LABELS } from "@/lib/copy-customize";
+import {
+  type GroupStatus,
+  groupScopes,
+  groupStatus,
+  groupVendor,
+  type ItemGroup,
+} from "@/lib/derive";
 import { kindIcon } from "@/lib/kind-icon";
 import {
   describesItself,
@@ -17,11 +29,20 @@ import { relativeTime } from "@/lib/relative-time";
 import { cn } from "@/lib/utils";
 import { useUpdatesStore } from "@/stores/updates";
 
+const STATUS_TONES: Record<GroupStatus, "good" | "warning" | "critical"> = {
+  active: "good",
+  off: "warning",
+  broken: "critical",
+};
+
 export function InstalledRow({
   group,
+  customized,
   onOpen,
 }: {
   group: ItemGroup;
+  /** Whether anything in the manifest changes this package here. */
+  customized: boolean;
   onOpen: () => void;
 }) {
   const Icon = kindIcon(group.kind);
@@ -34,6 +55,7 @@ export function InstalledRow({
     group.kind === "hook" ? hookDisplayName(group.name) : group.name;
   const vendor = groupVendor(group);
   const scopes = groupScopes(group);
+  const status = groupStatus(group);
   const whereLabel =
     scopes.length === 1 ? scopeName(scopes[0]) : `${scopes.length} locations`;
   const whereTitle = scopes
@@ -46,7 +68,23 @@ export function InstalledRow({
           wants to wrap rather than run out of the row and get cut mid-word. */}
       <TableCell className="max-w-[22rem] font-medium whitespace-normal">
         <span className="flex items-start gap-2">
-          <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          {/* The one place colour says something other than "which tool":
+              the Library's legend names it, and the row still says so in
+              words for anyone who cannot see the difference. */}
+          <span
+            title={customized ? CUSTOMIZED_MARK : undefined}
+            className="mt-0.5 shrink-0"
+          >
+            <Icon
+              className={cn(
+                "size-4",
+                customized ? "text-customized" : "text-muted-foreground",
+              )}
+            />
+            {customized ? (
+              <span className="sr-only">{CUSTOMIZED_MARK}</span>
+            ) : null}
+          </span>
           <span className="min-w-0">
             <span className="flex items-center gap-1.5">
               <span className="block truncate">{displayName}</span>
@@ -96,15 +134,20 @@ export function InstalledRow({
           ? relativeTime(group.modifiedAt * 1000, Date.now())
           : "—"}
       </TableCell>
+      {/* A dot, not a word: seven rows of "Active" say nothing the colour
+          doesn't, and the words are back on hover for anyone who wants them. */}
       <TableCell>
-        {group.installations.some((i) => i.enabled === false) ? (
-          <Badge variant="secondary">Off</Badge>
-        ) : (
-          <span className="flex items-center gap-1.5 text-xs text-good">
-            <StatusDot tone="good" />
-            Active
-          </span>
-        )}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span className="flex w-full justify-center py-1">
+                <StatusDot tone={STATUS_TONES[status]} />
+                <span className="sr-only">{STATUS_LABELS[status]}</span>
+              </span>
+            }
+          />
+          <TooltipContent side="left">{STATUS_LABELS[status]}</TooltipContent>
+        </Tooltip>
       </TableCell>
     </TableRow>
   );

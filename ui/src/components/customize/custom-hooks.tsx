@@ -1,5 +1,5 @@
 import { Plus, X } from "lucide-react";
-import { CommitInput, Field } from "@/components/editor/controls";
+import { CommitInput, Field } from "@/components/customize/controls";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,7 @@ import {
   setCustomHook,
 } from "@/lib/editor-draft";
 
-export function CustomHooksTab({
+export function CustomHooks({
   draft,
   onChange,
 }: {
@@ -24,9 +24,6 @@ export function CustomHooksTab({
 
   return (
     <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        Hooks are written straight into each tool's configuration when you save.
-      </p>
       {hooks.map((hook, index) => (
         <HookCard
           // biome-ignore lint/suspicious/noArrayIndexKey: position is a hook's only identity — [[custom-hooks]] is an ordered list with no names

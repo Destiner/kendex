@@ -160,7 +160,15 @@ lives in one capability table read by core and UI.
 - Hue carries exactly one meaning: **which tool** an item belongs to
   (`--tool-*`, one per harness). Status keeps the semantic tokens it
   always had, and item kinds are told apart by icon — so no surface ever
-  asks a reader to decode two colour languages at once.
+  asks a reader to decode two colour languages at once. The Library's
+  table is the single exception: a row's kind icon takes `--customized`
+  when you have changed that package, and the table prints the key above
+  itself. A colour that means something has to say what, on the same
+  screen as the thing it marks.
+- A status a colour can carry is a dot, and the words arrive on hover.
+  Seven rows reading "Active" spend a column on a sentence the colour
+  already told; the tooltip and a screen-reader line keep the words for
+  anyone who needs them.
 - Four type steps, and no page invents a fifth: page title (24
   semibold), section title (15 semibold, full contrast), row label (14
   medium), description (13 muted). `components/section.tsx` owns all
@@ -203,6 +211,19 @@ lives in one capability table read by core and UI.
   scored by nothing and asked about nowhere: it is listed in the Library,
   labelled with who ships it, and left alone. A finding nobody can act on
   is noise that teaches people to ignore the ones they can.
+- What you changed about a package is edited on that package's own page,
+  under a Customize tab beside its Overview — instructions, the skills an
+  agent gets, per-tool settings. The Customize page keeps only what is
+  not about one package (the `all` row every agent or skill inherits,
+  custom hooks, a project's skills folder) plus an index of everything
+  customized, each row opening the package it belongs to. A grid of every
+  agent against every skill made a person hunt for the row they came for;
+  a package's own page is where they already are.
+- Both surfaces edit one draft of one manifest per scope, held in
+  `stores/editor.ts`. Two drafts of the same file would let the second
+  save overwrite the first with no warning, so the Customize page reloads
+  only when nothing is unsaved, and `lib/customization.ts` slices that
+  one draft per package rather than fetching a second copy.
 - A section with nothing in it is not rendered. An empty state earns its
   place only when the page would otherwise be blank.
 - Commands that touch disk, git, or a subprocess are declared

@@ -1,16 +1,11 @@
-import { SlidersHorizontal } from "lucide-react";
 import { useEffect } from "react";
-import type { EditorInventory, Scope } from "@/bindings";
-import { AgentSkillsTab } from "@/components/editor/agent-skills-tab";
-import { Field } from "@/components/editor/controls";
-import { CustomHooksTab } from "@/components/editor/custom-hooks-tab";
-import { FrontmatterTab } from "@/components/editor/frontmatter-tab";
-import { InstructionsTab } from "@/components/editor/instructions-tab";
-import { SaveBar } from "@/components/editor/save-bar";
-import { EmptyState } from "@/components/empty-state";
+import { CustomHooks } from "@/components/customize/custom-hooks";
+import { CustomizedIndex } from "@/components/customize/customized-index";
+import { SaveBar } from "@/components/customize/save-bar";
+import { SharedInstructions } from "@/components/customize/shared-instructions";
 import { PageHeader } from "@/components/page-header";
+import { Section } from "@/components/section";
 import { StatusNote } from "@/components/status-note";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -19,27 +14,35 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   CUSTOMIZE_SUBTITLE,
-  NOTHING_CUSTOMIZED,
-  NOTHING_CUSTOMIZED_BODY,
-  START_CUSTOMIZING,
+  CUSTOMIZED_SECTION,
+  CUSTOMIZED_SECTION_HELP,
+  HOOKS_HELP,
+  HOOKS_SECTION,
+  SHARED_SECTION,
+  SHARED_SECTION_HELP,
+  SKILLS_DIR_HELP,
+  SKILLS_DIR_SECTION,
 } from "@/lib/copy-customize";
-import { type Draft, setProjectSkillsDir } from "@/lib/editor-draft";
+import {
+  clearItemCustomization,
+  customizedItems,
+  sharedCustomization,
+} from "@/lib/customization";
+import { setProjectSkillsDir } from "@/lib/editor-draft";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor";
 import { useSettingsStore } from "@/stores/settings";
 
-type Change = (change: (draft: Draft) => Draft) => void;
-
+/** What you have changed that isn't about one package — instructions every
+ *  agent and skill gets, hooks of your own, where a project keeps its
+ *  skills — and the way in to everything that is. */
 export function CustomizePage() {
   const {
     scope,
     draft,
-    inventory,
-    absent,
     dirty,
     loading,
     saving,
@@ -48,13 +51,13 @@ export function CustomizePage() {
     load,
     edit,
     save,
-    create,
   } = useEditorStore();
-  const settings = useSettingsStore((s) => s.settings);
-  const projects = settings?.projects ?? [];
+  const projects = useSettingsStore((s) => s.settings?.projects ?? []);
 
+  // Unsaved edits made on a package's own page live in this same draft;
+  // reloading over them here would throw away work with nothing said.
   useEffect(() => {
-    void load();
+    if (!useEditorStore.getState().dirty) void load();
   }, [load]);
 
   return (
@@ -96,7 +99,7 @@ export function CustomizePage() {
         }
       />
       <div className={cn("flex-1", PAGE_BODY)}>
-        <div className={cn("space-y-6", CONTENT_WIDTH)}>
+        <div className={cn("flex flex-col gap-10", CONTENT_WIDTH)}>
           {error ? (
             <StatusNote tone="critical" title="That change couldn't be saved">
               <span className="whitespace-pre-wrap">{error}</span>
@@ -105,26 +108,50 @@ export function CustomizePage() {
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : null}
-          {absent ? (
-            <EmptyState
-              icon={SlidersHorizontal}
-              title={NOTHING_CUSTOMIZED}
-              action={
-                <Button disabled={saving} onClick={() => void create()}>
-                  {START_CUSTOMIZING}
-                </Button>
-              }
-            >
-              {NOTHING_CUSTOMIZED_BODY}
-            </EmptyState>
-          ) : null}
           {draft ? (
-            <EditorTabs
-              draft={draft}
-              inventory={inventory}
-              scope={scope}
-              onChange={edit}
-            />
+            <>
+              <Section title={SHARED_SECTION} description={SHARED_SECTION_HELP}>
+                <SharedInstructions
+                  shared={sharedCustomization(draft)}
+                  onChange={edit}
+                />
+              </Section>
+              <Section
+                title={CUSTOMIZED_SECTION}
+                description={CUSTOMIZED_SECTION_HELP}
+              >
+                <CustomizedIndex
+                  items={customizedItems(draft)}
+                  scope={scope}
+                  onRemove={(kind, name) =>
+                    edit((current) =>
+                      clearItemCustomization(current, kind, name),
+                    )
+                  }
+                />
+              </Section>
+              <Section title={HOOKS_SECTION} description={HOOKS_HELP}>
+                <CustomHooks draft={draft} onChange={edit} />
+              </Section>
+              {scope.scope === "project" ? (
+                <Section
+                  title={SKILLS_DIR_SECTION}
+                  description={SKILLS_DIR_HELP}
+                >
+                  <Input
+                    aria-label="Skills folder"
+                    placeholder=".claude/skills-src"
+                    className="max-w-lg"
+                    value={draft["project-skills-dir"] ?? ""}
+                    onChange={(event) =>
+                      edit((current) =>
+                        setProjectSkillsDir(current, event.target.value),
+                      )
+                    }
+                  />
+                </Section>
+              ) : null}
+            </>
           ) : null}
         </div>
       </div>
@@ -136,73 +163,5 @@ export function CustomizePage() {
         />
       ) : null}
     </div>
-  );
-}
-
-function EditorTabs({
-  draft,
-  inventory,
-  scope,
-  onChange,
-}: {
-  draft: Draft;
-  inventory: EditorInventory | null;
-  scope: Scope;
-  onChange: Change;
-}) {
-  return (
-    <Tabs defaultValue="agent-skills">
-      <TabsList>
-        <TabsTrigger value="agent-skills">Agent skills</TabsTrigger>
-        <TabsTrigger value="instructions">Instructions</TabsTrigger>
-        <TabsTrigger value="frontmatter">Agent settings</TabsTrigger>
-        <TabsTrigger value="hooks">Custom hooks</TabsTrigger>
-        {scope.scope === "project" ? (
-          <TabsTrigger value="project">Project skills folder</TabsTrigger>
-        ) : null}
-      </TabsList>
-      <TabsContent value="agent-skills" className="pt-4">
-        <AgentSkillsTab
-          draft={draft}
-          inventory={inventory}
-          onChange={onChange}
-        />
-      </TabsContent>
-      <TabsContent value="instructions" className="pt-4">
-        <InstructionsTab
-          draft={draft}
-          inventory={inventory}
-          onChange={onChange}
-        />
-      </TabsContent>
-      <TabsContent value="frontmatter" className="pt-4">
-        <FrontmatterTab
-          draft={draft}
-          inventory={inventory}
-          onChange={onChange}
-        />
-      </TabsContent>
-      <TabsContent value="hooks" className="pt-4">
-        <CustomHooksTab draft={draft} onChange={onChange} />
-      </TabsContent>
-      <TabsContent value="project" className="max-w-lg pt-4">
-        <Field label="Skills folder">
-          <Input
-            aria-label="Skills folder"
-            placeholder=".claude/skills-src"
-            value={draft["project-skills-dir"] ?? ""}
-            onChange={(event) =>
-              onChange((current) =>
-                setProjectSkillsDir(current, event.target.value),
-              )
-            }
-          />
-        </Field>
-        <p className="pt-2 text-xs text-muted-foreground">
-          Skills you own live here, then get linked into each tool's own skill
-          folder, so the generated copies don't need to be committed.
-        </p>
-      </TabsContent>
-    </Tabs>
   );
 }

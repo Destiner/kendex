@@ -9,11 +9,13 @@ import { cn } from "@/lib/utils";
 export function Pill({
   selected,
   title,
+  disabled,
   onClick,
   children,
 }: {
   selected: boolean;
   title?: string;
+  disabled?: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -22,6 +24,7 @@ export function Pill({
       type="button"
       aria-pressed={selected}
       title={title}
+      disabled={disabled && !selected}
       onClick={onClick}
       className={cn(
         "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors",
@@ -31,6 +34,7 @@ export function Pill({
         selected
           ? "border-transparent bg-primary/20 text-primary"
           : "border-border text-muted-foreground hover:border-input hover:text-foreground",
+        "disabled:pointer-events-none disabled:opacity-50",
       )}
     >
       {children}

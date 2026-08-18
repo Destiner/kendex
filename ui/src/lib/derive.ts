@@ -198,3 +198,17 @@ export function bundleSummary(members: string[]): string {
   const rest = members.length - 4;
   return rest > 0 ? `${shown}, and ${rest} more` : shown;
 }
+
+/** How an installed package is doing, in one word. A broken link outranks
+ *  a switch: the file it points at is gone whatever the switch says. */
+export type GroupStatus = "active" | "off" | "broken";
+
+export function groupStatus(group: ItemGroup): GroupStatus {
+  const broken = group.installations.some(
+    (i) => i.fileState.state === "symlink" && i.fileState.broken,
+  );
+  if (broken) return "broken";
+  return group.installations.some((i) => i.enabled === false)
+    ? "off"
+    : "active";
+}

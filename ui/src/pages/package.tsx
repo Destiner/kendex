@@ -1,18 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Scope, VersionRow } from "@/bindings";
-import { ConfirmDialog } from "@/components/confirm-dialog";
-import { DiffView } from "@/components/diff/diff-view";
-import { FilePreview } from "@/components/package/file-preview";
-import { EditedNotice } from "@/components/package/fork-notice";
+import type { HarnessId, Scope, VersionRow } from "@/bindings";
+import { ItemCustomize } from "@/components/customize/item-customize";
+import { SaveBar } from "@/components/customize/save-bar";
 import { PackageActions } from "@/components/package/package-actions";
+import { PackageBody } from "@/components/package/package-body";
 import { PackageHeader } from "@/components/package/package-header";
-import { PackageSidebar } from "@/components/package/package-sidebar";
+import { RemoveDialog } from "@/components/package/remove-dialog";
 import {
   type PackageView,
   packageVersionActions,
   usePackageData,
   usePackageDiff,
 } from "@/components/package/use-package-data";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CUSTOMIZE_TAB, OVERVIEW_TAB } from "@/lib/copy-customize";
+import {
+  canCustomize,
+  isCustomized,
+  itemCustomization,
+} from "@/lib/customization";
 import { groupItems, groupScopes } from "@/lib/derive";
 import { packageDisplayName } from "@/lib/labels";
 import { PAGE_GUTTER, WIDE_CONTENT_WIDTH } from "@/lib/layout";
@@ -20,18 +26,21 @@ import { sameScope } from "@/lib/scope";
 import { cn } from "@/lib/utils";
 import { installedRow, latestRow, versionRowLabel } from "@/lib/versions";
 import { useAuditStore } from "@/stores/audit";
+import { useEditorStore } from "@/stores/editor";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 import { useUpdatesStore } from "@/stores/updates";
 
-/** One package, full page: provenance left, the file or diff right. */
+/** One package, full page: what it is as installed, and what you have
+ *  changed about it. */
 export function PackagePage() {
   const ref = useNavStore((s) => s.packageRef);
   const initialView = useNavStore((s) => s.packageView);
   const clearPackageView = useNavStore((s) => s.clearPackageView);
   const back = useNavStore((s) => s.back);
   const result = useScanStore((s) => s.result);
-  const { busy, toggle, removeItem } = useAuditStore();
+  const { busy, toggle } = useAuditStore();
+  const { draft, dirty, saving, openScope, load, save } = useEditorStore();
 
   const [view, setView] = useState<PackageView>(() =>
     initialView
@@ -50,6 +59,12 @@ export function PackagePage() {
     if (initialView) clearPackageView();
   }, [initialView, clearPackageView]);
 
+  // The manifest this package's own edits live in, loaded up front so the
+  // header can say whether there are any before the tab is opened.
+  useEffect(() => {
+    if (ref) void openScope(ref.scope);
+  }, [ref, openScope]);
+
   const group = useMemo(() => {
     if (!ref || !result) return null;
     const matching = result.items.filter(
@@ -58,7 +73,7 @@ export function PackagePage() {
     return groupItems(matching)[0] ?? null;
   }, [ref, result]);
 
-  const { meta, files, versions, load } = usePackageData(ref);
+  const { meta, files, versions, load: reload } = usePackageData(ref);
   const diff = usePackageDiff(
     ref,
     view,
@@ -98,6 +113,10 @@ export function PackagePage() {
     meta != null &&
     updatesLoaded &&
     !edited;
+  const customizable = canCustomize(group.kind);
+  const customized = isCustomized(
+    itemCustomization(draft, group.kind, group.name),
+  );
 
   const inEveryScope = async (act: (scope: Scope) => Promise<void>) => {
     for (const scope of groupScopes(group)) await act(scope);
@@ -108,7 +127,7 @@ export function PackagePage() {
     displayName,
     meta?.rev != null,
     setSwitching,
-    load,
+    reload,
   );
 
   const compare = (row: VersionRow) =>
@@ -121,6 +140,31 @@ export function PackagePage() {
       toLabel: versionRowLabel(row),
     });
 
+  const body = (
+    <PackageBody
+      reference={ref}
+      group={group}
+      primary={primary}
+      meta={meta}
+      versions={versions}
+      files={files}
+      installed={installed}
+      view={view}
+      setView={setView}
+      diff={diff}
+      busy={busy || switching}
+      onToggle={(enable) =>
+        void inEveryScope((scope) =>
+          toggle(scope, group.kind, group.name, enable),
+        )
+      }
+      onSwitchVersion={switchTo}
+      onCompare={compare}
+      onFollow={follow}
+      onReload={reload}
+    />
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PackageHeader
@@ -128,6 +172,7 @@ export function PackagePage() {
         displayName={displayName}
         description={group.description}
         forked={meta?.fork != null}
+        customized={customized}
         action={
           <PackageActions
             scope={primary.scope}
@@ -144,95 +189,43 @@ export function PackagePage() {
       />
       <div className={cn("min-h-0 flex-1 overflow-y-auto", PAGE_GUTTER)}>
         <div className={cn("pb-8", WIDE_CONTENT_WIDTH)}>
-          <EditedNotice
-            scope={ref.scope}
-            kind={ref.kind}
-            name={ref.name}
-            harness={primary.harness}
-            alreadyForked={meta?.fork != null}
-            onViewChanges={() => {
-              if (!installed) return;
-              setView({
-                mode: "diff",
-                from: installed.id,
-                to: "installed",
-                fromLabel: versionRowLabel(installed),
-                toLabel: "your edits",
-              });
-            }}
-            onResolved={load}
-          />
-          {view.mode === "diff" ? (
-            diff ? (
-              <DiffView
-                diff={diff}
-                fromLabel={view.fromLabel}
-                toLabel={view.toLabel}
-                onClose={() => setView({ mode: "files", file: null })}
-              />
-            ) : (
-              <p className="text-sm text-muted-foreground">Comparing…</p>
-            )
-          ) : (
-            <div className="flex flex-col gap-8 lg:flex-row">
-              <PackageSidebar
-                group={group}
-                primary={primary}
-                meta={meta}
-                versions={versions}
-                files={files}
-                selectedFile={view.file}
-                busy={busy || switching}
-                onToggle={(_, enable) =>
-                  void inEveryScope((scope) =>
-                    toggle(scope, group.kind, group.name, enable),
-                  )
-                }
-                onSwitchVersion={switchTo}
-                onCompare={compare}
-                onFollow={follow}
-                onSelectFile={(file) => setView({ mode: "files", file })}
-              />
-              <div className="min-w-0 flex-1">
-                <FilePreview
-                  scope={ref.scope}
-                  kind={ref.kind}
-                  name={ref.name}
-                  path={view.file}
+          {customizable ? (
+            <Tabs defaultValue="overview">
+              <TabsList>
+                <TabsTrigger value="overview">{OVERVIEW_TAB}</TabsTrigger>
+                <TabsTrigger value="customize">{CUSTOMIZE_TAB}</TabsTrigger>
+              </TabsList>
+              <TabsContent value="overview" className="pt-6">
+                {body}
+              </TabsContent>
+              <TabsContent value="customize" className="pt-6">
+                <ItemCustomize
+                  kind={group.kind}
+                  name={group.name}
+                  scopes={groupScopes(group)}
+                  harnesses={group.harnesses as HarnessId[]}
                 />
-              </div>
-            </div>
+              </TabsContent>
+            </Tabs>
+          ) : (
+            body
           )}
         </div>
       </div>
-      <ConfirmDialog
+      {dirty ? (
+        <SaveBar
+          saving={saving}
+          onSave={() => void save()}
+          onDiscard={() => void load()}
+        />
+      ) : null}
+      <RemoveDialog
         open={confirmRemove}
         onOpenChange={setConfirmRemove}
-        title={`Remove ${group.name}?`}
-        description="The files vstack manages will be moved to the trash, and it will stop being kept up to date."
-        confirmLabel="Remove"
-        destructive
-        busy={busy}
-        onConfirm={() => {
-          void inEveryScope((scope) =>
-            removeItem(scope, group.kind, group.name),
-          ).then(() => {
-            setConfirmRemove(false);
-            // A failed removal shows its error and leaves the page up —
-            // the vanish-effect takes us back only once the package is
-            // actually gone from the scan.
-            if (
-              !useScanStore
-                .getState()
-                .result?.items.some(
-                  (item) =>
-                    item.kind === group.kind && item.name === group.name,
-                )
-            ) {
-              back();
-            }
-          });
-        }}
+        kind={group.kind}
+        name={group.name}
+        scopes={groupScopes(group)}
+        onGone={back}
       />
     </div>
   );

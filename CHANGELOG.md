@@ -8,6 +8,20 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- A package's own page now carries what you have changed about it. Open
+  anything from the Library and a **Customize** tab sits beside its
+  overview: the instructions vstack writes into it, the skills an agent
+  gets, and the per-tool settings that beat the catalog's — the same
+  manifest the Customize page writes, sliced to the one package you are
+  looking at. Its header says **Customized** when anything is set, the
+  instructions that apply to everything are named where they land (with
+  the way to them), and where a package is installed in more than one
+  place you choose which one you are editing.
+- The Library marks what you have changed: a row's icon turns orange when
+  that package is customized where it lives, with the key printed above
+  the table. Kinds a manifest cannot change — hooks, commands, MCP
+  servers, plugins — carry no tab and no mark.
+
 - Content a coding tool ships with itself is now labelled with who ships
   it, and left alone. Codex's bundled plugins are OpenAI's, Claude Code's
   are Anthropic's — nobody using vstack chose them or can change them, so
@@ -425,6 +439,22 @@ changes carry a **Breaking** call-out with their migration note inline.
   exactly once, changing no other byte.
 
 ### Changed
+
+- Customize is now the page for what isn't about one package: the
+  instructions every agent and skill inherits, your own hooks, and a
+  project's skills folder — plus a list of every package you have
+  customized, each row opening that package's page. The agent-by-skill
+  grid and the stack of per-agent text boxes are gone; an agent's skills
+  and settings are edited on the agent.
+- The Library's status column is a dot — green active, amber switched
+  off, red for a broken link — with the words on hover instead of in
+  every row.
+- Per-agent settings read as settings: **Model**, **Blocked tools**,
+  **Reasoning effort** rather than the manifest's own key names, with an
+  example in each empty field.
+- Customizing no longer starts with a button. A scope with nothing
+  written yet opens on an empty page you can type into, and the first
+  save creates the file.
 
 - Where an item lives is filtered on the Library, and nowhere else. The
   app-wide location picker in the sidebar narrowed every page, including
