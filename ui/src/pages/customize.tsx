@@ -1,3 +1,4 @@
+import { SlidersHorizontal } from "lucide-react";
 import { useEffect } from "react";
 import type { EditorInventory, Scope } from "@/bindings";
 import { AgentSkillsTab } from "@/components/editor/agent-skills-tab";
@@ -6,6 +7,7 @@ import { CustomHooksTab } from "@/components/editor/custom-hooks-tab";
 import { FrontmatterTab } from "@/components/editor/frontmatter-tab";
 import { InstructionsTab } from "@/components/editor/instructions-tab";
 import { SaveBar } from "@/components/editor/save-bar";
+import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { StatusNote } from "@/components/status-note";
 import { Button } from "@/components/ui/button";
@@ -18,6 +20,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  CUSTOMIZE_SUBTITLE,
+  NOTHING_CUSTOMIZED,
+  NOTHING_CUSTOMIZED_BODY,
+  START_CUSTOMIZING,
+} from "@/lib/copy-customize";
 import { type Draft, setProjectSkillsDir } from "@/lib/editor-draft";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
 import { cn } from "@/lib/utils";
@@ -53,12 +61,10 @@ export function CustomizePage() {
     <div className="flex min-h-full flex-col">
       <PageHeader
         title="Customize"
-        subtitle="Every customization here — edited in one place, not by hand"
-      />
-      <div className={cn("flex-1", PAGE_BODY)}>
-        <div className={cn("space-y-6", CONTENT_WIDTH)}>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground">Editing</span>
+        subtitle={CUSTOMIZE_SUBTITLE}
+        action={
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] text-muted-foreground">Editing</span>
             <Select
               value={scope.scope === "global" ? "global" : scope.root}
               onValueChange={(value) => {
@@ -70,13 +76,15 @@ export function CustomizePage() {
                 );
               }}
             >
-              <SelectTrigger className="w-80" size="sm">
+              <SelectTrigger className="w-56" size="sm">
                 <SelectValue>
-                  {(value: string) => (value === "global" ? "Global" : value)}
+                  {(value: string) =>
+                    value === "global" ? "Everything (global)" : value
+                  }
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="global">Global</SelectItem>
+                <SelectItem value="global">Everything (global)</SelectItem>
                 {projects.map((root) => (
                   <SelectItem key={root} value={root}>
                     {root}
@@ -85,7 +93,10 @@ export function CustomizePage() {
               </SelectContent>
             </Select>
           </div>
-
+        }
+      />
+      <div className={cn("flex-1", PAGE_BODY)}>
+        <div className={cn("space-y-6", CONTENT_WIDTH)}>
           {error ? (
             <StatusNote tone="critical" title="That change couldn't be saved">
               <span className="whitespace-pre-wrap">{error}</span>
@@ -95,15 +106,17 @@ export function CustomizePage() {
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : null}
           {absent ? (
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">
-                Nothing here yet. Add something from your catalogs, or start
-                customizing directly.
-              </p>
-              <Button size="sm" disabled={saving} onClick={() => void create()}>
-                Start customizing
-              </Button>
-            </div>
+            <EmptyState
+              icon={SlidersHorizontal}
+              title={NOTHING_CUSTOMIZED}
+              action={
+                <Button disabled={saving} onClick={() => void create()}>
+                  {START_CUSTOMIZING}
+                </Button>
+              }
+            >
+              {NOTHING_CUSTOMIZED_BODY}
+            </EmptyState>
           ) : null}
           {draft ? (
             <EditorTabs

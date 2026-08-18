@@ -1,7 +1,13 @@
-import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  RefreshCw,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import type { UpdateRow } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { UpdateRowView } from "@/components/update-row";
@@ -13,6 +19,7 @@ import {
   ignoreConfirmTitle,
   UPDATE_ALL_LABEL,
   UPDATES_EMPTY,
+  UPDATES_EMPTY_BODY,
   UPDATES_SUBTITLE,
   UPDATES_UNCHECKED_TITLE,
 } from "@/lib/copy";
@@ -41,6 +48,31 @@ export function UpdatesPage() {
   const hidden = hiddenUpdates(rows);
   const HiddenChevron = showHidden ? ChevronDown : ChevronRight;
 
+  // With nothing to update there is nothing to introduce: a title and a
+  // sentence explaining a list that isn't there is furniture around good
+  // news. The sidebar already says which page this is.
+  if (visible.length === 0 && hidden.length === 0 && warnings.length === 0) {
+    return (
+      <div className="flex min-h-full items-center justify-center">
+        <EmptyState
+          icon={CheckCircle2}
+          title={UPDATES_EMPTY}
+          action={
+            <Button
+              variant="outline"
+              disabled={checking}
+              onClick={() => void check()}
+            >
+              {CHECK_FOR_UPDATES_LABEL}
+            </Button>
+          }
+        >
+          {UPDATES_EMPTY_BODY}
+        </EmptyState>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
@@ -48,17 +80,19 @@ export function UpdatesPage() {
         subtitle={UPDATES_SUBTITLE}
         action={
           <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={checking}
-              onClick={() => void check()}
-            >
-              <RefreshCw
-                className={cn("size-3.5", checking && "animate-spin")}
-              />
-              {CHECK_FOR_UPDATES_LABEL}
-            </Button>
+            {visible.length > 0 ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={checking}
+                onClick={() => void check()}
+              >
+                <RefreshCw
+                  className={cn("size-3.5", checking && "animate-spin")}
+                />
+                {CHECK_FOR_UPDATES_LABEL}
+              </Button>
+            ) : null}
             {visible.length > 1 ? (
               <Button
                 size="sm"
@@ -74,9 +108,9 @@ export function UpdatesPage() {
       <div className={cn("min-h-0 flex-1 overflow-y-auto", PAGE_GUTTER)}>
         <div className={cn("pb-8", CONTENT_WIDTH)}>
           {visible.length === 0 ? (
-            <p className="py-6 text-sm text-muted-foreground">
-              {UPDATES_EMPTY}
-            </p>
+            <EmptyState icon={CheckCircle2} title={UPDATES_EMPTY}>
+              {UPDATES_EMPTY_BODY}
+            </EmptyState>
           ) : (
             <div className="divide-y">
               {visible.map((row) => (

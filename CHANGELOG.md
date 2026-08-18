@@ -8,6 +8,14 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- Content a coding tool ships with itself is now labelled with who ships
+  it, and left alone. Codex's bundled plugins are OpenAI's, Claude Code's
+  are Anthropic's — nobody using vstack chose them or can change them, so
+  they are listed in the Library with their vendor named and scored by
+  nothing, asked about nowhere. Ownership is read off the marketplace a
+  plugin names; a marketplace vstack doesn't recognise stays yours, so
+  nothing real goes quiet.
+
 - Agents no longer start sessions blind. `vstack check` is now the drift
   contract: exit 0 when everything is current, 1 when something drifted,
   2 when the state could not be read — with `--quiet` printing a short,
@@ -417,6 +425,24 @@ changes carry a **Breaking** call-out with their migration note inline.
   exactly once, changing no other byte.
 
 ### Changed
+
+- Where an item lives is filtered on the Library, and nowhere else. The
+  app-wide location picker in the sidebar narrowed every page, including
+  pages that already state each row's location — so a count could
+  disagree with the table under it with nothing on screen explaining
+  why. Every other page now shows everything.
+
+- Tools and Projects are two places in the sidebar instead of two tabs
+  on one page. They answer different questions, and where a tool keeps
+  its files is now edited on that tool's own row rather than in a second
+  list of the same tools.
+
+- Chrome reads more honestly: a border now means "you can act on this",
+  so chips and badges are a quiet fill and a dismiss button never looks
+  like a label; muted text is a real step in the hierarchy rather than
+  decoration; a section with nothing in it isn't drawn at all; and the
+  dialog that rules on a finding restates what it is deciding, since the
+  row that opened it only showed a headline.
 
 - Projects are cards, and adding one is a dialog. Personal and each
   project now use the same card, so the item counts sit in the same

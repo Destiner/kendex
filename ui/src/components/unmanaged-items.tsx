@@ -1,8 +1,10 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import type { DriftRow, HarnessId, ItemKind } from "@/bindings";
+import type { DriftRow, ItemKind } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { KindToolChips } from "@/components/kind-tool-chips";
 import { Button } from "@/components/ui/button";
+import { type SharedLink, sharedLinkOf } from "@/lib/adopt-shared";
 import {
   HIDE_ITEMS_LABEL,
   START_MANAGING_LABEL,
@@ -16,9 +18,7 @@ import {
 } from "@/lib/copy-safety";
 import type { MergedDriftRow } from "@/lib/drift-merge";
 import { summarizePaths } from "@/lib/drift-merge";
-import { kindLabel, toolName } from "@/lib/labels";
-import { sameScope } from "@/stores/audit";
-import { useScanStore } from "@/stores/scan";
+import { kindLabel } from "@/lib/labels";
 
 // A project can carry dozens of hand-made items nobody intends to triage one
 // at a time. Past this many, the list folds behind a one-line summary so the
@@ -31,57 +31,6 @@ function kindCounts(rows: MergedDriftRow[]): [ItemKind, number][] {
   return [...counts.entries()];
 }
 
-interface SharedLink {
-  group: MergedDriftRow;
-  /** The harness whose link to adopt through — the core resolves the
-   *  target and takes every sibling link with it in one plan. */
-  harness: HarnessId;
-  /** The real folder the links resolve to. */
-  target: string;
-  /** Every tool whose install is a link at that folder. */
-  tools: string[];
-}
-
-// An install that is a live symlink adopts the *target* — a folder the
-// user may have pointed several tools at. That is a bigger move than
-// adopting a plain folder (the old folder is trashed, and links vstack
-// cannot see will break), so it gets a confirmation naming the folder and
-// every tool reading it. Detection reads the scan, which resolves links.
-function sharedLinkOf(group: MergedDriftRow): SharedLink | null {
-  const items = useScanStore.getState().result?.items ?? [];
-  for (const row of group.installations) {
-    const item = items.find(
-      (it) =>
-        it.kind === group.kind &&
-        it.name === group.name &&
-        it.harness === row.harness &&
-        sameScope(it.scope, row.scope),
-    );
-    if (item?.fileState.state !== "symlink" || item.fileState.broken) {
-      continue;
-    }
-    const target = item.fileState.target;
-    const tools = items
-      .filter(
-        (it) =>
-          it.kind === group.kind &&
-          it.name === group.name &&
-          sameScope(it.scope, row.scope) &&
-          it.fileState.state === "symlink" &&
-          !it.fileState.broken &&
-          it.fileState.target === target,
-      )
-      .map((it) => toolName(it.harness));
-    return {
-      group,
-      harness: row.harness,
-      target,
-      tools: [...new Set(tools)],
-    };
-  }
-  return null;
-}
-
 // A skill installed by hand for two harnesses is one thing to adopt, not
 // two — so one row carries every tool badge and one button adopts every
 // installation at once.
@@ -89,10 +38,14 @@ export function UnmanagedItems({
   rows,
   busy,
   title,
+  foldable: canFold = true,
   onAdopt,
 }: {
   rows: MergedDriftRow[];
   busy: boolean;
+  /** False on the page where this list is the whole task — there, nothing
+   *  is worth hiding behind a summary. */
+  foldable?: boolean;
   /** The list's heading — a project's name where several projects' lists
    *  sit under one panel heading, or nothing where the panel says it all. */
   title: string | null;
@@ -108,7 +61,7 @@ export function UnmanagedItems({
     null,
   );
   if (rows.length === 0) return null;
-  const foldable = rows.length > INLINE_LIMIT;
+  const foldable = canFold && rows.length > INLINE_LIMIT;
   const showList = !foldable || expanded;
 
   // One adoption at a time: every apply takes the scope's writer lock, so
@@ -133,29 +86,44 @@ export function UnmanagedItems({
   };
 
   return (
-    <div className="flex flex-col gap-2">
-      {title ? <p className="text-sm font-medium">{title}</p> : null}
+    <div className="flex flex-col">
+      {/* Which scope these are in rides inside the box as its first row, not
+          as a line above it: a heading that appears only when more than one
+          scope has items moves the whole block down the page as the filter
+          changes. */}
       <div className="divide-y divide-border/60 rounded-lg border bg-muted/30">
-        {foldable ? (
+        {title ? (
+          <p className="px-3 py-2 text-xs font-medium text-muted-foreground">
+            {title}
+          </p>
+        ) : null}
+        {/* The summary line carries the one action that covers the whole
+            list, so it stays even where nothing is folded. */}
+        {foldable || rows.length > 1 ? (
           <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
             <button
               type="button"
+              disabled={!foldable}
               onClick={() => setExpanded((e) => !e)}
-              className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+              className="flex min-w-0 flex-1 items-center gap-1.5 text-left disabled:cursor-default"
             >
-              {expanded ? (
-                <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-              )}
+              {foldable ? (
+                expanded ? (
+                  <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                )
+              ) : null}
               <span className="truncate text-sm">
                 {kindCounts(rows)
                   .map(([kind, count]) => `${count} ${kindLabel(kind, count)}`)
                   .join(" · ")}
               </span>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {expanded ? HIDE_ITEMS_LABEL : showAllItemsLabel(rows.length)}
-              </span>
+              {foldable ? (
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {expanded ? HIDE_ITEMS_LABEL : showAllItemsLabel(rows.length)}
+                </span>
+              ) : null}
             </button>
             <Button
               size="sm"
@@ -173,28 +141,32 @@ export function UnmanagedItems({
               const paths = summarizePaths(
                 group.installations.map((row) => row.detail),
               );
-              const tools = group.installations
-                .map((row) => toolName(row.harness))
-                .join(", ");
+              const harnesses = [
+                ...new Set(group.installations.map((row) => row.harness)),
+              ];
               return (
                 <div
                   key={`${group.kind}:${group.name}:${group.state}`}
-                  className="flex items-center gap-2 px-3 py-2.5"
+                  className="flex items-center gap-3 px-3 py-3"
                 >
-                  <span className="min-w-0 flex-1">
-                    <span className="text-sm font-medium">{group.name}</span>{" "}
-                    <span className="text-xs text-muted-foreground">
-                      {kindLabel(group.kind)} · {tools}
+                  {/* Name over path on the left, chips in a lane of their
+                      own: chips trailing the name start at a different x on
+                      every row, and a column that never lines up is the
+                      thing that makes a list of these hard to read. */}
+                  <span className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="truncate text-sm font-medium">
+                      {group.name}
                     </span>
                     {paths ? (
                       <span
-                        className="block truncate font-mono text-xs text-muted-foreground"
+                        className="truncate font-mono text-xs text-muted-foreground"
                         title={paths.title}
                       >
                         {paths.text}
                       </span>
                     ) : null}
                   </span>
+                  <KindToolChips kind={group.kind} harnesses={harnesses} />
                   <Button
                     size="sm"
                     variant="outline"

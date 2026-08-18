@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { countByKind } from "@/lib/derive";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
 import { useScanStore } from "@/stores/scan";
+import { useSettingsStore } from "@/stores/settings";
 
 const ALL_HARNESSES: HarnessId[] = [
   "claude",
@@ -19,6 +20,8 @@ const ALL_HARNESSES: HarnessId[] = [
 export function HarnessList() {
   const result = useScanStore((s) => s.result);
   const refreshScan = useScanStore((s) => s.refresh);
+  const settings = useSettingsStore((s) => s.settings);
+  const setHarnessRoot = useSettingsStore((s) => s.setHarnessRoot);
 
   const anyDetected = ALL_HARNESSES.some((id) =>
     result?.harnesses.some((h) => h.harness === id),
@@ -64,6 +67,8 @@ export function HarnessList() {
                 detectedRoot={info?.root ?? null}
                 version={info?.version ?? null}
                 counts={[...counts.entries()]}
+                folder={settings?.["harness-roots"]?.[id] ?? ""}
+                onFolderChange={(root) => void setHarnessRoot(id, root)}
               />
             );
           })}

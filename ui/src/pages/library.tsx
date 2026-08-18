@@ -12,11 +12,7 @@ export function LibraryPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader
-        title="Library"
-        subtitle="What's installed, and where to add more"
-        wide
-      />
+      <PageHeader title="Library" wide />
       <Tabs
         value={libraryTab}
         onValueChange={(value) => goToLibrary({ tab: value as LibraryTab })}

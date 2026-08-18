@@ -4,8 +4,8 @@ import { TagBadges } from "@/components/tag-badge";
 import { ToolBadge } from "@/components/tool-badge";
 import { Badge } from "@/components/ui/badge";
 import { TableCell, TableRow } from "@/components/ui/table";
-import { FORKED_BADGE_LABEL } from "@/lib/copy";
-import { groupScopes, type ItemGroup } from "@/lib/derive";
+import { bundledWithLabel, FORKED_BADGE_LABEL, vendorHelp } from "@/lib/copy";
+import { groupScopes, groupVendor, type ItemGroup } from "@/lib/derive";
 import { kindIcon } from "@/lib/kind-icon";
 import {
   describesItself,
@@ -32,6 +32,7 @@ export function InstalledRow({
   );
   const displayName =
     group.kind === "hook" ? hookDisplayName(group.name) : group.name;
+  const vendor = groupVendor(group);
   const scopes = groupScopes(group);
   const whereLabel =
     scopes.length === 1 ? scopeName(scopes[0]) : `${scopes.length} locations`;
@@ -51,6 +52,11 @@ export function InstalledRow({
               <span className="block truncate">{displayName}</span>
               {forked ? (
                 <Badge variant="outline">{FORKED_BADGE_LABEL}</Badge>
+              ) : null}
+              {vendor ? (
+                <Badge variant="outline" title={vendorHelp(vendor)}>
+                  {bundledWithLabel(group.installations[0].harness)}
+                </Badge>
               ) : null}
             </span>
             {group.description ? (

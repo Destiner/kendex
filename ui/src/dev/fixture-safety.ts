@@ -9,8 +9,6 @@ import {
   CLEAN_PLUGINS,
   CLEAN_SKIP_REASON,
   CLEAN_SKIP_RULES,
-  CODEX_FINDINGS,
-  CODEX_PLUGINS,
   HOOK_FINDING,
   UNMANAGED_SKILLS,
 } from "./fixture-personal";
@@ -61,34 +59,10 @@ const cleanPluginSafety = (name: string, index: number): ItemSafety => ({
   override: { state: "absent" },
 });
 
-const codexPluginSafety = (name: string, index: number): ItemSafety => ({
-  kind: "plugin",
-  name,
-  harness: "codex",
-  scope: GLOBAL,
-  safety: { score: 92, deductions: [] },
-  quality: null,
-  findings: CODEX_FINDINGS,
-  skipped: [],
-  verdict: "warn",
-  reasons: ["Nothing serious, but worth a look before you rely on it."],
-  contentHash: `codex-plugin-${index}`,
-  reviewHash: `codex-plugin-${index}`,
-  location: "",
-  provenance: null,
-  decisions: decisionsFor(
-    `plugin:${name}:codex`,
-    `codex-plugin-${index}`,
-    CODEX_FINDINGS,
-  ),
-  override: { state: "absent" },
-});
-
 export function personalSafety(): ItemSafety[] {
   return [
     ...CLAUDE_HOOK_IDS.map(hookSafety),
     ...CLEAN_PLUGINS.map(cleanPluginSafety),
-    ...CODEX_PLUGINS.map(codexPluginSafety),
   ];
 }
 

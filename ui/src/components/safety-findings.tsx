@@ -1,32 +1,23 @@
-import type { Finding, ItemSafety } from "@/bindings";
-import { Badge } from "@/components/ui/badge";
+import { useState } from "react";
+import type { Finding } from "@/bindings";
+import { FileLink } from "@/components/file-link";
+import { InlineMarkdown } from "@/components/inline-markdown";
+import { StatusDot } from "@/components/status-dot";
 import { morePlacesLabel } from "@/lib/copy";
-import { RECORDED_DECISIONS_LINK } from "@/lib/copy-decisions";
-import { cleanSummaryLead, settledSummaryLead } from "@/lib/copy-safety";
-import { abbreviateHome } from "@/lib/drift-merge";
-import { groupSkipped } from "@/lib/group-notes";
-import {
-  kindLabel,
-  SEVERITY_BADGES,
-  SEVERITY_LABELS,
-  skipReasonShort,
-} from "@/lib/labels";
-import { settledCount } from "@/lib/reviewable";
-import { useNavStore } from "@/stores/nav";
+import { SEVERITY_DOT_TONE, SEVERITY_LABELS, sentence } from "@/lib/labels";
 
 /**
- * One finding, read top to bottom as: how bad, what it is, what to do,
- * where.
+ * One finding, read top to bottom as: what it is, what to do, where.
  *
- * The severity chip sits in a lane of its own rather than inline, because
- * "Serious" and "Worth a look" are different widths and an inline chip
- * starts every message at a different left edge — a column of text that
- * never lines up is the thing that makes a list of these unreadable.
+ * How bad it is rides on the dot — the same dot the rows above use — so the
+ * claim starts at the same left edge every time, and the word itself is on
+ * the dot for anyone who needs it in text. The engine writes its messages
+ * with `code` in them, so they render as the author wrote them rather than
+ * printing their own backticks.
  *
- * One place is named in full. The rest are counted, not listed: a rule that
- * fired in twenty files printed twenty paths, and nobody reads the
- * nineteenth. The items themselves are named under the finding, which is
- * the identification a person actually wants.
+ * Every place the rule fired is a file you can open. One is shown; the rest
+ * are a click away in the same row, because a rule that fired in twenty
+ * files would otherwise print a paragraph of paths nobody reads.
  */
 export function FindingLine({
   finding,
@@ -35,77 +26,39 @@ export function FindingLine({
   finding: Finding;
   locations?: string[];
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? locations : locations.slice(0, 1);
+  const hidden = locations.length - shown.length;
   return (
-    <div className="flex items-start gap-3 text-[13px]">
-      <div className="w-[5.5rem] shrink-0 pt-0.5">
-        <Badge variant={SEVERITY_BADGES[finding.severity]}>
-          {SEVERITY_LABELS[finding.severity]}
-        </Badge>
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <p className="break-words">{finding.message}</p>
-        <p className="break-words text-muted-foreground">
-          <span className="font-medium text-foreground/70">To fix: </span>
+    <div className="flex items-start gap-2.5">
+      <StatusDot
+        tone={SEVERITY_DOT_TONE[finding.severity]}
+        className="mt-[7px]"
+        title={SEVERITY_LABELS[finding.severity]}
+      />
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <p className="text-sm break-words">
+          <InlineMarkdown source={sentence(finding.message)} />
+        </p>
+        <p className="text-[13px] break-words text-muted-foreground">
+          <span className="font-medium text-foreground">Fix: </span>
           {finding.remediation}
         </p>
-        <p
-          className="truncate font-mono text-xs text-muted-foreground/80"
-          title={locations.join("\n")}
-        >
-          {abbreviateHome(locations[0])}
-          {locations.length > 1 ? (
-            <span className="font-sans">
-              {" "}
-              {morePlacesLabel(locations.length - 1)}
-            </span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {shown.map((location) => (
+            <FileLink key={location} location={location} />
+          ))}
+          {hidden > 0 ? (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              {morePlacesLabel(hidden)}
+            </button>
           ) : null}
-        </p>
+        </div>
       </div>
     </div>
-  );
-}
-
-// One quiet line under the safety list — clean items don't get a row of
-// their own, just a tally, so a scan of the section ends on reassurance
-// instead of trailing off after the last warning. Findings already ruled
-// on are tallied here too: decided is not the same as clean, and a person
-// who dismissed four things yesterday should still see that four things
-// were found.
-export function SafetyCleanSummary({
-  rows,
-  settled = [],
-}: {
-  rows: ItemSafety[];
-  settled?: ItemSafety[];
-}) {
-  const goTo = useNavStore((s) => s.goTo);
-  const decided = settledCount(settled);
-  if (rows.length === 0 && decided === 0) return null;
-  const clauses = [
-    ...(decided > 0 ? [settledSummaryLead(decided)] : []),
-    ...(rows.length > 0 ? [cleanSummaryLead(rows.length)] : []),
-    ...groupSkipped(rows).map((group) => {
-      const noun = group.kind
-        ? kindLabel(group.kind, group.count).toLowerCase()
-        : `item${group.count === 1 ? "" : "s"}`;
-      return `${group.count} ${noun} ${skipReasonShort(group.reason)}`;
-    }),
-  ];
-  return (
-    <p className="pt-2 text-[13px] text-muted-foreground">
-      {clauses.join(" · ")}.
-      {decided > 0 ? (
-        <>
-          {" "}
-          <button
-            type="button"
-            className="underline underline-offset-2 hover:text-foreground"
-            onClick={() => goTo("settings")}
-          >
-            {RECORDED_DECISIONS_LINK}
-          </button>
-        </>
-      ) : null}
-    </p>
   );
 }

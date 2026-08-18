@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
-import type { Appearance, HarnessId } from "@/bindings";
+import type { Appearance } from "@/bindings";
 import { commands } from "@/bindings";
 import { PageHeader } from "@/components/page-header";
 import { RecordedDecisions } from "@/components/recorded-decisions";
 import { Section, SettingRow } from "@/components/section";
-import { ToolOverrideRow } from "@/components/tools/tool-override-row";
 import {
   Select,
   SelectContent,
@@ -17,16 +16,6 @@ import { SETTINGS_SUBTITLE } from "@/lib/labels";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
 import { cn } from "@/lib/utils";
 import { useSettingsStore } from "@/stores/settings";
-
-const ALL_HARNESSES: HarnessId[] = [
-  "claude",
-  "codex",
-  "opencode",
-  "cursor",
-  "pi",
-  "gemini",
-  "copilot",
-];
 
 // How cautious the safety check is, said without numbers on the dial.
 const SAFETY_LEVELS = {
@@ -58,8 +47,7 @@ function safetyLevelOf(warn: number, block: number): SafetyLevel | "custom" {
 }
 
 export function SettingsPage() {
-  const { settings, setAppearance, setSafety, setHarnessRoot } =
-    useSettingsStore();
+  const { settings, setAppearance, setSafety } = useSettingsStore();
   const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
@@ -68,7 +56,6 @@ export function SettingsPage() {
 
   const safety = settings?.safety ?? SAFETY_LEVELS.balanced;
   const level = safetyLevelOf(safety["warn-below"], safety["block-below"]);
-  const projects = settings?.projects ?? [];
 
   return (
     <div>
@@ -124,39 +111,6 @@ export function SettingsPage() {
           </Section>
 
           <RecordedDecisions />
-
-          <Section
-            title="Projects"
-            description="Add or remove projects on the Tools & Projects page."
-          >
-            {projects.length === 0 ? (
-              <p className="py-3.5 text-sm text-muted-foreground">
-                No projects yet.
-              </p>
-            ) : (
-              projects.map((path) => (
-                <SettingRow
-                  key={path}
-                  label={path.split("/").pop()}
-                  description={<span className="font-mono">{path}</span>}
-                />
-              ))
-            )}
-          </Section>
-
-          <Section
-            title="Tool folders"
-            description="Where each tool keeps its files. Set one only if you've moved a tool somewhere other than its usual place."
-          >
-            {ALL_HARNESSES.map((id) => (
-              <ToolOverrideRow
-                key={id}
-                id={id}
-                override={settings?.["harness-roots"]?.[id] ?? ""}
-                onSave={(root) => void setHarnessRoot(id, root)}
-              />
-            ))}
-          </Section>
 
           <Section title="About">
             <SettingRow

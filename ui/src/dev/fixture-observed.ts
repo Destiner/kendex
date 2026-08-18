@@ -42,6 +42,7 @@ function item(
     description: null,
     tags: [],
     modifiedAt: null,
+    vendor: null,
     ...over,
   };
 }
@@ -229,7 +230,8 @@ export function items(): ObservedItem[] {
       item("plugin", name, "codex", GLOBAL, "~/.codex/plugins", {
         fileState: ENTRY,
         origin: null,
-        description: "Bundled with Codex",
+        description: null,
+        vendor: "OpenAI",
       }),
     ),
     ...UNMANAGED_SKILLS.map((skill) =>

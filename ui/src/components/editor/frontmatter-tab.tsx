@@ -1,7 +1,17 @@
-import type { EditorInventory } from "@/bindings";
+import { Bot } from "lucide-react";
+import { useState } from "react";
+import type { EditorInventory, HarnessId } from "@/bindings";
 import { FrontmatterFields } from "@/components/editor/frontmatter-fields";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EmptyState } from "@/components/empty-state";
+import { Pill } from "@/components/pill";
+import { StatusLine } from "@/components/status-note";
+import { ToolIcon } from "@/components/tool-icon";
+import {
+  FRONTMATTER_HELP,
+  FRONTMATTER_IGNORED,
+  NO_AGENTS_YET,
+  NO_AGENTS_YET_BODY,
+} from "@/lib/copy-customize";
 import {
   type Draft,
   EMPTY_FRONTMATTER,
@@ -10,8 +20,13 @@ import {
 import { toolName } from "@/lib/labels";
 
 /** Cursor renders rules, not agent files — its frontmatter is never read. */
-const IGNORED_BY = new Set(["cursor"]);
+const IGNORED_BY = new Set<HarnessId>(["cursor"]);
 
+/**
+ * Per-agent settings, one tool at a time. The tool is a row of pills rather
+ * than a second tab bar: two stacked tab bars leave a reader unsure which
+ * one they just changed.
+ */
 export function FrontmatterTab({
   draft,
   inventory,
@@ -22,77 +37,58 @@ export function FrontmatterTab({
   onChange: (change: (draft: Draft) => Draft) => void;
 }) {
   const harnesses = inventory?.harnesses ?? [];
-  if (harnesses.length === 0) return null;
+  const [selected, setSelected] = useState<HarnessId | null>(null);
+  const harness = selected ?? harnesses[0];
+  if (!harness) return null;
 
-  return (
-    <Tabs defaultValue={harnesses[0]}>
-      <TabsList>
-        {harnesses.map((harness) => (
-          <TabsTrigger key={harness} value={harness}>
-            {toolName(harness)}
-          </TabsTrigger>
-        ))}
-      </TabsList>
-      {harnesses.map((harness) => (
-        <TabsContent key={harness} value={harness} className="space-y-4 pt-2">
-          <p className="text-xs text-muted-foreground">
-            {IGNORED_BY.has(harness)
-              ? "Cursor doesn't use agent settings, so values saved here are stored but have no effect."
-              : "Project values always win over the catalog's; leave a field blank to keep the catalog's value."}
-          </p>
-          <HarnessAgents
-            draft={draft}
-            harness={harness}
-            declared={inventory?.declaredAgents ?? []}
-            onChange={onChange}
-          />
-        </TabsContent>
-      ))}
-    </Tabs>
-  );
-}
-
-function HarnessAgents({
-  draft,
-  harness,
-  declared,
-  onChange,
-}: {
-  draft: Draft;
-  harness: string;
-  declared: string[];
-  onChange: (change: (draft: Draft) => Draft) => void;
-}) {
   const perAgent = draft["agent-frontmatter"]?.[harness] ?? {};
-  const agents = [...new Set([...declared, ...Object.keys(perAgent)])].sort();
-
-  if (agents.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        No agents here yet — install an agent before changing its settings.
-      </p>
-    );
-  }
+  const agents = [
+    ...new Set([
+      ...(inventory?.declaredAgents ?? []),
+      ...Object.keys(perAgent),
+    ]),
+  ].sort();
 
   return (
-    <>
-      {agents.map((agent) => (
-        <Card key={agent}>
-          <CardHeader>
-            <CardTitle className="text-sm">{agent}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <FrontmatterFields
-              overrides={perAgent[agent] ?? EMPTY_FRONTMATTER}
-              onSet={(field, value) =>
-                onChange((current) =>
-                  setFrontmatterField(current, harness, agent, field, value),
-                )
-              }
-            />
-          </CardContent>
-        </Card>
-      ))}
-    </>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap gap-1.5">
+        {harnesses.map((id) => (
+          <Pill
+            key={id}
+            selected={id === harness}
+            onClick={() => setSelected(id)}
+          >
+            <ToolIcon harness={id} className="size-3.5" />
+            {toolName(id)}
+          </Pill>
+        ))}
+      </div>
+      <StatusLine tone={IGNORED_BY.has(harness) ? "warning" : "info"}>
+        {IGNORED_BY.has(harness)
+          ? FRONTMATTER_IGNORED(toolName(harness))
+          : FRONTMATTER_HELP}
+      </StatusLine>
+      {agents.length === 0 ? (
+        <EmptyState icon={Bot} title={NO_AGENTS_YET}>
+          {NO_AGENTS_YET_BODY}
+        </EmptyState>
+      ) : (
+        <div className="flex flex-col divide-y rounded-lg border">
+          {agents.map((agent) => (
+            <div key={agent} className="flex flex-col gap-3 px-4 py-4">
+              <p className="text-sm font-medium">{agent}</p>
+              <FrontmatterFields
+                overrides={perAgent[agent] ?? EMPTY_FRONTMATTER}
+                onSet={(field, value) =>
+                  onChange((current) =>
+                    setFrontmatterField(current, harness, agent, field, value),
+                  )
+                }
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

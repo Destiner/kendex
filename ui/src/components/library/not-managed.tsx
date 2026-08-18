@@ -28,7 +28,7 @@ export function NotManagedPanel() {
   const views = useAuditStore((s) => s.views);
   const busy = useAuditStore((s) => s.busy);
   const adopt = useAuditStore((s) => s.adopt);
-  const scope = useNavStore((s) => s.scope);
+  const scope = useNavStore((s) => s.libraryScope);
   const [expanded, setExpanded] = useState(false);
   const perScope = views
     .filter((view) => {

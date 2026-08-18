@@ -176,6 +176,9 @@ pub struct ObservedItem {
     /// failed) — a shared file's mtime does not describe any one entry
     /// inside it.
     pub modified_at: Option<u32>,
+    /// Who ships this content, when a tool ships it itself — see
+    /// [`crate::vendor`]. `None` is the common case: the user's own.
+    pub vendor: Option<String>,
 }
 
 /// A harness found on this machine.

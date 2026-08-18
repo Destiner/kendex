@@ -1,6 +1,8 @@
 // A plain-English one-liner per safety rule the engine actually emits
 // (crates/core/src/quality/rules — the `id()` of each rule); unknown rules
 // fall back to the engine's own message rather than a raw rule id.
+import { sentence } from "@/lib/labels";
+
 const FINDING_HEADLINES: Record<string, string> = {
   "plaintext-secrets": "Contains a real credential in plain text",
   "credential-theft": "Reads a credential and sends it somewhere",
@@ -19,5 +21,5 @@ const FINDING_HEADLINES: Record<string, string> = {
 };
 
 export function findingHeadline(rule: string, fallbackMessage: string): string {
-  return FINDING_HEADLINES[rule] ?? fallbackMessage;
+  return FINDING_HEADLINES[rule] ?? sentence(fallbackMessage);
 }

@@ -10,7 +10,7 @@ import {
 } from "@/bindings";
 import { adoptedToastLabel } from "@/lib/copy";
 import {
-  dismissedToast,
+  ignoredToast,
   TAKEN_BACK_TOAST,
   UNDO_LABEL,
 } from "@/lib/copy-decisions";
@@ -202,7 +202,7 @@ export const useAuditStore = create<AuditState>((set, get) => {
       }
       const { view, records } = response.data;
       set({ views: replaceView(get().views, view), error: null });
-      toast.success(dismissedToast(records.length), {
+      toast.success(ignoredToast(records.length), {
         action: {
           label: UNDO_LABEL,
           onClick: () =>

@@ -310,6 +310,7 @@ mod tests {
             description: None,
             tags: Vec::new(),
             modified_at: None,
+            vendor: None,
         }
     }
 

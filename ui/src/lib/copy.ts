@@ -1,3 +1,5 @@
+import type { HarnessId } from "@/bindings";
+import { toolName } from "@/lib/labels";
 // Product prose: the sentences a person reads, as opposed to the vocabulary
 // in labels.ts that names things. Kept apart so wording can be reviewed as
 // writing, in one place, without wading through id-to-name maps.
@@ -8,17 +10,19 @@
 //   - Never claim a state the app has not checked.
 export const FEWER_ITEMS_LABEL = "Show less";
 export const morePlacesLabel = (count: number): string =>
-  `and ${count} more place${count === 1 ? "" : "s"}`;
+  `+${count} more place${count === 1 ? "" : "s"}`;
 export const AFFECTS_LABEL = "Affects";
 
 // Review & apply page copy: what the page is, and what "managing" an item
 // buys you — said once here so "Start managing" doesn't need to explain
 // itself on every row.
-export const REVIEW_SUBTITLE =
-  "What vstack would change, and what it found while looking. Nothing is written until you apply.";
+export const REVIEW_SUBTITLE = "Nothing is written until you apply.";
+export const ALL_IN_SYNC_TITLE = "Everything is in sync";
+export const ALL_IN_SYNC_BODY =
+  "Changes from Customize or your catalogs show up here.";
 // Says what you get, not what the app calls the state you'd be leaving.
 export const UNMANAGED_SECTION_EXPLAINER =
-  "Things already on your machine that vstack didn't put there. Hand one over and it gets kept up to date, safety-checked, and copied to every tool you use.";
+  "vstack didn't install these. Hand one over and it gets kept updated, checked, and copied to every tool.";
 export const START_MANAGING_LABEL = "Start managing";
 // The apply flow, said as what will happen rather than as what the engine
 // calls it. "Orphan" is a word for whoever wrote the planner; the person
@@ -31,7 +35,7 @@ export const APPLY_BUTTON_LABEL = "Apply changes…";
 export const NOTHING_TO_DO_HERE = "Nothing to do here";
 // Every attention row leads to the same page, so they all say so the same
 // way. Four different verbs for one destination read as four destinations.
-export const REVIEW_ACTION_LABEL = "Open Review & apply";
+export const REVIEW_ACTION_LABEL = "Review & apply";
 
 // A project's one-line summary, so a closed panel still says what is inside
 // it. Written as counted nouns rather than jargon: "2 changes ready" beats
@@ -45,38 +49,36 @@ export function scopeSummaryLabel(counts: {
 }): string | null {
   const parts: string[] = [];
   if (counts.blocked > 0) {
-    parts.push(
-      counts.blocked === 1
-        ? "1 serious problem"
-        : `${counts.blocked} serious problems`,
-    );
+    parts.push(`${counts.blocked} problem${counts.blocked === 1 ? "" : "s"}`);
   }
-  if (counts.changes > 0) {
-    parts.push(
-      counts.changes === 1
-        ? "1 change ready"
-        : `${counts.changes} changes ready`,
-    );
-  }
+  if (counts.changes > 0) parts.push(`${counts.changes} to apply`);
   if (counts.open > 0) {
-    parts.push(
-      counts.open === 1
-        ? "1 finding needs your decision"
-        : `${counts.open} findings need your decision`,
-    );
+    parts.push(`${counts.open} finding${counts.open === 1 ? "" : "s"}`);
   }
-  if (counts.unmanaged > 0) {
-    parts.push(`${counts.unmanaged} not managed yet`);
-  }
+  if (counts.unmanaged > 0) parts.push(`${counts.unmanaged} unmanaged`);
   return parts.length > 0 ? parts.join(" · ") : null;
 }
-// The Review card's footnote about items vstack does not manage: they are
-// not a debt, so they are counted here and acted on in the Library.
-export const notManagedFootnote = (count: number): string =>
-  count === 1
-    ? "1 item on your machine isn't managed by vstack yet."
-    : `${count} items on your machine aren't managed by vstack yet.`;
+export const UNMANAGED_PAGE_SUBTITLE =
+  "On your machine, but vstack didn't put them there";
+export const ALL_MANAGED_TITLE = "Everything is managed";
+export const ALL_MANAGED_BODY =
+  "vstack looks after every skill, agent and hook it can see.";
 export const SEE_IN_LIBRARY_LABEL = "See them in the Library";
+// Where a tool keeps its files — only worth setting for a tool that was
+// moved somewhere other than its usual place.
+// Content a tool ships with itself. It is named, never nagged about: the
+// person never chose it and cannot change it from here.
+export const bundledWithLabel = (harness: HarnessId): string =>
+  `Bundled with ${toolName(harness)}`;
+export const vendorHelp = (vendor: string): string =>
+  `${vendor} ships and updates this with the tool. vstack lists it, but doesn't manage or check it.`;
+export const BROWSE_LABEL = "Choose a folder…";
+export const TOOL_FOLDER_HELP = "Change where this tool keeps its files";
+export const toolFolderTitle = (tool: string): string =>
+  `Where does ${tool} keep its files?`;
+export const TOOL_FOLDER_BODY =
+  "Only worth setting if you moved the tool. Leave it empty to let vstack find it.";
+export const NOT_INSTALLED_LABEL = "Not installed";
 export const removeLeftBehindLabel = (count: number): string =>
   count === 1
     ? "Also delete 1 item nothing asks for any more"
@@ -88,25 +90,10 @@ export const HIDE_ITEMS_LABEL = "Hide";
 export const adoptedToastLabel = (name: string): string =>
   `Now managing ${name}`;
 
-// Home page copy: attention keeps its own subtitle since it's the lead;
-// the other two sections are self-explanatory under their SectionLabel.
-export const HOME_SUBTITLE = "What needs your attention, and what changed";
-// "You're all caught up · Everything matches what you've chosen to install"
-// left a person to work out what was compared with what. This says the thing
-// that is actually true and what will happen next.
-export const ALL_CAUGHT_UP_TITLE = "Nothing needs your attention";
-export const ALL_CAUGHT_UP_DETAIL =
-  "Every tool has the skills and agents you asked for. Anything new shows up here.";
-// A file's timestamp can say that it changed and when — not who changed it
-// or why — so the copy claims exactly that and no more.
-export const RECENTLY_CHANGED_HELP =
-  "Skills, agents and hooks whose files changed most recently.";
 export const RECENT_ACTIVITY_EMPTY = "Nothing on this machine has changed yet.";
 
 export const TAGS_ROW_LABEL = "For";
 
-// Adding projects. Says what a project *is* to vstack — somewhere it will
-// keep in sync — rather than naming the field twice over.
 export const ADD_PROJECT_HELP =
   "Point vstack at a repository and it keeps that project's tools in sync too.";
 export const SCAN_FOLDER_HELP =
@@ -116,14 +103,14 @@ export const NO_PROJECTS_FOUND = "Nothing that looks like a project in there.";
 // "Add from a catalog". A catalog is a git repo of shareable skills and
 // agents; a bundle is a named set inside one. Both are said in terms of what
 // they get you rather than what they are.
-export const BUNDLES_HELP =
-  "Ready-made sets from your catalogs — install everything in one go.";
-export const NO_BUNDLES_YET =
-  "Nothing to show yet. Add a catalog and any sets it offers appear here.";
+export const BUNDLES_HELP = "Ready-made sets — install everything in one go.";
 export const CATALOGS_HELP =
-  "Git repositories of skills and agents you can install from.";
+  "Where your installable skills and agents come from.";
+export const ADD_CATALOG_LABEL = "Add a catalog";
+export const CHECK_UPDATES_LABEL = "Check for updates";
+export const NO_CATALOGS_TITLE = "Nothing to install from yet";
 export const NO_CATALOGS_YET =
-  "No catalogs yet. Add one and everything it offers becomes installable.";
+  "A catalog is a git repository of skills and agents. Add one and everything it offers becomes installable here.";
 
 // The one toggle on an item. It was a button reading "Turn off", which said
 // what the click does but never what the state is or what turning it off
@@ -135,6 +122,8 @@ export const ENABLED_HELP =
 
 // Library flyout's open-actions menu.
 export const OPEN_IN_LABEL = "Open in…";
+export const COPY_PATH_LABEL = "Copy path";
+export const PATH_COPIED_TOAST = "Path copied";
 export const OPEN_IN_FILE_BROWSER_LABEL = "File browser";
 export const OPEN_IN_EDITOR_LABEL = "Editor";
 export const EDITOR_ERROR_TITLE = "Couldn't open the editor";
@@ -144,7 +133,6 @@ export const EDITOR_ERROR_STEPS = [
 export const FILE_BROWSER_ERROR_TITLE = "Couldn't open the file browser";
 
 export const BACK_LABEL = "Back";
-export const FORWARD_LABEL = "Forward";
 export const WINDOW_CONTROL_LABELS = {
   minimize: "Minimize",
   maximize: "Maximize",
@@ -184,9 +172,10 @@ export const DIFF_TRUNCATED_NOTE =
 export const VERSION_ERROR_TITLE = "Couldn't switch versions";
 
 // Updates page.
-export const UPDATES_SUBTITLE =
-  "Newer versions of what you have installed. Packages set to update automatically come current when you apply changes.";
-export const UPDATES_EMPTY = "Everything is on its latest version.";
+export const UPDATES_SUBTITLE = "Newer versions of what you already have.";
+export const UPDATES_EMPTY = "Everything is up to date";
+export const UPDATES_EMPTY_BODY =
+  "Every package you installed is on its latest version.";
 export const UPDATES_UNCHECKED_TITLE = "Couldn't be checked";
 export const REMOVED_UPSTREAM_TAG = "No longer in its source";
 export const UPDATE_ALL_LABEL = "Update all";

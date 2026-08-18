@@ -50,6 +50,10 @@ pub fn observed_rows(env: &Env, scope: &Scope) -> Result<Vec<ItemSafety>> {
     Ok(scan
         .items
         .iter()
+        // Content a tool ships itself is that tool's to answer for: the
+        // reader never chose it and cannot change it, so an audit that asks
+        // them to rule on it is asking a question with no answer.
+        .filter(|item| item.vendor.is_none())
         .map(|item| {
             let scored = crate::quality::observe::audit_observed(
                 &mut cache,

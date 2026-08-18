@@ -2,9 +2,9 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { ItemSafety } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { KindToolChips } from "@/components/kind-tool-chips";
 import { FindingLine } from "@/components/safety-findings";
 import { StatusDot } from "@/components/status-dot";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   ACCEPT_BLOCKED_CONFIRM,
@@ -13,6 +13,7 @@ import {
   acceptBlockedBody,
   BLOCKED_SECTION_EXPLAINER,
   HELD_BACK_NOT_ON_DISK_NOTE,
+  NOTHING_TO_ACCEPT,
 } from "@/lib/copy-safety";
 import { findingHeadline } from "@/lib/finding-headlines";
 import {
@@ -23,12 +24,7 @@ import {
   mergeHeldBack,
   ruleGroupAsFinding,
 } from "@/lib/group-findings-blocked";
-import {
-  hookDisplayName,
-  kindLabel,
-  moreItemsLabel,
-  toolName,
-} from "@/lib/labels";
+import { hookDisplayName, moreItemsLabel, toolName } from "@/lib/labels";
 
 // A row where every rule was skipped has not been audited, and showing
 // nothing would read as an audit that passed. It gets a line of its own
@@ -125,9 +121,7 @@ function BlockedGroupRow({
             </span>
           ) : null}
         </span>
-        <Badge variant="outline" className="shrink-0 font-normal">
-          {kindLabel(group.kind)} · {harnesses.map(toolName).join(", ")}
-        </Badge>
+        <KindToolChips kind={group.kind} harnesses={harnesses} />
         {open ? (
           <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
         ) : (
@@ -135,7 +129,7 @@ function BlockedGroupRow({
         )}
       </button>
       {open ? (
-        <div className="flex flex-col gap-3 border-t border-critical/20 px-3 py-3.5">
+        <div className="flex flex-col gap-3 border-t border-critical/15 bg-critical/5 px-3 py-3.5">
           {group.rows.map((row) => (
             <BlockedRowNotes
               key={row.harness}
@@ -157,14 +151,17 @@ function BlockedGroupRow({
             <div>
               <Button
                 size="sm"
-                variant="outline"
                 disabled={busy}
                 onClick={() => setConfirming(true)}
               >
                 {ACCEPT_BLOCKED_LABEL}
               </Button>
             </div>
-          ) : null}
+          ) : (
+            <p className="text-[13px] text-muted-foreground">
+              {NOTHING_TO_ACCEPT}
+            </p>
+          )}
         </div>
       ) : null}
       <ConfirmDialog
@@ -207,11 +204,11 @@ export function BlockedFindings({
   const groups = groupBlocked(display);
   if (groups.length === 0) return null;
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-critical/30 bg-critical/5 p-3">
-      <p className="text-[13px] text-muted-foreground">
+    <div className="overflow-hidden rounded-lg border border-critical/30">
+      <p className="border-b border-critical/20 bg-critical/5 px-3 py-2 text-[13px] text-muted-foreground">
         {BLOCKED_SECTION_EXPLAINER}
       </p>
-      <div className="divide-y divide-critical/20 rounded-md border border-critical/20 bg-background/40">
+      <div className="divide-y divide-critical/15">
         {groups.map((group) => (
           <BlockedGroupRow
             key={group.rows

@@ -17,7 +17,7 @@ export const REASON_HELP: Record<DismissReason, string> = {
     "The check misread this — nothing here does what the finding says.",
   intended: "The flagged behaviour is what this item is for.",
   "trusted-source":
-    "You trust where this content came from. Bound to that source — the same content from anywhere else asks again.",
+    "You trust where this content came from. The same content from anywhere else asks again.",
 };
 
 /** The reasons in the order the dialog offers them: the common call first,
@@ -29,63 +29,50 @@ export const REASON_ORDER: DismissReason[] = [
 ];
 
 export const reasonPhrase = (reason: DismissReason): string =>
-  `Dismissed as ${REASON_LABELS[reason].toLowerCase()}`;
+  `Ignored — ${REASON_LABELS[reason].toLowerCase()}`;
 
 // The dismiss dialog. Where the record lands decides who inherits it, so
 // the body says which file — the same honesty the accept dialog has.
-export const DISMISS_LABEL = "Dismiss…";
-export const DISMISS_TITLE = "Dismiss this finding?";
-export const dismissBody = (projectScope: boolean): string =>
+export const IGNORE_LABEL = "Ignore…";
+export const IGNORE_TITLE = "Ignore this finding?";
+export const ignoreBody = (projectScope: boolean): string =>
   projectScope
-    ? "It stops asking, and stays dismissed until this content changes. The decision is saved into this project's vstack.toml, so anyone using the repository inherits it — pick the reason that is true for them too."
-    : "It stops asking, and stays dismissed until this content changes. The decision is saved in your personal manifest on this machine.";
-export const DISMISS_CONFIRM = "Dismiss";
-export const dismissManyTitle = (count: number): string =>
-  `Dismiss ${count} findings?`;
-export const dismissManyBody =
+    ? "Stops asking until this content changes. Saved into this project's vstack.toml, so anyone using the repository inherits it — pick a reason that is true for them too."
+    : "Stops asking until this content changes. Saved in your personal manifest on this machine.";
+export const IGNORE_CONFIRM = "Ignore";
+export const ignoreManyTitle = (count: number): string =>
+  `Ignore ${count} findings?`;
+export const ignoreManyBody =
   "These are the same content seen through several tools, so one decision covers all of them.";
 export const UNDO_LABEL = "Undo";
-export const dismissedToast = (count: number): string =>
-  count === 1 ? "Finding dismissed" : `${count} findings dismissed`;
-export const TAKEN_BACK_TOAST = "Dismissal taken back — the finding is back";
+export const ignoredToast = (count: number): string =>
+  count === 1 ? "Finding ignored" : `${count} findings ignored`;
+export const TAKEN_BACK_TOAST = "Back to needing a decision";
 export const earlierDecisionNote = (why: string): string =>
-  `You dismissed this before, but ${why}.`;
-export const UNDECIDABLE_HERE =
-  "Can't be decided here — its content can't be read on this machine";
+  `You ignored this before, but ${why}.`;
+// One concern, several different files behind it: each is its own call,
+// and the set can be settled in one go.
+export const separatePiecesLabel = (count: number): string =>
+  `${count} separate items`;
+export const ignoreAllLabel = (count: number): string => `Ignore all ${count}…`;
+export const UNDECIDABLE_HERE = "Content can't be read on this machine";
 export const NO_SOURCE_TO_TRUST =
-  "vstack didn't install this from a catalog it resolved, so there is no source to trust.";
-
-// Reviewing one finding at a time. Each step is one piece of evidence: an
-// item, a finding, three reasons, and Skip. Twenty different plugins are
-// twenty steps, because that is how many things there are to look at.
-export const FOCUSED_REVIEW_LABEL = "Review one by one";
-export const focusedProgress = (at: number, total: number): string =>
-  `${at} of ${total}`;
-export const focusedBody = (projectScope: boolean): string =>
-  projectScope
-    ? "Pick why this isn't a problem, or skip it. Decisions are saved into this project's vstack.toml, shared with everyone using it."
-    : "Pick why this isn't a problem, or skip it. Decisions are saved in your personal manifest on this machine.";
-export const FOCUSED_SKIP = "Skip";
-export const FOCUSED_UNDO_HINT =
-  "Each pick records a decision. Undo is on the toast.";
-export const FOCUSED_ALL_DONE = "You've reached the end of the list";
-export const FOCUSED_ALL_DONE_BODY =
-  "Anything you skipped is still waiting on the page.";
+  "vstack didn't install this from a catalog, so there's no source to trust.";
 
 // The apply preview: a warning-only install is not held back, and its
 // findings can only be decided once it is on disk — so the preview says
 // what will be waiting.
 export const queuedDecisionsLabel = (count: number): string =>
   count === 1
-    ? "The safety check found 1 thing in what this installs. It will be waiting for your decision here once it lands."
-    : `The safety check found ${count} things in what this installs. They will be waiting for your decision here once they land.`;
+    ? "1 thing flagged in what this installs — you'll decide on it here once it lands."
+    : `${count} things flagged in what this installs — you'll decide on them here once they land.`;
 
 // The Settings list of every recorded decision — acceptances and
 // dismissals — with the way out of each.
 export const DECISIONS_SECTION_TITLE = "Recorded decisions";
 export const RECORDED_DECISIONS_LINK = "See recorded decisions";
 export const DECISIONS_SECTION_EXPLAINER =
-  "Findings you accepted or dismissed. Each covers exactly the content it was made for — if that changes, it stops applying and the finding comes back. A project's decisions live in its vstack.toml, so anyone using the repository inherits them.";
+  "Findings you accepted or dismissed. Each covers one version of one item — change the file and the finding comes back. A project's decisions live in its vstack.toml, so teammates inherit them.";
 export const TAKE_BACK_LABEL = "Take back";
 export const FORGET_LABEL = "Forget";
 export const NO_LONGER_INSTALLED = "The item is no longer installed here.";

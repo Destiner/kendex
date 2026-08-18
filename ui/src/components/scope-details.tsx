@@ -1,8 +1,6 @@
-import type { ItemWarning } from "@/bindings";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { type MergedDriftRow, mergedDetail } from "@/lib/drift-merge";
-import { groupWarnings } from "@/lib/group-notes";
 import {
   driftDetail,
   kindLabel,
@@ -41,38 +39,6 @@ export function ScopeChanges({ changes }: { changes: MergedDriftRow[] }) {
           );
         })}
       </div>
-    </Section>
-  );
-}
-
-/** Things worth knowing that aren't a change and aren't a safety finding. */
-export function ScopeNotes({
-  notes,
-  warnings,
-}: {
-  notes: string[];
-  warnings: ItemWarning[];
-}) {
-  if (notes.length === 0 && warnings.length === 0) return null;
-  return (
-    <Section title="Notes">
-      {notes.map((note) => (
-        <p key={note} className="text-[13px] text-muted-foreground">
-          {note}
-        </p>
-      ))}
-      {groupWarnings(warnings).map((group) => (
-        <p
-          key={`${group.message}-${group.remediation ?? ""}`}
-          className="text-[13px] text-muted-foreground"
-        >
-          <span className="break-all font-mono">
-            {group.items.map((item) => item.name).join(", ")}
-          </span>
-          : {group.message}
-          {group.remediation ? ` — fix: ${group.remediation}` : ""}
-        </p>
-      ))}
     </Section>
   );
 }

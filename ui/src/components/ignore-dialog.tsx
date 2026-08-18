@@ -2,11 +2,11 @@ import { useState } from "react";
 import type { DismissReason } from "@/bindings";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
-  DISMISS_CONFIRM,
-  DISMISS_TITLE,
-  dismissBody,
-  dismissManyBody,
-  dismissManyTitle,
+  IGNORE_CONFIRM,
+  IGNORE_TITLE,
+  ignoreBody,
+  ignoreManyBody,
+  ignoreManyTitle,
   NO_SOURCE_TO_TRUST,
   REASON_HELP,
   REASON_LABELS,
@@ -15,16 +15,18 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * Dismissing a finding asks one thing: why. The reasons are a closed list,
+ * Ignoring a finding asks one thing: why. The reasons are a closed list,
  * each a claim about the content rather than about the person deciding —
  * a project's decisions travel with the repository, so a teammate has to
  * be able to read the reason and agree. The body says which file the
  * decision lands in, the same honesty the accept dialog has.
  */
-export function DismissDialog({
+export function IgnoreDialog({
   open,
   onOpenChange,
   count,
+  subject,
+  finding,
   projectScope,
   canTrustSource,
   busy,
@@ -35,6 +37,11 @@ export function DismissDialog({
   /** How many installations the decision covers — the same bytes seen
    *  through several tools. One is the common case. */
   count: number;
+  /** What is being ruled on, named the way the row names it. */
+  subject: string;
+  /** The finding's own words — the dialog is opened from a row that only
+   *  showed a headline, so the claim is restated where the call is made. */
+  finding: string;
   projectScope: boolean;
   /** Whether every installation can name where its content came from;
    *  trusting a source needs one to trust. */
@@ -51,19 +58,20 @@ export function DismissDialog({
         if (!next) setReason("wrong-call");
         onOpenChange(next);
       }}
-      title={count > 1 ? dismissManyTitle(count) : DISMISS_TITLE}
-      description={[
-        count > 1 ? dismissManyBody : null,
-        dismissBody(projectScope),
-      ]
+      title={count > 1 ? ignoreManyTitle(count) : IGNORE_TITLE}
+      description={[count > 1 ? ignoreManyBody : null, ignoreBody(projectScope)]
         .filter(Boolean)
         .join(" ")}
-      confirmLabel={DISMISS_CONFIRM}
+      confirmLabel={IGNORE_CONFIRM}
       busy={busy}
       onConfirm={() => onConfirm(reason)}
     >
-      <fieldset className="flex flex-col gap-1.5">
-        <legend className="mb-1.5 text-sm font-medium">Why?</legend>
+      <p className="text-sm">
+        <span className="font-medium">{subject}</span>
+        <span className="text-muted-foreground"> — {finding}</span>
+      </p>
+      <fieldset className="divide-y overflow-hidden rounded-lg border">
+        <legend className="sr-only">Why?</legend>
         {REASON_ORDER.map((option) => {
           const disabled = option === "trusted-source" && !canTrustSource;
           const selected = reason === option;
@@ -71,8 +79,8 @@ export function DismissDialog({
             <label
               key={option}
               className={cn(
-                "flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5",
-                selected ? "border-foreground/40 bg-muted/40" : "border-border",
+                "flex cursor-pointer items-start gap-3 px-3 py-2.5",
+                selected ? "bg-muted/60" : "hover:bg-muted/30",
                 disabled && "cursor-not-allowed opacity-60",
               )}
             >

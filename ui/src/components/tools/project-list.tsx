@@ -1,4 +1,4 @@
-import { FolderPlus, FolderSearch, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { AddProjectDialog } from "@/components/tools/add-project-dialog";
@@ -15,7 +15,7 @@ import { useSettingsStore } from "@/stores/settings";
 /** "Projects": personal plus every registered project, one card each. */
 export function ProjectList() {
   const result = useScanStore((s) => s.result);
-  const setScope = useNavStore((s) => s.setScope);
+  const setLibraryScope = useNavStore((s) => s.setLibraryScope);
   const goToLibrary = useNavStore((s) => s.goToLibrary);
   const { settings, registerProject, unregisterProject, discoverProjects } =
     useSettingsStore();
@@ -34,21 +34,19 @@ export function ProjectList() {
             — as a form pinned under the cards it took more of the page than
             the projects themselves. */}
         <div className="flex justify-end gap-2">
-          <Button onClick={() => setAdding(true)}>
-            <FolderPlus className="size-4" /> Add a project
-          </Button>
+          <Button onClick={() => setAdding(true)}>Add a project</Button>
           <Button variant="outline" onClick={() => setScanning(true)}>
-            <FolderSearch className="size-4" /> Scan a folder
+            Scan a folder
           </Button>
         </div>
 
         <ProjectCard
           name="Personal"
-          subtitle="Just for you — works in every project on this computer"
+          subtitle="Works in every project on this computer"
           counts={[...countByKind(globalItems).entries()]}
           emptyLabel="Nothing from vstack yet."
           onKindClick={(kind) => {
-            setScope("global");
+            setLibraryScope("global");
             goToLibrary({ kind });
           }}
         />
@@ -77,7 +75,7 @@ export function ProjectList() {
                     : undefined
                 }
                 onKindClick={(kind) => {
-                  setScope({ project: root });
+                  setLibraryScope({ project: root });
                   goToLibrary({ kind });
                 }}
                 action={

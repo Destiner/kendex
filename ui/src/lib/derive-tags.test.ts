@@ -15,6 +15,7 @@ function item(overrides: Partial<ObservedItem>): ObservedItem {
     description: null,
     tags: [],
     modifiedAt: null,
+    vendor: null,
     ...overrides,
   };
 }

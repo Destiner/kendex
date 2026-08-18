@@ -1227,6 +1227,11 @@ export type ObservedItem = {
 	 *  inside it.
 	 */
 	modifiedAt: number | null,
+	/**
+	 *  Who ships this content, when a tool ships it itself — see
+	 *  [`crate::vendor`]. `None` is the common case: the user's own.
+	 */
+	vendor: string | null,
 };
 
 export type OpSupport = {

@@ -136,7 +136,7 @@ export function RecordedDecisions() {
             <span className="flex flex-col gap-1">
               <span>{describeDecision(row, now)}</span>
               {decisionDetail(row) ? (
-                <span className="text-foreground/70">
+                <span className="text-muted-foreground">
                   “{decisionDetail(row)}”
                 </span>
               ) : null}

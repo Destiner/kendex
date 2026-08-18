@@ -171,6 +171,16 @@ lives in one capability table read by core and UI.
   surface is `Section` + `SettingRow`, never a stack of cards. A `Card`
   means a discrete thing a person acts on as a unit — a bundle, a
   problem, an error.
+- A border means "you can act on this". Buttons and inputs carry one;
+  chips and badges are a quiet fill with no border, so a dismiss button
+  never reads as a label. Nesting stops at the card: inside one, groups
+  are made with dividers, a tinted band, and space — never another box
+  inside a box.
+- Muted text is a real step in the hierarchy, not decoration: the
+  `--muted-foreground` token stays legible against card and page in both
+  themes, and no surface dims it further with an opacity suffix.
+- A finding is ruled on where it sits. The decision dialog restates what
+  it is deciding, since the row that opened it only showed a headline.
 - Three surface planes, back to front: sidebar, page, card. Every page
   draws its width and gutters from `lib/layout.ts` — two widths only, a
   reading measure and full-width for data-dense tables — so header,
@@ -178,10 +188,23 @@ lives in one capability table read by core and UI.
 - One search box, on the Library page above the table it filters. "/"
   works anywhere and takes you there, so the box is never a cursor
   sitting over a list that isn't on screen.
-- Where an item lives is filtered once, by the app-wide scope, which the
-  sidebar picker and the Library's pills both write. A page-local second
-  location filter can contradict the global one and empty a table with no
-  way to see why.
+- Location filtering belongs to the Library's table, and nowhere else. An
+  app-wide picker in the chrome silently narrowed pages that state each
+  row's location anyway — a count that disagreed with the page under it,
+  with no visible cause. Every other page shows every scope.
+- Tools and Projects are two sidebar destinations, not two tabs on one
+  page: they answer different questions and neither is a mode of the
+  other. Where a tool keeps its files is edited on the tool's own row,
+  not in a second list of the same tools.
+- Content a tool ships with itself — Codex's bundled plugins, Claude
+  Code's — belongs to that tool, not to the person running vstack.
+  `core/vendor.rs` reads ownership off the marketplace a plugin names, an
+  unknown marketplace is always the user's, and vendor-owned content is
+  scored by nothing and asked about nowhere: it is listed in the Library,
+  labelled with who ships it, and left alone. A finding nobody can act on
+  is noise that teaches people to ignore the ones they can.
+- A section with nothing in it is not rendered. An empty state earns its
+  place only when the page would otherwise be blank.
 - Commands that touch disk, git, or a subprocess are declared
   `#[tauri::command(async)]`. On Linux a synchronous command runs on the
   GTK main loop, so seconds of work reads to the window manager as a

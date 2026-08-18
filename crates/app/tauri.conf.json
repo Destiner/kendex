@@ -8,7 +8,7 @@
       "cwd": "../../ui",
       "script": "npm run dev"
     },
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://localhost:5273",
     "beforeBuildCommand": {
       "cwd": "../../ui",
       "script": "npm run build"

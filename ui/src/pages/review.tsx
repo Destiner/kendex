@@ -1,12 +1,17 @@
 import { CheckCircle2 } from "lucide-react";
 import { useEffect } from "react";
+import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { ScopeErrorCard } from "@/components/scope-error-card";
 import { StatusNote } from "@/components/status-note";
 import { SyncScopeCard } from "@/components/sync-scope";
 import { blockedCount, openCount } from "@/lib/audit-counts";
-import { REVIEW_SUBTITLE } from "@/lib/copy";
-import { scopeLabel, viewsInScope } from "@/lib/derive";
+import {
+  ALL_IN_SYNC_BODY,
+  ALL_IN_SYNC_TITLE,
+  REVIEW_SUBTITLE,
+} from "@/lib/copy";
+import { scopeLabel } from "@/lib/derive";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
 import { cn } from "@/lib/utils";
 import { useAuditStore } from "@/stores/audit";
@@ -15,19 +20,16 @@ import { useNavStore } from "@/stores/nav";
 export function ReviewPage() {
   const { views, auditing, error, busy, refresh, applyPlan, dismiss } =
     useAuditStore();
-  const scope = useNavStore((s) => s.scope);
-  const setScope = useNavStore((s) => s.setScope);
-  const goToLibrary = useNavStore((s) => s.goToLibrary);
+  const goTo = useNavStore((s) => s.goTo);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  const visible = viewsInScope(views, scope);
   // A scope is finished when nothing in it waits on a person: no change to
   // apply, no note, and no decision left to make. Findings someone already
   // ruled on do not keep the page open — that is what ruling on them is for.
-  const active = visible.filter(
+  const active = views.filter(
     (view) =>
       view.error != null ||
       view.drift.length > 0 ||
@@ -54,13 +56,9 @@ export function ReviewPage() {
             </p>
           ) : null}
           {allClean ? (
-            <div className="flex flex-col items-center gap-2 py-16 text-center">
-              <CheckCircle2 className="size-8 text-muted-foreground" />
-              <p className="font-medium">Everything is in sync.</p>
-              <p className="text-sm text-muted-foreground">
-                Changes from Customize or your catalogs will show up here.
-              </p>
-            </div>
+            <EmptyState icon={CheckCircle2} title={ALL_IN_SYNC_TITLE}>
+              {ALL_IN_SYNC_BODY}
+            </EmptyState>
           ) : (
             active.map((view) =>
               view.error ? (
@@ -80,14 +78,7 @@ export function ReviewPage() {
                   onDismiss={(tokens, reason) =>
                     void dismiss(view.scope, tokens, reason)
                   }
-                  onSeeUnmanaged={() => {
-                    setScope(
-                      view.scope.scope === "global"
-                        ? "global"
-                        : { project: view.scope.root },
-                    );
-                    goToLibrary({ tab: "installed" });
-                  }}
+                  onSeeUnmanaged={() => goTo("unmanaged")}
                 />
               ),
             )

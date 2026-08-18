@@ -5,11 +5,10 @@ describe("nav store", () => {
   beforeEach(() => {
     useNavStore.setState({
       page: "home",
-      scope: "all",
+      libraryScope: "all",
       search: "",
       searchFocus: 0,
       libraryTab: "installed",
-      toolsTab: "tools",
       libraryFilter: null,
       packageRef: null,
       packageView: null,
@@ -67,7 +66,7 @@ describe("nav store", () => {
     useNavStore.getState().back();
     expect(useNavStore.getState().future).toHaveLength(1);
 
-    useNavStore.getState().goToTools("tools");
+    useNavStore.getState().goTo("tools");
     expect(useNavStore.getState().future).toEqual([]);
   });
 
@@ -152,7 +151,6 @@ describe("nav store", () => {
       {
         page: "home",
         libraryTab: "installed",
-        toolsTab: "tools",
         packageRef: null,
       },
     ]);
@@ -166,18 +164,18 @@ describe("nav store", () => {
   });
 
   it("back() pops history and restores the prior page and tab", () => {
-    useNavStore.setState({ toolsTab: "projects" });
-    useNavStore.getState().goToLibrary({ tab: "add" });
+    useNavStore.setState({ libraryTab: "add" });
+    useNavStore.getState().goTo("tools");
     useNavStore.getState().back();
 
     const state = useNavStore.getState();
     expect(state.page).toBe("home");
-    expect(state.toolsTab).toBe("projects");
+    expect(state.libraryTab).toBe("add");
     expect(state.history).toEqual([]);
   });
 
   it("back() clears any pending library filter", () => {
-    useNavStore.getState().goToTools("tools");
+    useNavStore.getState().goTo("tools");
     useNavStore.getState().goToLibrary({ tool: "claude", kind: "hook" });
     useNavStore.getState().back();
 
@@ -208,26 +206,23 @@ describe("nav store", () => {
       {
         page: "home",
         libraryTab: "installed",
-        toolsTab: "tools",
         packageRef: null,
       },
     ]);
   });
 
   it("back() after goTo restores the page it was called from", () => {
-    useNavStore.getState().goToTools("projects");
+    useNavStore.getState().goTo("projects");
     useNavStore.getState().goTo("review");
     useNavStore.getState().back();
 
-    const state = useNavStore.getState();
-    expect(state.page).toBe("tools");
-    expect(state.toolsTab).toBe("projects");
+    expect(useNavStore.getState().page).toBe("projects");
   });
 
   it("caps the history stack so it never grows without bound", () => {
     for (let i = 0; i < 25; i++) {
       useNavStore.getState().goToLibrary();
-      useNavStore.getState().goToTools("tools");
+      useNavStore.getState().goTo("tools");
     }
 
     expect(useNavStore.getState().history.length).toBeLessThanOrEqual(20);

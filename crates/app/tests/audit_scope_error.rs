@@ -51,7 +51,7 @@ fn a_v1_lock_scope_audits_successfully_with_a_note() {
     let result = view(&f.env, &f.scope);
     assert!(result.error.is_none(), "a v1 lock is not a scope error");
     assert!(
-        result.notes.iter().any(|n| n.contains("v1 lock")),
+        result.notes.iter().any(|n| n.contains("from version 1")),
         "expected a v1-lock note, got: {:?}",
         result.notes
     );

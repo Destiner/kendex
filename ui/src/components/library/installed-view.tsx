@@ -25,8 +25,8 @@ import { useScanStore } from "@/stores/scan";
  *  coming back from that page lands exactly where the table was left. */
 export function InstalledView() {
   const result = useScanStore((s) => s.result);
-  const scope = useNavStore((s) => s.scope);
-  const setScope = useNavStore((s) => s.setScope);
+  const scope = useNavStore((s) => s.libraryScope);
+  const setScope = useNavStore((s) => s.setLibraryScope);
   const goToLibrary = useNavStore((s) => s.goToLibrary);
   const goToPackage = useNavStore((s) => s.goToPackage);
   const clearLibraryFilter = useNavStore((s) => s.clearLibraryFilter);

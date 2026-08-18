@@ -10,7 +10,7 @@ import type {
   Tag,
   Verdict,
 } from "@/bindings";
-import type { LibraryTab, Page, ToolsTab } from "@/stores/nav";
+import type { LibraryTab, Page } from "@/stores/nav";
 
 export const TOOL_NAMES: Record<HarnessId, string> = {
   claude: "Claude Code",
@@ -174,11 +174,17 @@ export function driftDetail(row: DriftRow): string | null {
 // clean-items summary uses this shortened paraphrase instead.
 const SKIP_REASON_SHORT: Record<string, string> = {
   "the plugin's own files are not readable here — a declared plugin is one switch in a settings file until it is installed":
-    "can't be fully checked until they're installed",
+    "not installed yet",
 };
 
+/** The engine writes its findings as sentence fragments; anywhere one
+ *  stands on its own, it starts a sentence. */
+export function sentence(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 export function skipReasonShort(reason: string): string {
-  return SKIP_REASON_SHORT[reason] ?? "can't be fully checked here yet";
+  return SKIP_REASON_SHORT[reason] ?? "nothing here could be read";
 }
 
 // Affected-item disclosure copy — collapsed so a finding on 21 plugins isn't a wall of text.
@@ -189,7 +195,9 @@ export const PAGE_LABELS: Record<Page, string> = {
   review: "Review & apply",
   library: "Library",
   updates: "Updates",
-  tools: "Tools & Projects",
+  tools: "Tools",
+  projects: "Projects",
+  unmanaged: "Unmanaged items",
   customize: "Customize",
   settings: "Settings",
   problems: "Problems",
@@ -201,24 +209,15 @@ const LIBRARY_TAB_LABELS: Record<LibraryTab, string> = {
   add: "Add from a catalog",
 };
 
-const TOOLS_TAB_LABELS: Record<ToolsTab, string> = {
-  tools: "Tools",
-  projects: "Projects",
-};
-
 // Where you are, in one line — pages without tabs read as just their name.
 export function breadcrumbLabel(nav: {
   page: Page;
   libraryTab: LibraryTab;
-  toolsTab: ToolsTab;
   /** The open package's display name, when the page is a package. */
   packageName?: string | null;
 }): string {
   if (nav.page === "library") {
     return `${PAGE_LABELS.library} / ${LIBRARY_TAB_LABELS[nav.libraryTab]}`;
-  }
-  if (nav.page === "tools") {
-    return `${PAGE_LABELS.tools} / ${TOOLS_TAB_LABELS[nav.toolsTab]}`;
   }
   if (nav.page === "package" && nav.packageName) {
     return `${PAGE_LABELS.library} / ${nav.packageName}`;

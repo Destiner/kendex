@@ -6,6 +6,7 @@ import {
   filterItems,
   groupItems,
   groupScopes,
+  groupVendor,
   recentItems,
   scopeMatches,
   viewsInScope,
@@ -24,6 +25,7 @@ function item(overrides: Partial<ObservedItem>): ObservedItem {
     description: null,
     tags: [],
     modifiedAt: null,
+    vendor: null,
     ...overrides,
   };
 }
@@ -221,5 +223,26 @@ describe("viewsInScope", () => {
       "global",
     ]);
     expect(viewsInScope(all, { project: "/b" })).toEqual([all[2]]);
+  });
+});
+
+describe("groupVendor", () => {
+  it("names the vendor only when every installation agrees it is theirs", () => {
+    const bundled = groupItems([
+      item({ kind: "plugin", name: "chrome@openai-bundled", vendor: "OpenAI" }),
+      item({
+        kind: "plugin",
+        name: "chrome@openai-bundled",
+        harness: "codex",
+        vendor: "OpenAI",
+      }),
+    ]);
+    expect(groupVendor(bundled[0])).toBe("OpenAI");
+
+    const mixed = groupItems([
+      item({ kind: "plugin", name: "gh", vendor: "OpenAI" }),
+      item({ kind: "plugin", name: "gh", harness: "codex", vendor: null }),
+    ]);
+    expect(groupVendor(mixed[0])).toBeNull();
   });
 });

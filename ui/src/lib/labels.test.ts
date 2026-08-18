@@ -107,7 +107,7 @@ describe("labels", () => {
       "Contains a command that could do real damage",
     );
     expect(findingHeadline("some-future-rule", "the engine's message")).toBe(
-      "the engine's message",
+      "The engine's message",
     );
   });
 
@@ -116,9 +116,9 @@ describe("labels", () => {
       skipReasonShort(
         "the plugin's own files are not readable here — a declared plugin is one switch in a settings file until it is installed",
       ),
-    ).toBe("can't be fully checked until they're installed");
+    ).toBe("not installed yet");
     expect(skipReasonShort("some new engine sentence")).toBe(
-      "can't be fully checked here yet",
+      "nothing here could be read",
     );
   });
 });
@@ -129,7 +129,6 @@ describe("breadcrumbLabel for a package", () => {
       breadcrumbLabel({
         page: "package",
         libraryTab: "installed",
-        toolsTab: "tools",
         packageName: packageDisplayName({ kind: "skill", name: "gh" }),
       }),
     ).toBe("Library / gh");

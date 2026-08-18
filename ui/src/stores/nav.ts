@@ -7,7 +7,11 @@ export type Page =
   | "review"
   | "library"
   | "tools"
+  | "projects"
   | "customize"
+  // Reached from Home's attention list and the Review card's footnote —
+  // adopting is an offer, not a sidebar destination.
+  | "unmanaged"
   | "settings"
   | "updates"
   // Reached only from the status footer's problems segment or a review
@@ -20,9 +24,6 @@ export type Page =
 
 /** Which half of the Library page is showing. */
 export type LibraryTab = "installed" | "add";
-
-/** Which half of the Tools & Projects page is showing. */
-export type ToolsTab = "tools" | "projects";
 
 /** What Library's Installed view should filter to when it first opens. */
 export interface LibraryFilter {
@@ -51,7 +52,6 @@ export interface PackageView {
 export interface HistoryEntry {
   page: Page;
   libraryTab: LibraryTab;
-  toolsTab: ToolsTab;
   packageRef: PackageRef | null;
 }
 
@@ -61,7 +61,10 @@ const HISTORY_CAP = 20;
 
 interface NavState {
   page: Page;
-  scope: ScopeSelection;
+  /** Which locations the Library's table shows. It belongs to that page —
+   *  every other page states the location on each row instead, so nothing
+   *  is ever hidden behind a filter set somewhere else. */
+  libraryScope: ScopeSelection;
   /** What the Library's search box holds, kept here so leaving the page and
    * coming back keeps the table narrowed the same way. */
   search: string;
@@ -70,7 +73,6 @@ interface NavState {
    * rather than only from the one it happens to be mounted on. */
   searchFocus: number;
   libraryTab: LibraryTab;
-  toolsTab: ToolsTab;
   /** Consumed once by Installed on mount, then cleared. */
   libraryFilter: LibraryFilter | null;
   /** Which package the package page shows; null anywhere else. */
@@ -82,12 +84,11 @@ interface NavState {
    * pair. Any fresh navigation abandons it, exactly as a browser does. */
   future: HistoryEntry[];
   setPage: (page: Page) => void;
-  setScope: (scope: ScopeSelection) => void;
+  setLibraryScope: (scope: ScopeSelection) => void;
   setSearch: (search: string) => void;
   /** Send the user to the Library with the cursor in its search box. */
   focusSearch: () => void;
   goToLibrary: (opts?: { tab?: LibraryTab } & LibraryFilter) => void;
-  goToTools: (tab: ToolsTab) => void;
   /** A cross-page link from chrome that's always on screen (e.g. the status
    * footer) — pushes history like the other goTo* helpers so back and the
    * breadcrumb work, without needing per-tab state of its own. */
@@ -101,11 +102,10 @@ interface NavState {
 
 export const useNavStore = create<NavState>((set) => ({
   page: "home",
-  scope: "all",
+  libraryScope: "all",
   search: "",
   searchFocus: 0,
   libraryTab: "installed",
-  toolsTab: "tools",
   libraryFilter: null,
   packageRef: null,
   packageView: null,
@@ -122,7 +122,7 @@ export const useNavStore = create<NavState>((set) => ({
       libraryFilter: null,
       packageRef: null,
     }),
-  setScope: (scope) => set({ scope }),
+  setLibraryScope: (libraryScope) => set({ libraryScope }),
   setSearch: (search) => set({ search }),
   // Asking to search means "find me this thing", and the only page that can
   // answer is the Library — so the shortcut takes you there rather than
@@ -144,13 +144,6 @@ export const useNavStore = create<NavState>((set) => ({
       libraryTab: tab,
       libraryFilter: tool || kind ? { tool, kind } : null,
       history: pushHistory(state, "library"),
-      future: [],
-    })),
-  goToTools: (tab) =>
-    set((state) => ({
-      page: "tools",
-      toolsTab: tab,
-      history: pushHistory(state, "tools"),
       future: [],
     })),
   goTo: (page) =>
@@ -200,7 +193,6 @@ function here(state: NavState): HistoryEntry {
   return {
     page: state.page,
     libraryTab: state.libraryTab,
-    toolsTab: state.toolsTab,
     packageRef: state.packageRef,
   };
 }

@@ -185,6 +185,7 @@ fn scan_surface(
                     tags: found.meta.tags,
                     description: found.meta.description,
                     modified_at: found.modified_at,
+                    vendor: None,
                 });
             }
         }
@@ -203,6 +204,7 @@ fn scan_surface(
                     tags: found.meta.tags,
                     description: found.meta.description,
                     modified_at: found.modified_at,
+                    vendor: None,
                 });
             }
         }
@@ -254,6 +256,8 @@ fn scan_structured_file(
                 // a config file shared with every other entry of its kind,
                 // whose mtime would describe all of them at once.
                 let modified_at = entry.source_path.as_deref().and_then(files::mtime_unix);
+                let vendor =
+                    crate::vendor::vendor_of(kind, &entry.name, adapter.id()).map(str::to_owned);
                 result.items.push(ObservedItem {
                     kind,
                     name: entry.name,
@@ -272,6 +276,7 @@ fn scan_structured_file(
                     tags: Vec::new(),
                     description: entry.description,
                     modified_at,
+                    vendor,
                 });
             }
         }

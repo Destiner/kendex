@@ -135,6 +135,16 @@ export function groupItems(items: ObservedItem[]): ItemGroup[] {
   return [...groups.values()].sort((a, b) => a.key.localeCompare(b.key));
 }
 
+/** Who ships this item, when a tool ships it itself — the vendor named by
+ *  every installation, or null the moment they disagree or none says. */
+export function groupVendor(group: ItemGroup): string | null {
+  const vendor = group.installations[0]?.vendor ?? null;
+  if (!vendor) return null;
+  return group.installations.every((install) => install.vendor === vendor)
+    ? vendor
+    : null;
+}
+
 /** Every distinct scope a group's installations live in, in first-seen order. */
 export function groupScopes(group: ItemGroup): Scope[] {
   const seen = new Map<string, Scope>();

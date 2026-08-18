@@ -1,20 +1,23 @@
-import { Plus, RefreshCw } from "lucide-react";
+import { Boxes } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Scope } from "@/bindings";
 import { CatalogScopeGroup } from "@/components/catalog-scope";
+import { EmptyState } from "@/components/empty-state";
 import { AddCatalogDialog } from "@/components/library/add-catalog-dialog";
 import { BundleGallery } from "@/components/library/bundle-gallery";
-import { SectionHeading } from "@/components/section";
+import { Section } from "@/components/section";
 import { StatusNote } from "@/components/status-note";
 import { Button } from "@/components/ui/button";
 import {
+  ADD_CATALOG_LABEL,
   BUNDLES_HELP,
   CATALOGS_HELP,
-  NO_BUNDLES_YET,
+  CHECK_UPDATES_LABEL,
+  NO_CATALOGS_TITLE,
   NO_CATALOGS_YET,
 } from "@/lib/copy";
 import { scopeLabel } from "@/lib/derive";
-import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
+import { PAGE_BODY, WIDE_CONTENT_WIDTH } from "@/lib/layout";
 import { cn } from "@/lib/utils";
 import { sameScope } from "@/stores/audit";
 import { useSettingsStore } from "@/stores/settings";
@@ -50,7 +53,7 @@ export function AddCatalogView() {
   const hasCatalogs = rows.length > 0;
 
   return (
-    <div className={cn("space-y-6", CONTENT_WIDTH, PAGE_BODY)}>
+    <div className={cn("space-y-8", WIDE_CONTENT_WIDTH, PAGE_BODY)}>
       {error ? (
         <StatusNote tone="critical" title="That catalog couldn't be added">
           {error}
@@ -62,63 +65,82 @@ export function AddCatalogView() {
         </StatusNote>
       ))}
 
-      <section className="space-y-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <SectionHeading>Bundles</SectionHeading>
-            <p className="text-sm text-muted-foreground">{BUNDLES_HELP}</p>
-          </div>
-          <Button
-            variant="outline"
-            className="shrink-0"
-            disabled={busy}
-            onClick={() => void refreshRemotes()}
-          >
-            <RefreshCw className="size-4" /> Check for updates
-          </Button>
-        </div>
-        {hasBundles ? (
-          scopes.map((scope) => (
-            <BundleGallery
-              key={scopeLabel(scope)}
-              scope={scope}
-              rows={bundles.filter((bundle) => sameScope(bundle.scope, scope))}
-              busy={busy}
-              onInstall={(source, name) =>
-                void installBundle(scope, source, name)
+      {/* Nothing to install from is one situation, not two empty sections:
+          bundles come out of catalogs, so with no catalog there is nothing
+          to say about them. */}
+      {hasCatalogs ? (
+        <>
+          {hasBundles ? (
+            <Section
+              title="Bundles"
+              description={BUNDLES_HELP}
+              action={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void refreshRemotes()}
+                >
+                  {CHECK_UPDATES_LABEL}
+                </Button>
               }
-            />
-          ))
-        ) : (
-          <p className="text-sm text-muted-foreground">{NO_BUNDLES_YET}</p>
-        )}
-      </section>
+            >
+              <div className="space-y-3">
+                {scopes.map((scope) => (
+                  <BundleGallery
+                    key={scopeLabel(scope)}
+                    scope={scope}
+                    rows={bundles.filter((bundle) =>
+                      sameScope(bundle.scope, scope),
+                    )}
+                    busy={busy}
+                    onInstall={(source, name) =>
+                      void installBundle(scope, source, name)
+                    }
+                  />
+                ))}
+              </div>
+            </Section>
+          ) : null}
 
-      <section className="space-y-3 border-t pt-6">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <SectionHeading>Catalogs</SectionHeading>
-            <p className="text-sm text-muted-foreground">{CATALOGS_HELP}</p>
-          </div>
-          <Button className="shrink-0" onClick={() => setAddOpen(true)}>
-            <Plus className="size-4" /> Add a catalog
-          </Button>
-        </div>
-        {hasCatalogs ? (
-          scopes.map((scope) => (
-            <CatalogScopeGroup
-              key={scopeLabel(scope)}
-              scope={scope}
-              rows={rows.filter((row) => sameScope(row.scope, scope))}
-              busy={busy}
-              onToggle={(name, enabled) => void toggle(scope, name, enabled)}
-              onRemove={(name) => void remove(scope, name)}
-            />
-          ))
-        ) : (
-          <p className="text-sm text-muted-foreground">{NO_CATALOGS_YET}</p>
-        )}
-      </section>
+          <Section
+            title="Catalogs"
+            description={CATALOGS_HELP}
+            action={
+              <Button size="sm" onClick={() => setAddOpen(true)}>
+                {ADD_CATALOG_LABEL}
+              </Button>
+            }
+          >
+            <div className="space-y-3">
+              {scopes.map((scope) => (
+                <CatalogScopeGroup
+                  key={scopeLabel(scope)}
+                  scope={scope}
+                  rows={rows.filter((row) => sameScope(row.scope, scope))}
+                  busy={busy}
+                  onToggle={(name, enabled) =>
+                    void toggle(scope, name, enabled)
+                  }
+                  onRemove={(name) => void remove(scope, name)}
+                />
+              ))}
+            </div>
+          </Section>
+        </>
+      ) : (
+        <EmptyState
+          icon={Boxes}
+          title={NO_CATALOGS_TITLE}
+          action={
+            <Button onClick={() => setAddOpen(true)}>
+              {ADD_CATALOG_LABEL}
+            </Button>
+          }
+        >
+          {NO_CATALOGS_YET}
+        </EmptyState>
+      )}
 
       <AddCatalogDialog
         open={addOpen}

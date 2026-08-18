@@ -1,7 +1,8 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import type { DismissReason, ItemSafety } from "@/bindings";
-import { DismissButton, EvidenceLine } from "@/components/finding-decide";
+import type { DismissReason, HarnessId, ItemSafety } from "@/bindings";
+import { EvidenceList, IgnoreButton } from "@/components/finding-decide";
+import { KindToolChips } from "@/components/kind-tool-chips";
 import { FindingLine } from "@/components/safety-findings";
 import { StatusDot } from "@/components/status-dot";
 import { StatusLine } from "@/components/status-note";
@@ -58,37 +59,60 @@ function scopeChipLabel(items: FindingItem[]): string {
 
 const COLLAPSE_THRESHOLD = 6;
 
-// The names of what this concern touched — a plugin called
-// `chrome@openai-bundled` is what a person recognises, where the directory
-// it happens to live in is not. Past a handful the rest are a click away,
-// because a real plugin set (20+) prints a wall nobody reads to the end.
+// What this concern touched, named the way a person recognises it: one row
+// per piece of content, with the tools that load it. The same skill
+// installed for four tools used to print the same name four times, which
+// reads as four different problems.
+function uniqueItems(items: FindingItem[]) {
+  const byKey = new Map<
+    string,
+    { kind: FindingItem["kind"]; name: string; harnesses: HarnessId[] }
+  >();
+  for (const item of items) {
+    const key = `${item.kind}:${item.name}`;
+    const seen = byKey.get(key);
+    if (seen) {
+      if (!seen.harnesses.includes(item.harness))
+        seen.harnesses.push(item.harness);
+      continue;
+    }
+    byKey.set(key, {
+      kind: item.kind,
+      name: item.name,
+      harnesses: [item.harness],
+    });
+  }
+  return [...byKey.values()];
+}
+
 function AffectedList({ concern }: { concern: ConcernGroup }) {
   const [expanded, setExpanded] = useState(false);
-  const items = concern.items;
+  const items = uniqueItems(concern.items);
   const visible = expanded ? items : items.slice(0, COLLAPSE_THRESHOLD);
   const hiddenCount = items.length - visible.length;
-  const canCollapse = items.length > COLLAPSE_THRESHOLD;
   return (
     <div className="flex flex-col gap-1.5 text-[13px]">
-      <p className="font-medium text-foreground/70">
+      <p className="font-medium text-foreground">
         Affects {items.length}{" "}
-        {affectedLabel(items, concern.findings[0].location)}
+        {affectedLabel(concern.items, concern.findings[0].location)}
       </p>
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-col gap-1.5">
         {visible.map((item) => (
-          <Badge
-            key={`${item.harness}:${item.kind}:${item.name}`}
-            variant="outline"
-            className="max-w-full truncate font-normal"
+          <div
+            key={`${item.kind}:${item.name}`}
+            className="flex flex-wrap items-center gap-2"
           >
-            {item.kind === "hook" ? hookDisplayName(item.name) : item.name}
-          </Badge>
+            <span className="truncate">
+              {item.kind === "hook" ? hookDisplayName(item.name) : item.name}
+            </span>
+            <KindToolChips kind={item.kind} harnesses={item.harnesses} />
+          </div>
         ))}
-        {canCollapse ? (
+        {items.length > COLLAPSE_THRESHOLD ? (
           <button
             type="button"
             onClick={() => setExpanded((e) => !e)}
-            className="inline-flex items-center gap-0.5 px-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
+            className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
           >
             {expanded ? FEWER_ITEMS_LABEL : moreItemsLabel(hiddenCount)}
           </button>
@@ -137,7 +161,7 @@ function ConcernRow({
           </Badge>
         </button>
         {single ? (
-          <DismissButton
+          <IgnoreButton
             group={single}
             projectScope={decide.projectScope}
             busy={decide.busy}
@@ -175,21 +199,13 @@ function ConcernRow({
           {single ? (
             <AffectedList concern={concern} />
           ) : (
-            <div className="flex flex-col divide-y divide-border text-[13px]">
-              <p className="pb-1.5 font-medium text-foreground/70">
-                Decide each on its own — these are {evidence.length} different
-                pieces of content
-              </p>
-              {evidence.map((group) => (
-                <EvidenceLine
-                  key={group.tokens.join("|")}
-                  group={group}
-                  projectScope={decide.projectScope}
-                  busy={decide.busy}
-                  onDismiss={decide.onDismiss}
-                />
-              ))}
-            </div>
+            <EvidenceList
+              groups={evidence}
+              finding={details[0].finding.message}
+              projectScope={decide.projectScope}
+              busy={decide.busy}
+              onDismiss={decide.onDismiss}
+            />
           )}
         </div>
       ) : null}

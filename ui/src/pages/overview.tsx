@@ -11,8 +11,6 @@ import { auditCounts } from "@/lib/audit-counts";
 import {
   FORKED_ATTENTION_DETAIL,
   forkedAttentionTitle,
-  HOME_SUBTITLE,
-  RECENTLY_CHANGED_HELP,
   REVIEW_ACTION_LABEL,
 } from "@/lib/copy";
 import { groupItems, recentItems } from "@/lib/derive";
@@ -37,13 +35,13 @@ export function OverviewPage() {
   const goToPackage = useNavStore((s) => s.goToPackage);
   const updateRows = useUpdatesStore((s) => s.rows);
   const editedPackages = updateRows.filter((row) => row.blockedByLocalEdit);
-  const goToTools = useNavStore((s) => s.goToTools);
+  const goTo = useNavStore((s) => s.goTo);
   const goToLibrary = useNavStore((s) => s.goToLibrary);
 
   if (!result) {
     return (
       <div>
-        <PageHeader title="Home" subtitle={HOME_SUBTITLE} />
+        <PageHeader title="Home" />
         <div className={PAGE_BODY}>
           <div className={cn("space-y-6", CONTENT_WIDTH)}>
             <div className="space-y-3">
@@ -80,7 +78,7 @@ export function OverviewPage() {
       action:
         editedPackages.length === 1 && first
           ? {
-              label: `Open ${first.name}`,
+              label: first.name,
               onClick: () =>
                 goToPackage({
                   kind: first.kind,
@@ -88,19 +86,15 @@ export function OverviewPage() {
                   scope: first.scope,
                 }),
             }
-          : { label: "Open Library", onClick: () => setPage("library") },
+          : { label: "Library", onClick: () => setPage("library") },
     });
   }
   if (blocked > 0) {
     rows.push({
       key: "safety",
       tone: "critical",
-      title:
-        blocked === 1
-          ? "1 serious problem found"
-          : `${blocked} serious problems found`,
-      detail:
-        "They're on your machine now. Read what was found before vstack installs or updates them.",
+      title: blocked === 1 ? "1 problem found" : `${blocked} problems found`,
+      detail: "Held back until you read the findings and accept them.",
       action: { label: REVIEW_ACTION_LABEL, onClick: () => setPage("review") },
     });
   }
@@ -108,12 +102,8 @@ export function OverviewPage() {
     rows.push({
       key: "decisions",
       tone: "warning",
-      title:
-        open === 1
-          ? "1 finding needs your decision"
-          : `${open} findings need your decision`,
-      detail:
-        "The safety check flagged something in content you have installed. Read it and decide whether it is a problem.",
+      title: open === 1 ? "1 finding to review" : `${open} findings to review`,
+      detail: "Flagged in content you already have installed.",
       action: { label: REVIEW_ACTION_LABEL, onClick: () => setPage("review") },
     });
   }
@@ -135,13 +125,10 @@ export function OverviewPage() {
       tone: "muted",
       title:
         unmanagedCount === 1
-          ? "1 item isn't managed yet"
-          : `${unmanagedCount} items aren't managed yet`,
+          ? "1 unmanaged item"
+          : `${unmanagedCount} unmanaged items`,
       detail: "Already on your machine, but vstack didn't put them there.",
-      action: {
-        label: "Open Library",
-        onClick: () => goToLibrary({ tab: "installed" }),
-      },
+      action: { label: "Review", onClick: () => goTo("unmanaged") },
     });
   }
   if (missing.length > 0) {
@@ -157,8 +144,8 @@ export function OverviewPage() {
           ? `We can't find ${missing[0]}. If you moved it, add it again.`
           : "If you moved these, add them again from Tools & Projects.",
       action: {
-        label: "Open Projects",
-        onClick: () => goToTools("projects"),
+        label: "Projects",
+        onClick: () => goTo("projects"),
       },
     });
   }
@@ -179,14 +166,18 @@ export function OverviewPage() {
 
   return (
     <div>
-      <PageHeader title="Home" subtitle={HOME_SUBTITLE} />
+      <PageHeader title="Home" />
       <div className={PAGE_BODY}>
         <div className={cn("flex flex-col gap-10", CONTENT_WIDTH)}>
-          <Section title="Needs attention">
-            <AttentionSection rows={rows} />
-          </Section>
+          {/* Nothing to decide means nothing to say: the section is gone
+              rather than standing there reporting its own emptiness. */}
+          {rows.length > 0 ? (
+            <Section title="Needs attention">
+              <AttentionSection rows={rows} />
+            </Section>
+          ) : null}
 
-          <Section title="Recently changed" description={RECENTLY_CHANGED_HELP}>
+          <Section title="Recently changed">
             <RecentActivity groups={recent} />
           </Section>
 
@@ -196,7 +187,7 @@ export function OverviewPage() {
                 label="Tools"
                 value={result.harnesses.length}
                 detail={toolNames || undefined}
-                onClick={() => goToTools("tools")}
+                onClick={() => goTo("tools")}
               />
               <StatTile
                 label="Installed"
@@ -206,7 +197,7 @@ export function OverviewPage() {
               <StatTile
                 label="Projects"
                 value={projectCount}
-                onClick={() => goToTools("projects")}
+                onClick={() => goTo("projects")}
               />
             </div>
           </Section>

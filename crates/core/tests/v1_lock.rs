@@ -69,7 +69,7 @@ fn a_v1_lock_audits_read_only_with_a_note_instead_of_a_parse_error() {
 
     let report = audit(&f.env, &f.scope).unwrap();
     assert!(
-        report.notes.iter().any(|n| n.contains("v1 lock")),
+        report.notes.iter().any(|n| n.contains("from version 1")),
         "expected a v1-lock note, got: {:?}",
         report.notes
     );

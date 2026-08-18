@@ -18,14 +18,21 @@ const buttonVariants = cva(
           "border border-primary/50 bg-transparent text-primary hover:border-primary hover:bg-primary/10",
         ghost:
           "text-muted-foreground hover:bg-foreground/[0.07] hover:text-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+        // An action that rides on a line of text — an edit pencil beside a
+        // path. It brightens rather than growing a background, so the line
+        // it sits in keeps its shape under the pointer.
+        quiet: "text-muted-foreground hover:text-foreground",
+        // A link on a dark page has to be readable first: the blue that
+        // works as a button fill is a mid-tone on this background. The
+        // underline carries "this is a link", the text keeps full contrast.
+        link: "text-foreground underline decoration-muted-foreground underline-offset-4 hover:decoration-foreground",
       },
       size: {
-        default: "h-9 px-4 py-2 has-[>svg]:px-3",
+        default: "h-8 px-3.5 py-1.5 has-[>svg]:px-3",
         xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5",
-        lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
-        icon: "size-9",
+        sm: "h-7 gap-1.5 rounded-md px-2.5 has-[>svg]:px-2",
+        lg: "h-9 rounded-md px-5 has-[>svg]:px-4",
+        icon: "size-8",
         "icon-xs": "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3",
         "icon-sm": "size-8",
         "icon-lg": "size-10",

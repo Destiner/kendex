@@ -370,14 +370,13 @@ pub fn plan_apply(env: &Env, scope: &Scope, options: &PlanOptions) -> Result<Eng
         kept: Vec::new(),
         safety: Vec::new(),
     };
-    if matches!(manifest_file, ManifestFile::Legacy { .. }) {
-        report
-            .notes
-            .push("v1 manifest — read-only until migration (Phase 6 importer)".into());
-    }
-    if matches!(lock_file, LockFile::Legacy { .. }) {
+    // One fact, said once: files this build will read but not write. Which
+    // of the two is legacy is vstack's problem, not the reader's.
+    if matches!(manifest_file, ManifestFile::Legacy { .. })
+        || matches!(lock_file, LockFile::Legacy { .. })
+    {
         report.notes.push(
-            "v1 lock — this project's install history predates v2; read-only until it is migrated"
+            "This scope's vstack files are from version 1 — vstack reads them, but changes nothing here until they are migrated"
                 .into(),
         );
     }

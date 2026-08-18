@@ -34,6 +34,20 @@ const TINT: Record<HarnessId, string> = {
   copilot: "text-tool-copilot",
 };
 
+// Each vendor draws its mark with its own padding and its own weight, so
+// one shared box makes Pi's solid block read twice the size of Codex's thin
+// ring. These factors even the marks out by eye — the box never changes,
+// only how much of it the mark fills.
+const OPTICAL: Record<HarnessId, string> = {
+  claude: "scale-[0.92]",
+  codex: "scale-[1.2]",
+  opencode: "scale-[0.75]",
+  cursor: "scale-[0.9]",
+  pi: "scale-[0.66]",
+  gemini: "scale-[1.15]",
+  copilot: "scale-[0.88]",
+};
+
 /** A tool's mark, in the tool's own colour. Decorative — every place this
  *  appears also names the tool in text. */
 export function ToolIcon({
@@ -54,6 +68,7 @@ export function ToolIcon({
       preserveAspectRatio="xMidYMid meet"
       className={cn(
         "size-4 shrink-0",
+        OPTICAL[harness],
         muted ? "text-muted-foreground grayscale opacity-80" : TINT[harness],
         className,
       )}

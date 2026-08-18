@@ -54,7 +54,7 @@ describe("describeDecision", () => {
       "Accepted 3 findings · 2d ago · in acme's vstack.toml, shared",
     );
     expect(describeDecision(dismissed(), NOW)).toBe(
-      "Dismissed as not actually a problem · 1d ago · yours, on this machine",
+      "Ignored — not actually a problem · 1d ago · yours, on this machine",
     );
   });
 

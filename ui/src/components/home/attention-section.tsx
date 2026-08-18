@@ -1,8 +1,5 @@
-import { CheckCircle2 } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { StatusDot } from "@/components/status-dot";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { ALL_CAUGHT_UP_DETAIL, ALL_CAUGHT_UP_TITLE } from "@/lib/copy";
 
 export interface AttentionRow {
   key: string;
@@ -12,59 +9,56 @@ export interface AttentionRow {
   action?: { label: string; onClick: () => void };
 }
 
-function AttentionCard({
-  row,
-  primary,
-}: {
-  row: AttentionRow;
-  primary: boolean;
-}) {
+/**
+ * The lead of Home: what needs a person's judgment, worst first. Home drops
+ * the whole section when there is nothing in it.
+ *
+ * One list, not a stack of cards. Three findings that all end at Review &
+ * apply used to print the same blue button three times, which reads as
+ * three different places to go; the row itself is the way in now, and where
+ * it lands is said once, quietly, beside the chevron.
+ */
+export function AttentionSection({ rows }: { rows: AttentionRow[] }) {
   return (
-    <Card>
-      <CardContent className="flex items-center justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <StatusDot tone={row.tone} className="mt-2" />
-          <div>
-            <p className="font-medium">{row.title}</p>
-            <p className="text-sm text-muted-foreground">{row.detail}</p>
-          </div>
-        </div>
-        {row.action ? (
-          <Button
-            variant={primary ? "default" : "outline"}
-            className="shrink-0"
-            onClick={row.action.onClick}
-          >
-            {row.action.label}
-          </Button>
-        ) : null}
-      </CardContent>
-    </Card>
+    <div className="divide-y overflow-hidden rounded-xl border bg-card">
+      {rows.map((row) => (
+        <AttentionLine key={row.key} row={row} />
+      ))}
+    </div>
   );
 }
 
-/** The lead of Home: what needs a person's judgment, ranked by how much it
- *  blocks — or, once that list is empty, a single quiet confirmation. */
-export function AttentionSection({ rows }: { rows: AttentionRow[] }) {
-  if (rows.length === 0) {
-    return (
-      <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-5 py-4">
-        <CheckCircle2 className="size-5 text-good" />
-        <div>
-          <p className="font-medium">{ALL_CAUGHT_UP_TITLE}</p>
-          <p className="text-sm text-muted-foreground">
-            {ALL_CAUGHT_UP_DETAIL}
-          </p>
-        </div>
-      </div>
-    );
+function AttentionLine({ row }: { row: AttentionRow }) {
+  const body = (
+    <>
+      <StatusDot tone={row.tone} className="mt-1.5 self-start" />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="text-sm font-medium">{row.title}</span>
+        <span className="text-[13px] text-muted-foreground">{row.detail}</span>
+      </span>
+      {row.action ? (
+        // Centred against the whole row, not its first line: a destination
+        // belongs to the row, and hung off the top it reads as part of the
+        // headline instead.
+        <span className="flex shrink-0 items-center gap-1 text-[13px] text-muted-foreground">
+          {row.action.label}
+          <ChevronRight className="size-4" />
+        </span>
+      ) : null}
+    </>
+  );
+  // A row with nowhere to go is a statement, not a control — it must not
+  // light up under the pointer as if a click would do something.
+  if (!row.action) {
+    return <div className="flex items-center gap-3 px-4 py-3.5">{body}</div>;
   }
-
   return (
-    <div className="space-y-3">
-      {rows.map((row, i) => (
-        <AttentionCard key={row.key} row={row} primary={i === 0} />
-      ))}
-    </div>
+    <button
+      type="button"
+      onClick={row.action.onClick}
+      className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/40"
+    >
+      {body}
+    </button>
   );
 }

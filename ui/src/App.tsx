@@ -11,9 +11,11 @@ import { LibraryPage } from "@/pages/library";
 import { OverviewPage } from "@/pages/overview";
 import { PackagePage } from "@/pages/package";
 import { ProblemsPage } from "@/pages/problems";
+import { ProjectsPage } from "@/pages/projects";
 import { ReviewPage } from "@/pages/review";
 import { SettingsPage } from "@/pages/settings";
-import { ToolsProjectsPage } from "@/pages/tools";
+import { ToolsPage } from "@/pages/tools";
+import { UnmanagedPage } from "@/pages/unmanaged";
 import { UpdatesPage } from "@/pages/updates";
 import { useAuditStore } from "@/stores/audit";
 import { useNavStore } from "@/stores/nav";
@@ -141,7 +143,9 @@ export default function App() {
               {page === "library" && <LibraryPage />}
               {page === "package" && <PackagePage key={packageKey} />}
               {page === "updates" && <UpdatesPage />}
-              {page === "tools" && <ToolsProjectsPage />}
+              {page === "tools" && <ToolsPage />}
+              {page === "projects" && <ProjectsPage />}
+              {page === "unmanaged" && <UnmanagedPage />}
               {page === "review" && <ReviewPage />}
               {page === "customize" && <CustomizePage />}
               {page === "settings" && <SettingsPage />}

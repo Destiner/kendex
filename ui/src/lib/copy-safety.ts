@@ -5,54 +5,38 @@
 // The zone only a person can clear: held-back installs first, then the
 // findings nobody has ruled on. Its caption counts both halves.
 export const DECISION_ZONE_TITLE = "Needs your decision";
-export function decisionZoneLabel(blocked: number, open: number): string {
-  const parts: string[] = [];
-  if (blocked > 0) {
-    parts.push(
-      blocked === 1
-        ? "1 install is held back until you rule on it"
-        : `${blocked} installs are held back until you rule on them`,
-    );
-  }
-  if (open > 0) {
-    parts.push(
-      open === 1
-        ? "1 finding on installed content is waiting for a call"
-        : `${open} findings on installed content are waiting for a call`,
-    );
-  }
-  return parts.join(" · ");
-}
 export const cleanSummaryLead = (total: number): string =>
-  `${total} other thing${total === 1 ? "" : "s"} checked — nothing to report`;
+  `${total} item${total === 1 ? "" : "s"}, nothing to report`;
 export const settledSummaryLead = (count: number): string =>
-  count === 1
-    ? "1 finding already decided"
-    : `${count} findings already decided`;
+  `${count} finding${count === 1 ? "" : "s"} already decided`;
 
 export const SAFETY_HELP =
-  "Strict catches more but sometimes flags things that are actually fine. Lenient trusts more, and only stops the riskiest items.";
+  "Strict catches more, and flags more things that turn out fine. Lenient stops only the riskiest.";
 
 // This list scores what is on disk right now, not what a plan would write —
 // so every row here is a thing the tools will load the next time they start.
 // "Held back" describes what vstack refuses to do with it, and must never be
 // read as "this isn't on your machine".
 export const BLOCKED_SECTION_EXPLAINER =
-  "Serious problems. vstack won't install or update these until you've read the findings and accepted them; ones already on your machine still load in your tools.";
+  "vstack won't install or update these. Open one, read what was found, then Accept to let it through. Copies already on your machine keep running.";
 // The row for an install the gate stopped before it ever reached disk.
 export const HELD_BACK_NOT_ON_DISK_NOTE =
-  "Not on your machine — vstack was asked to install this and held it back.";
+  "Not installed — vstack stopped this one before it landed.";
 
 // Accepting a held-back item. The action is reading the findings and
 // choosing to install anyway; the record lands in a manifest, and *which*
 // manifest decides who inherits the decision — so the dialog words the
 // consequence per scope and claims nothing else.
 export const ACCEPT_BLOCKED_LABEL = "Accept and install…";
+// A held-back row the next apply would not write — an item already on the
+// machine that vstack does not install. There is nothing to let through.
+export const NOTHING_TO_ACCEPT =
+  "Nothing to accept here — vstack isn't installing this one. It's already on your machine; remove it from the Library if you don't want it.";
 export const ACCEPT_BLOCKED_TITLE = "Accept these findings?";
 export const acceptBlockedBody = (projectScope: boolean): string =>
   projectScope
-    ? "Your acceptance is saved into this project's vstack.toml, so anyone who uses this repository inherits it. It covers exactly this version of the content — if the file changes, the block comes back."
-    : "Your acceptance is saved in your personal manifest on this machine. It covers exactly this version of the content — if the file changes, the block comes back.";
+    ? "Saved into this project's vstack.toml, so anyone using the repository inherits it. It covers this version only — if the file changes, the block comes back."
+    : "Saved in your personal manifest on this machine. It covers this version only — if the file changes, the block comes back.";
 export const ACCEPT_BLOCKED_CONFIRM = "Accept and install";
 
 // Withdrawing an acceptance, from the recorded-decisions list.

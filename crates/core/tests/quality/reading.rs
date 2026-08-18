@@ -149,6 +149,7 @@ fn an_observed_mcp_server_is_read_from_the_config_that_holds_it() {
         description: None,
         tags: Vec::new(),
         modified_at: None,
+        vendor: None,
     });
     let result = audit(input);
     let hits = rules_hit(&result);
@@ -182,6 +183,7 @@ fn an_mcp_server_with_no_readable_entry_reports_its_rules_as_skipped() {
         description: None,
         tags: Vec::new(),
         modified_at: None,
+        vendor: None,
     });
     let result = audit(input);
     assert!(result.findings.is_empty());
