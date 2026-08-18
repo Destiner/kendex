@@ -15,6 +15,10 @@ changes, the code and the page beside it change together.
 | Gemini CLI | [gemini.md](gemini.md) | `~/.gemini` | `.gemini/` |
 | GitHub Copilot | [copilot.md](copilot.md) | `~/.copilot` (`COPILOT_HOME`) | `.github/` |
 
+The Gemini and Copilot pages rest on
+[gemini-copilot-matrix.md](gemini-copilot-matrix.md) — the observation
+matrix, discrepancy log, and risk notes the code cites as `matrix §N`.
+
 ## The capability model
 
 Everything a page says about *what vstack may do* comes from one table,

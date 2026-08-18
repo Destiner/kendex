@@ -661,6 +661,3 @@ lives in one capability table read by core and UI.
   validated identifiers in argument positions, while free text from
   sources or errors renders in quoted informational positions, never in
   a command position.
-
-Build sequence and to-build specs: `docs/PLAN.md` — consumed and deleted as
-phases complete; delete this pointer with that file.

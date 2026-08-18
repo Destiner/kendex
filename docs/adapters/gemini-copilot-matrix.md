@@ -1,6 +1,7 @@
 # Gemini CLI and GitHub Copilot — observation matrix
 
-Research for the v0.2 adapter cycle. Every claim below was checked against
+The observation matrix behind the Gemini and Copilot adapter pages, cited
+from the code as `matrix §N`. Every claim below was checked against
 official documentation or upstream source on **2026-08-10**; wshobson's
 adapters were used as a lead only and are wrong often enough that nothing
 here rests on them (see the discrepancy log).
