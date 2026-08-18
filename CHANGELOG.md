@@ -440,6 +440,13 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Changed
 
+- The safety check got about seven times faster: a large project that took
+  0.8 s to score now takes 0.11 s, and spends less processor time doing it.
+  Each distinct file is read once and scored on its own core, phrase
+  matching skips ahead instead of trying every position in every line, and
+  content that is plain ASCII skips the pass that folds lookalike letters —
+  there is nothing there for it to fold. The findings themselves are
+  unchanged, byte for byte.
 - The app no longer looks empty while it is still reading. The Library
   draws placeholder rows until the first scan lands, instead of claiming
   "Nothing installed yet", and Home says it is still checking rather than

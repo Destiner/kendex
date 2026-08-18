@@ -136,9 +136,18 @@ lives in one capability table read by core and UI.
     surface lists many items — a plugin cache, a settings file — the
     scanner records where each item's files actually live, so a
     neighbour's contents can never land in this item's findings.
-    Repeated work within a pass is cached on exactly what decides the
-    outcome (kind, path, name); no rule reads the harness, which is what
-    lets one file installed for several tools be scored once.
+    What decides the outcome is exactly kind, path and name
+    (`quality::observe::same_reading`); no rule reads the harness, which
+    is what lets one file installed for several tools be read once. The
+    distinct readings share nothing, so they run on every core
+    (`core/parallel.rs`) and come back in the order they were given — a
+    scoring pass is a pure function of the disk, and two runs over the
+    same disk produce byte-identical output. Two things keep the work
+    itself small: phrase matching skips to the next byte that could begin
+    a match rather than trying every position, and text that is ASCII
+    from end to end takes no normalizing pass at all, since every
+    invisible character, compatibility form and homoglyph lives outside
+    ASCII.
 
 15. An item says what it is for in its own header, from a closed
     vocabulary (`core/tags.rs`). Kind says what a thing *is*; a tag says

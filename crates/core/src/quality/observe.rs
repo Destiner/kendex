@@ -9,7 +9,6 @@
 //! scanner never visits), the input says so and every rule that would have
 //! read them reports itself not applicable.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::model::{ItemKind, ObservedItem};
@@ -64,18 +63,17 @@ pub fn input_for(item: &ObservedItem) -> AuditInput {
     }
 }
 
-/// The work already done during one pass over a scope.
+/// What decides an observation's score, and so which observations are one
+/// reading.
 ///
 /// One skill installed for two harnesses is two observations of the same
-/// directory, and a scope with eighty of them spends most of an audit
+/// directory, and a scope with eighty of them would spend most of an audit
 /// scoring each tree twice. No rule reads the harness — every one of them
 /// judges the bytes — so the key is everything that decides the outcome:
-/// kind, path and name. A hit is the same answer by construction, never a
-/// guess. What is kept is the verdict and the hash, never the bytes: a
-/// scope's trees together outweigh the work they save to copy.
-#[derive(Default)]
-pub struct AuditCache {
-    by_source: HashMap<(ItemKind, PathBuf, String), Scored>,
+/// kind, path and name. Two observations that agree here score the same by
+/// construction, never by guess.
+pub fn same_reading(item: &ObservedItem) -> (ItemKind, PathBuf, String) {
+    (item.kind, item.path.clone(), item.name.clone())
 }
 
 /// One observation's two hashes and what the rules made of it. The hashes
@@ -89,27 +87,19 @@ pub struct Scored {
     pub result: AuditResult,
 }
 
-/// Score what this observation points at, reusing the pass's earlier answer
-/// for the same bytes. `hash` runs only on the pass that reads them; it must
-/// depend on nothing the key leaves out.
-pub fn audit_observed(
-    cache: &mut AuditCache,
+/// Read what this observation points at and score it. Pure over the bytes
+/// on disk, so it can run on any thread and in any order.
+pub fn score(
     item: &ObservedItem,
     hash: impl Fn(&AuditInput) -> String,
     review: impl Fn(&ObservedItem) -> Option<String>,
 ) -> Scored {
-    let key = (item.kind, item.path.clone(), item.name.clone());
-    if let Some(done) = cache.by_source.get(&key) {
-        return done.clone();
-    }
     let input = input_for(item);
-    let done = Scored {
+    Scored {
         content: hash(&input),
         review: review(item),
         result: super::audit(input),
-    };
-    cache.by_source.insert(key, done.clone());
-    done
+    }
 }
 
 const UNREADABLE_FILE: &str = "the installed file could not be read from disk";
@@ -315,31 +305,16 @@ mod tests {
     }
 
     /// One item installed for two harnesses is one file on disk, and no rule
-    /// reads the harness — which is what lets the second one reuse the
-    /// first's answer. Rewriting the file in between is the only way to tell
-    /// from the outside that it did.
+    /// reads the harness — so both observations are one reading.
     #[test]
-    fn one_file_shared_by_two_harnesses_is_scored_once() {
+    fn one_file_shared_by_two_harnesses_is_one_reading() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("reviewer.md");
-        std::fs::write(&path, "first").unwrap();
-        let mut cache = AuditCache::default();
 
-        let claude = audit_observed(
-            &mut cache,
-            &agent_at(&path, HarnessId::Claude),
-            text_hash,
-            |_| None,
+        assert_eq!(
+            same_reading(&agent_at(&path, HarnessId::Claude)),
+            same_reading(&agent_at(&path, HarnessId::Pi)),
         );
-        std::fs::write(&path, "second").unwrap();
-        let pi = audit_observed(
-            &mut cache,
-            &agent_at(&path, HarnessId::Pi),
-            text_hash,
-            |_| None,
-        );
-
-        assert_eq!(claude.content, pi.content);
     }
 
     /// The assumption the cache rests on, asserted rather than assumed: the
@@ -360,7 +335,7 @@ mod tests {
     /// Two entries inside one config file are different bytes to score even
     /// though they share a path — the name is part of what was read.
     #[test]
-    fn two_names_in_one_file_are_not_shared() {
+    fn two_names_in_one_file_are_not_one_reading() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("mcp.json");
         std::fs::write(
@@ -368,16 +343,15 @@ mod tests {
             r#"{"mcpServers":{"one":{"command":"a"},"two":{"command":"b"}}}"#,
         )
         .unwrap();
-        let mut cache = AuditCache::default();
         let server = |name: &str| ObservedItem {
             kind: ItemKind::McpServer,
             name: name.to_owned(),
             ..agent_at(&path, HarnessId::Claude)
         };
 
-        let one = audit_observed(&mut cache, &server("one"), text_hash, |_| None);
-        let two = audit_observed(&mut cache, &server("two"), text_hash, |_| None);
-
+        assert_ne!(same_reading(&server("one")), same_reading(&server("two")));
+        let one = score(&server("one"), text_hash, |_| None);
+        let two = score(&server("two"), text_hash, |_| None);
         assert_ne!(one.content, two.content);
     }
 }

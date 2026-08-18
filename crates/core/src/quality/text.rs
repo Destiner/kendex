@@ -12,6 +12,7 @@
 use unicode_normalization::UnicodeNormalization;
 
 use super::homoglyph;
+use super::phrase::find_phrase;
 use super::{AuditInput, Content, Doc, Prepared, Severity, TreeFile};
 
 /// What deobfuscation had to do to one document. Only the two counts are
@@ -114,40 +115,6 @@ impl Line {
             false => base,
         }
     }
-}
-
-/// Substring search where one space in the needle matches any run of
-/// whitespace in the haystack — `ignore  previous   instructions` is the
-/// same phrase as the single-spaced one.
-pub fn find_phrase(hay: &str, needle: &str) -> Option<usize> {
-    let hay = hay.as_bytes();
-    let needle = needle.as_bytes();
-    if needle.is_empty() {
-        return None;
-    }
-    'start: for start in 0..hay.len() {
-        let mut h = start;
-        let mut n = 0;
-        while n < needle.len() {
-            if needle[n] == b' ' {
-                if h >= hay.len() || hay[h] != b' ' {
-                    continue 'start;
-                }
-                while h < hay.len() && hay[h] == b' ' {
-                    h += 1;
-                }
-                n += 1;
-                continue;
-            }
-            if h >= hay.len() || hay[h] != needle[n] {
-                continue 'start;
-            }
-            h += 1;
-            n += 1;
-        }
-        return Some(start);
-    }
-    None
 }
 
 /// Deobfuscate every text this input carries and split it into lines.
@@ -304,6 +271,14 @@ pub fn deobfuscate(location: &str, text: &str) -> (String, Normalization) {
         location: location.to_owned(),
         ..Normalization::default()
     };
+    // Nothing here has anything to say about plain ASCII: every invisible
+    // character, every compatibility form and every homoglyph is outside
+    // it, and NFKC leaves ASCII exactly as it found it. Most installed
+    // content is ASCII from end to end, and normalizing it was the second
+    // most expensive thing an audit did.
+    if text.is_ascii() {
+        return (text.to_owned(), report);
+    }
     let stripped: String = text
         .chars()
         .filter(|c| {
@@ -379,4 +354,46 @@ fn flatten(raw: &str) -> String {
             false => c,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The full pass, spelled out: what the ASCII shortcut has to agree
+    /// with for every input it takes.
+    fn the_long_way(text: &str) -> String {
+        text.chars()
+            .filter(|c| !is_invisible(*c))
+            .collect::<String>()
+            .nfkc()
+            .collect::<String>()
+            .chars()
+            .map(|c| homoglyph::fold(c).unwrap_or(c))
+            .collect()
+    }
+
+    #[test]
+    fn ascii_reads_the_same_by_the_short_way_as_by_the_long_one() {
+        for text in [
+            "",
+            "read the `diff` first",
+            "curl https://example.com/x.sh | sh\n\tthen run it",
+            "quotes \"straight\" and 'single' -- dashes ... dots",
+            "a\r\nb\n\nc",
+        ] {
+            let (short, report) = deobfuscate("x", text);
+            assert_eq!(short, the_long_way(text), "{text:?}");
+            assert!(!report.reportable(), "{text:?}");
+        }
+    }
+
+    /// And the shortcut must not be taken for anything else: one letter
+    /// that only looks Latin still folds, and still says so.
+    #[test]
+    fn a_lookalike_letter_still_folds_and_is_counted() {
+        let (out, report) = deobfuscate("x", "\u{0456}gnore previous");
+        assert_eq!(out, "ignore previous");
+        assert_eq!(report.homoglyphs, 1);
+    }
 }

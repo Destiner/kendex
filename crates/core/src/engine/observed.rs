@@ -46,21 +46,19 @@ pub fn observed_rows(env: &Env, scope: &Scope) -> Result<Vec<ItemSafety>> {
         crate::lock::LockFile::Current(lock) => lock,
         _ => crate::lock::Lock::default(),
     };
-    let mut cache = crate::quality::observe::AuditCache::default();
-    Ok(scan
+    // Content a tool ships itself is that tool's to answer for: the reader
+    // never chose it and cannot change it, so an audit that asks them to
+    // rule on it is asking a question with no answer.
+    let items: Vec<&crate::model::ObservedItem> = scan
         .items
         .iter()
-        // Content a tool ships itself is that tool's to answer for: the
-        // reader never chose it and cannot change it, so an audit that asks
-        // them to rule on it is asking a question with no answer.
         .filter(|item| item.vendor.is_none())
-        .map(|item| {
-            let scored = crate::quality::observe::audit_observed(
-                &mut cache,
-                item,
-                gate::content_hash,
-                super::review_hash::observed,
-            );
+        .collect();
+    let scored = score_each(&items);
+    Ok(items
+        .into_iter()
+        .zip(scored)
+        .map(|(item, scored)| {
             let result = scored.result;
             let (verdict, reasons) =
                 crate::quality::verdict(&result.findings, &result.safety, settings.safety);
@@ -115,4 +113,28 @@ pub fn observed_rows(env: &Env, scope: &Scope) -> Result<Vec<ItemSafety>> {
             }
         })
         .collect())
+}
+
+/// Every observation's score, one reading per distinct set of bytes, spread
+/// over the machine's cores.
+///
+/// Scoring is the slowest thing an audit does and the readings share
+/// nothing, so they run side by side; `crate::parallel::map` hands them back
+/// in the order they were given, which is the order the rows are built in.
+fn score_each(items: &[&crate::model::ObservedItem]) -> Vec<crate::quality::observe::Scored> {
+    use crate::quality::observe::same_reading;
+    let mut first = std::collections::HashMap::new();
+    let mut distinct: Vec<&crate::model::ObservedItem> = Vec::new();
+    let mut reading: Vec<usize> = Vec::with_capacity(items.len());
+    for item in items {
+        let at = *first.entry(same_reading(item)).or_insert_with(|| {
+            distinct.push(item);
+            distinct.len() - 1
+        });
+        reading.push(at);
+    }
+    let scored = crate::parallel::map(&distinct, |item| {
+        crate::quality::observe::score(item, gate::content_hash, super::review_hash::observed)
+    });
+    reading.into_iter().map(|at| scored[at].clone()).collect()
 }
