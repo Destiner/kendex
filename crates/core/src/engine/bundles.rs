@@ -237,7 +237,7 @@ fn disagreement(
             held.by
         ),
         remediation: Some(format!(
-            "declare the {} {name} in vstack.toml to say how it should install",
+            "declare the {} {name} in kendex.toml to say how it should install",
             kind.name()
         )),
     })

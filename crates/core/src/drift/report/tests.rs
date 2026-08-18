@@ -163,15 +163,15 @@ fn each_classification_lands_in_its_section_with_its_remedy() {
     let text = render_plain(&report);
     assert!(text.contains("stale:"), "{text}");
     assert!(
-        text.contains("'stale-one' has a newer version on its source — fix: vstack refresh"),
+        text.contains("'stale-one' has a newer version on its source — fix: kendex refresh"),
         "{text}"
     );
     assert!(
-        text.contains("'edited-one'") && text.contains("fix: vstack fork skill edited-one"),
+        text.contains("'edited-one'") && text.contains("fix: kendex fork skill edited-one"),
         "{text}"
     );
     assert!(
-        text.contains("'gone-one'") && text.contains("fix: vstack remove gone-one"),
+        text.contains("'gone-one'") && text.contains("fix: kendex remove gone-one"),
         "{text}"
     );
     assert!(
@@ -287,7 +287,7 @@ fn missing_skill_reference_stays_a_failure() {
     assert_eq!(report.status, CheckStatus::Drift);
     let text = render_plain(&report);
     assert!(
-        text.contains("references skill 'ghost'") && text.contains("vstack add --skill ghost"),
+        text.contains("references skill 'ghost'") && text.contains("kendex add --skill ghost"),
         "{text}"
     );
 }
@@ -368,7 +368,7 @@ fn open_findings_and_held_back_render_with_the_findings_remedy() {
     let text = render_plain(&report);
     assert!(
         text.contains("1 install(s) held back, 3 finding(s) awaiting review")
-            && text.contains("fix: vstack findings"),
+            && text.contains("fix: kendex findings"),
         "{text}"
     );
 }

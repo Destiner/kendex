@@ -7,7 +7,7 @@ export function HarnessesPage() {
     <div>
       <PageHeader
         title="Harnesses"
-        subtitle="The AI coding tools vstack writes to on this machine"
+        subtitle="The AI coding tools kendex writes to on this machine"
       />
       <HarnessList />
     </div>

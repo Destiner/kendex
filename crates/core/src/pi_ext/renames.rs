@@ -1,4 +1,4 @@
-//! Package renames shipped by vstack's catalog, and the cross-scope guard
+//! Package renames shipped by kendex's catalog, and the cross-scope guard
 //! built on them. Pi loads the global and project scopes together and
 //! de-duplicates packages by identity, not by the resources they register —
 //! the same package under two names or at two scopes registers twice and

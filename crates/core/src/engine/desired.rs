@@ -93,7 +93,7 @@ pub struct DesiredState {
     /// the merge changed something and must be written back.
     pub manifest_update: Option<Manifest>,
     /// `[env]` defaults shipped by enabled skills
-    /// (vstack.settings.toml.example), every declaration in order — each
+    /// (kendex.settings.toml.example), every declaration in order — each
     /// with the skill that ships it. Seeding writes the first declaration
     /// of a key; a refresh listens to the key's recorded owner.
     pub settings_env: Vec<crate::settings_seed::SeededEnv>,

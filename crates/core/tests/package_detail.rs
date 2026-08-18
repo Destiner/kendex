@@ -163,7 +163,7 @@ fn the_exact_readme_wins_over_case_variants() {
     assert_eq!(readme.content, "# The readme\n");
 }
 
-/// A skill vstack never declared — dropped straight onto disk the way a
+/// A skill kendex never declared — dropped straight onto disk the way a
 /// harness's own installer, or a hand-edit, would leave it — still has to
 /// preview: the manifest has nothing to say about it, but the files are
 /// real.

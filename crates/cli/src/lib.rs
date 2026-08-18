@@ -116,7 +116,7 @@ enum Command {
         #[arg(long)]
         scope: Option<String>,
     },
-    /// Register, list, and discover vstack-enabled projects
+    /// Register, list, and discover kendex-enabled projects
     #[command(subcommand)]
     Project(ProjectCommand),
     /// List everything observed on this machine

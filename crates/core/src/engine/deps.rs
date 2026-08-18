@@ -181,7 +181,7 @@ fn wanted_by(
         found.push(warn(
             parent,
             format!("{name} was chosen as an optional dependency, and {parent} does not offer one by that name"),
-            format!("remove {name} from optional-dependencies.{parent} in vstack.toml"),
+            format!("remove {name} from optional-dependencies.{parent} in kendex.toml"),
         ));
     }
     let mut wanted = Vec::new();

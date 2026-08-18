@@ -20,7 +20,7 @@ import {
 import { scopeLabel } from "@/lib/derive";
 import { scopeName } from "@/lib/labels";
 
-/** The one form for pointing vstack at a new catalog, wherever it's opened from. */
+/** The one form for pointing kendex at a new catalog, wherever it's opened from. */
 export function AddCatalogDialog({
   open,
   onOpenChange,

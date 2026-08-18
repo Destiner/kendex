@@ -162,7 +162,7 @@ pub(super) fn hold_local_edit(
     };
     let detail = match (cause, &entry.rendered_hash) {
         (DriftCause::Both, None) => {
-            "changed upstream and on disk — vstack cannot tell your edits from the update; keep it as a fork or apply with edits discarded"
+            "changed upstream and on disk — kendex cannot tell your edits from the update; keep it as a fork or apply with edits discarded"
         }
         (DriftCause::Both, _) => {
             "edited on disk and changed upstream — keep your edits as a fork, or apply with edits discarded"

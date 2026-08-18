@@ -31,7 +31,7 @@ impl HarnessAdapter for Pi {
                 dir: root.join("skills"),
                 marker: "SKILL.md",
             }],
-            // Hooks ride the pi-hooks carrier: the registry vstack renders
+            // Hooks ride the pi-hooks carrier: the registry kendex renders
             // is what the carrier's listeners execute. pi has no MCP.
             ItemKind::Hook => vec![Surface::Structured {
                 path: root.join("hooks.json"),

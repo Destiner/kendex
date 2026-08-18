@@ -113,7 +113,7 @@ export function OverviewPage() {
         unmanagedCount === 1
           ? "1 unmanaged item"
           : `${unmanagedCount} unmanaged items`,
-      detail: "vstack didn't put them there.",
+      detail: "kendex didn't put them there.",
       action: { label: "Review", onClick: () => goTo("unmanaged") },
     });
   }

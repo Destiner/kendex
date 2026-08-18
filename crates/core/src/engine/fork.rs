@@ -116,7 +116,7 @@ pub fn fork(
 
     let manifest_path = manifest::manifest_path(env, scope);
     ops.push(PlannedOp {
-        description: format!("record the fork of {name} in vstack.toml"),
+        description: format!("record the fork of {name} in kendex.toml"),
         op: Op::WriteManifest {
             pre: Pre::observed(&manifest_path)?,
             path: manifest_path,
@@ -268,7 +268,7 @@ pub fn rename_fork(env: &Env, scope: &Scope, kind: ItemKind, old: &str, new: &st
     manifest.rename_decisions(kind, old, new);
     let manifest_path = manifest::manifest_path(env, scope);
     ops.push(PlannedOp {
-        description: format!("record the rename to {new} in vstack.toml"),
+        description: format!("record the rename to {new} in kendex.toml"),
         op: Op::WriteManifest {
             pre: Pre::observed(&manifest_path)?,
             path: manifest_path,
@@ -305,7 +305,7 @@ pub(crate) fn skill_content_path(
                 } else {
                     dir.join(target)
                 };
-                // Only a link into a location vstack itself manages is
+                // Only a link into a location kendex itself manages is
                 // followed — the shared canonical tree or this tool's
                 // variant. A foreign link the user pointed elsewhere is
                 // not this skill's content, and reading (then trashing) it
@@ -322,7 +322,7 @@ pub(crate) fn skill_content_path(
     canonical.is_dir().then_some(canonical)
 }
 
-/// Whether `path` is a skill tree vstack manages for `name`: the shared
+/// Whether `path` is a skill tree kendex manages for `name`: the shared
 /// canonical tree, or a per-tool variant under the rendered-variants
 /// directory. Compared canonically so a `..`-laden link cannot dress a
 /// foreign directory up as a managed one.

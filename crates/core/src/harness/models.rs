@@ -53,7 +53,7 @@ pub fn resolve_model(harness: HarnessId, model: &str) -> ResolvedModel {
             (HarnessId::Gemini, "fable" | "opus") => resolved(Some("gemini-3-pro-preview")),
             (HarnessId::Gemini, _) => resolved(Some("gemini-3-flash-preview")),
             // Copilot's model list moves monthly and is gated by plan, org
-            // policy, and a per-repo allowlist, so vstack pins nothing and
+            // policy, and a per-repo allowlist, so kendex pins nothing and
             // lets Copilot choose (matrix §4, §D12).
             (HarnessId::Copilot, _) => resolved(Some("auto")),
         };

@@ -82,7 +82,7 @@ fn staged_path(current: &std::path::Path) -> PathBuf {
     let mut name = current
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "vstack".to_owned());
+        .unwrap_or_else(|| "kendex".to_owned());
     name.push_str(".update");
     current.with_file_name(name)
 }

@@ -58,7 +58,7 @@ pub(super) fn hook(
     if registered.matcher_as_authored {
         state.warnings.push(named(
             format!(
-                "Copilot matches `{}` against its own tool names, and this matcher carries syntax vstack cannot restate in them — it installs as written and may never match",
+                "Copilot matches `{}` against its own tool names, and this matcher carries syntax kendex cannot restate in them — it installs as written and may never match",
                 hook.matcher.as_deref().unwrap_or_default()
             ),
             Some(
@@ -84,7 +84,7 @@ pub(super) fn hook(
 
 /// A skill or server this project declares on that Copilot's own settings
 /// hold down. A repository file may add a name to `disabledSkills` or
-/// `disabledMcpServers` but can never take one off, so vstack does not write
+/// `disabledMcpServers` but can never take one off, so kendex does not write
 /// a project-scope switch that Copilot would ignore — it says so instead
 /// (matrix §R7).
 pub(super) fn switched_off_elsewhere(ctx: &ItemCtx, kind: ItemKind, state: &mut DesiredState) {

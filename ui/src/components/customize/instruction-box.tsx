@@ -3,7 +3,7 @@ import { SHARED_ALSO_APPLIES, SHARED_VIEW } from "@/lib/copy-customize";
 import { useNavStore } from "@/stores/nav";
 
 /**
- * One block of instructions vstack writes alongside what the author wrote.
+ * One block of instructions kendex writes alongside what the author wrote.
  * When the same table has a shared row, this says so and offers the way to
  * it — text arriving from somewhere you cannot see is the confusing part,
  * not the text itself.

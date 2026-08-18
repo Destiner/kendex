@@ -51,7 +51,7 @@ function dismissed(
 describe("describeDecision", () => {
   it("says what was decided, when, and whose file it lives in", () => {
     expect(describeDecision(accepted(), NOW)).toBe(
-      "Accepted 3 findings · 2d ago · in acme's vstack.toml, shared",
+      "Accepted 3 findings · 2d ago · in acme's kendex.toml, shared",
     );
     expect(describeDecision(dismissed(), NOW)).toBe(
       "Ignored — not actually a problem · 1d ago · yours, on this machine",

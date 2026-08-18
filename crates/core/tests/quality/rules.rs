@@ -222,7 +222,7 @@ fn safety_bypass_separates_a_switch_that_disables_a_check_from_prose_about_one()
     assert_eq!(severity_of(&prose, "safety-bypass"), Some(Severity::High));
 }
 
-/// Flags that ordinary tools carry say nothing on their own. The vstack
+/// Flags that ordinary tools carry say nothing on their own. The kendex
 /// `github` skill uses `--force` forty-two times, every one of them about
 /// its own documented override, and `--yes` is in every non-interactive
 /// install line there is.

@@ -284,7 +284,7 @@ fn an_unreadable_source_item_never_orphans_its_installation() {
     declare(&w, &scope, "[agents.rust]\nsource = \"cat\"\n");
     apply_now(&w, &scope);
 
-    // Someone breaks the source file: vstack knows nothing about what the
+    // Someone breaks the source file: kendex knows nothing about what the
     // declaration wants now, which is not the same as wanting nothing.
     put(&w.source.join("agents/rust.md"), "no frontmatter here\n");
     let report = plan_scope(
@@ -321,7 +321,7 @@ fn a_disabled_declaration_still_conflicts_with_an_unmanaged_enabled_file() {
     assert!(has(&report, "rust", DriftState::Conflict));
     apply::execute(&w.env, &report.plan, None).unwrap();
 
-    // The harness keeps loading the handmade file, so vstack may not report
+    // The harness keeps loading the handmade file, so kendex may not report
     // the agent as cleanly disabled beside it.
     assert_eq!(fs::read_to_string(&handmade).unwrap(), "mine");
     assert!(

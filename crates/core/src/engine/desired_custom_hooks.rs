@@ -73,7 +73,7 @@ pub(super) fn desired_custom_hooks(
                 enabled: hook.enabled,
                 method: Method::Copy,
                 source_name: "custom".to_owned(),
-                provenance: "vstack.toml [[custom-hooks]]".to_owned(),
+                provenance: "kendex.toml [[custom-hooks]]".to_owned(),
                 source_commit: None,
                 recorded_fork: false,
                 hash: hash_bytes(

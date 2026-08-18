@@ -1,4 +1,4 @@
-//! A fresh manifest points at the tools on this machine vstack can actually
+//! A fresh manifest points at the tools on this machine kendex can actually
 //! write to. A tool it can only read is still found and reported — it just
 //! never becomes a target whose every install would silently do nothing.
 #![cfg(unix)]
@@ -32,7 +32,7 @@ fn a_fresh_manifest_targets_the_tools_it_can_write_to() {
         [HarnessId::Claude, HarnessId::Gemini, HarnessId::Copilot]
     );
 
-    // Copilot is a full install target now that vstack writes its agents,
+    // Copilot is a full install target now that kendex writes its agents,
     // skills, hooks and servers — the seed follows the capability table
     // rather than a list of its own.
     let manifest = ops::manifest_for_mutation(&env, &Scope::Global).unwrap();

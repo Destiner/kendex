@@ -72,7 +72,7 @@ pub fn dismiss(
         }
         let source = match reason {
             DismissReason::TrustedSource => Some(row.provenance.clone().ok_or_else(|| {
-                stale(token, "vstack did not install it from a source it resolved, so there is no source to trust")
+                stale(token, "kendex did not install it from a source it resolved, so there is no source to trust")
             })?),
             _ => None,
         };

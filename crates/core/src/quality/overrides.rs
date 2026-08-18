@@ -81,7 +81,7 @@ pub fn mint(
 /// does. Every decision binds the same two things, so every decision goes
 /// stale the same way. Bytes nobody can read cannot be the bytes somebody
 /// reviewed: a record with nothing to compare itself against never applies,
-/// the same rule that reports an artifact vstack cannot compare as
+/// the same rule that reports an artifact kendex cannot compare as
 /// uncompared rather than as passing.
 pub fn snapshot_stale(
     recorded_hash: &str,

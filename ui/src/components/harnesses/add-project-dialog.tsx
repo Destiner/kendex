@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { ADD_PROJECT_HELP } from "@/lib/copy";
 
-/** Point vstack at one folder. */
+/** Point kendex at one folder. */
 export function AddProjectDialog({
   open,
   onOpenChange,

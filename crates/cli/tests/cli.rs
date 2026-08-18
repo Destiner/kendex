@@ -7,7 +7,7 @@ use std::process::{Command, Output};
 // Integration-test helpers sit outside #[test] fns, so clippy's
 // allow-unwrap-in-tests does not reach them.
 #[allow(clippy::expect_used)]
-fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
+fn kendex(home: &Path, cwd: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_kendex"))
         .args(args)
         .current_dir(cwd)
@@ -15,7 +15,7 @@ fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
         .env("HOME", home)
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .output()
-        .expect("vstack binary runs")
+        .expect("kendex binary runs")
 }
 
 #[allow(clippy::unwrap_used)]
@@ -38,18 +38,18 @@ fn list_sees_global_and_current_project_scopes() {
     let tmp = fixture_home();
     let home = tmp.path();
 
-    let output = vstack(home, &home.join("dev/app"), &["list"]);
+    let output = kendex(home, &home.join("dev/app"), &["list"]);
     assert!(output.status.success());
     let table = String::from_utf8_lossy(&output.stderr);
     assert!(table.contains("orch"), "global agent missing: {table}");
     assert!(table.contains("deploy"), "project skill missing: {table}");
 
-    let output = vstack(home, &home.join("dev/app"), &["ls", "--scope", "project"]);
+    let output = kendex(home, &home.join("dev/app"), &["ls", "--scope", "project"]);
     let table = String::from_utf8_lossy(&output.stderr);
     assert!(!table.contains("orch"));
     assert!(table.contains("deploy"));
 
-    let output = vstack(
+    let output = kendex(
         home,
         &home.join("dev/app"),
         &["list", "-g", "--harness", "claude-code"],
@@ -63,7 +63,7 @@ fn list_sees_global_and_current_project_scopes() {
 fn scope_project_outside_a_project_is_an_error() {
     let tmp = fixture_home();
     let home = tmp.path();
-    let output = vstack(home, home, &["list", "--scope", "project"]);
+    let output = kendex(home, home, &["list", "--scope", "project"]);
     assert!(!output.status.success());
 }
 
@@ -71,7 +71,7 @@ fn scope_project_outside_a_project_is_an_error() {
 fn check_is_clean_and_quiet_on_a_scope_with_no_drift() {
     let tmp = fixture_home();
     let home = tmp.path();
-    let output = vstack(home, &home.join("dev/app"), &["check"]);
+    let output = kendex(home, &home.join("dev/app"), &["check"]);
     assert!(output.status.success());
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("all clear"),
@@ -80,12 +80,12 @@ fn check_is_clean_and_quiet_on_a_scope_with_no_drift() {
     );
 
     // The hook's mode: silence when clean, on both streams.
-    let quiet = vstack(home, &home.join("dev/app"), &["check", "--quiet"]);
+    let quiet = kendex(home, &home.join("dev/app"), &["check", "--quiet"]);
     assert!(quiet.status.success());
     assert_eq!(String::from_utf8_lossy(&quiet.stdout).trim(), "");
     assert_eq!(String::from_utf8_lossy(&quiet.stderr).trim(), "");
 
-    let json = vstack(home, &home.join("dev/app"), &["check", "--json"]);
+    let json = kendex(home, &home.join("dev/app"), &["check", "--json"]);
     assert!(json.status.success());
     let parsed: serde_json::Value =
         serde_json::from_slice(&json.stdout).expect("check --json is valid JSON");
@@ -97,18 +97,18 @@ fn project_registry_round_trips() {
     let tmp = fixture_home();
     let home = tmp.path();
 
-    let add = vstack(home, home, &["project", "add", "dev/app"]);
+    let add = kendex(home, home, &["project", "add", "dev/app"]);
     assert!(add.status.success());
 
-    let list = vstack(home, home, &["project", "list"]);
+    let list = kendex(home, home, &["project", "list"]);
     assert!(String::from_utf8_lossy(&list.stdout).contains("dev/app"));
 
-    let discover = vstack(home, home, &["project", "discover", "dev"]);
+    let discover = kendex(home, home, &["project", "discover", "dev"]);
     assert!(String::from_utf8_lossy(&discover.stdout).contains("dev/app"));
 
-    let remove = vstack(home, home, &["project", "remove", "dev/app"]);
+    let remove = kendex(home, home, &["project", "remove", "dev/app"]);
     assert!(remove.status.success());
-    let list = vstack(home, home, &["project", "list"]);
+    let list = kendex(home, home, &["project", "list"]);
     assert_eq!(String::from_utf8_lossy(&list.stdout).trim(), "");
 }
 
@@ -147,8 +147,8 @@ fn verify_names_an_installation_that_cannot_act() {
     )
     .unwrap();
 
-    assert!(vstack(home, &project, &["apply", "-y"]).status.success());
-    let output = vstack(home, &project, &["verify"]);
+    assert!(kendex(home, &project, &["apply", "-y"]).status.success());
+    let output = kendex(home, &project, &["verify"]);
     assert!(output.status.success());
     let printed = String::from_utf8_lossy(&output.stderr);
     assert!(printed.contains("✓ hook audit [copilot]"), "{printed}");

@@ -26,7 +26,7 @@ const ITEM_TABLES: &[&str] = &[
 /// a directory on disk that nothing knows to remove.
 const NAMESPACED_TABLES: &[&str] = &["agents", "commands", "skills"];
 
-/// The tools whose plugin switch vstack can write. Naming any other one
+/// The tools whose plugin switch kendex can write. Naming any other one
 /// asks for a write that has nowhere to land.
 fn plugin_harnesses() -> Vec<&'static str> {
     crate::model::HarnessId::ALL
@@ -150,7 +150,7 @@ fn validate_rev(
             location: location.to_owned(),
             problem: "an item's rev must be a full commit id".into(),
             fix: format!(
-                "run `vstack pin {} {name} <version>` to resolve a tag or branch to its commit",
+                "run `kendex pin {} {name} <version>` to resolve a tag or branch to its commit",
                 kind_table.strip_suffix('s').unwrap_or(kind_table)
             ),
         });
@@ -252,7 +252,7 @@ pub(super) fn validate_plugins(table: &Table, findings: &mut Vec<Finding>) {
         {
             findings.push(Finding {
                 location: format!("plugins.{key}.harness"),
-                problem: format!("{harness} has no plugin switch vstack can write"),
+                problem: format!("{harness} has no plugin switch kendex can write"),
                 fix: format!("set harness to one of: {}", plugin_harnesses().join(", ")),
             });
         }

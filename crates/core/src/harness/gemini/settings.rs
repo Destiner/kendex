@@ -1,4 +1,4 @@
-//! What Gemini's own configuration says about the surfaces vstack writes.
+//! What Gemini's own configuration says about the surfaces kendex writes.
 //! These are reads of the user's harness config, not of a catalog, so they
 //! go through `crate::fs` rather than the sealed source API.
 
@@ -41,7 +41,7 @@ const CATEGORIES: [&str; 25] = [
     "admin",
 ];
 
-/// Whether the installed CLI would read what vstack writes into this file.
+/// Whether the installed CLI would read what kendex writes into this file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shape {
     /// Nothing there yet — a write creates the file in the current schema.
@@ -66,7 +66,7 @@ impl Settings {
     /// `None` when they can.
     pub fn unmanageable(&self) -> Option<String> {
         (self.shape == Shape::Legacy).then(|| {
-            "its settings.json still holds the flat pre-v0.3.0 keys, so the installed Gemini CLI would not read what vstack writes".to_owned()
+            "its settings.json still holds the flat pre-v0.3.0 keys, so the installed Gemini CLI would not read what kendex writes".to_owned()
         })
     }
 }

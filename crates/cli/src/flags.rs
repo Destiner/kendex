@@ -1,5 +1,5 @@
 //! The two flag sets that are shared or long enough to crowd the verb
-//! list: `add`, which the bare `vstack <source>` form reuses flag for
+//! list: `add`, which the bare `kendex <source>` form reuses flag for
 //! flag, and `report`.
 
 use clap::Args;
@@ -104,7 +104,7 @@ pub struct ReportFlags {
     /// project | global (default project; all rejected)
     #[arg(long)]
     scope: Option<String>,
-    /// Upstream repo for vstack-owned issues
+    /// Upstream repo for kendex-owned issues
     #[arg(long)]
     upstream: Option<String>,
     /// Routing label: cli | skills | harness | review-gate | docs | tech-debt

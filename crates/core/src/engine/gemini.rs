@@ -23,7 +23,7 @@ fn settings(ctx: &ItemCtx) -> Settings {
 }
 
 /// The system settings layer outranks both the user's file and the
-/// project's, so a key it sets can leave what vstack writes inert. Only what
+/// project's, so a key it sets can leave what kendex writes inert. Only what
 /// is on disk is observable, so the wording says how things are configured
 /// and never claims what a run will do (matrix §R2).
 fn overridden(ctx: &ItemCtx, kind: ItemKind, key: &str) -> Option<ItemWarning> {
@@ -36,7 +36,7 @@ fn overridden_named(env: &Env, name: &str, kind: ItemKind, key: &str) -> Option<
         name: name.to_owned(),
         harness: Some(HarnessId::Gemini),
         message: format!(
-            "this machine's system-wide Gemini settings also set `{key}`, which outranks both your settings and this project — as configured, what vstack writes here can be overridden"
+            "this machine's system-wide Gemini settings also set `{key}`, which outranks both your settings and this project — as configured, what kendex writes here can be overridden"
         ),
         remediation: Some(format!(
             "ask whoever manages {} to make room for it, or install this at a scope that file leaves alone",
@@ -45,7 +45,7 @@ fn overridden_named(env: &Env, name: &str, kind: ItemKind, key: &str) -> Option<
     })
 }
 
-/// What the machine's own configuration says about an agent vstack is about
+/// What the machine's own configuration says about an agent kendex is about
 /// to write. An installation that cannot run must not read as one that can.
 pub(super) fn agent_notices(ctx: &ItemCtx, state: &mut DesiredState) {
     // Gemini's own default for this flag is on, so only an explicit `false`
@@ -99,7 +99,7 @@ pub(super) fn hook(
             name: name.to_owned(),
             harness: Some(HarnessId::Gemini),
             message: format!(
-                "Gemini matches `{}` against its own tool names, and this matcher carries syntax vstack cannot restate in them — it installs as written and may never match",
+                "Gemini matches `{}` against its own tool names, and this matcher carries syntax kendex cannot restate in them — it installs as written and may never match",
                 hook.matcher.as_deref().unwrap_or_default()
             ),
             remediation: Some(

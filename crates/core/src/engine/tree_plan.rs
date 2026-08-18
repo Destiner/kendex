@@ -95,7 +95,7 @@ fn collapsed_link(
     }
     if !locked && !owned.contains(canonical) {
         return Err(Planned::Conflict(format!(
-            "{} is a link vstack did not create",
+            "{} is a link kendex did not create",
             canonical.display()
         )));
     }
@@ -157,7 +157,7 @@ fn plan_link(
         let points_to = std::fs::read_link(link).unwrap_or_default();
         if points_to != canonical {
             return Ok(Planned::Conflict(format!(
-                "{} links somewhere vstack does not own ({})",
+                "{} links somewhere kendex does not own ({})",
                 link.display(),
                 points_to.display()
             )));

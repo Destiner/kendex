@@ -166,7 +166,7 @@ pub(super) fn gemini(name: &str, text: &str) -> Vec<Finding> {
     if !model.is_empty() && model != "inherit" && !model.starts_with("gemini-") {
         findings.push(Finding::advisory(
             format!("`model: {model}` is not a Gemini model id, so Gemini falls back to its own"),
-            "name a `gemini-*` model, or use a tier alias so vstack picks one",
+            "name a `gemini-*` model, or use a tier alias so kendex picks one",
         ));
     }
     findings

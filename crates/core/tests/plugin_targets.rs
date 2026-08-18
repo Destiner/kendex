@@ -74,7 +74,7 @@ fn a_copilot_plugin_lands_in_copilots_settings_and_nowhere_else() {
 }
 
 /// A declaration written before the harness was part of it belongs to Claude
-/// Code: the only tool whose plugin switch vstack ever wrote.
+/// Code: the only tool whose plugin switch kendex ever wrote.
 #[test]
 #[allow(clippy::unwrap_used)]
 fn a_declaration_with_no_harness_stays_claude_codes() {

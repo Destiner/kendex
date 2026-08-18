@@ -1,4 +1,4 @@
-//! The session-start drift hook: first-party content shipped inside vstack
+//! The session-start drift hook: first-party content shipped inside kendex
 //! itself, never fetched from a catalog — it injects into agent context,
 //! and its install must not depend on catalog availability. It is still a
 //! declared, user-approved install per scope: the plan writes the script
@@ -150,7 +150,7 @@ pub fn install_plan(env: &Env, scope: &Scope) -> Result<Plan> {
         );
         let path = crate::manifest::manifest_path(env, &scope);
         ops.push(PlannedOp {
-            description: "declare the drift hook in vstack.toml".into(),
+            description: "declare the drift hook in kendex.toml".into(),
             op: Op::WriteManifest {
                 pre: Pre::observed(&path)?,
                 path,

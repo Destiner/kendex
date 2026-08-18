@@ -162,7 +162,7 @@ fn set_ignored(
     kendex_core::package::updates::set_ignored(env, scope, kind, &name, &row.repo, ignored)?;
     match ignored {
         true => say(&format!(
-            "updates for {name} are muted — `vstack updates unignore` brings them back"
+            "updates for {name} are muted — `kendex updates unignore` brings them back"
         )),
         false => say(&format!("updates for {name} notify again")),
     }

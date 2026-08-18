@@ -48,7 +48,7 @@ function confirmCopy(row: RecordedDecision): { title: string; body: string } {
   if (row.record.kind === "accepted") {
     return {
       title: `Withdraw the acceptance of ${name}?`,
-      body: "The item is held back again. The next apply moves vstack's installed copy to the trash.",
+      body: "The item is held back again. The next apply moves kendex's installed copy to the trash.",
     };
   }
   return {

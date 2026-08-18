@@ -8,7 +8,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 #[allow(clippy::expect_used)]
-fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
+fn kendex(home: &Path, cwd: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_kendex"))
         .args(args)
         .current_dir(cwd)
@@ -16,7 +16,7 @@ fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
         .env("HOME", home)
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .output()
-        .expect("vstack binary runs")
+        .expect("kendex binary runs")
 }
 
 #[allow(clippy::unwrap_used)]
@@ -61,7 +61,7 @@ fn a_bundle_installs_whole_and_uninstalls_with_the_split_said_out_loud() {
     let catalog = catalog(home);
 
     // One flag declares the set, and `beta` is also asked for by name.
-    let output = vstack(
+    let output = kendex(
         home,
         &project,
         &[
@@ -91,7 +91,7 @@ fn a_bundle_installs_whole_and_uninstalls_with_the_split_said_out_loud() {
     assert!(manifest.contains("[skills.beta]"), "{manifest}");
 
     // Taking the set away says what goes and what stays, with the reason.
-    let output = vstack(home, &project, &["remove", "starter"]);
+    let output = kendex(home, &project, &["remove", "starter"]);
     assert!(
         output.status.success(),
         "remove failed: {}",
@@ -128,7 +128,7 @@ fn a_bundle_the_catalog_lacks_is_refused() {
     fs::create_dir_all(project.join(".claude")).unwrap();
     let catalog = catalog(home);
 
-    let output = vstack(
+    let output = kendex(
         home,
         &project,
         &[

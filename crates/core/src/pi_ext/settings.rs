@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use crate::error::{CoreError, Result};
 use crate::fs::{atomic_write, read_if_exists};
 
-/// The `packages` entry vstack writes. Pi resolves relative entries against
+/// The `packages` entry kendex writes. Pi resolves relative entries against
 /// the settings file's own directory, so one shape works in both scopes.
 fn entry_for(name: &str) -> String {
     format!("./packages/{name}")
@@ -138,7 +138,7 @@ pub(super) fn references_package(path: &Path, name: &str) -> Result<bool> {
         .is_some_and(|entries| entries.iter().any(|entry| refers_to(entry, name))))
 }
 
-/// The npm-sourced packages Pi loads in this scope — vstack does not own
+/// The npm-sourced packages Pi loads in this scope — kendex does not own
 /// these, `update-pi` only reports their versions.
 pub fn list_npm_entries(scope_root: &Path) -> Result<Vec<String>> {
     let path = super::settings_path(scope_root);

@@ -1,5 +1,5 @@
 //! A catalog's own configuration — `kendex.toml` (or the pre-rename
-//! `vstack.toml`) plus a Claude plugin registry where one exists — and the
+//! `kendex.toml`) plus a Claude plugin registry where one exists — and the
 //! item lookups that read it.
 
 use std::collections::BTreeMap;

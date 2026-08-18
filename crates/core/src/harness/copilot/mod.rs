@@ -13,7 +13,7 @@ pub struct Copilot;
 /// ([hooks reference](https://docs.github.com/en/copilot/reference/hooks-reference),
 /// accessed 2026-08-13; matrix §2, §D9). Copilot accepts a PascalCase
 /// spelling of each name too; the camelCase one is what its reference
-/// writes, so that is what vstack registers. An event with no counterpart
+/// writes, so that is what kendex registers. An event with no counterpart
 /// stays unmapped rather than hung on a near-miss — a safety hook on the
 /// wrong event is worse than one the user is told did not install.
 pub(crate) fn event(fleet: &str) -> Option<&'static str> {
@@ -206,7 +206,7 @@ mod tests {
         );
     }
 
-    /// Hook files come first: they are the ones vstack writes, and the dir
+    /// Hook files come first: they are the ones kendex writes, and the dir
     /// they live in is the one a hook target has to agree with.
     #[test]
     fn hooks_are_read_from_files_and_from_the_settings_they_can_also_live_in() {

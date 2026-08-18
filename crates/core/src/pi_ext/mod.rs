@@ -1,5 +1,5 @@
 //! Pi extensions are npm-shaped packages: a source ships
-//! `pi-extensions/<name>/`, vstack copies it into a scope's `packages/` dir,
+//! `pi-extensions/<name>/`, kendex copies it into a scope's `packages/` dir,
 //! resolves its production dependencies, links its `bin` entries, registers
 //! it in `settings.json`, and mirrors its `pi.appendSystem` file into the
 //! scope's `APPEND_SYSTEM.md`.
@@ -53,7 +53,7 @@ pub fn append_system_path(scope_root: &Path) -> PathBuf {
     scope_root.join("APPEND_SYSTEM.md")
 }
 
-/// The `package.json` fields vstack acts on.
+/// The `package.json` fields kendex acts on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PiPackage {
     pub name: String,
@@ -265,7 +265,7 @@ fn link_bins(
         } else if link.exists() {
             return Err(CoreError::PiPackage {
                 name: package.name.clone(),
-                message: format!("{} exists and is not a link vstack owns", link.display()),
+                message: format!("{} exists and is not a link kendex owns", link.display()),
             });
         }
         make_symlink(&target, &link)?;

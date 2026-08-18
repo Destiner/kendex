@@ -212,7 +212,7 @@ fn a_skill_tree_must_carry_a_skill_md_that_names_its_own_directory() {
 
     // An item that carries its plugin installs under a name no catalog file
     // knows and no declaration can spell, so the fix has to be about the
-    // file vstack rewrites — never about renaming what nobody controls.
+    // file kendex rewrites — never about renaming what nobody controls.
     let derived = validate_skill_tree(
         HarnessId::Claude,
         "data-science/eda",

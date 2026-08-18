@@ -1,5 +1,5 @@
-//! `vstack check --catalog` as a CI gate: it must fail on content that
-//! would not install, and it must pass on what `vstack init` writes.
+//! `kendex check --catalog` as a CI gate: it must fail on content that
+//! would not install, and it must pass on what `kendex init` writes.
 //! HarnessKit's equivalent always exited 0, which made it unusable for
 //! exactly this.
 #![cfg(unix)]
@@ -8,7 +8,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 #[allow(clippy::expect_used)]
-fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
+fn kendex(home: &Path, cwd: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_kendex"))
         .args(args)
         .current_dir(cwd)
@@ -16,7 +16,7 @@ fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
         .env("HOME", home)
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .output()
-        .expect("vstack binary runs")
+        .expect("kendex binary runs")
 }
 
 fn fixture() -> std::path::PathBuf {
@@ -29,7 +29,7 @@ fn a_seeded_bad_catalog_fails_the_check() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path();
     let catalog = fixture();
-    let output = vstack(
+    let output = kendex(
         home,
         home,
         &["check", "--catalog", catalog.to_str().unwrap()],
@@ -48,7 +48,7 @@ fn a_seeded_bad_catalog_fails_the_check() {
     assert!(said.contains("    fix: "), "{said}");
 }
 
-/// The scaffolding vstack writes must survive vstack's own gate. A starting
+/// The scaffolding kendex writes must survive kendex's own gate. A starting
 /// point that fails the check on its first run teaches people to ignore it.
 #[test]
 #[allow(clippy::unwrap_used)]
@@ -63,7 +63,7 @@ fn what_init_scaffolds_passes_the_check() {
         ("release-notes", "skill"),
         ("guard-bash", "hook"),
     ] {
-        let output = vstack(home, &catalog, &["init", name, "--kind", kind]);
+        let output = kendex(home, &catalog, &["init", name, "--kind", kind]);
         assert!(
             output.status.success(),
             "init {kind} failed: {}",
@@ -71,7 +71,7 @@ fn what_init_scaffolds_passes_the_check() {
         );
     }
 
-    let output = vstack(
+    let output = kendex(
         home,
         home,
         &["check", "--catalog", catalog.to_str().unwrap()],

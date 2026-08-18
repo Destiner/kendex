@@ -111,7 +111,7 @@ fn an_agent_installs_with_copilots_double_extension_and_toggles_by_rename() {
     let text = fs::read_to_string(&file).unwrap();
     assert!(text.starts_with("---\nname: rust\ndescription: \"Rust engineer\"\n"));
     // Which models a user can reach depends on their plan and their
-    // organization, so vstack pins none of them.
+    // organization, so kendex pins none of them.
     assert!(text.contains("model: auto\n"), "{text}");
     assert!(text.contains("Use the grep tool."), "{text}");
     assert!(is_clean(&f));
@@ -191,7 +191,7 @@ fn a_hook_registers_in_a_hook_file_of_its_own() {
     assert!(json(&registry).get("hooks").is_none());
 }
 
-/// What vstack writes is what vstack reads back: the hook file lands in the
+/// What kendex writes is what kendex reads back: the hook file lands in the
 /// directory Copilot globs, and the scan finds the entry inside it rather
 /// than the file it happens to be called.
 #[test]

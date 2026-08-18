@@ -62,7 +62,7 @@ pub struct PackageMeta {
 ///
 /// The manifest is loaded here rather than passed in: a project whose
 /// manifest is still v1, or any other manifest that fails to load, must not
-/// stop the preview for an item that vstack never touched — it falls
+/// stop the preview for an item that kendex never touched — it falls
 /// through to the on-disk installation exactly as an undeclared item does.
 fn effective_item(
     env: &Env,

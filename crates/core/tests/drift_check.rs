@@ -282,7 +282,7 @@ fn the_snapshot_carries_stale_and_holding_silences_it() {
     assert_eq!(checked.status, drift::report::CheckStatus::Drift);
     let text = drift::report::render_plain(&checked);
     assert!(text.contains("'gh' has a newer version"), "{text}");
-    assert!(text.contains("fix: vstack refresh"), "{text}");
+    assert!(text.contains("fix: kendex refresh"), "{text}");
 
     // Hold it: the same drift goes quiet, because a hold is a decision.
     declare(

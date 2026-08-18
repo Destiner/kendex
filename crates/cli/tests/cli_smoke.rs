@@ -1,11 +1,11 @@
-//! Round-trip against the real tools: stage the exact trees vstack emits,
+//! Round-trip against the real tools: stage the exact trees kendex emits,
 //! then let each harness's own CLI read them.
 //!
 //! Unit tests assert what our renderers produce. They cannot tell us that
 //! the far end accepts it — the three bugs wshobson recorded in
 //! `docs/round-trip-results.md` were all of that shape, and all of them
 //! passed unit tests. This is the only check in the suite where something
-//! other than vstack reads vstack's output.
+//! other than kendex reads kendex's output.
 //!
 //! Opt-in: set `KENDEX_CLI_SMOKE=1`. Without it the test does nothing and
 //! says so, because installing seven CLIs is not a precondition for
@@ -22,7 +22,7 @@ use std::process::{Command, Output};
 struct Probe {
     /// The binary as it is installed.
     bin: &'static str,
-    /// vstack's id for the same tool.
+    /// kendex's id for the same tool.
     harness: &'static str,
     args: &'static [&'static str],
     /// A string the output must contain — set where the CLI actually lists
@@ -102,7 +102,7 @@ fn installed(bin: &str) -> bool {
         .is_ok_and(|out| out.status.success())
 }
 
-/// A catalog with one item of every kind vstack renders, then a global
+/// A catalog with one item of every kind kendex renders, then a global
 /// install of all of it for every harness that can hold it.
 #[allow(clippy::unwrap_used)]
 fn stage(home: &Path) -> PathBuf {
@@ -136,9 +136,9 @@ fn stage(home: &Path) -> PathBuf {
     // Every harness by name rather than by detection: a fresh temporary
     // home has none of their marker directories, and this must stage the
     // same trees whether or not the machine happens to run these tools.
-    let vstack = env!("CARGO_BIN_EXE_kendex");
+    let kendex = env!("CARGO_BIN_EXE_kendex");
     let out = run(
-        vstack,
+        kendex,
         home,
         home,
         &[
@@ -162,7 +162,7 @@ fn stage(home: &Path) -> PathBuf {
 
 #[test]
 #[allow(clippy::unwrap_used)]
-fn every_harness_cli_reads_what_vstack_wrote() {
+fn every_harness_cli_reads_what_kendex_wrote() {
     if std::env::var("KENDEX_CLI_SMOKE").as_deref() != Ok("1") {
         note("not run — set KENDEX_CLI_SMOKE=1 with the harness CLIs installed");
         return;

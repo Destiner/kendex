@@ -65,7 +65,7 @@ impl ScopeCheck<'_> {
             if crate::drift::hook::script_current(self.env, self.scope, manifest) == Some(false) {
                 sections.stale.push(drift(
                     format!(
-                        "{prefix}the session drift hook script is from an older vstack — reinstall it with the drift-hook command, or fork it to keep your changes"
+                        "{prefix}the session drift hook script is from an older kendex — reinstall it with the drift-hook command, or fork it to keep your changes"
                     ),
                     None,
                 ));

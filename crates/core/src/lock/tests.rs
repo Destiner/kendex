@@ -107,7 +107,7 @@ fn unparseable_json_is_reported_as_corrupt() {
     assert!(matches!(load(&path), Err(CoreError::LockCorrupt { .. })));
 }
 
-/// A lock a future vstack wrote refuses to load rather than being
+/// A lock a future kendex wrote refuses to load rather than being
 /// silently misread or corrupted by an older build.
 #[test]
 fn a_newer_lock_refuses_to_load() {

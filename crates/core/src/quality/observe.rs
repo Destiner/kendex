@@ -138,7 +138,7 @@ fn read_hook(path: &Path) -> Content {
 ///
 /// The scan reaches this file to learn the server's *name*; reading it again
 /// for the command line is what lets the MCP rules run at all. Every layout
-/// vstack writes nests the servers under one key and each server under its
+/// kendex writes nests the servers under one key and each server under its
 /// own name, so the same walk covers JSON, JSONC and TOML. Where the entry
 /// cannot be found the input says so and the rules report themselves not
 /// applicable, which is the honest answer and never a pass.
@@ -151,7 +151,7 @@ fn read_mcp(path: &Path, name: &str) -> Content {
     }
 }
 
-/// The server entry itself, before anything reduces it. Every layout vstack
+/// The server entry itself, before anything reduces it. Every layout kendex
 /// writes nests the servers under one key and each server under its own
 /// name, so the same walk covers JSON, JSONC and TOML.
 pub fn mcp_entry(path: &Path, name: &str) -> Option<serde_json::Value> {
@@ -185,7 +185,7 @@ fn read_tree(root: &Path) -> Content {
 }
 
 /// Depth-first, budget-bounded, and never through a symlink: the canonical
-/// tree is the one vstack wrote, and following a link out of it would audit
+/// tree is the one kendex wrote, and following a link out of it would audit
 /// somebody else's files under this item's name.
 fn walk(root: &Path, dir: &Path, files: &mut Vec<TreeFile>, budget: &mut usize) {
     let Ok(entries) = std::fs::read_dir(dir) else {

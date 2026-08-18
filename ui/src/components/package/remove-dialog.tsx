@@ -27,7 +27,7 @@ export function RemoveDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={`Remove ${name}?`}
-      description="The files vstack manages will be moved to the trash, and it will stop being kept up to date."
+      description="The files kendex manages will be moved to the trash, and it will stop being kept up to date."
       confirmLabel="Remove"
       destructive
       busy={busy}

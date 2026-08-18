@@ -53,7 +53,7 @@ export function ReportDialog({
             <DialogTitle>Report a problem with {name}</DialogTitle>
             <DialogDescription>
               {route?.issueUrl
-                ? "This came from the vstack catalog, so the report goes to the catalog's issue tracker."
+                ? "This came from the kendex catalog, so the report goes to the catalog's issue tracker."
                 : "This item belongs to your own project, so report it wherever this project tracks its work."}
             </DialogDescription>
           </DialogHeader>

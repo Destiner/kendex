@@ -11,14 +11,14 @@ import { WITHDRAW_LABEL } from "@/lib/copy-safety";
 import { scopeName } from "@/lib/labels";
 import { relativeTime } from "@/lib/relative-time";
 
-/** Whose file a decision sits in. A project's vstack.toml is shared with
+/** Whose file a decision sits in. A project's kendex.toml is shared with
  *  everyone using the repository; the personal manifest is this machine's.
  *  Inheriting a teammate's decision is fine — inheriting it invisibly is
  *  not, so every row says which. */
 export function decisionHome(scope: Scope): string {
   return scope.scope === "global"
     ? "yours, on this machine"
-    : `in ${scopeName(scope)}'s vstack.toml, shared`;
+    : `in ${scopeName(scope)}'s kendex.toml, shared`;
 }
 
 export function decisionWhen(

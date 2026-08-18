@@ -82,8 +82,8 @@ export const CODEX_FINDINGS: Finding[] = [
     severity: "medium",
     location: `${CODEX_PLUGINS_PATH}/registry.json`,
     message:
-      "installed from a repository vstack never recorded, so there's no way to tell what changed since",
-    remediation: "reinstall it through vstack so the source is tracked",
+      "installed from a repository kendex never recorded, so there's no way to tell what changed since",
+    remediation: "reinstall it through kendex so the source is tracked",
   },
   {
     rule: "no-manifest",

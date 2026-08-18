@@ -12,7 +12,7 @@ export default defineConfig({
   },
   clearScreen: false,
   server: {
-    // A port of vstack's own. 5173 is Vite's default, so every other project
+    // A port of kendex's own. 5173 is Vite's default, so every other project
     // on the machine is already sitting on it — and Tauri points its window
     // at a fixed URL, so a silent fallback to the next free port shows a
     // blank window instead of the app.

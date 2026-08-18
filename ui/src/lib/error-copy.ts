@@ -6,24 +6,24 @@ import type { ProblemKind } from "@/stores/problems";
 // A v1 lock does not land here — it degrades with a note instead. This kind
 // means the lock or manifest is truly unreadable, not merely old.
 export const PROBLEM_HEADLINES: Record<ProblemKind, string> = {
-  "lock-corrupt": "A vstack file in this project can't be read",
-  "schema-too-new": "This project's vstack files come from a newer version",
-  "manifest-invalid": "This project's vstack.toml has a problem",
+  "lock-corrupt": "A kendex file in this project can't be read",
+  "schema-too-new": "This project's kendex files come from a newer version",
+  "manifest-invalid": "This project's kendex.toml has a problem",
   other: "Something went wrong in this project",
-  "scan-failure": "vstack couldn't scan this machine",
+  "scan-failure": "kendex couldn't scan this machine",
 };
 
 export const PROBLEM_STEPS: Record<ProblemKind, string[]> = {
   "lock-corrupt": [
     "Rescan to retry",
-    "If it keeps failing, the file may be from vstack v1 — reinstall its items through vstack",
+    "If it keeps failing, the file may be from vstack v1 — reinstall its items through kendex",
   ],
   "schema-too-new": [
-    "Update vstack to the latest version",
+    "Update kendex to the latest version",
     "Rescan once you're up to date",
   ],
   "manifest-invalid": [
-    "Open vstack.toml and check its syntax",
+    "Open kendex.toml and check its syntax",
     "Rescan once it's fixed",
   ],
   other: [
@@ -32,12 +32,12 @@ export const PROBLEM_STEPS: Record<ProblemKind, string[]> = {
   ],
   "scan-failure": [
     "Try scanning again",
-    "Check that vstack can still read your harness folders",
+    "Check that kendex can still read your harness folders",
   ],
 };
 
 export const PROBLEMS_SUBTITLE =
-  "Projects vstack couldn't fully check, and what to do about them";
+  "Projects kendex couldn't fully check, and what to do about them";
 export const PROBLEMS_EMPTY = "No problems right now.";
 
 export const problemsFooterLabel = (count: number): string =>

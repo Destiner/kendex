@@ -29,7 +29,7 @@ export const commands = {
 	 */
 	capabilityTable: () => __TAURI_INVOKE<CapabilityRow[]>("capability_table"),
 	/**
-	 *  Where a problem report about this item belongs: the vstack upstream
+	 *  Where a problem report about this item belongs: the kendex upstream
 	 *  (with a prefilled issue link) or the user's own repo.
 	 */
 	reportRoute: (scope: Scope, name: string, kind: "agent" | "skill" | "hook" | "command" | "mcp-server" | "plugin" | "pi-extension" | null) => typedError<ReportRouteView, string>(__TAURI_INVOKE("report_route", { scope, name, kind })),
@@ -668,8 +668,8 @@ export type EditorInventory = {
 };
 
 /**
- *  Whether the harness runs what vstack writes, or only reads it as prose.
- *  `managed` says vstack can write and track an artifact; it never said the
+ *  Whether the harness runs what kendex writes, or only reads it as prose.
+ *  `managed` says kendex can write and track an artifact; it never said the
  *  tool would act on it, and a safety hook must not read as protection on a
  *  tool that can merely suggest it.
  */
@@ -679,7 +679,7 @@ export type Enforcement =
 /**  Rendered as instructions the model is free to ignore. */
 "advisory" | 
 /**
- *  Nothing here executes: every kind but Hook, and the harnesses vstack
+ *  Nothing here executes: every kind but Hook, and the harnesses kendex
  *  declares no hook surface for.
  */
 "not-applicable";
@@ -993,8 +993,8 @@ export type ItemSafety_Deserialize = {
 	 */
 	reviewHash: string | null,
 	/**
-	 *  Where the bytes came from, as vstack itself resolved and recorded it.
-	 *  What a trusted-source dismissal binds to. `None` for anything vstack
+	 *  Where the bytes came from, as kendex itself resolved and recorded it.
+	 *  What a trusted-source dismissal binds to. `None` for anything kendex
 	 *  did not install — a remote url found near the files is not a source
 	 *  to trust by, since the files could have written it.
 	 */
@@ -1042,8 +1042,8 @@ export type ItemSafety_Serialize = {
 	 */
 	reviewHash: string | null,
 	/**
-	 *  Where the bytes came from, as vstack itself resolved and recorded it.
-	 *  What a trusted-source dismissal binds to. `None` for anything vstack
+	 *  Where the bytes came from, as kendex itself resolved and recorded it.
+	 *  What a trusted-source dismissal binds to. `None` for anything kendex
 	 *  did not install — a remote url found near the files is not a source
 	 *  to trust by, since the files could have written it.
 	 */
@@ -1371,7 +1371,7 @@ export type PackageMeta_Serialize = {
  *  which is a claim about software the user never installed there.
  * 
  *  A declaration written before the harness was part of it belongs to Claude
- *  Code — the only tool whose plugin switch vstack ever wrote — so that is
+ *  Code — the only tool whose plugin switch kendex ever wrote — so that is
  *  what an older manifest reads back as, and the next write records it.
  */
 export type PluginDecl = {
@@ -1441,7 +1441,7 @@ export type RecordedDecision_Serialize = {
 };
 
 export type ReportRouteView = {
-	vstackOwned: boolean,
+	kendexOwned: boolean,
 	repo: string | null,
 	label: string | null,
 	/**  Prefilled new-issue page — only when the report belongs upstream. */
@@ -1551,7 +1551,7 @@ export type ScopeErrorKind =
  *  shape — damaged, not merely old.
  */
 "lock-corrupt" | 
-/**  The manifest or lock was written by a newer vstack than this one. */
+/**  The manifest or lock was written by a newer kendex than this one. */
 "schema-too-new" | 
 /**  The manifest parses but fails validation. */
 "manifest-invalid" | "other";

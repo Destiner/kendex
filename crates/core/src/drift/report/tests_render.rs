@@ -67,7 +67,7 @@ fn report_budget_counts_its_truncation_line_and_never_cuts_a_line() {
     );
     // No line was cut mid-way: every remedy that rendered is complete.
     for line in &lines {
-        if line.contains("fix: vstack fork") {
+        if line.contains("fix: kendex fork") {
             assert!(
                 line.trim_end()
                     .ends_with(|c: char| c == 'x' || c.is_ascii_digit()),
@@ -88,7 +88,7 @@ fn an_unsafe_identifier_drops_the_remedy_not_the_line() {
         name: "gh".into(),
         global: true,
     };
-    assert_eq!(fine.render().as_deref(), Some("vstack remove gh --global"));
+    assert_eq!(fine.render().as_deref(), Some("kendex remove gh --global"));
     assert_eq!(
         Remedy::Add {
             kind: ItemKind::Skill,

@@ -32,7 +32,7 @@ export const SHARED_ALSO_APPLIES =
 export const SHARED_VIEW = "See them";
 export const SKILLS_SECTION = "Skills";
 export const SKILLS_AUTOMATIC =
-  "vstack picks these from the agent's tags. Add one and this agent keeps exactly what you choose.";
+  "kendex picks these from the agent's tags. Add one and this agent keeps exactly what you choose.";
 export const SKILLS_CHOSEN =
   "This agent gets exactly these. Remove them all to give it none.";
 export const SKILLS_NONE_AVAILABLE =

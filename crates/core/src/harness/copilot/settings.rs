@@ -1,4 +1,4 @@
-//! What Copilot's own configuration says about the surfaces vstack writes.
+//! What Copilot's own configuration says about the surfaces kendex writes.
 //! These are reads of the user's harness config, not of a catalog, so they
 //! go through `crate::fs` rather than the sealed source API.
 //!
@@ -14,10 +14,10 @@ use crate::env::Env;
 use crate::harness::HarnessAdapter;
 use crate::model::{ItemKind, Scope};
 
-/// Where a scope's own settings live — the file vstack writes plugin
+/// Where a scope's own settings live — the file kendex writes plugin
 /// toggles into. Only a fixed list of keys is honored in a repository file
 /// and the rest are ignored in silence, so `enabledPlugins` is the one key
-/// vstack ever writes there; everything else it manages for Copilot is a
+/// kendex ever writes there; everything else it manages for Copilot is a
 /// file of its own (matrix §2).
 pub fn settings_file(env: &Env, scope: &Scope) -> PathBuf {
     match scope {
@@ -123,14 +123,14 @@ fn names_in(path: &Path, key: &str) -> Vec<String> {
 
 /// Why this scope's settings-backed surfaces cannot be managed, or `None`
 /// when they can. A machine still holding the old `config.json` and no
-/// `settings.json` has never run a CLI that reads what vstack would write,
+/// `settings.json` has never run a CLI that reads what kendex would write,
 /// so the write is refused rather than left somewhere nothing loads it.
 pub fn unmanageable(env: &Env, scope: &Scope) -> Option<String> {
     let stale = matches!(scope, Scope::Global)
         && !user_settings_file(env).exists()
         && legacy_user_settings_file(env).exists();
     stale.then(|| {
-        "this machine still keeps Copilot's settings in the older config.json, so the installed CLI would not read what vstack writes".to_owned()
+        "this machine still keeps Copilot's settings in the older config.json, so the installed CLI would not read what kendex writes".to_owned()
     })
 }
 

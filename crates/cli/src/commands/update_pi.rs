@@ -30,7 +30,7 @@ enum Status {
     },
     /// Installed under `packages/`, but no declared source ships it.
     Unsourced,
-    /// An `npm:` entry in Pi's settings: Pi resolves these itself, so vstack
+    /// An `npm:` entry in Pi's settings: Pi resolves these itself, so kendex
     /// reports the version and leaves the package alone.
     Npm {
         latest: Option<String>,

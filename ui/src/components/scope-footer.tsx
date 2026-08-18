@@ -8,7 +8,7 @@ import { useNavStore } from "@/stores/nav";
 
 /**
  * The quiet end of a scope's card: what the check looked at and had nothing
- * to say about, notes about the scope itself, and the items vstack does not
+ * to say about, notes about the scope itself, and the items kendex does not
  * manage.
  *
  * These used to be three paragraphs of prose that wrapped for four lines

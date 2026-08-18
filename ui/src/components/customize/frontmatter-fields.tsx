@@ -10,7 +10,7 @@ import {
   parseList,
 } from "@/lib/editor-draft";
 
-// The manifest key is what a hand-written vstack.toml uses; the label is
+// The manifest key is what a hand-written kendex.toml uses; the label is
 // what a reader sees. A list field says what a list looks like in its
 // placeholder rather than in a parenthesis after its name.
 const TEXT_FIELDS = [

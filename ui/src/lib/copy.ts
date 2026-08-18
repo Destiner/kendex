@@ -20,14 +20,14 @@ export const ALL_IN_SYNC_BODY =
   "Changes from Customize or your catalogs show up here.";
 // Says what you get, not what the app calls the state you'd be leaving.
 export const UNMANAGED_SECTION_EXPLAINER =
-  "Hand one over and vstack keeps it updated, checked and copied to every harness.";
+  "Hand one over and kendex keeps it updated, checked and copied to every harness.";
 export const START_MANAGING_LABEL = "Start managing";
 // The apply flow, said as what will happen rather than as what the engine
 // calls it. "Orphan" is a word for whoever wrote the planner; the person
 // reading this wants to know something will be deleted and what it is.
 export const APPLY_DIALOG_TITLE = "Apply these changes?";
 export const APPLY_DIALOG_BODY =
-  "vstack will update the files it manages. Nothing else on your machine is touched.";
+  "kendex will update the files it manages. Nothing else on your machine is touched.";
 export const APPLY_CONFIRM_LABEL = "Apply changes";
 export const APPLY_BUTTON_LABEL = "Apply changes…";
 export const NOTHING_TO_DO_HERE = "Nothing to do here";
@@ -57,10 +57,10 @@ export function scopeSummaryLabel(counts: {
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 export const UNMANAGED_PAGE_SUBTITLE =
-  "On your machine, but vstack didn't put them there";
+  "On your machine, but kendex didn't put them there";
 export const ALL_MANAGED_TITLE = "Everything is managed";
 export const ALL_MANAGED_BODY =
-  "vstack looks after every skill, agent and hook it can see.";
+  "kendex looks after every skill, agent and hook it can see.";
 export const SEE_IN_LIBRARY_LABEL = "See them in the Library";
 // Where a harness keeps its files — only worth setting for one that was
 // moved somewhere other than its usual place.
@@ -69,13 +69,13 @@ export const SEE_IN_LIBRARY_LABEL = "See them in the Library";
 export const bundledWithLabel = (harness: HarnessId): string =>
   `Bundled with ${harnessName(harness)}`;
 export const vendorHelp = (vendor: string): string =>
-  `${vendor} ships and updates this with the harness. vstack lists it, but doesn't manage or check it.`;
+  `${vendor} ships and updates this with the harness. kendex lists it, but doesn't manage or check it.`;
 export const BROWSE_LABEL = "Choose a folder…";
 export const HARNESS_FOLDER_HELP = "Change where this harness keeps its files";
 export const harnessFolderTitle = (harness: string): string =>
   `Where does ${harness} keep its files?`;
 export const HARNESS_FOLDER_BODY =
-  "Only worth setting if you moved the harness. Leave it empty to let vstack find it.";
+  "Only worth setting if you moved the harness. Leave it empty to let kendex find it.";
 export const NOT_INSTALLED_LABEL = "Not installed";
 export const removeLeftBehindLabel = (count: number): string =>
   count === 1
@@ -93,7 +93,7 @@ export const RECENT_ACTIVITY_EMPTY = "Nothing on this machine has changed yet.";
 export const TAGS_ROW_LABEL = "For";
 
 export const ADD_PROJECT_HELP =
-  "Point vstack at a repository and it keeps that project's harnesses in sync too.";
+  "Point kendex at a repository and it keeps that project's harnesses in sync too.";
 export const SCAN_FOLDER_HELP =
   "Look inside a folder for repositories, then add the ones you want.";
 export const NO_PROJECTS_FOUND = "Nothing that looks like a project in there.";

@@ -12,7 +12,7 @@ use super::desired::{DesiredState, Refused};
 use super::expansion::Expansion;
 
 /// The installations two declarations both claim. Namespacing is what makes
-/// this reachable: `a/b` and a plain `a__b` are two names in `vstack.toml`
+/// this reachable: `a/b` and a plain `a__b` are two names in `kendex.toml`
 /// and one file on disk, as are two names a filesystem folds together.
 /// Neither is installed — writing one would hand its content to the other's
 /// name, and there is no way to tell which one the user meant.

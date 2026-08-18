@@ -8,7 +8,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 #[allow(clippy::expect_used)]
-fn vstack_in(home: &Path, cwd: &Path, args: &[&str]) -> Output {
+fn kendex_in(home: &Path, cwd: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_kendex"))
         .args(args)
         .current_dir(cwd)
@@ -16,7 +16,7 @@ fn vstack_in(home: &Path, cwd: &Path, args: &[&str]) -> Output {
         .env("HOME", home)
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .output()
-        .expect("vstack binary runs")
+        .expect("kendex binary runs")
 }
 
 #[allow(clippy::unwrap_used)]
@@ -40,7 +40,7 @@ fn a_malformed_v1_lock_refuses_instead_of_reading_as_absent() {
     fs::write(proj.join(".vstack-lock.json"), "{not json").unwrap();
 
     let before = fs::read_to_string(proj.join(".vstack-lock.json")).unwrap();
-    let output = vstack_in(home, &proj, &["import", "--scope", "project"]);
+    let output = kendex_in(home, &proj, &["import", "--scope", "project"]);
     assert!(!output.status.success(), "the import must refuse");
     let said = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -84,7 +84,7 @@ fn a_stale_v1_lock_never_reimports_over_a_live_v2_record() {
     let live_lock = r#"{"version":4,"entries":{"skill:current:claude":{"name":"current","kind":"skill","harness":"claude","source":"local","sourceRepo":"local","method":"symlink","installedAt":"t","sourceHash":"bb","enabled":true}}}"#;
     fs::write(v2_dir.join("lock.json"), live_lock).unwrap();
 
-    let output = vstack_in(home, &proj, &["import", "--scope", "global"]);
+    let output = kendex_in(home, &proj, &["import", "--scope", "global"]);
     assert!(!output.status.success(), "the import must refuse");
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("live v2 install record"),

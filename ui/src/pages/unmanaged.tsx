@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { useAuditStore } from "@/stores/audit";
 
 /**
- * Everything on this machine vstack didn't put there, on a page of its own.
+ * Everything on this machine kendex didn't put there, on a page of its own.
  *
  * The Library shows the same list above its table, folded, because there it
  * is a footnote to what is installed. Arriving here from Home the list *is*

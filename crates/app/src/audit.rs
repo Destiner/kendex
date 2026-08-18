@@ -18,7 +18,7 @@ pub enum ScopeErrorKind {
     /// The lock exists but isn't readable as JSON, or as this build's lock
     /// shape — damaged, not merely old.
     LockCorrupt,
-    /// The manifest or lock was written by a newer vstack than this one.
+    /// The manifest or lock was written by a newer kendex than this one.
     SchemaTooNew,
     /// The manifest parses but fails validation.
     ManifestInvalid,

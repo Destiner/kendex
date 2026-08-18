@@ -20,7 +20,7 @@ pub(super) fn desired_command(ctx: &ItemCtx, state: &mut DesiredState) -> Result
             Some(ItemKind::Skill) => as_skill(ctx, state, harness, &bytes)?,
             Some(kind) => {
                 state.notes.push(format!(
-                    "command {}: {} stores commands as {}s, which vstack cannot write",
+                    "command {}: {} stores commands as {}s, which kendex cannot write",
                     ctx.name,
                     harness.display_name(),
                     kind.name()

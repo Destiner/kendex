@@ -55,8 +55,8 @@ pub struct ItemSafety {
     /// is what a reviewer is accepting. `None` where the bytes cannot be
     /// reached from here at all.
     pub review_hash: Option<String>,
-    /// Where the bytes came from, as vstack itself resolved and recorded it.
-    /// What a trusted-source dismissal binds to. `None` for anything vstack
+    /// Where the bytes came from, as kendex itself resolved and recorded it.
+    /// What a trusted-source dismissal binds to. `None` for anything kendex
     /// did not install — a remote url found near the files is not a source
     /// to trust by, since the files could have written it.
     pub provenance: Option<String>,

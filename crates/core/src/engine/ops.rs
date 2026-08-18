@@ -29,7 +29,7 @@ const DECLARED_KINDS: [ItemKind; 6] = [
 ];
 
 /// The tools on this machine a fresh manifest should install to — a tool
-/// vstack can only read is detected and listed, never seeded as a target
+/// kendex can only read is detected and listed, never seeded as a target
 /// whose every install would silently do nothing.
 fn detected_harnesses(env: &Env) -> Vec<HarnessId> {
     crate::harness::all_adapters()

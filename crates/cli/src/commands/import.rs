@@ -35,7 +35,7 @@ pub fn run(env: &Env, filter: ScopeFilter) -> CliResult {
     if migrated == 0 && refusals.is_empty() {
         say("nothing to migrate");
     } else if migrated > 0 {
-        say("run `vstack refresh` to regenerate everything from sources");
+        say("run `kendex refresh` to regenerate everything from sources");
     }
     if !refusals.is_empty() {
         return Err(format!("{} scope(s) refused to migrate — see above", refusals.len()).into());

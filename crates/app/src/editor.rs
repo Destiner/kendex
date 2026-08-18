@@ -178,7 +178,7 @@ pub fn update_manifest(scope: Scope, manifest: Manifest) -> Result<AuditView, St
         report.plan.ops.insert(
             0,
             PlannedOp {
-                description: "Save vstack.toml".into(),
+                description: "Save kendex.toml".into(),
                 op: Op::WriteManifest {
                     pre: Pre::observed(&path).map_err(|e| e.to_string())?,
                     path: path.clone(),
@@ -201,7 +201,7 @@ pub fn editor_inventory(scope: Scope) -> Result<EditorInventory, String> {
         declared_agents: Vec::new(),
         declared_skills: Vec::new(),
         available_skills: Vec::new(),
-        // Per-harness settings are only offered for harnesses vstack
+        // Per-harness settings are only offered for harnesses kendex
         // writes to.
         harnesses: HarnessId::ALL
             .into_iter()

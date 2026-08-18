@@ -7,7 +7,7 @@
 
 /// Room for the separator a namespaced name expands to, the `.disabled`
 /// parking suffix, and Copilot's `.agent.md` — inside the 255-byte
-/// component limit every filesystem vstack installs to shares.
+/// component limit every filesystem kendex installs to shares.
 const MAX_SEGMENT: usize = 100;
 
 /// Names Windows keeps for devices. A file with one of these stems is not

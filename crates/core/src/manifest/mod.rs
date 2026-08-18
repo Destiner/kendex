@@ -142,7 +142,7 @@ pub struct FrontmatterOverrides {
 /// which is a claim about software the user never installed there.
 ///
 /// A declaration written before the harness was part of it belongs to Claude
-/// Code — the only tool whose plugin switch vstack ever wrote — so that is
+/// Code — the only tool whose plugin switch kendex ever wrote — so that is
 /// what an older manifest reads back as, and the next write records it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "kebab-case")]

@@ -118,7 +118,7 @@ mod tests {
     }
 
     /// Every tier lands on `auto` on purpose: which models a user can reach
-    /// depends on their plan and their organization, not on vstack.
+    /// depends on their plan and their organization, not on kendex.
     #[test]
     fn frontmatter_names_the_agent_and_leaves_the_model_to_copilot() {
         let source = engineer();

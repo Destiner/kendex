@@ -27,8 +27,8 @@ pub const NONE: OpSupport = OpSupport {
     global: false,
 };
 
-/// Whether the harness runs what vstack writes, or only reads it as prose.
-/// `managed` says vstack can write and track an artifact; it never said the
+/// Whether the harness runs what kendex writes, or only reads it as prose.
+/// `managed` says kendex can write and track an artifact; it never said the
 /// tool would act on it, and a safety hook must not read as protection on a
 /// tool that can merely suggest it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -38,7 +38,7 @@ pub enum Enforcement {
     Enforced,
     /// Rendered as instructions the model is free to ignore.
     Advisory,
-    /// Nothing here executes: every kind but Hook, and the harnesses vstack
+    /// Nothing here executes: every kind but Hook, and the harnesses kendex
     /// declares no hook surface for.
     NotApplicable,
 }
@@ -234,7 +234,7 @@ pub fn canonical_name(name: &str) -> String {
     name.replace('/', CANONICAL_SEPARATOR)
 }
 
-/// Whether any kind installs on this harness at any scope. A tool vstack
+/// Whether any kind installs on this harness at any scope. A tool kendex
 /// only reads is not an install target: naming it in a manifest or an
 /// editor picker promises writes that never happen.
 pub fn installable(harness: HarnessId) -> bool {
@@ -323,7 +323,7 @@ pub fn capabilities(harness: HarnessId, kind: ItemKind) -> KindCaps {
 
         (Pi, Agent | Skill) => managed(BOTH),
         // Enforced through the carrier: the pi-hooks extension hosts the
-        // native listeners and hook content rides in the registry vstack
+        // native listeners and hook content rides in the registry kendex
         // renders. The static row says what the mechanism supports; the
         // surfaces that label an installation read carrier reality through
         // `pi_ext::carrier::enforcement`, which downgrades to advisory
@@ -354,10 +354,10 @@ pub fn capabilities(harness: HarnessId, kind: ItemKind) -> KindCaps {
         (Gemini, Plugin) => observe_only(GLOBAL),
         (Gemini, PiExtension) => unsupported(),
 
-        // A skill or server switches by the rename and the entry vstack owns,
+        // A skill or server switches by the rename and the entry kendex owns,
         // both ways. Copilot's own `disabledSkills` list is a separate hold
         // a repository cannot lift, and the audit says so per item rather
-        // than the table claiming vstack's switch is one-way (matrix §R7).
+        // than the table claiming kendex's switch is one-way (matrix §R7).
         (Copilot, Agent | Skill | McpServer) => managed(BOTH),
         // No file-backed slash-command surface exists in any Copilot product
         // — prompt files are IDE-only (matrix §D8).

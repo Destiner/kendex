@@ -40,7 +40,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       useProblemsStore.getState().showError({
         title: "Couldn't load your settings",
         message: settings.error,
-        steps: ["Try again", "If it keeps happening, restart vstack"],
+        steps: ["Try again", "If it keeps happening, restart kendex"],
         actions: [{ label: "Retry", onClick: () => void get().load() }],
       });
     }
@@ -108,7 +108,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         title: "Couldn't update the tool folder",
         message: response.error,
         steps: [
-          "Check that the folder exists and vstack can read it",
+          "Check that the folder exists and kendex can read it",
           "Try again",
         ],
         actions: [
@@ -193,7 +193,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       message: response.error,
       steps: [
         "Check the folder path is correct",
-        "Make sure vstack can read it",
+        "Make sure kendex can read it",
       ],
     });
     return [];

@@ -26,7 +26,7 @@ export function ItemSkills({
   onChange,
 }: {
   agent: string;
-  /** null while vstack picks skills from the agent's tags. */
+  /** null while kendex picks skills from the agent's tags. */
   chosen: string[] | null;
   inventory: EditorInventory | null;
   onChange: (change: (draft: Draft) => Draft) => void;

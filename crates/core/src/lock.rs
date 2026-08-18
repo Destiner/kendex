@@ -30,7 +30,7 @@ pub struct Lock {
     /// lock costs the record, not the pin.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub sources: BTreeMap<String, SourceRev>,
-    /// Per `vstack.settings.toml` key: which skill seeded it and the hash
+    /// Per `kendex.settings.toml` key: which skill seeded it and the hash
     /// of the comment block seeding last wrote — the proof a later refresh
     /// needs before it may rewrite the comment to a newer template.
     /// Project-scope locks only.

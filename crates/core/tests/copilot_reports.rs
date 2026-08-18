@@ -1,4 +1,4 @@
-//! What vstack tells the user about a Copilot setup it cannot fully act on:
+//! What kendex tells the user about a Copilot setup it cannot fully act on:
 //! an event Copilot has no counterpart for, hooks switched off from another
 //! tool's settings file, a skill a personal setting holds down that no
 //! repository can lift, a model the repository will not run, and a machine

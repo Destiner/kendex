@@ -64,7 +64,7 @@ pub fn observed_rows(env: &Env, scope: &Scope) -> Result<Vec<ItemSafety>> {
                 crate::quality::verdict(&result.findings, &result.safety, settings.safety);
             let key = crate::lock::entry_key(item.kind, &item.name, item.harness);
             let root = item.path.display().to_string();
-            // Only the lock's word on where the bytes came from: what vstack
+            // Only the lock's word on where the bytes came from: what kendex
             // itself declared and resolved. The scanner's guess is a remote
             // url read out of a `.git/config` sitting inside the very
             // content being judged, which is not something to trust a

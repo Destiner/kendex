@@ -4,7 +4,7 @@
 //! An item's name carries the plugin it came from — `<plugin>/<item>` — so
 //! two plugins can each ship an `analyzer` without one hiding the other.
 //! The metadata here is read-side only: it feeds a browse view and the
-//! groups a plugin installs as. None of it belongs in `vstack.toml`, which
+//! groups a plugin installs as. None of it belongs in `kendex.toml`, which
 //! records what the user chose, not what a catalog says about itself.
 
 use std::path::PathBuf;
@@ -20,7 +20,7 @@ use super::plugin_registry::{CatalogFinding, PLUGIN_MANIFEST, PluginEntry, Regis
 
 /// The directory a plugin keeps this kind in, and the file that marks one
 /// item. Everything else a plugin may carry (hooks, servers) is left alone
-/// until vstack can install it from here.
+/// until kendex can install it from here.
 fn kind_dir(kind: ItemKind) -> Option<(&'static str, Option<&'static str>)> {
     match kind {
         ItemKind::Agent => Some(("agents", None)),

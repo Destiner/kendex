@@ -74,8 +74,8 @@ describe("stripFrontmatter", () => {
 
 describe("renderInlineMarkdown", () => {
   it("gives file names and commands their own treatment", () => {
-    const html = renderInlineMarkdown("Reads `vstack.toml` before it runs.");
-    expect(html).toContain("<code>vstack.toml</code>");
+    const html = renderInlineMarkdown("Reads `kendex.toml` before it runs.");
+    expect(html).toContain("<code>kendex.toml</code>");
   });
 
   it("stays on one line — block syntax is left as written", () => {

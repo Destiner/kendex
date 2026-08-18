@@ -203,7 +203,7 @@ fn rewriting_rewritten_text_changes_nothing() {
 }
 
 /// Hook matchers are regexes over each tool's own names. Every alternative
-/// vstack can restate it restates; a token carrying regex syntax around a
+/// kendex can restate it restates; a token carrying regex syntax around a
 /// name stays exactly as authored and is reported as such.
 #[test]
 fn a_hook_matcher_is_restated_alternative_by_alternative() {

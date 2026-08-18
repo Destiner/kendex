@@ -50,7 +50,7 @@ const scraperSafety = (): ItemSafety => ({
   override: { state: "absent" },
 });
 
-// vstack keeps the same skill directory symlinked for every harness that
+// kendex keeps the same skill directory symlinked for every harness that
 // declares it, so a skill installed for both Codex and Pi reads the exact
 // same bytes and trips the exact same findings on both — the case
 // groupBlocked exists to collapse into one entry instead of two verbatim

@@ -84,7 +84,7 @@ export function views(): AuditView[] {
       error: {
         kind: "lock-corrupt",
         message:
-          "/home/dana/work/api-server/.vstack-lock.json: the file is not valid JSON",
+          "/home/dana/work/api-server/.kendex-lock.json: the file is not valid JSON",
       },
     },
   ];

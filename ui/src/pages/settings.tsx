@@ -122,7 +122,7 @@ export function SettingsPage() {
                   </span>
                 </span>
               }
-              description="vstack keeps your AI coding tools in sync."
+              description="kendex keeps your AI coding tools in sync."
             />
           </Section>
         </div>

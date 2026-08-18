@@ -2,7 +2,7 @@ import { Marked, type Tokens } from "marked";
 import { highlightCode } from "@/lib/highlight";
 
 // Catalog content is adversarial input: a SKILL.md a person previews here
-// was written by whoever published the catalog, not by vstack. marked
+// was written by whoever published the catalog, not by kendex. marked
 // passes raw HTML straight through by default and only percent-encodes
 // link/image URLs (it does not reject `javascript:`), so both paths are
 // overridden to keep the preview inert — no injected markup, no clickable
@@ -57,7 +57,7 @@ export function renderMarkdown(source: string): string {
 }
 
 /** One line's worth: emphasis, links and `code`, but no blocks. For prose
- *  vstack shows inside its own layout — a package description — where a
+ *  kendex shows inside its own layout — a package description — where a
  *  heading or a list would break the surface it sits in. Hardened by the
  *  same renderer as the full document. */
 export function renderInlineMarkdown(source: string): string {

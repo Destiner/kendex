@@ -60,7 +60,7 @@ fn mcp_and_plugin_edits_round_trip() {
 #[test]
 fn opencode_instruction_and_codex_feature_edits() {
     let edit = ConfigEdit::OpencodeAddInstruction {
-        reference: ".opencode/instructions/vstack-hook-guard.md".into(),
+        reference: ".opencode/instructions/kendex-hook-guard.md".into(),
         bash_permission: true,
     };
     let once = edit.apply(r#"{"mcp": {"db": {"type": "local"}}}"#).unwrap();

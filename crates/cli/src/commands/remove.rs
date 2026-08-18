@@ -12,7 +12,7 @@ use crate::scope::ScopeFilter;
 /// `None` means nobody has answered yet.
 pub fn run(env: &Env, names: Vec<String>, filter: ScopeFilter, sweep: Option<bool>) -> CliResult {
     if names.is_empty() {
-        say("usage: vstack remove <name>… [--scope project|global|all]");
+        say("usage: kendex remove <name>… [--scope project|global|all]");
         return Ok(());
     }
     let mut removed_any = false;

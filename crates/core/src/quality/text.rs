@@ -204,7 +204,7 @@ fn tree_docs(
 /// issuing it, and a reference page is background reading the model pulls in
 /// only when it needs the detail.
 ///
-/// This was settled by a real catalog. The vstack `orch` skill ships tests
+/// This was settled by a real catalog. The kendex `orch` skill ships tests
 /// that assert `--dangerously-skip-permissions` reaches the launcher, and
 /// the `review-gate` skill has a test that base64-encodes a fixture. Both
 /// are exactly what those rules look for, and neither is the skill telling

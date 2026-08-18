@@ -106,7 +106,7 @@ fn print_row(row: &ItemSafety) {
 
 #[derive(Args)]
 pub struct DismissArgs {
-    /// The finding tokens printed by `vstack findings`
+    /// The finding tokens printed by `kendex findings`
     #[arg(required = true)]
     tokens: Vec<String>,
     /// wrong-call | intended | trusted-source

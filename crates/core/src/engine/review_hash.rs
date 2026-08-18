@@ -15,7 +15,7 @@
 //! no budget and no decoding. A decision binds to it, and the flag that
 //! grants one carries it. Where the bytes cannot be reached at all the
 //! answer is `None`: a decision with nothing to compare against must never
-//! read as live, which is the same rule that reports an artifact vstack
+//! read as live, which is the same rule that reports an artifact kendex
 //! cannot compare as uncompared rather than as passing.
 //!
 //! A hook is the one kind whose two paths read different things, and each

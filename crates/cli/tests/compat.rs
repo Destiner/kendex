@@ -11,7 +11,7 @@ use std::process::{Command, Output};
 use kendex_core::manifest::MANIFEST_SCHEMA;
 
 #[allow(clippy::expect_used)]
-fn vstack_in(home: &Path, cwd: &Path, args: &[&str], envs: &[(&str, String)]) -> Output {
+fn kendex_in(home: &Path, cwd: &Path, args: &[&str], envs: &[(&str, String)]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_kendex"));
     command
         .args(args)
@@ -22,7 +22,7 @@ fn vstack_in(home: &Path, cwd: &Path, args: &[&str], envs: &[(&str, String)]) ->
     for (key, value) in envs {
         command.env(key, value);
     }
-    command.output().expect("vstack binary runs")
+    command.output().expect("kendex binary runs")
 }
 
 #[allow(clippy::unwrap_used)]
@@ -45,7 +45,7 @@ fn bare_form_maps_to_add_flag_for_flag() {
     let home = tmp.path();
     let catalog = home.join("catalog").display().to_string();
 
-    let output = vstack_in(
+    let output = kendex_in(
         home,
         &home.join("proj"),
         &[&catalog, "--skill", "gh", "--harness", "claude", "-y"],
@@ -72,7 +72,7 @@ fn report_dry_run_routes_by_ownership_and_rejects_scope_all() {
     )
     .unwrap();
 
-    let upstream = vstack_in(
+    let upstream = kendex_in(
         home,
         &proj,
         &[
@@ -89,11 +89,11 @@ fn report_dry_run_routes_by_ownership_and_rejects_scope_all() {
     );
     assert!(upstream.status.success());
     let text = String::from_utf8_lossy(&upstream.stderr);
-    assert!(text.contains("ownership: vstack"), "{text}");
+    assert!(text.contains("ownership: kendex"), "{text}");
     assert!(text.contains("--repo vanillagreencom/vstack"), "{text}");
     assert!(text.contains("--label skills"), "{text}");
 
-    let local = vstack_in(
+    let local = kendex_in(
         home,
         &proj,
         &[
@@ -112,7 +112,7 @@ fn report_dry_run_routes_by_ownership_and_rejects_scope_all() {
     assert!(text.contains("ownership: project-local"), "{text}");
     assert!(!text.contains("--label"), "{text}");
 
-    let rejected = vstack_in(
+    let rejected = kendex_in(
         home,
         &proj,
         &["report", "--title", "T", "--body", "B", "--scope", "all"],
@@ -151,7 +151,7 @@ fn report_files_through_a_stubbed_gh() {
         std::env::var("PATH").unwrap_or_default()
     );
 
-    let output = vstack_in(
+    let output = kendex_in(
         home,
         &proj,
         &[
@@ -222,7 +222,7 @@ fn update_replaces_the_binary_from_a_local_feed() {
         .unwrap()
         .replace("9.9.9", env!("CARGO_PKG_VERSION"));
     fs::write(home.join("feed.json"), same).unwrap();
-    let output = vstack_in(
+    let output = kendex_in(
         home,
         home,
         &["update"],
@@ -252,7 +252,7 @@ fn import_migrates_v1_files_and_is_idempotent() {
     )
     .unwrap();
 
-    let output = vstack_in(home, &proj, &["import", "--scope", "project"], &[]);
+    let output = kendex_in(home, &proj, &["import", "--scope", "project"], &[]);
     assert!(
         output.status.success(),
         "{}",
@@ -266,7 +266,7 @@ fn import_migrates_v1_files_and_is_idempotent() {
     assert!(lock.contains("skill:gh:claude"));
     assert!(String::from_utf8_lossy(&output.stderr).contains("agent-colors"));
 
-    let again = vstack_in(home, &proj, &["import", "--scope", "project"], &[]);
+    let again = kendex_in(home, &proj, &["import", "--scope", "project"], &[]);
     assert!(again.status.success());
     assert!(String::from_utf8_lossy(&again.stderr).contains("nothing to migrate"));
 }
@@ -275,7 +275,7 @@ fn import_migrates_v1_files_and_is_idempotent() {
 fn init_scaffolds_and_validates() {
     let tmp = sandbox_with_catalog();
     let home = tmp.path();
-    let output = vstack_in(
+    let output = kendex_in(
         home,
         &home.join("catalog"),
         &["init", "deploy", "--kind", "skill"],
@@ -284,10 +284,10 @@ fn init_scaffolds_and_validates() {
     assert!(output.status.success());
     assert!(home.join("catalog/skills/deploy/SKILL.md").is_file());
 
-    let usage = vstack_in(home, &home.join("catalog"), &["init"], &[]);
+    let usage = kendex_in(home, &home.join("catalog"), &["init"], &[]);
     assert!(usage.status.success());
 
-    let bad = vstack_in(
+    let bad = kendex_in(
         home,
         &home.join("catalog"),
         &["init", "x", "--kind", "wat"],

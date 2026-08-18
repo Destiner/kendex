@@ -1,7 +1,7 @@
 // Product prose for decisions: the reasons a finding can be dismissed for,
 // the dismiss dialog, and the recorded-decisions list. Same house style as
 // copy.ts. Every reason is a claim about the content and reads the same to
-// a teammate who inherits it from a project's vstack.toml — none of them
+// a teammate who inherits it from a project's kendex.toml — none of them
 // is "I'm fine with the risk", because a project file is not the place for
 // one person's tolerance.
 import type { DismissReason } from "@/bindings";
@@ -37,7 +37,7 @@ export const IGNORE_LABEL = "Ignore…";
 export const IGNORE_TITLE = "Ignore this finding?";
 export const ignoreBody = (projectScope: boolean): string =>
   projectScope
-    ? "Stops asking until this content changes. Saved into this project's vstack.toml, so anyone using the repository inherits it — pick a reason that is true for them too."
+    ? "Stops asking until this content changes. Saved into this project's kendex.toml, so anyone using the repository inherits it — pick a reason that is true for them too."
     : "Stops asking until this content changes. Saved in your personal manifest on this machine.";
 export const IGNORE_CONFIRM = "Ignore";
 export const ignoreManyTitle = (count: number): string =>
@@ -57,7 +57,7 @@ export const separatePiecesLabel = (count: number): string =>
 export const ignoreAllLabel = (count: number): string => `Ignore all ${count}…`;
 export const UNDECIDABLE_HERE = "Content can't be read on this machine";
 export const NO_SOURCE_TO_TRUST =
-  "vstack didn't install this from a catalog, so there's no source to trust.";
+  "kendex didn't install this from a catalog, so there's no source to trust.";
 
 // The apply preview: a warning-only install is not held back, and its
 // findings can only be decided once it is on disk — so the preview says
@@ -72,7 +72,7 @@ export const queuedDecisionsLabel = (count: number): string =>
 export const DECISIONS_SECTION_TITLE = "Recorded decisions";
 export const RECORDED_DECISIONS_LINK = "See recorded decisions";
 export const DECISIONS_SECTION_EXPLAINER =
-  "Findings you accepted or dismissed. Each covers one version of one item — change the file and the finding comes back. A project's decisions live in its vstack.toml, so teammates inherit them.";
+  "Findings you accepted or dismissed. Each covers one version of one item — change the file and the finding comes back. A project's decisions live in its kendex.toml, so teammates inherit them.";
 export const TAKE_BACK_LABEL = "Take back";
 export const FORGET_LABEL = "Forget";
 export const NO_LONGER_INSTALLED = "The item is no longer installed here.";

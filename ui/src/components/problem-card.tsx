@@ -83,7 +83,7 @@ export function ProblemCard({ problem }: { problem: Problem }) {
           open={confirmRemove}
           onOpenChange={setConfirmRemove}
           title={`Stop tracking ${name}?`}
-          description="vstack will stop managing this project. Nothing in the folder is deleted."
+          description="kendex will stop managing this project. Nothing in the folder is deleted."
           confirmLabel="Stop tracking"
           destructive
           onConfirm={() => {

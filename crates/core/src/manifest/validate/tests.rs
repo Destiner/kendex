@@ -41,7 +41,7 @@ matcher = "Bash"
     let locations: Vec<_> = findings.iter().map(|f| f.location.as_str()).collect();
     assert!(locations.contains(&"mcp-servers.gh"));
     assert!(locations.contains(&"plugins.fmt@main"));
-    // Cursor reads no plugin map vstack can write, so aiming a plugin at
+    // Cursor reads no plugin map kendex can write, so aiming a plugin at
     // it asks for a write with nowhere to land.
     assert!(locations.contains(&"plugins.fmt@main.harness"));
     assert!(locations.contains(&"schema"));

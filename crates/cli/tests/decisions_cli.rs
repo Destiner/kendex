@@ -13,7 +13,7 @@ use kendex_core::env::{Env, FakeOs};
 use kendex_core::model::Scope;
 
 #[allow(clippy::expect_used)]
-fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
+fn kendex(home: &Path, cwd: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_kendex"))
         .args(args)
         .current_dir(cwd)
@@ -21,7 +21,7 @@ fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
         .env("HOME", home)
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .output()
-        .expect("vstack binary runs")
+        .expect("kendex binary runs")
 }
 
 fn stderr(output: &Output) -> String {
@@ -42,7 +42,7 @@ fn project(home: &Path) -> std::path::PathBuf {
         "---\nname: mild\ndescription: the mild skill\n---\nRun chmod 777 build.sh first.\n",
     )
     .unwrap();
-    let output = vstack(
+    let output = kendex(
         home,
         &project,
         &[
@@ -70,7 +70,7 @@ fn a_finding_is_dismissed_by_its_token_listed_and_taken_back() {
         root: project.clone(),
     };
 
-    let listed = vstack(home, &project, &["findings", "--scope", "project"]);
+    let listed = kendex(home, &project, &["findings", "--scope", "project"]);
     assert!(listed.status.success(), "{}", stderr(&listed));
     let printed = stderr(&listed);
     assert!(printed.contains("skill mild for Claude Code"), "{printed}");
@@ -81,7 +81,7 @@ fn a_finding_is_dismissed_by_its_token_listed_and_taken_back() {
         .to_owned();
     assert!(token.starts_with("skill:mild:claude#"), "{token}");
 
-    let refused = vstack(home, &project, &["dismiss", &token, "--reason", "because"]);
+    let refused = kendex(home, &project, &["dismiss", &token, "--reason", "because"]);
     assert!(!refused.status.success());
     assert!(
         stderr(&refused).contains("wrong-call"),
@@ -89,7 +89,7 @@ fn a_finding_is_dismissed_by_its_token_listed_and_taken_back() {
         stderr(&refused)
     );
 
-    let dismissed = vstack(
+    let dismissed = kendex(
         home,
         &project,
         &["dismiss", &token, "--reason", "wrong-call"],
@@ -99,14 +99,14 @@ fn a_finding_is_dismissed_by_its_token_listed_and_taken_back() {
     assert_eq!(recorded.len(), 1);
     assert_eq!(recorded[0].state, RecordState::Active);
 
-    let again = stderr(&vstack(home, &project, &["findings", "--scope", "project"]));
+    let again = stderr(&kendex(home, &project, &["findings", "--scope", "project"]));
     assert!(again.contains("dismissed"), "{again}");
     assert!(
         !again.contains("token: skill:mild:claude#"),
         "a settled finding offers no token: {again}"
     );
 
-    let registry = stderr(&vstack(
+    let registry = stderr(&kendex(
         home,
         &project,
         &["decisions", "--scope", "project"],
@@ -125,10 +125,10 @@ fn a_finding_is_dismissed_by_its_token_listed_and_taken_back() {
         .and_then(|rest| rest.split_whitespace().next())
         .unwrap()
         .to_owned();
-    let revoked = vstack(home, &project, &["decisions", "--revoke", &id]);
+    let revoked = kendex(home, &project, &["decisions", "--revoke", &id]);
     assert!(revoked.status.success(), "{}", stderr(&revoked));
     assert!(list_decisions(&env, &scope).unwrap().is_empty());
-    let empty = stderr(&vstack(
+    let empty = stderr(&kendex(
         home,
         &project,
         &["decisions", "--scope", "project"],
@@ -144,7 +144,7 @@ fn a_token_from_before_the_content_changed_dismisses_nothing() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path();
     let project = project(home);
-    let printed = stderr(&vstack(home, &project, &["findings", "--scope", "project"]));
+    let printed = stderr(&kendex(home, &project, &["findings", "--scope", "project"]));
     let token = printed
         .lines()
         .find_map(|line| line.trim().strip_prefix("token: "))
@@ -155,7 +155,7 @@ fn a_token_from_before_the_content_changed_dismisses_nothing() {
     let edited = fs::read_to_string(&installed).unwrap() + "\nOne more line.\n";
     fs::write(&installed, edited).unwrap();
 
-    let refused = vstack(home, &project, &["dismiss", &token, "--reason", "intended"]);
+    let refused = kendex(home, &project, &["dismiss", &token, "--reason", "intended"]);
     assert!(!refused.status.success());
     assert!(
         stderr(&refused).contains("nothing was changed"),

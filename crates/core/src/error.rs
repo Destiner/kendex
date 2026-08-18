@@ -54,7 +54,7 @@ pub enum CoreError {
     LockCorrupt { path: PathBuf, message: String },
 
     #[error(
-        "{path} was written by a newer vstack (format {found}) — update this app before touching it"
+        "{path} was written by a newer kendex (format {found}) — update this app before touching it"
     )]
     SchemaTooNew { path: PathBuf, found: i64 },
 
@@ -73,7 +73,7 @@ pub enum CoreError {
     // "Foreign symlink, not a clobber target" is the same fact in words that
     // only mean anything to whoever wrote the check.
     #[error(
-        "{target} is a shortcut to {points_to}, not a folder of its own.          vstack only takes over files it can move, and moving this would          break whatever set the shortcut up."
+        "{target} is a shortcut to {points_to}, not a folder of its own.          kendex only takes over files it can move, and moving this would          break whatever set the shortcut up."
     )]
     ForeignSymlink { target: PathBuf, points_to: PathBuf },
 

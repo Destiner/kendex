@@ -25,7 +25,7 @@ export interface ItemCustomization {
   additional: string | null;
   /** Skills: text added to the author's own instructions. */
   instructions: string | null;
-  /** Agents: the skills this agent gets, or null while vstack picks them. */
+  /** Agents: the skills this agent gets, or null while kendex picks them. */
   skills: string[] | null;
   /** Agents: per-harness settings, only where any are set. */
   frontmatter: [HarnessId, DraftFrontmatter][];

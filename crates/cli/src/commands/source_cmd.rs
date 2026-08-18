@@ -20,7 +20,7 @@ pub enum SourceCommand {
     /// Re-resolve remote source caches
     Refresh {
         /// Only fetch mirrors whose freshness stamp is old, then re-derive
-        /// the drift snapshot — the detached job `vstack check` spawns
+        /// the drift snapshot — the detached job `kendex check` spawns
         #[arg(long)]
         stale: bool,
     },

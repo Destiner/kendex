@@ -276,9 +276,9 @@ mod tests {
         }
     }
 
-    /// Copilot is managed where its own documentation gives vstack a surface
+    /// Copilot is managed where its own documentation gives kendex a surface
     /// to write, and nowhere else: it has no file-backed command kind at all,
-    /// and installing a plugin needs a marketplace vstack cannot resolve yet.
+    /// and installing a plugin needs a marketplace kendex cannot resolve yet.
     #[test]
     fn copilot_manages_only_the_surfaces_it_documents() {
         for kind in [

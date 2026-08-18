@@ -8,7 +8,7 @@ use super::{CliResult, out, say};
 /// without --kind, or with '/' or a leading '-', → error).
 pub fn run(name: Option<String>, kind: Option<String>) -> CliResult {
     let Some(name) = name else {
-        say("usage: vstack init <name> --kind agent|skill|hook");
+        say("usage: kendex init <name> --kind agent|skill|hook");
         return Ok(());
     };
     let Some(kind) = kind else {

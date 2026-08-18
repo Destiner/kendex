@@ -60,11 +60,11 @@ pub(super) fn findings(
                 ),
                 // The installed name carries the plugin the item lives in,
                 // which no catalog file knows and no declaration can spell.
-                // vstack writes it into its own copy, and the one shape it
+                // kendex writes it into its own copy, and the one shape it
                 // cannot write into is frontmatter that is not a plain
                 // `---` block.
                 false => format!(
-                    "give this skill's SKILL.md a plain `---` frontmatter block — that is what vstack writes `name: {name}` into when it installs `{declared}`"
+                    "give this skill's SKILL.md a plain `---` frontmatter block — that is what kendex writes `name: {name}` into when it installs `{declared}`"
                 ),
             },
         ));

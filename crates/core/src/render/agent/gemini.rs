@@ -10,8 +10,8 @@ use crate::render::{RenderWarning, yaml_quoted, yaml_scalar};
 /// `tools` is a real allowlist, so an `AllowOnly` intent renders natively
 /// and nothing has to be complemented (matrix §1, §D4).
 ///
-/// `kind: local` is written out because it is the only kind vstack manages —
-/// a remote subagent runs off this machine, and vstack neither installs nor
+/// `kind: local` is written out because it is the only kind kendex manages —
+/// a remote subagent runs off this machine, and kendex neither installs nor
 /// claims one (§R3).
 pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
     let source = agent.source;

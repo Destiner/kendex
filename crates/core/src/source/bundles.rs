@@ -1,6 +1,6 @@
 //! The curated sets a catalog offers.
 //!
-//! A plain catalog declares them in its own `vstack.toml`: `[bundles.<name>]`
+//! A plain catalog declares them in its own `kendex.toml`: `[bundles.<name>]`
 //! with a description and one member list per kind. A plugin-registry-shaped
 //! catalog declares them by existing — each plugin it ships is a set already,
 //! under the name, version and category its registry carries.
@@ -44,7 +44,7 @@ pub struct CatalogBundle {
     pub members: Vec<BundleMember>,
 }
 
-/// The `[bundles]` table of a catalog's own `vstack.toml`, read leniently the
+/// The `[bundles]` table of a catalog's own `kendex.toml`, read leniently the
 /// way every other catalog-side table is: a member list that is not a list of
 /// names carries no members, and the declaration that installs the set is
 /// where a name nothing backs gets reported.

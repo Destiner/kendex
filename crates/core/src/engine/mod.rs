@@ -284,12 +284,12 @@ pub fn plan_apply(env: &Env, scope: &Scope, options: &PlanOptions) -> Result<Eng
         safety: Vec::new(),
     };
     // One fact, said once: files this build will read but not write. Which
-    // of the two is legacy is vstack's problem, not the reader's.
+    // of the two is legacy is kendex's problem, not the reader's.
     if matches!(manifest_file, ManifestFile::Legacy { .. })
         || matches!(lock_file, LockFile::Legacy { .. })
     {
         report.notes.push(
-            "This scope's vstack files are from version 1 — vstack reads them, but changes nothing here until they are migrated"
+            "This scope's vstack files are from version 1 — kendex reads them, but changes nothing here until they are migrated"
                 .into(),
         );
     }

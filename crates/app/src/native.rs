@@ -1,6 +1,6 @@
 //! Thin wrappers over OS-native pickers and file browsers. Neither plugin's
 //! own IPC commands are exposed to the frontend — these wrap the plugins'
-//! Rust APIs behind vstack's own typed commands instead, the same way
+//! Rust APIs behind kendex's own typed commands instead, the same way
 //! `window.rs` wraps the frameless titlebar's OS calls.
 
 use std::path::{Path, PathBuf};
@@ -35,7 +35,7 @@ pub fn reveal_path(path: String) -> Result<(), String> {
     tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| e.to_string())
 }
 
-/// Editors vstack looks for, in preference order, after `KENDEX_EDITOR`.
+/// Editors kendex looks for, in preference order, after `KENDEX_EDITOR`.
 const EDITOR_CANDIDATES: [&str; 5] = ["codium", "code", "cursor", "zed", "subl"];
 
 /// Ordered list of editor names or paths to try: the `KENDEX_EDITOR`
@@ -176,7 +176,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn vstack_editor_override_wins_over_the_built_in_list() {
+    fn kendex_editor_override_wins_over_the_built_in_list() {
         let tmp = tempfile::tempdir().unwrap();
         write_executable(tmp.path(), "code");
         let hx = write_executable(tmp.path(), "hx");
@@ -187,7 +187,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn vstack_editor_override_accepts_an_absolute_path() {
+    fn kendex_editor_override_accepts_an_absolute_path() {
         let tmp = tempfile::tempdir().unwrap();
         let hx = write_executable(tmp.path(), "hx");
 

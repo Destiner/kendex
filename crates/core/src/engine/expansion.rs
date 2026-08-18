@@ -274,7 +274,7 @@ pub(super) fn expand(
             // nothing — one of the two has to go, and the user picks which.
             if manifest.is_suppressed(kind, name) {
                 state.notes.push(format!(
-                    "{} {name} is declared and also kept removed — the declaration wins and it installs; drop it from [suppressed] in vstack.toml to settle it",
+                    "{} {name} is declared and also kept removed — the declaration wins and it installs; drop it from [suppressed] in kendex.toml to settle it",
                     kind.name()
                 ));
             }

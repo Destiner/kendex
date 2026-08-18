@@ -51,7 +51,7 @@ fn fresh_file_gets_the_seeded_header() {
     let entries = seeded(TEMPLATE, "review");
     let (created, added) = merge(None, &entries).unwrap();
     assert_eq!(added, ["REVIEWERS", "DEPTH"]);
-    assert!(created.starts_with("# Public vstack settings"));
+    assert!(created.starts_with("# Public kendex settings"));
     assert!(created.contains("[env]\n# Which reviewer set to run."));
 }
 

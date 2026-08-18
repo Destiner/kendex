@@ -133,7 +133,7 @@ pub fn capability_table() -> Vec<CapabilityRow> {
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ReportRouteView {
-    pub vstack_owned: bool,
+    pub kendex_owned: bool,
     pub repo: Option<String>,
     pub label: Option<String>,
     /// Prefilled new-issue page — only when the report belongs upstream.
@@ -151,7 +151,7 @@ fn urlencode(text: &str) -> String {
         .collect()
 }
 
-/// Where a problem report about this item belongs: the vstack upstream
+/// Where a problem report about this item belongs: the kendex upstream
 /// (with a prefilled issue link) or the user's own repo.
 #[tauri::command(async)]
 #[specta::specta]
@@ -190,7 +190,7 @@ pub fn report_route(
         url
     });
     Ok(ReportRouteView {
-        vstack_owned: route.vstack_owned,
+        kendex_owned: route.kendex_owned,
         repo: route.repo,
         label: route.label,
         issue_url,

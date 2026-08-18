@@ -44,7 +44,7 @@ export function ProjectList() {
           name="Personal"
           subtitle="Works in every project on this computer"
           counts={[...countByKind(globalItems).entries()]}
-          emptyLabel="Nothing from vstack yet."
+          emptyLabel="Nothing from kendex yet."
           onKindClick={(kind) => {
             setLibraryScope("global");
             goToLibrary({ kind });
@@ -68,7 +68,7 @@ export function ProjectList() {
                 name={name}
                 subtitle={root}
                 counts={[...countByKind(items).entries()]}
-                emptyLabel="Nothing from vstack yet."
+                emptyLabel="Nothing from kendex yet."
                 badge={
                   result?.missingProjects.includes(root)
                     ? "Folder not found"
@@ -112,7 +112,7 @@ export function ProjectList() {
             if (!open) setRemoveTarget(null);
           }}
           title={`Stop tracking ${removeTarget?.split("/").pop() ?? ""}?`}
-          description="vstack will stop managing this project. Nothing in the folder is deleted."
+          description="kendex will stop managing this project. Nothing in the folder is deleted."
           confirmLabel="Stop tracking"
           destructive
           onConfirm={() => {

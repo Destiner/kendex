@@ -123,7 +123,7 @@ export function SyncScopeCard({
       {/* Two zones, in the order a person works them. Needs your decision
           holds everything only they can settle: installs the gate is holding
           back, then findings nobody has ruled on. Ready to apply is what the
-          button does. Notes and the safety tally follow; items vstack does
+          button does. Notes and the safety tally follow; items kendex does
           not manage are a footnote pointing at the Library, where adopting
           them lives. */}
       {open ? (

@@ -29,7 +29,7 @@ pub struct HookSpec {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum HookBody {
-    /// vstack owns the file and writes it (catalog hooks).
+    /// kendex owns the file and writes it (catalog hooks).
     Script(String),
     /// The person's own command, registered verbatim (custom hooks).
     Command(String),

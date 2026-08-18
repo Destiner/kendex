@@ -14,9 +14,9 @@ import { mergeHeldBack } from "@/lib/group-findings-blocked";
 import { evidenceGroups, openOccurrences } from "@/lib/reviewable";
 
 export interface AuditCounts {
-  /** Writes vstack is ready to make: install, update, remove. */
+  /** Writes kendex is ready to make: install, update, remove. */
   changes: number;
-  /** On disk, but vstack was never asked to look after it. Not a debt —
+  /** On disk, but kendex was never asked to look after it. Not a debt —
    *  adopting is an offer the user takes up, so it is counted apart from
    *  the work that is actually queued. */
   unmanaged: number;

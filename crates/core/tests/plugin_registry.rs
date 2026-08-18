@@ -331,7 +331,7 @@ fn adding_everything_a_catalog_offers_writes_names_that_load_again() {
     let report = ops::add(&f.env, &f.scope, &request).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
 
-    // The manifest is written and read back by vstack itself: a key with a
+    // The manifest is written and read back by kendex itself: a key with a
     // `/` in it has to survive that round trip, quotes and all.
     let text = read(&f, "kendex.toml");
     assert!(text.contains("\"data-science/eda\""), "{text}");

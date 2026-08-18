@@ -28,7 +28,7 @@ pub(super) struct SharedTarget {
 
 /// What a live link may be adopted through. The target must be a real
 /// skill folder — the `SKILL.md` marker is what keeps a link at `$HOME` or
-/// `/etc` refused — and must sit outside vstack's own machinery: the
+/// `/etc` refused — and must sit outside kendex's own machinery: the
 /// rendered canonical and variant trees, the trash, the source cache, the
 /// journal, and the local source the capture would write into (a managed
 /// tree is already ours, and capturing it under another name would steal
@@ -173,7 +173,7 @@ mod tests {
     /// The shared-folder case this path exists for: two tools read one
     /// folder through links. Adopting captures the folder's content, and
     /// after the follow-up apply every tool still resolves to real files —
-    /// the sharing survives with vstack's copy as canonical.
+    /// the sharing survives with kendex's copy as canonical.
     #[test]
     fn a_shared_skill_folder_adopts_the_target_and_keeps_every_tool_reading() {
         let tmp = tempfile::tempdir().unwrap();
@@ -207,7 +207,7 @@ mod tests {
         assert!(!project.join(".claude/skills/browser").is_symlink());
         assert!(!project.join(".agents/skills/browser").is_symlink());
 
-        // The follow-up apply restores the sharing from vstack's copy.
+        // The follow-up apply restores the sharing from kendex's copy.
         let report = crate::engine::audit(&env, &scope).unwrap();
         crate::apply::execute(&env, &report.plan, None).unwrap();
         let through_claude =
@@ -220,7 +220,7 @@ mod tests {
         assert_eq!(after.drift, vec![]);
     }
 
-    /// "Somewhere vstack has no business touching": a folder that is not a
+    /// "Somewhere kendex has no business touching": a folder that is not a
     /// skill at all. The marker is the boundary — no SKILL.md, no adopt.
     #[test]
     fn a_link_at_a_folder_without_the_marker_still_refuses() {
@@ -249,10 +249,10 @@ mod tests {
         assert!(elsewhere.join("notes.txt").is_file());
     }
 
-    /// A link the user repointed into vstack's own store is not theirs to
+    /// A link the user repointed into kendex's own store is not theirs to
     /// adopt: capturing a managed tree under another name would steal it.
     #[test]
-    fn a_link_into_vstacks_own_trees_refuses() {
+    fn a_link_into_kendexs_own_trees_refuses() {
         let tmp = tempfile::tempdir().unwrap();
         let env = Env::fake(tmp.path(), FakeOs::Linux);
         let project = tmp.path().join("app");

@@ -8,7 +8,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 #[allow(clippy::expect_used)]
-fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
+fn kendex(home: &Path, cwd: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_kendex"))
         .args(args)
         .current_dir(cwd)
@@ -17,7 +17,7 @@ fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .env("KENDEX_GIT_BASE", format!("file://{}/git", home.display()))
         .output()
-        .expect("vstack binary runs")
+        .expect("kendex binary runs")
 }
 
 #[allow(clippy::unwrap_used)]
@@ -87,7 +87,7 @@ fn consuming_repo_installs_customizes_and_refreshes_from_the_default_catalog() {
 
     // Install with NO source argument: the seeded default source resolves
     // remotely, is fetched into the cache, and the skill lands.
-    let output = vstack(home, &proj, &["add", "--skill", "gh", "-y"]);
+    let output = kendex(home, &proj, &["add", "--skill", "gh", "-y"]);
     assert!(
         output.status.success(),
         "{}",
@@ -107,19 +107,19 @@ fn consuming_repo_installs_customizes_and_refreshes_from_the_default_catalog() {
     let installed = only_child(&only_child(&sources.join("commits")));
     assert!(installed.join("skills/gh/SKILL.md").is_file());
     assert!(only_child(&sources.join("mirrors")).join("HEAD").is_file());
-    assert!(vstack(home, &proj, &["verify"]).status.success());
+    assert!(kendex(home, &proj, &["verify"]).status.success());
 
     // Customize: a project skill instruction re-renders into the skill.
     let manifest = format!("{manifest}\n[skill-instructions]\ngh = \"Team note.\"\n");
     fs::write(proj.join("kendex.toml"), manifest).unwrap();
-    let output = vstack(home, &proj, &["refresh"]);
+    let output = kendex(home, &proj, &["refresh"]);
     assert!(output.status.success());
     assert!(
         fs::read_to_string(&rendered)
             .unwrap()
             .contains("Team note."),
     );
-    assert!(vstack(home, &proj, &["verify"]).status.success());
+    assert!(kendex(home, &proj, &["verify"]).status.success());
 
     // Upstream moves; refresh re-syncs the cache and regenerates.
     let upstream = home.join("git/vanillagreencom/vstack");
@@ -129,12 +129,12 @@ fn consuming_repo_installs_customizes_and_refreshes_from_the_default_catalog() {
     )
     .unwrap();
     git(&upstream, &["commit", "--quiet", "-am", "two"]);
-    let output = vstack(home, &proj, &["refresh"]);
+    let output = kendex(home, &proj, &["refresh"]);
     assert!(output.status.success());
     let text = fs::read_to_string(&rendered).unwrap();
     assert!(text.contains("Upstream v2"), "{text}");
     assert!(text.contains("Team note."), "{text}");
-    assert!(vstack(home, &proj, &["verify"]).status.success());
+    assert!(kendex(home, &proj, &["verify"]).status.success());
 
     // The refresh published the new commit beside the old one instead of
     // resetting a shared checkout: the first commit's bytes are still there.

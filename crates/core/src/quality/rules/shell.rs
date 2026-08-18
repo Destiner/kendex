@@ -42,7 +42,7 @@ struct SafetyBypass;
 
 /// HarnessKit's version of this rule also flagged `--force`, `--yes` and
 /// their spellings, all at Critical. Calibrating against a real catalog
-/// retired them: the vstack `github` skill uses `--force` forty-two times,
+/// retired them: the kendex `github` skill uses `--force` forty-two times,
 /// every one of them documenting or implementing its *own* override flag,
 /// and `--yes` is in every non-interactive install line ever written. A
 /// flag that ordinary tools carry says nothing on its own, and a Critical

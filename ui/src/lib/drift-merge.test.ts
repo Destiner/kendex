@@ -84,8 +84,8 @@ describe("abbreviateHome", () => {
   });
 
   it("leaves paths outside the home directory alone", () => {
-    expect(abbreviateHome("/etc/vstack/config.json")).toBe(
-      "/etc/vstack/config.json",
+    expect(abbreviateHome("/etc/kendex/config.json")).toBe(
+      "/etc/kendex/config.json",
     );
   });
 });

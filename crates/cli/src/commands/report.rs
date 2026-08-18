@@ -104,12 +104,12 @@ pub fn run(env: &Env, args: ReportArgs) -> CliResult {
     let route = selector
         .as_ref()
         .map(|(name, kind)| kendex_core::report::route(env, &scope, &lock, name, *kind, &upstream));
-    let vstack_owned = route.as_ref().is_some_and(|r| r.vstack_owned);
+    let kendex_owned = route.as_ref().is_some_and(|r| r.kendex_owned);
 
     let mut gh_args = vec!["issue".to_owned(), "create".to_owned()];
     let mut sent_body = body.clone();
     let mut area = None;
-    if vstack_owned {
+    if kendex_owned {
         let (name, kind) = selector
             .as_ref()
             .map(|(n, k)| (n.as_str(), *k))
@@ -131,8 +131,8 @@ pub fn run(env: &Env, args: ReportArgs) -> CliResult {
     gh_args.extend(["--title".to_owned(), args.title.clone()]);
     gh_args.extend(["--body".to_owned(), sent_body.clone()]);
 
-    let ownership = if vstack_owned {
-        "vstack"
+    let ownership = if kendex_owned {
+        "kendex"
     } else {
         "project-local"
     };
@@ -140,7 +140,7 @@ pub fn run(env: &Env, args: ReportArgs) -> CliResult {
         say(&format!("ownership: {ownership}"));
         say(&format!(
             "target: {}",
-            if vstack_owned {
+            if kendex_owned {
                 upstream.as_str()
             } else {
                 "current repo origin"
@@ -186,7 +186,7 @@ fn save_body(title: &str, body: &str) -> Option<PathBuf> {
         .map(|c| if c.is_alphanumeric() { c } else { '-' })
         .take(40)
         .collect();
-    let path = std::env::temp_dir().join(format!("vstack-report-{slug}-{}.md", std::process::id()));
+    let path = std::env::temp_dir().join(format!("kendex-report-{slug}-{}.md", std::process::id()));
     std::fs::write(&path, body).ok()?;
     Some(path)
 }

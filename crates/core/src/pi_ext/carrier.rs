@@ -1,6 +1,6 @@
 //! The carrier that makes hooks real on Pi. Pi has no per-hook artifact:
 //! the `pi-hooks` extension package hosts native listeners, and hook
-//! content rides in the registry vstack renders beside them. A hook
+//! content rides in the registry kendex renders beside them. A hook
 //! "installed" for Pi without the carrier registered anywhere Pi loads is
 //! written but never runs — so every label reads carrier reality instead
 //! of claiming enforcement the runtime cannot deliver.

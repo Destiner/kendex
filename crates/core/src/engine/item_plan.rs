@@ -134,7 +134,7 @@ fn rendered_hash(artifact: &Artifact) -> Option<String> {
         Artifact::File { .. } | Artifact::Tree { .. } => {
             Some(super::desired::artifact_disk_hash(artifact))
         }
-        // A hook's backing script is a file vstack alone writes, so it can
+        // A hook's backing script is a file kendex alone writes, so it can
         // be anchored like any other. A registration with no script edits
         // only shared config, which holds other people's keys — nothing to
         // anchor there.
@@ -192,7 +192,7 @@ fn plan_written_file(
 ) -> Result<Planned> {
     if path.is_symlink() {
         return Ok(Planned::Conflict(format!(
-            "{} is a link vstack did not create",
+            "{} is a link kendex did not create",
             path.display()
         )));
     }
@@ -262,7 +262,7 @@ fn plan_absent_file(
     let alternate = toggle_sibling(path);
     if alternate.is_symlink() {
         return Planned::Conflict(format!(
-            "{} is a link vstack did not create",
+            "{} is a link kendex did not create",
             alternate.display()
         ));
     }
@@ -332,7 +332,7 @@ fn plan_registration(
         return Ok(Planned::Clean);
     };
     // Every edit is checked before anything is planned: a settings file
-    // vstack cannot read back — comments in a JSON, a torn edit — blocks
+    // kendex cannot read back — comments in a JSON, a torn edit — blocks
     // this one registration whole, script included, not the whole scope.
     let mut pending = Vec::new();
     for (path, edit) in edits {

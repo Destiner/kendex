@@ -20,7 +20,7 @@ use crate::source::local_source_root;
 /// live symlink → adopt the *target's* content when it passes the shared-
 /// target boundary (a skill folder the user linked several tools at), and
 /// take every sibling link with it so the follow-up apply can restore the
-/// sharing with vstack's copy as canonical; anything else a link points at
+/// sharing with kendex's copy as canonical; anything else a link points at
 /// stays a conflict, never a clobber target; broken symlink → nothing to
 /// adopt, the follow-up apply recreates from declaration.
 pub fn adopt(
@@ -102,7 +102,7 @@ pub fn adopt(
 
     let manifest_path = manifest::manifest_path(env, scope);
     ops.push(PlannedOp {
-        description: "declare the adopted item in vstack.toml".into(),
+        description: "declare the adopted item in kendex.toml".into(),
         op: Op::WriteManifest {
             pre: Pre::observed(&manifest_path)?,
             path: manifest_path,

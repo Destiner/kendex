@@ -23,7 +23,7 @@ import { scopeName } from "@/lib/labels";
 import { scopeKey } from "@/lib/scope";
 import { useEditorStore } from "@/stores/editor";
 
-/** Everything vstack lets a person change about one installed package,
+/** Everything kendex lets a person change about one installed package,
  *  on that package's own page. The same manifest the Customize page edits,
  *  sliced to this one name. */
 export function ItemCustomize({

@@ -194,7 +194,7 @@ pub(super) fn plan_schema_upgrade(
 }
 
 /// Skills may ship `[env]` defaults; missing keys merge into the project's
-/// vstack.settings.toml write-if-absent (v1 semantics — a key the user set
+/// kendex.settings.toml write-if-absent (v1 semantics — a key the user set
 /// anywhere in the file is never touched), and seeded comment blocks whose
 /// template improved are refreshed while provably unedited — gated by the
 /// lock's per-key ledger, which this plan carries forward on `new_lock`.

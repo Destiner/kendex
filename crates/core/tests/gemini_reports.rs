@@ -1,6 +1,6 @@
-//! What vstack tells the user about a Gemini setup it cannot fully act on:
+//! What kendex tells the user about a Gemini setup it cannot fully act on:
 //! an event Gemini has no counterpart for, subagents switched off, a
-//! settings file older than the schema vstack writes, and a machine-wide
+//! settings file older than the schema kendex writes, and a machine-wide
 //! settings layer that outranks the project.
 #![cfg(unix)]
 
@@ -143,7 +143,7 @@ fn an_agent_installed_while_the_feature_is_off_is_reported_inert() {
 }
 
 /// A settings file that never met the nested schema belongs to a CLI that
-/// would not read what vstack writes into it, so the settings-backed kinds
+/// would not read what kendex writes into it, so the settings-backed kinds
 /// report that instead of writing anyway.
 #[test]
 #[allow(clippy::unwrap_used)]
@@ -174,7 +174,7 @@ fn an_un_upgraded_settings_file_blocks_the_kinds_that_live_in_it() {
 }
 
 /// The system settings layer outranks both the user's file and the
-/// project's, so what vstack writes can be overridden there.
+/// project's, so what kendex writes can be overridden there.
 #[test]
 #[allow(clippy::unwrap_used)]
 fn a_system_wide_override_is_named_rather_than_argued_with() {

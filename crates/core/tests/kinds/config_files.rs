@@ -1,6 +1,6 @@
 //! The shared config files registrations land in are the user's — and
 //! another tool's — as much as ours: a link is followed, its key order is
-//! kept, and one vstack cannot read blocks one registration, not a scope.
+//! kept, and one kendex cannot read blocks one registration, not a scope.
 
 use std::fs;
 
@@ -51,7 +51,7 @@ fn another_writers_key_order_is_kept_and_is_not_drift() {
     assert!(is_clean(&f), "a key another tool appended is not drift");
 }
 
-/// A settings file vstack cannot read back blocks that registration alone
+/// A settings file kendex cannot read back blocks that registration alone
 /// — named, with the file — while the rest of the scope still plans.
 #[test]
 fn an_unreadable_settings_file_is_one_conflict_not_a_scope_error() {

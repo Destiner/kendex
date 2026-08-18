@@ -87,7 +87,7 @@ export const coreHandlers: Record<string, Handler> = {
           ? "skills"
           : "cli";
     return {
-      vstackOwned: owned,
+      kendexOwned: owned,
       repo: owned ? upstream : null,
       label,
       issueUrl: owned

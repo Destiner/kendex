@@ -14,7 +14,7 @@
 
 use crate::model::{HarnessId, ItemKind};
 
-/// Who ships this content, when it is not the person running vstack.
+/// Who ships this content, when it is not the person running kendex.
 pub fn vendor_of(kind: ItemKind, name: &str, harness: HarnessId) -> Option<&'static str> {
     if kind != ItemKind::Plugin {
         return None;

@@ -48,7 +48,7 @@ pub fn run(env: &Env, cmd: ProjectCommand) -> CliResult {
                 }
                 // Registration is where the drift hook is offered: agents in
                 // this project start blind until it is installed.
-                false => out("tip: `vstack drift-hook` installs the session-start drift report"),
+                false => out("tip: `kendex drift-hook` installs the session-start drift report"),
             }
         }
         ProjectCommand::Remove { path } => {

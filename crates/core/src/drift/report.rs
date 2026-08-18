@@ -101,15 +101,15 @@ impl Remedy {
             return None;
         }
         Some(match self {
-            Remedy::Refresh { global } => format!("vstack refresh{}", flag(global)),
-            Remedy::Remove { name, global } => format!("vstack remove {name}{}", flag(global)),
+            Remedy::Refresh { global } => format!("kendex refresh{}", flag(global)),
+            Remedy::Remove { name, global } => format!("kendex remove {name}{}", flag(global)),
             Remedy::Add { kind, name, global } => {
-                format!("vstack add --{} {name}{}", kind.name(), flag(global))
+                format!("kendex add --{} {name}{}", kind.name(), flag(global))
             }
             Remedy::Fork { kind, name, global } => {
-                format!("vstack fork {} {name}{}", kind.name(), flag(global))
+                format!("kendex fork {} {name}{}", kind.name(), flag(global))
             }
-            Remedy::Findings { global } => format!("vstack findings{}", flag(global)),
+            Remedy::Findings { global } => format!("kendex findings{}", flag(global)),
         })
     }
 }

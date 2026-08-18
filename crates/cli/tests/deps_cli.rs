@@ -9,7 +9,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 #[allow(clippy::expect_used)]
-fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
+fn kendex(home: &Path, cwd: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_kendex"))
         .args(args)
         .current_dir(cwd)
@@ -17,7 +17,7 @@ fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
         .env("HOME", home)
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .output()
-        .expect("vstack binary runs")
+        .expect("kendex binary runs")
 }
 
 #[allow(clippy::unwrap_used)]
@@ -42,7 +42,7 @@ fn project(tmp: &tempfile::TempDir) -> std::path::PathBuf {
     skill(home, "github", "");
     skill(home, "linear", "");
 
-    let output = vstack(
+    let output = kendex(
         home,
         &project,
         &[
@@ -82,7 +82,7 @@ fn refresh_regenerates_freely_but_asks_before_changing_what_is_installed() {
         "---\nname: github\ndescription: the github skill\n---\nNewer body.\n",
     )
     .unwrap();
-    let output = vstack(home, &project, &["refresh"]);
+    let output = kendex(home, &project, &["refresh"]);
     assert!(output.status.success());
     let said = String::from_utf8_lossy(&output.stderr).into_owned();
     assert!(said.contains("refreshed"), "{said}");
@@ -95,7 +95,7 @@ fn refresh_regenerates_freely_but_asks_before_changing_what_is_installed() {
     // A new dependency upstream changes the set, so with no terminal to ask
     // and no --yes, the refresh refuses before it writes.
     skill(home, "dev", "dependencies:\n  required: [github, linear]\n");
-    let output = vstack(home, &project, &["refresh"]);
+    let output = kendex(home, &project, &["refresh"]);
     assert!(!output.status.success());
     let said = String::from_utf8_lossy(&output.stderr).into_owned();
     assert!(said.contains("this changes what is installed"), "{said}");
@@ -104,7 +104,7 @@ fn refresh_regenerates_freely_but_asks_before_changing_what_is_installed() {
     assert!(said.contains("--yes"), "{said}");
     assert!(!project.join(".claude/skills/linear").exists());
 
-    let output = vstack(home, &project, &["refresh", "--yes"]);
+    let output = kendex(home, &project, &["refresh", "--yes"]);
     assert!(
         output.status.success(),
         "{}",
@@ -114,10 +114,10 @@ fn refresh_regenerates_freely_but_asks_before_changing_what_is_installed() {
 
     // And the same in the other direction, when upstream stops needing it.
     skill(home, "dev", "dependencies:\n  required: [github]\n");
-    let output = vstack(home, &project, &["refresh"]);
+    let output = kendex(home, &project, &["refresh"]);
     assert!(!output.status.success());
     assert!(project.join(".claude/skills/linear").exists());
-    let output = vstack(home, &project, &["refresh", "-y"]);
+    let output = kendex(home, &project, &["refresh", "-y"]);
     assert!(output.status.success());
     assert!(!project.join(".claude/skills/linear").exists());
 }
@@ -129,7 +129,7 @@ fn removing_the_last_dependent_asks_about_what_it_leaves_behind() {
     let home = tmp.path();
     let project = project(&tmp);
 
-    let output = vstack(home, &project, &["remove", "dev"]);
+    let output = kendex(home, &project, &["remove", "dev"]);
     assert!(!output.status.success());
     let said = String::from_utf8_lossy(&output.stderr).into_owned();
     assert!(said.contains("skill github"), "{said}");
@@ -140,12 +140,12 @@ fn removing_the_last_dependent_asks_about_what_it_leaves_behind() {
         "the removal wrote before it asked"
     );
 
-    let output = vstack(home, &project, &["remove", "dev", "--no-sweep"]);
+    let output = kendex(home, &project, &["remove", "dev", "--no-sweep"]);
     assert!(output.status.success());
     assert!(!project.join(".claude/skills/dev").exists());
     assert!(project.join(".claude/skills/github").exists());
 
-    let output = vstack(home, &project, &["remove", "github"]);
+    let output = kendex(home, &project, &["remove", "github"]);
     assert!(output.status.success());
     assert!(!project.join(".claude/skills/github").exists());
 }
@@ -159,12 +159,12 @@ fn sweeping_takes_the_leftovers_and_a_held_back_dependency_says_so() {
 
     // Removing the dependency alone holds it back and says what still wants
     // it; nothing brings it back.
-    let output = vstack(home, &project, &["remove", "github"]);
+    let output = kendex(home, &project, &["remove", "github"]);
     assert!(output.status.success());
     let said = String::from_utf8_lossy(&output.stderr).into_owned();
     assert!(said.contains("missing required dependency"), "{said}");
     assert!(!project.join(".claude/skills/github").exists());
-    let output = vstack(home, &project, &["refresh", "--yes"]);
+    let output = kendex(home, &project, &["refresh", "--yes"]);
     assert!(output.status.success());
     assert!(!project.join(".claude/skills/github").exists());
     assert!(
@@ -175,7 +175,7 @@ fn sweeping_takes_the_leftovers_and_a_held_back_dependency_says_so() {
 
     // Asking for it again outranks the removal. Named source: with none, the
     // default catalog is consulted, and this suite must not reach the network.
-    let output = vstack(
+    let output = kendex(
         home,
         &project,
         &[
@@ -195,7 +195,7 @@ fn sweeping_takes_the_leftovers_and_a_held_back_dependency_says_so() {
     );
     assert!(project.join(".claude/skills/github").exists());
 
-    let output = vstack(home, &project, &["remove", "dev", "--sweep"]);
+    let output = kendex(home, &project, &["remove", "dev", "--sweep"]);
     assert!(output.status.success());
     // github was asked for by name, so a sweep still leaves it.
     assert!(project.join(".claude/skills/github").exists());
@@ -227,7 +227,7 @@ fn an_optional_dependency_is_taken_only_when_it_is_asked_for() {
             "-y",
         ];
         all.extend_from_slice(args);
-        vstack(home, &project, &all)
+        kendex(home, &project, &all)
     };
 
     // A name nothing offers is an error, and it changes nothing.
@@ -250,7 +250,7 @@ fn an_optional_dependency_is_taken_only_when_it_is_asked_for() {
     // The choice, not its consequence: the extra is never declared.
     assert!(!manifest.contains("[skills.linear]"), "{manifest}");
 
-    let output = vstack(home, &project, &["refresh"]);
+    let output = kendex(home, &project, &["refresh"]);
     assert!(output.status.success());
     assert!(project.join(".claude/skills/linear").exists());
 }

@@ -1,6 +1,6 @@
 //! Spreading one pure function over the machine's cores.
 //!
-//! Scoring installed content is the slowest thing vstack does, and every
+//! Scoring installed content is the slowest thing kendex does, and every
 //! item is scored independently of every other — so the work is a fan-out
 //! with nothing shared. What this must not become is a source of
 //! nondeterminism: results come back in the order the inputs were given,

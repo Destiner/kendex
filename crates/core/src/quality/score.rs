@@ -9,7 +9,7 @@
 //! Repeats stop counting once they have cost as much as the first hit did.
 //! Past that point they have said all they can say — that the pattern is
 //! pervasive rather than incidental — and the real catalog is what settled
-//! it: the vstack `github` skill reads `.env.local` on forty lines because
+//! it: the kendex `github` skill reads `.env.local` on forty lines because
 //! that is the skill's entire job, and an uncapped tail turned a Medium
 //! finding into a blocked install.
 //!

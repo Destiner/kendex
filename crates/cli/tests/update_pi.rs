@@ -7,7 +7,7 @@ use std::process::{Command, Output};
 // Integration-test helpers sit outside #[test] fns, so clippy's
 // allow-unwrap-in-tests does not reach them.
 #[allow(clippy::expect_used)]
-fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
+fn kendex(home: &Path, cwd: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_kendex"))
         .args(args)
         .current_dir(cwd)
@@ -15,7 +15,7 @@ fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
         .env("HOME", home)
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .output()
-        .expect("vstack binary runs")
+        .expect("kendex binary runs")
 }
 
 #[allow(clippy::unwrap_used)]
@@ -65,7 +65,7 @@ fn check_reports_stale_packages_without_touching_them() {
     let project = tmp.path().join("dev/app");
     let installed = project.join(".pi/packages/pi-widgets/index.js");
 
-    let output = vstack(tmp.path(), &project, &["update-pi", "--check"]);
+    let output = kendex(tmp.path(), &project, &["update-pi", "--check"]);
 
     assert!(output.status.success());
     let plan = String::from_utf8_lossy(&output.stdout);
@@ -85,7 +85,7 @@ fn update_reinstalls_from_the_declared_source() {
     let project = tmp.path().join("dev/app");
     let installed = project.join(".pi/packages/pi-widgets/index.js");
 
-    let output = vstack(tmp.path(), &project, &["update-pi"]);
+    let output = kendex(tmp.path(), &project, &["update-pi"]);
 
     assert!(output.status.success());
     let progress = String::from_utf8_lossy(&output.stdout);
@@ -99,7 +99,7 @@ fn update_reinstalls_from_the_declared_source() {
     );
 
     // A second run has nothing left to do.
-    let output = vstack(tmp.path(), &project, &["update-pi"]);
+    let output = kendex(tmp.path(), &project, &["update-pi"]);
     assert!(output.status.success());
     let summary = String::from_utf8_lossy(&output.stderr);
     assert!(summary.contains("all pi packages up to date"), "{summary}");
@@ -113,12 +113,12 @@ fn a_declared_package_not_yet_installed_installs_fresh() {
     fs::remove_dir_all(project.join(".pi/packages/pi-widgets")).unwrap();
     fs::write(project.join(".pi/settings.json"), "{}\n").unwrap();
 
-    let check = vstack(tmp.path(), &project, &["update-pi", "--check"]);
+    let check = kendex(tmp.path(), &project, &["update-pi", "--check"]);
     assert!(check.status.success());
     let plan = String::from_utf8_lossy(&check.stdout);
     assert!(plan.contains("not installed yet"), "{plan}");
 
-    let output = vstack(tmp.path(), &project, &["update-pi"]);
+    let output = kendex(tmp.path(), &project, &["update-pi"]);
     assert!(output.status.success());
     let progress = String::from_utf8_lossy(&output.stdout);
     assert!(
@@ -149,7 +149,7 @@ fn a_package_installed_at_the_other_scope_blocks_the_install() {
         "{\"name\": \"pi-widgets\", \"version\": \"1.0.0\"}\n",
     );
 
-    let output = vstack(tmp.path(), &project, &["update-pi"]);
+    let output = kendex(tmp.path(), &project, &["update-pi"]);
     assert!(output.status.success());
     let plan = String::from_utf8_lossy(&output.stdout);
     assert!(plan.contains("blocked"), "{plan}");
@@ -178,7 +178,7 @@ fn a_legacy_named_package_at_the_other_scope_blocks_the_scoped_name() {
         "{\"name\": \"pi-hooks\", \"version\": \"0.9.0\"}\n",
     );
 
-    let output = vstack(tmp.path(), &project, &["update-pi"]);
+    let output = kendex(tmp.path(), &project, &["update-pi"]);
     assert!(output.status.success());
     let plan = String::from_utf8_lossy(&output.stdout);
     assert!(plan.contains("blocked"), "{plan}");
@@ -192,7 +192,7 @@ fn a_package_no_source_declares_is_reported_not_updated() {
     let project = tmp.path().join("dev/app");
     fs::remove_dir_all(project.join("catalog/pi-extensions/pi-widgets")).unwrap();
 
-    let output = vstack(tmp.path(), &project, &["update-pi"]);
+    let output = kendex(tmp.path(), &project, &["update-pi"]);
 
     assert!(output.status.success());
     let plan = String::from_utf8_lossy(&output.stdout);

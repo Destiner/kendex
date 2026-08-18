@@ -115,7 +115,7 @@ fn a_hook_says_which_tools_run_it_and_which_only_read_it() {
     }
 }
 
-/// A matcher is a regex over each tool's own tool names. vstack translates
+/// A matcher is a regex over each tool's own tool names. kendex translates
 /// the names it knows and leaves the rest exactly as authored — and says so,
 /// because a matcher that never matches is a protection that never runs.
 #[test]
