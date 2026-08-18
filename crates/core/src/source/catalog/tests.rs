@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::source::marketplace::read;
+use crate::source::plugin_registry::read;
 
 const REGISTRY: &str = r#"{
   "name": "workflows",
@@ -57,7 +57,9 @@ fn fixture() -> (tempfile::TempDir, SealedSource) {
 #[test]
 fn items_are_named_for_the_plugin_they_came_from() {
     let (_tmp, sealed) = fixture();
-    let registry = read(&sealed).expect("read").expect("marketplace-shaped");
+    let registry = read(&sealed)
+        .expect("read")
+        .expect("plugin-registry-shaped");
 
     assert_eq!(
         items(&sealed, &registry, ItemKind::Agent),
@@ -78,7 +80,9 @@ fn items_are_named_for_the_plugin_they_came_from() {
 #[test]
 fn names_resolve_only_through_the_registry() {
     let (_tmp, sealed) = fixture();
-    let registry = read(&sealed).expect("read").expect("marketplace-shaped");
+    let registry = read(&sealed)
+        .expect("read")
+        .expect("plugin-registry-shaped");
 
     let skill = find(&sealed, &registry, ItemKind::Skill, "data-science/eda").expect("found");
     assert!(skill.ends_with("plugins/data-science/skills/eda"));
@@ -109,7 +113,7 @@ fn each_plugin_is_a_group_carrying_its_members_and_its_metadata() {
     let (_tmp, sealed) = fixture();
     let meta = metadata(&sealed)
         .expect("read")
-        .expect("marketplace-shaped");
+        .expect("plugin-registry-shaped");
 
     assert_eq!(meta.name, "workflows");
     assert_eq!(meta.version.as_deref(), Some("1.2.0"));
@@ -147,7 +151,7 @@ fn a_catalog_whose_two_files_disagree_is_reported() {
     let sealed = SealedSource::open(&root).expect("open");
     let meta = metadata(&sealed)
         .expect("read")
-        .expect("marketplace-shaped");
+        .expect("plugin-registry-shaped");
     let problems: Vec<&str> = meta.findings.iter().map(|f| f.problem.as_str()).collect();
 
     assert!(
@@ -175,10 +179,12 @@ fn item_names_a_filesystem_would_fold_together_are_reported_not_installed() {
     );
     write(&root, "plugins/data-science/agents/nul.md", "---\n---\n");
     let sealed = SealedSource::open(&root).expect("open");
-    let registry = read(&sealed).expect("read").expect("marketplace-shaped");
+    let registry = read(&sealed)
+        .expect("read")
+        .expect("plugin-registry-shaped");
     let meta = metadata(&sealed)
         .expect("read")
-        .expect("marketplace-shaped");
+        .expect("plugin-registry-shaped");
     let problems: Vec<&str> = meta.findings.iter().map(|f| f.problem.as_str()).collect();
 
     assert!(
@@ -206,7 +212,9 @@ fn a_symlinked_plugin_component_is_never_read_through() {
     )
     .expect("symlink");
     let sealed = SealedSource::open(&root).expect("open");
-    let registry = read(&sealed).expect("read").expect("marketplace-shaped");
+    let registry = read(&sealed)
+        .expect("read")
+        .expect("plugin-registry-shaped");
 
     assert_eq!(
         find(&sealed, &registry, ItemKind::Agent, "code-review/leak"),

@@ -1,4 +1,4 @@
-//! Marketplace-shaped catalogs, end to end: a repository that ships its
+//! Plugin-registry-shaped catalogs, end to end: a repository that ships its
 //! content one plugin at a time is pointed at, enumerated, installed and
 //! refreshed, with every item carrying the plugin it came from into the
 //! name each tool lists it under.
@@ -46,7 +46,7 @@ fn write(root: &Path, rel: &str, text: &str) {
     fs::write(path, text).unwrap();
 }
 
-/// A project pointed at a marketplace-shaped catalog and a plain one.
+/// A project pointed at a plugin-registry-shaped catalog and a plain one.
 #[allow(clippy::unwrap_used)]
 fn fixture(harnesses: &str, declarations: &str) -> Fixture {
     let tmp = tempfile::tempdir().unwrap();
@@ -138,7 +138,7 @@ fn a_windows_written_catalog_installs_under_its_plugin() {
 
 #[test]
 #[allow(clippy::unwrap_used)]
-fn every_tool_lists_a_marketplace_item_under_its_plugin() {
+fn every_tool_lists_a_plugin_registry_item_under_its_plugin() {
     let f = fixture(
         "\"claude\", \"codex\", \"opencode\"",
         "[skills.\"data-science/eda\"]\nsource = \"market\"\n\n[agents.\"code-review/reviewer\"]\nsource = \"market\"\n\n[commands.\"data-science/report\"]\nsource = \"market\"\n",

@@ -1,5 +1,5 @@
-//! Reading items out of a marketplace-shaped catalog, and describing what
-//! it offers.
+//! Reading items out of a plugin-registry-shaped catalog, and describing
+//! what it offers.
 //!
 //! An item's name carries the plugin it came from — `<plugin>/<item>` — so
 //! two plugins can each ship an `analyzer` without one hiding the other.
@@ -16,7 +16,7 @@ use crate::model::ItemKind;
 use crate::names;
 use crate::source_read::SealedSource;
 
-use super::marketplace::{CatalogFinding, PLUGIN_MANIFEST, PluginEntry, Registry};
+use super::plugin_registry::{CatalogFinding, PLUGIN_MANIFEST, PluginEntry, Registry};
 
 /// The directory a plugin keeps this kind in, and the file that marks one
 /// item. Everything else a plugin may carry (hooks, servers) is left alone
@@ -52,7 +52,7 @@ fn exists(sealed: &SealedSource, path: &std::path::Path, kind: ItemKind) -> bool
 /// Where a `<plugin>/<item>` name resolves to, or `None` when this catalog
 /// carries no such item. A name whose plugin the registry never validated
 /// resolves nowhere — that is what makes the registry, not the directory
-/// listing, the thing that decides what a marketplace catalog offers.
+/// listing, the thing that decides what a plugin-registry catalog offers.
 pub fn find(
     sealed: &SealedSource,
     registry: &Registry,
@@ -132,7 +132,7 @@ pub struct CatalogGroup {
     pub members: Vec<CatalogItem>,
 }
 
-/// What a marketplace-shaped catalog offers, and everything wrong with it.
+/// What a plugin-registry-shaped catalog offers, and everything wrong with it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CatalogMetadata {
     pub name: String,
@@ -155,9 +155,9 @@ pub(super) fn plugin_members(
 
 /// The full read: the registry, every plugin's own manifest, and the items
 /// on disk, checked against each other. `None` when the source is not
-/// marketplace-shaped.
+/// plugin-registry-shaped.
 pub fn metadata(sealed: &SealedSource) -> Result<Option<CatalogMetadata>> {
-    let Some(registry) = super::marketplace::read(sealed)? else {
+    let Some(registry) = super::plugin_registry::read(sealed)? else {
         return Ok(None);
     };
     let mut findings = registry.findings.clone();

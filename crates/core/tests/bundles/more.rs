@@ -1,5 +1,5 @@
 //! What a set does when the catalog changes its mind, when the catalog is a
-//! marketplace, and when it names a member nobody offers.
+//! plugin registry, and when it names a member nobody offers.
 
 use std::fs;
 
@@ -76,11 +76,11 @@ fn an_upstream_member_addition_previews_too() {
     );
 }
 
-/// Each plugin a marketplace catalog ships is a set already — it installs as
-/// one without the catalog author writing a bundle table at all.
+/// Each plugin a plugin-registry catalog ships is a set already — it installs
+/// as one without the catalog author writing a bundle table at all.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn a_marketplace_plugin_installs_as_a_bundle() {
+fn a_plugin_registry_plugin_installs_as_a_bundle() {
     let f = fixture("");
     let market = f.project.parent().unwrap().parent().unwrap().join("market");
     write(

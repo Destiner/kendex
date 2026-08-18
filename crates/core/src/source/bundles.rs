@@ -1,7 +1,7 @@
 //! The curated sets a catalog offers.
 //!
 //! A plain catalog declares them in its own `vstack.toml`: `[bundles.<name>]`
-//! with a description and one member list per kind. A marketplace-shaped
+//! with a description and one member list per kind. A plugin-registry-shaped
 //! catalog declares them by existing — each plugin it ships is a set already,
 //! under the name, version and category its registry carries.
 //!
@@ -88,7 +88,7 @@ pub(super) fn declared(table: &toml::Table) -> BTreeMap<String, CatalogBundle> {
 
 /// Every set this catalog offers.
 pub fn offered(sealed: &SealedSource, config: &SourceConfig) -> Result<Vec<CatalogBundle>> {
-    let Some(registry) = &config.marketplace else {
+    let Some(registry) = &config.plugin_registry else {
         return Ok(config.bundles.values().cloned().collect());
     };
     registry
@@ -104,7 +104,7 @@ pub fn find(
     config: &SourceConfig,
     name: &str,
 ) -> Result<Option<CatalogBundle>> {
-    let Some(registry) = &config.marketplace else {
+    let Some(registry) = &config.plugin_registry else {
         return Ok(config.bundles.get(name).cloned());
     };
     match registry.entry(name) {

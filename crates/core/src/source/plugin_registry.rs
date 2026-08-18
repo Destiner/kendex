@@ -1,4 +1,4 @@
-//! Marketplace-shaped catalogs: a repository that carries
+//! Plugin-registry-shaped catalogs: a repository that carries
 //! `.claude-plugin/marketplace.json` and keeps its content one plugin at a
 //! time under `plugins/<name>/{agents,commands,skills}`.
 //!
@@ -23,7 +23,7 @@ use crate::error::Result;
 use crate::names;
 use crate::source_read::SealedSource;
 
-/// The file that declares a catalog marketplace-shaped.
+/// The file that declares a catalog plugin-registry-shaped.
 pub const REGISTRY: &str = ".claude-plugin/marketplace.json";
 /// A plugin's own manifest — the one file that can disagree with the
 /// registry about what the plugin is called and which version it is.
@@ -90,8 +90,8 @@ impl Registry {
     }
 }
 
-/// The registry of a marketplace-shaped source, or `None` when the source
-/// carries no registry at all and is read the plain way.
+/// The registry of a plugin-registry-shaped source, or `None` when the
+/// source carries no registry at all and is read the plain way.
 pub fn read(sealed: &SealedSource) -> Result<Option<Registry>> {
     let Some(text) = sealed.read_if_exists(&sealed.root().join(REGISTRY))? else {
         return Ok(None);

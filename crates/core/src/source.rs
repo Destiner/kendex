@@ -9,11 +9,11 @@ use crate::source_read::SealedSource;
 
 pub mod bundles;
 mod catalog;
-mod marketplace;
+mod plugin_registry;
 
 pub use bundles::CatalogBundle;
 pub use catalog::{CatalogGroup, CatalogItem, CatalogMetadata, metadata as catalog_metadata};
-pub use marketplace::{CatalogFinding, PluginEntry, REGISTRY as MARKETPLACE_REGISTRY, Registry};
+pub use plugin_registry::{CatalogFinding, PluginEntry, Registry};
 
 /// A source the engine can read right now.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -233,19 +233,19 @@ pub struct SourceConfig {
     pub role_skills: BTreeMap<String, Vec<String>>,
     pub frontmatter: BTreeMap<String, BTreeMap<String, crate::manifest::FrontmatterOverrides>>,
     /// The curated sets this catalog offers by name. Empty for a
-    /// marketplace-shaped catalog, whose plugins are its sets.
+    /// plugin-registry-shaped catalog, whose plugins are its sets.
     pub bundles: BTreeMap<String, CatalogBundle>,
-    /// Set when the source carries a marketplace registry: its items live
+    /// Set when the source carries a plugin registry: its items live
     /// one plugin deep and are named `<plugin>/<item>`. The kind directories
     /// at the root are not read in that case — the registry says what the
     /// catalog offers, and reading both would offer the same file twice.
-    pub marketplace: Option<Registry>,
+    pub plugin_registry: Option<Registry>,
 }
 
 impl SourceConfig {
     /// Everything wrong with the catalog's own registry, if it has one.
     pub fn findings(&self) -> &[CatalogFinding] {
-        match &self.marketplace {
+        match &self.plugin_registry {
             Some(registry) => &registry.findings,
             None => &[],
         }
@@ -256,7 +256,7 @@ pub fn source_config(sealed: &SealedSource) -> Result<SourceConfig> {
     let mut config = SourceConfig {
         agent_dirs: vec!["agents".to_owned()],
         skill_dirs: vec!["skills".to_owned()],
-        marketplace: marketplace::read(sealed)?,
+        plugin_registry: plugin_registry::read(sealed)?,
         ..SourceConfig::default()
     };
     let Some(text) = sealed.read_if_exists(&sealed.root().join("vstack.toml"))? else {
@@ -325,7 +325,7 @@ pub fn find_item(
     if crate::names::item_problem(name).is_some() {
         return None;
     }
-    if let Some(registry) = &config.marketplace {
+    if let Some(registry) = &config.plugin_registry {
         return catalog::find(sealed, registry, kind, name);
     }
     let root = sealed.root();
@@ -353,7 +353,7 @@ fn catalog_file(sealed: &SealedSource, dir: &str, file: &str) -> Option<PathBuf>
 }
 
 pub fn list_items(sealed: &SealedSource, config: &SourceConfig, kind: ItemKind) -> Vec<String> {
-    if let Some(registry) = &config.marketplace {
+    if let Some(registry) = &config.plugin_registry {
         return catalog::items(sealed, registry, kind);
     }
     let mut names = Vec::new();

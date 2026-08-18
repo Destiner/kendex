@@ -28,7 +28,7 @@ const WSHOBSON: &str = r#"{
 }"#;
 
 #[test]
-fn a_source_without_the_registry_is_not_marketplace_shaped() {
+fn a_source_without_the_registry_is_not_plugin_registry_shaped() {
     let tmp = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir_all(tmp.path().join("catalog/plugins/thing")).expect("mkdir");
     let sealed = SealedSource::open(&tmp.path().join("catalog")).expect("open");
@@ -43,7 +43,9 @@ fn local_entries_are_consumed_and_entries_elsewhere_are_named() {
         WSHOBSON,
         &["plugins/data-science", "plugins/code-review", "plugins/y"],
     );
-    let registry = read(&sealed).expect("read").expect("marketplace-shaped");
+    let registry = read(&sealed)
+        .expect("read")
+        .expect("plugin-registry-shaped");
     assert_eq!(registry.name, "claude-code-workflows");
     assert_eq!(registry.owner.as_deref(), Some("wshobson"));
     assert_eq!(registry.version.as_deref(), Some("1.2.0"));
