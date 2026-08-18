@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { TAGS_ROW_LABEL } from "@/lib/copy";
 import type { ScopeSelection } from "@/lib/derive";
 import { kindLabel, TAG_LABELS, toolName } from "@/lib/labels";
@@ -53,6 +54,7 @@ export function LibraryFilters({
   projects,
   shown,
   total,
+  counting,
   filtered,
   onClear,
 }: {
@@ -70,6 +72,8 @@ export function LibraryFilters({
   /** Rows the table is showing, against every row it could show. */
   shown: number;
   total: number;
+  /** The first scan hasn't landed, so there is no count to state yet. */
+  counting: boolean;
   filtered: boolean;
   onClear: () => void;
 }) {
@@ -151,9 +155,13 @@ export function LibraryFilters({
             <span />
           )}
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="tabular-nums">
-              {shown === total ? `${total} items` : `${shown} of ${total}`}
-            </span>
+            {counting ? (
+              <Skeleton className="h-3 w-16" />
+            ) : (
+              <span className="tabular-nums">
+                {shown === total ? `${total} items` : `${shown} of ${total}`}
+              </span>
+            )}
             {filtered ? (
               <button
                 type="button"

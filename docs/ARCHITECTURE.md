@@ -226,6 +226,12 @@ lives in one capability table read by core and UI.
   one draft per package rather than fetching a second copy.
 - A section with nothing in it is not rendered. An empty state earns its
   place only when the page would otherwise be blank.
+- "Nothing here" and "not counted yet" are different sentences. A list
+  whose data has not arrived draws skeleton rows; the empty state waits
+  until the read that would fill it has finished. The startup reads —
+  settings, scan, audit, updates — run side by side rather than in a
+  chain, since the slowest of them (scoring every installed file) is one
+  nothing else waits on.
 - Commands that touch disk, git, or a subprocess are declared
   `#[tauri::command(async)]`. On Linux a synchronous command runs on the
   GTK main loop, so seconds of work reads to the window manager as a

@@ -76,10 +76,13 @@ function useScanTriggers() {
   const updatesLoad = useUpdatesStore((s) => s.load);
   const load = useSettingsStore((s) => s.load);
   useEffect(() => {
-    void load()
-      .then(() => refresh())
-      .then(() => auditRefresh())
-      .then(() => updatesLoad());
+    // Four independent reads, started together: the audit is the slow one
+    // (it scores every installed file), and chaining it behind the scan
+    // meant the Library sat empty waiting on work it does not need.
+    void load();
+    void refresh();
+    void auditRefresh();
+    void updatesLoad();
     let last = Date.now();
     const onFocus = () => {
       if (Date.now() - last < FOCUS_RESCAN_DEBOUNCE_MS) return;

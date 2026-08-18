@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { ItemKind, Tag } from "@/bindings";
 import { InstalledRow } from "@/components/library/installed-row";
+import { InstalledSkeleton } from "@/components/library/installed-skeleton";
 import { LibraryFilters } from "@/components/library/library-filters";
 import { LibraryLegend } from "@/components/library/library-legend";
 import { NotManagedPanel } from "@/components/library/not-managed";
@@ -115,6 +116,8 @@ export function InstalledView() {
     () => (result ? groupItems(result.items).length : 0),
     [result],
   );
+  // Nothing has been counted yet — distinct from "counted, found nothing".
+  const scanning = result === null;
   const hasAnyItems = (result?.items.length ?? 0) > 0;
   const filtered =
     search !== "" ||
@@ -145,6 +148,7 @@ export function InstalledView() {
         projects={projects}
         shown={groups.length}
         total={total}
+        counting={scanning}
         filtered={filtered}
         onClear={clearFilters}
       />
@@ -187,7 +191,8 @@ export function InstalledView() {
                     />
                   );
                 })}
-                {groups.length === 0 ? (
+                {scanning ? <InstalledSkeleton /> : null}
+                {!scanning && groups.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="py-10">
                       {hasAnyItems ? (

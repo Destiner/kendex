@@ -103,6 +103,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
     load,
 
     loadAll: async () => {
+      // Startup reads run side by side, so the project list may still be on
+      // its way — without it this would mark only the global scope.
+      const settings = useSettingsStore.getState();
+      if (!settings.settings) await settings.load();
       const projects = useSettingsStore.getState().settings?.projects ?? [];
       const scopes: Scope[] = [
         { scope: "global" },

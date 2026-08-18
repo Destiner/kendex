@@ -28,6 +28,10 @@ const RECENT_ACTIVITY_LIMIT = 6;
 export function OverviewPage() {
   const { result } = useScanStore();
   const views = useAuditStore((s) => s.views);
+  // The safety pass is the slowest thing the app does; until it has run
+  // once, Home cannot say whether anything needs attention — so it says
+  // that it is still looking rather than showing an empty page.
+  const stillChecking = useAuditStore((s) => s.auditedAt === null);
   const projectCount = useSettingsStore(
     (s) => s.settings?.projects?.length ?? 0,
   );
@@ -171,7 +175,14 @@ export function OverviewPage() {
         <div className={cn("flex flex-col gap-10", CONTENT_WIDTH)}>
           {/* Nothing to decide means nothing to say: the section is gone
               rather than standing there reporting its own emptiness. */}
-          {rows.length > 0 ? (
+          {stillChecking ? (
+            <Section title="Needs attention">
+              <div className="flex flex-col gap-px overflow-hidden rounded-xl border bg-card">
+                <Skeleton className="h-[3.75rem] rounded-none" />
+                <Skeleton className="h-[3.75rem] rounded-none" />
+              </div>
+            </Section>
+          ) : rows.length > 0 ? (
             <Section title="Needs attention">
               <AttentionSection rows={rows} />
             </Section>

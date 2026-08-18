@@ -440,6 +440,13 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Changed
 
+- The app no longer looks empty while it is still reading. The Library
+  draws placeholder rows until the first scan lands, instead of claiming
+  "Nothing installed yet", and Home says it is still checking rather than
+  showing a blank space where what-needs-attention will appear. The four
+  startup reads now run at the same time, so the Library — which needs
+  only the quick one — no longer waits behind the safety pass over every
+  installed file.
 - Customize is now the page for what isn't about one package: the
   instructions every agent and skill inherits, your own hooks, and a
   project's skills folder — plus a list of every package you have
