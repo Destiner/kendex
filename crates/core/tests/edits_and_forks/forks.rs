@@ -25,7 +25,7 @@ fn fork_keeps_the_name_pauses_updates_and_survives_refresh() {
 
     // The fork's bytes live in the local source and render under the name.
     assert!(
-        fs::read_to_string(w.home.join("app/.vstack-local/skills/gh/SKILL.md"))
+        fs::read_to_string(w.home.join("app/.kendex-local/skills/gh/SKILL.md"))
             .unwrap()
             .contains("My fork.")
     );
@@ -87,7 +87,7 @@ fn rename_fork_moves_the_declaration_and_refuses_depended_on_names() {
     assert!(!text.contains("[skills.gh]"));
     assert!(
         w.home
-            .join("app/.vstack-local/skills/my-gh/SKILL.md")
+            .join("app/.kendex-local/skills/my-gh/SKILL.md")
             .is_file()
     );
 }

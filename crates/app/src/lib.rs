@@ -111,6 +111,13 @@ pub fn run() -> tauri::Result<()> {
     let mut stderr = std::io::stderr();
     match kendex_core::env::Env::detect() {
         Ok(env) => {
+            // The old-name dirs move before anything reads the new ones —
+            // recovery included, so it finds the journals where they now
+            // live. A failure is reported, not fatal: the app still opens,
+            // and the next launch tries again.
+            if let Err(error) = kendex_core::rename::migrate_global_dirs(&env) {
+                let _ = writeln!(stderr, "moving vstack2 data to kendex failed: {error}");
+            }
             for message in recovery::recover_on_launch(&env) {
                 let _ = writeln!(stderr, "recovery: {message}");
             }

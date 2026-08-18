@@ -1,12 +1,9 @@
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::env::Env;
 use crate::error::{CoreError, Result};
 use crate::manifest::{LOCAL_SOURCE_NAME, Manifest, SourceDecl};
-use crate::model::{ItemKind, Scope};
-use crate::source_read::SealedSource;
-
+use crate::model::Scope;
 pub mod bundles;
 mod catalog;
 mod plugin_registry;
@@ -45,11 +42,20 @@ pub enum SourceState {
     },
 }
 
-/// Where adopted content lives for a scope — always catalog-shaped.
+/// Where adopted content lives for a scope — always catalog-shaped. New
+/// content lands under the new name; a scope whose local source exists
+/// only under the old name keeps reading it until the rename op moves it.
 pub fn local_source_root(env: &Env, scope: &Scope) -> PathBuf {
     match scope {
         Scope::Global => env.global_local_source_dir(),
-        Scope::Project { root } => root.join(".vstack-local"),
+        Scope::Project { root } => {
+            let new = root.join(crate::rename::LOCAL_SOURCE_DIR);
+            let old = root.join(crate::rename::LEGACY_LOCAL_SOURCE_DIR);
+            if !new.is_dir() && old.is_dir() {
+                return old;
+            }
+            new
+        }
     }
 }
 
@@ -223,176 +229,8 @@ pub fn require_ready(
     }
 }
 
-/// Source-side layout + mapping tables, read leniently — source catalogs are
-/// v1-format repos (no schema key) and stay valid forever.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct SourceConfig {
-    pub agent_dirs: Vec<String>,
-    pub skill_dirs: Vec<String>,
-    pub agent_skills: BTreeMap<String, Vec<String>>,
-    pub role_skills: BTreeMap<String, Vec<String>>,
-    pub frontmatter: BTreeMap<String, BTreeMap<String, crate::manifest::FrontmatterOverrides>>,
-    /// The curated sets this catalog offers by name. Empty for a
-    /// plugin-registry-shaped catalog, whose plugins are its sets.
-    pub bundles: BTreeMap<String, CatalogBundle>,
-    /// Set when the source carries a plugin registry: its items live
-    /// one plugin deep and are named `<plugin>/<item>`. The kind directories
-    /// at the root are not read in that case — the registry says what the
-    /// catalog offers, and reading both would offer the same file twice.
-    pub plugin_registry: Option<Registry>,
-}
-
-impl SourceConfig {
-    /// Everything wrong with the catalog's own registry, if it has one.
-    pub fn findings(&self) -> &[CatalogFinding] {
-        match &self.plugin_registry {
-            Some(registry) => &registry.findings,
-            None => &[],
-        }
-    }
-}
-
-pub fn source_config(sealed: &SealedSource) -> Result<SourceConfig> {
-    let mut config = SourceConfig {
-        agent_dirs: vec!["agents".to_owned()],
-        skill_dirs: vec!["skills".to_owned()],
-        plugin_registry: plugin_registry::read(sealed)?,
-        ..SourceConfig::default()
-    };
-    let Some(text) = sealed.read_if_exists(&sealed.root().join("vstack.toml"))? else {
-        return Ok(config);
-    };
-    let Ok(table) = text.parse::<toml::Table>() else {
-        return Ok(config);
-    };
-    if let Some(catalog) = table.get("catalog").and_then(|c| c.as_table()) {
-        if let Some(dirs) = string_list(catalog.get("agents")) {
-            config.agent_dirs = dirs;
-        }
-        if let Some(dirs) = string_list(catalog.get("skills")) {
-            config.skill_dirs = dirs;
-        }
-    }
-    config.bundles = bundles::declared(&table);
-    if let Some(mapping) = table.get("agent-skills").and_then(|t| t.as_table()) {
-        for (agent, skills) in mapping {
-            if let Some(list) = string_list(Some(skills)) {
-                config.agent_skills.insert(agent.clone(), list);
-            }
-        }
-    }
-    if let Some(mapping) = table.get("role-skills").and_then(|t| t.as_table()) {
-        for (role, skills) in mapping {
-            if let Some(list) = string_list(Some(skills)) {
-                config.role_skills.insert(role.clone(), list);
-            }
-        }
-    }
-    if let Some(frontmatter) = table.get("agent-frontmatter").and_then(|t| t.as_table()) {
-        for (harness, agents) in frontmatter {
-            let Some(agents) = agents.as_table() else {
-                continue;
-            };
-            let mut per_agent = BTreeMap::new();
-            for (agent, overrides) in agents {
-                if let Ok(parsed) = overrides.clone().try_into() {
-                    per_agent.insert(agent.clone(), parsed);
-                }
-            }
-            config.frontmatter.insert(harness.clone(), per_agent);
-        }
-    }
-    Ok(config)
-}
-
-fn string_list(value: Option<&toml::Value>) -> Option<Vec<String>> {
-    value?.as_array().map(|list| {
-        list.iter()
-            .filter_map(|v| v.as_str())
-            .map(str::to_owned)
-            .collect()
-    })
-}
-
-pub fn find_item(
-    sealed: &SealedSource,
-    config: &SourceConfig,
-    kind: ItemKind,
-    name: &str,
-) -> Option<PathBuf> {
-    // A name that cannot be a file is not on offer, whoever asks — a bundle
-    // member or a dependency is not checked anywhere else.
-    if crate::names::item_problem(name).is_some() {
-        return None;
-    }
-    if let Some(registry) = &config.plugin_registry {
-        return catalog::find(sealed, registry, kind, name);
-    }
-    let root = sealed.root();
-    match kind {
-        ItemKind::Skill => config
-            .skill_dirs
-            .iter()
-            .map(|d| root.join(d).join(name))
-            .find(|p| sealed.is_file(&p.join("SKILL.md"))),
-        ItemKind::Agent => config
-            .agent_dirs
-            .iter()
-            .map(|d| root.join(d).join(format!("{name}.md")))
-            .find(|p| sealed.is_file(p)),
-        ItemKind::Hook => catalog_file(sealed, "hooks", &format!("{name}.sh")),
-        ItemKind::Command => catalog_file(sealed, "commands", &format!("{name}.md")),
-        ItemKind::McpServer => catalog_file(sealed, "mcp", &format!("{name}.toml")),
-        ItemKind::Plugin | ItemKind::PiExtension => None,
-    }
-}
-
-fn catalog_file(sealed: &SealedSource, dir: &str, file: &str) -> Option<PathBuf> {
-    let path = sealed.root().join(dir).join(file);
-    sealed.is_file(&path).then_some(path)
-}
-
-pub fn list_items(sealed: &SealedSource, config: &SourceConfig, kind: ItemKind) -> Vec<String> {
-    if let Some(registry) = &config.plugin_registry {
-        return catalog::items(sealed, registry, kind);
-    }
-    let mut names = Vec::new();
-    match kind {
-        ItemKind::Skill => {
-            for dir in &config.skill_dirs {
-                let Ok(entries) = sealed.list_dir(&sealed.root().join(dir)) else {
-                    continue;
-                };
-                for path in entries {
-                    if sealed.is_file(&path.join("SKILL.md"))
-                        && let Some(name) = path.file_name().and_then(|n| n.to_str())
-                    {
-                        names.push(name.to_owned());
-                    }
-                }
-            }
-        }
-        ItemKind::Agent => {
-            for dir in &config.agent_dirs {
-                let Ok(entries) = sealed.list_dir(&sealed.root().join(dir)) else {
-                    continue;
-                };
-                for path in entries {
-                    if path.extension().is_some_and(|e| e == "md")
-                        && sealed.is_file(&path)
-                        && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-                    {
-                        names.push(stem.to_owned());
-                    }
-                }
-            }
-        }
-        _ => {}
-    }
-    names.sort();
-    names.dedup();
-    names
-}
+mod config;
+pub use config::{SourceConfig, find_item, list_items, source_config};
 
 #[cfg(test)]
 mod tests;

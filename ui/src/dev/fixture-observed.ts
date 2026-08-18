@@ -118,7 +118,7 @@ export function items(): ObservedItem[] {
       GLOBAL,
       "~/.claude/skills/code-review",
       {
-        fileState: link("~/.local/share/vstack2/rendered/skills/code-review"),
+        fileState: link("~/.local/share/kendex/rendered/skills/code-review"),
         description: "A structured checklist for reviewing changes",
         modifiedAt: DAYS_AGO(9),
       },

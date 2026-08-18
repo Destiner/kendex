@@ -41,10 +41,10 @@ fn fixture() -> Fixture {
         "# my project setup\nschema = 1\n\n[sources.cat]\npath = \"{}\"   # local catalog\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.gh]\nsource = \"cat\"\n",
         source.display()
     );
-    let manifest_path = project.join("vstack.toml");
+    let manifest_path = project.join("kendex.toml");
     fs::write(&manifest_path, &original).unwrap();
     fs::write(
-        project.join(".vstack-lock.json"),
+        project.join(".kendex-lock.json"),
         "{\n  \"version\": 1,\n  \"entries\": {}\n}\n",
     )
     .unwrap();
@@ -70,7 +70,7 @@ fn a_v01_scope_upgrades_in_place_changing_only_the_schema_line() {
             .plan
             .ops
             .iter()
-            .any(|op| op.description.contains("Upgrade vstack.toml"))
+            .any(|op| op.description.contains("Upgrade kendex.toml"))
     );
     apply::execute(&f.env, &report.plan, None).unwrap();
 

@@ -53,7 +53,7 @@ fn fixture(harnesses: &str, declarations: &str) -> Fixture {
     fs::write(source.join("hooks/done.sh"), DONE_HOOK).unwrap();
 
     fs::write(
-        project.join("vstack.toml"),
+        project.join("kendex.toml"),
         format!(
             "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [{harnesses}]\nmethod = \"symlink\"\n\n{declarations}",
             source.display()

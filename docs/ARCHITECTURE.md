@@ -430,6 +430,20 @@ lives in one capability table read by core and UI.
   the normal journaled, previewed plan as a surgical edit (the version
   line changes, nothing else). Files from a newer kendex refuse to load
   — an older build never corrupts a newer file.
+- **Old product names read as an import, not as a second format**
+  (`crates/core/src/rename.rs`). New scopes write `kendex.toml` /
+  `.kendex-lock.json` / `.kendex-local`; a scope found only under the
+  vstack spellings loads normally, and its next engine plan leads with a
+  journaled "Rename to kendex" prefix — the file renames, the
+  `.gitignore` line kendex wrote for the local source, nothing else —
+  with the rest of the plan retargeted to the renamed paths (a rename
+  preserves bytes, so observed-hash preconditions carry over). Both
+  generations in one scope root is a hard error naming both files; no
+  arbitration. Foreign surfaces never get the error: a catalog's own
+  `kendex.toml` outranks its `vstack.toml`, and old-name settings files
+  and templates keep being read. The global `vstack2` config/cache/data
+  dirs move under `kendex` once, on first launch of either shell, under
+  a scope-style lock, never overwriting what the new dirs already hold.
 - **Permission intent is typed and never widens.** A source's tool
   allowlist survives parse, merge, and every renderer as
   `Unspecified | AllowOnly | DenyExtra`; explicit denies survive

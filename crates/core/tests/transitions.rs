@@ -97,7 +97,7 @@ fn a_tool_diverges_and_reconverges_without_ever_serving_the_split_body() {
     let project = w.home.join("dev/app");
     declare(
         &w,
-        &project.join("vstack.toml"),
+        &project.join("kendex.toml"),
         "\"claude\", \"codex\", \"pi\"",
     );
     let scope = Scope::Project {
@@ -146,7 +146,7 @@ fn two_tools_refusing_one_shared_tree_still_applies() {
     let project = w.home.join("dev/app");
     declare(
         &w,
-        &project.join("vstack.toml"),
+        &project.join("kendex.toml"),
         "\"claude\", \"codex\", \"pi\"",
     );
     let scope = Scope::Project {

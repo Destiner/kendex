@@ -1,6 +1,8 @@
 use super::*;
 use crate::env::FakeOs;
 use crate::manifest::{MANIFEST_SCHEMA, SourceDecl};
+use crate::model::ItemKind;
+use crate::source_read::SealedSource;
 
 fn manifest_with(name: &str, decl: SourceDecl) -> Manifest {
     let mut manifest = Manifest {
@@ -147,7 +149,7 @@ fn a_catalog_never_talks_to_the_terminal_through_a_finding() {
 fn v1_catalog_tables_parse_leniently() {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(
-        tmp.path().join("vstack.toml"),
+        tmp.path().join("kendex.toml"),
         r#"
 is_source_catalog = true
 [catalog]
@@ -163,4 +165,59 @@ engineer = ["dev"]
     assert_eq!(config.skill_dirs, ["skills", "extra-skills"]);
     assert_eq!(config.agent_skills["rust"], ["clippy"]);
     assert_eq!(config.role_skills["engineer"], ["dev"]);
+}
+
+#[test]
+fn a_catalog_still_naming_its_config_vstack_toml_is_read() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("vstack.toml"),
+        "[catalog]\nskills = [\"old-skills\"]\n",
+    )
+    .unwrap();
+    let config = source_config(&SealedSource::open(tmp.path()).unwrap()).unwrap();
+    assert_eq!(config.skill_dirs, ["old-skills"]);
+}
+
+#[test]
+fn a_catalog_carrying_both_config_names_is_served_from_kendex_toml() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("kendex.toml"),
+        "[catalog]\nskills = [\"new-skills\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("vstack.toml"),
+        "[catalog]\nskills = [\"old-skills\"]\n",
+    )
+    .unwrap();
+    let config = source_config(&SealedSource::open(tmp.path()).unwrap()).unwrap();
+    assert_eq!(config.skill_dirs, ["new-skills"]);
+}
+
+#[test]
+fn a_local_source_left_under_the_old_name_still_reads() {
+    let tmp = tempfile::tempdir().unwrap();
+    let env = Env::fake(tmp.path(), FakeOs::Linux);
+    let project = tmp.path().join("proj");
+    std::fs::create_dir_all(project.join(".vstack-local/skills/handmade")).unwrap();
+    let scope = Scope::Project {
+        root: project.clone(),
+    };
+    assert_eq!(
+        local_source_root(&env, &scope),
+        project.join(".vstack-local")
+    );
+    let state = resolve(&env, &scope, LOCAL_SOURCE_NAME, &Manifest::default()).unwrap();
+    match state {
+        SourceState::Ready(ready) => assert_eq!(ready.root, project.join(".vstack-local")),
+        other => panic!("expected the old-name local source to read: {other:?}"),
+    }
+    // The new name wins the moment it exists — the rename op created it.
+    std::fs::create_dir_all(project.join(".kendex-local")).unwrap();
+    assert_eq!(
+        local_source_root(&env, &scope),
+        project.join(".kendex-local")
+    );
 }

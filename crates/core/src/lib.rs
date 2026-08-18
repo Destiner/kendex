@@ -25,6 +25,7 @@ pub mod pi_ext;
 pub mod process;
 pub mod quality;
 pub mod remote;
+pub mod rename;
 pub mod render;
 pub mod report;
 pub mod scan;

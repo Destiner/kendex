@@ -149,18 +149,7 @@ pub(crate) fn persist_and_plan(
         .iter()
         .any(|op| matches!(op.op, crate::apply::Op::WriteManifest { .. }));
     if !has_write {
-        let path = manifest::manifest_path(env, scope);
-        report.plan.ops.insert(
-            0,
-            crate::apply::PlannedOp {
-                description: "Save vstack.toml".into(),
-                op: crate::apply::Op::WriteManifest {
-                    pre: crate::apply::Pre::observed(&path)?,
-                    path,
-                    manifest: Box::new(manifest),
-                },
-            },
-        );
+        crate::rename::insert_manifest_save(env, scope, &mut report.plan, manifest)?;
     }
     Ok(report)
 }
@@ -249,7 +238,7 @@ mod tests {
         fs::create_dir_all(source.join("skills/gh")).unwrap();
         fs::write(source.join("skills/gh/SKILL.md"), "---\nname: gh\n---\nx\n").unwrap();
         fs::write(
-            project.join("vstack.toml"),
+            project.join("kendex.toml"),
             format!(
                 "schema = 5\n[sources.cat]\npath = \"{}\"\n[install]\nharnesses = [\"claude\"]\n[skills.gh]\nsource = \"cat\"\n",
                 source.display()

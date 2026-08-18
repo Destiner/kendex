@@ -276,7 +276,7 @@ mod tests {
         // Content lives in the local source; the original is trashed.
         assert!(
             project
-                .join(".vstack-local/skills/handmade/SKILL.md")
+                .join(".kendex-local/skills/handmade/SKILL.md")
                 .is_file()
         );
         assert!(!project.join(".claude/skills/handmade").exists());
@@ -303,7 +303,7 @@ mod tests {
         let scope = Scope::Project {
             root: project.clone(),
         };
-        let earlier = project.join(".vstack-local/skills/handmade");
+        let earlier = project.join(".kendex-local/skills/handmade");
         fs::create_dir_all(&earlier).unwrap();
         fs::write(earlier.join("SKILL.md"), "earlier").unwrap();
         fs::write(earlier.join("notes.md"), "kept only here").unwrap();

@@ -38,7 +38,7 @@ fn fixture(harnesses: &str, declarations: &str) -> Fixture {
     fs::write(source.join("commands/ship.md"), SHIP).unwrap();
 
     fs::write(
-        project.join("vstack.toml"),
+        project.join("kendex.toml"),
         format!(
             "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [{harnesses}]\nmethod = \"symlink\"\n\n{declarations}",
             source.display()
@@ -86,7 +86,7 @@ fn json(path: &Path) -> Value {
 }
 
 fn lock(f: &Fixture) -> Value {
-    json(&f.project.join(".vstack-lock.json"))
+    json(&f.project.join(".kendex-lock.json"))
 }
 
 #[allow(clippy::unwrap_used)]

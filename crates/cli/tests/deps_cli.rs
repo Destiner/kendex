@@ -168,7 +168,7 @@ fn sweeping_takes_the_leftovers_and_a_held_back_dependency_says_so() {
     assert!(output.status.success());
     assert!(!project.join(".claude/skills/github").exists());
     assert!(
-        fs::read_to_string(project.join("vstack.toml"))
+        fs::read_to_string(project.join("kendex.toml"))
             .unwrap()
             .contains("skill = [\"github\"]")
     );
@@ -235,7 +235,7 @@ fn an_optional_dependency_is_taken_only_when_it_is_asked_for() {
     assert!(!output.status.success());
     let said = String::from_utf8_lossy(&output.stderr).into_owned();
     assert!(said.contains("nonesuch"), "{said}");
-    assert!(!project.join("vstack.toml").exists());
+    assert!(!project.join("kendex.toml").exists());
 
     let output = add(&["--skill", "dev", "--with", "linear"]);
     assert!(
@@ -244,7 +244,7 @@ fn an_optional_dependency_is_taken_only_when_it_is_asked_for() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(project.join(".claude/skills/linear").exists());
-    let manifest = fs::read_to_string(project.join("vstack.toml")).unwrap();
+    let manifest = fs::read_to_string(project.join("kendex.toml")).unwrap();
     assert!(manifest.contains("[optional-dependencies]"), "{manifest}");
     assert!(manifest.contains("dev = [\"linear\"]"), "{manifest}");
     // The choice, not its consequence: the extra is never declared.

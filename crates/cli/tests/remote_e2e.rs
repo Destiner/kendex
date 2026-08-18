@@ -93,7 +93,7 @@ fn consuming_repo_installs_customizes_and_refreshes_from_the_default_catalog() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let manifest = fs::read_to_string(proj.join("vstack.toml")).unwrap();
+    let manifest = fs::read_to_string(proj.join("kendex.toml")).unwrap();
     assert!(manifest.contains("[sources.vstack]"), "{manifest}");
     assert!(manifest.contains("vanillagreencom/vstack"), "{manifest}");
     let rendered = proj.join(".agents/skills/gh/SKILL.md");
@@ -103,7 +103,7 @@ fn consuming_repo_installs_customizes_and_refreshes_from_the_default_catalog() {
             .contains("Upstream v1"),
     );
     assert!(proj.join(".claude/skills/gh").is_symlink());
-    let sources = home.join(".cache/vstack2/sources");
+    let sources = home.join(".cache/kendex/sources");
     let installed = only_child(&only_child(&sources.join("commits")));
     assert!(installed.join("skills/gh/SKILL.md").is_file());
     assert!(only_child(&sources.join("mirrors")).join("HEAD").is_file());
@@ -111,7 +111,7 @@ fn consuming_repo_installs_customizes_and_refreshes_from_the_default_catalog() {
 
     // Customize: a project skill instruction re-renders into the skill.
     let manifest = format!("{manifest}\n[skill-instructions]\ngh = \"Team note.\"\n");
-    fs::write(proj.join("vstack.toml"), manifest).unwrap();
+    fs::write(proj.join("kendex.toml"), manifest).unwrap();
     let output = vstack(home, &proj, &["refresh"]);
     assert!(output.status.success());
     assert!(

@@ -78,7 +78,7 @@ fn fixture() -> Fixture {
     )
     .unwrap();
     fs::write(
-        project.join("vstack.toml"),
+        project.join("kendex.toml"),
         format!(
             "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[agents.rust]\nsource = \"cat\"\n",
             source.display()
@@ -103,7 +103,7 @@ fn fixture() -> Fixture {
 fn a_refused_apply_leaves_every_surface_byte_identical() {
     let f = fixture();
     let report = audit(&f.env, &f.scope).unwrap();
-    let manifest_before = fs::read(f.project.join("vstack.toml")).unwrap();
+    let manifest_before = fs::read(f.project.join("kendex.toml")).unwrap();
 
     // The plan binds to plan-time state; a file appearing at the target
     // after planning must abort the whole apply.
@@ -112,10 +112,10 @@ fn a_refused_apply_leaves_every_surface_byte_identical() {
     apply::execute(&f.env, &report.plan, None).unwrap_err();
 
     assert_eq!(
-        fs::read(f.project.join("vstack.toml")).unwrap(),
+        fs::read(f.project.join("kendex.toml")).unwrap(),
         manifest_before
     );
-    assert!(!f.project.join(".vstack-lock.json").exists());
+    assert!(!f.project.join(".kendex-lock.json").exists());
     assert_eq!(
         fs::read_to_string(f.project.join(".claude/agents/rust.md")).unwrap(),
         "squatter"

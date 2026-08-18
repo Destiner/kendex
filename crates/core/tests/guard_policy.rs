@@ -144,7 +144,7 @@ fn the_commit_msg_hook_lane_honors_its_enabled_switch() {
 
     stage(
         &r,
-        "vstack.settings.toml",
+        "kendex.settings.toml",
         "[guards.commit-msg]\nenabled = false\n",
     );
     let report = guard::run_commit_msg(&ctx(&r), "not conventional at all\n");
@@ -221,7 +221,7 @@ fn a_users_color_config_cannot_garble_what_the_guards_parse() {
     stage(&r, "tools/size-ratchet-baseline.tsv", "src/long.rs\t30\n");
     stage(
         &r,
-        "vstack.settings.toml",
+        "kendex.settings.toml",
         "[guards.size-ratchet]\nthreshold = 20\n",
     );
     let out = size_ratchet::run(&ctx(&r), &policy(&r), size_ratchet::Mode::Check).unwrap();
@@ -246,7 +246,7 @@ fn seed_refuses_while_head_still_carries_a_baseline() {
     stage(&r, "src/long.rs", &long);
     stage(
         &r,
-        "vstack.settings.toml",
+        "kendex.settings.toml",
         "[guards.size-ratchet]\nthreshold = 20\n",
     );
     stage(&r, "tools/size-ratchet-baseline.tsv", "src/long.rs\t30\n");
@@ -275,7 +275,7 @@ fn update_settles_the_baselines_own_row_in_one_run() {
     let r = repo();
     stage(
         &r,
-        "vstack.settings.toml",
+        "kendex.settings.toml",
         "[guards.size-ratchet]\nthreshold = 3\n",
     );
     let long: String = (0..6).map(|i| format!("line {i}\n")).collect();

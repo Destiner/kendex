@@ -25,11 +25,11 @@ fn fixture(name: &str) -> Fixture {
     let project = home.join("dev").join(name);
     fs::create_dir_all(project.join(".claude")).unwrap();
     fs::write(
-        project.join("vstack.toml"),
+        project.join("kendex.toml"),
         "schema = 2\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n",
     )
     .unwrap();
-    let lock_path = project.join(".vstack-lock.json");
+    let lock_path = project.join(".kendex-lock.json");
     Fixture {
         env,
         scope: Scope::Project { root: project },

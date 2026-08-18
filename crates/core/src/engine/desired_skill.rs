@@ -98,8 +98,17 @@ pub(super) fn desired_skill(ctx: &ItemCtx, state: &mut DesiredState) -> Result<(
     // harness here installs seeds nothing, so nothing reaches the settings
     // file without passing the safety gate the installation passes.
     if enabled && matches!(ctx.scope, Scope::Project { .. }) {
+        // Catalog content is foreign: a skill still shipping the old
+        // template name keeps seeding, the new name winning when both ship.
         let template = ctx.item_path.join(crate::settings_seed::SETTINGS_TEMPLATE);
-        if let Some(text) = ctx.sealed.read_if_exists(&template)? {
+        let text = match ctx.sealed.read_if_exists(&template)? {
+            Some(text) => Some(text),
+            None => ctx.sealed.read_if_exists(
+                &ctx.item_path
+                    .join(crate::settings_seed::LEGACY_SETTINGS_TEMPLATE),
+            )?,
+        };
+        if let Some(text) = text {
             for entry in crate::settings_seed::extract_env_entries(&text) {
                 state.settings_env.push(crate::settings_seed::SeededEnv {
                     entry,

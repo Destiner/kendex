@@ -195,10 +195,16 @@ pub fn parse_entry_key(key: &str) -> Option<(ItemKind, &str, HarnessId)> {
     Some((kind, name, HarnessId::parse(harness)?))
 }
 
+/// Where this scope's lock lives right now: the new name, or the old one
+/// when only it exists — the rename op moves it (the global lock is
+/// `lock.json` in both generations, so only projects have two spellings).
 pub fn lock_path(env: &Env, scope: &Scope) -> PathBuf {
     match scope {
         Scope::Global => env.global_lock_file(),
-        Scope::Project { root } => Env::project_lock_file(root),
+        Scope::Project { root } => crate::rename::existing_or_new(
+            Env::project_lock_file(root),
+            root.join(crate::rename::LEGACY_LOCK_FILE),
+        ),
     }
 }
 
@@ -241,6 +247,7 @@ pub fn is_v1_text(text: &str) -> bool {
 }
 
 pub fn load_file(path: &Path) -> Result<LockFile> {
+    crate::rename::refuse_both_generations(path)?;
     let Some(text) = read_if_exists(path)? else {
         return Ok(LockFile::Absent);
     };

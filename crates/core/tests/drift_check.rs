@@ -152,7 +152,7 @@ fn a_pin_reaching_a_member_through_a_bundle_reports_held() {
     let w = world();
     write_skill(&w.upstream, "member", "One.");
     fs::write(
-        w.upstream.join("vstack.toml"),
+        w.upstream.join("kendex.toml"),
         "[bundles.kit]\ndescription = \"a set\"\nskills = [\"member\"]\n",
     )
     .unwrap();

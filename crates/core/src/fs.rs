@@ -64,10 +64,10 @@ mod tests {
     #[test]
     fn a_symlinked_file_is_rewritten_through_the_link() {
         let tmp = tempfile::tempdir().unwrap();
-        let real = tmp.path().join("dotfiles/vstack.toml");
+        let real = tmp.path().join("dotfiles/kendex.toml");
         fs::create_dir_all(real.parent().unwrap()).unwrap();
         fs::write(&real, "old").unwrap();
-        let link = tmp.path().join("vstack.toml");
+        let link = tmp.path().join("kendex.toml");
         std::os::unix::fs::symlink(&real, &link).unwrap();
 
         atomic_write(&link, "new").unwrap();

@@ -40,7 +40,7 @@ fn scope(world: &World) -> Scope {
 #[allow(clippy::unwrap_used)]
 fn declare(world: &World, hook_lines: &str) {
     fs::write(
-        world.project.join("vstack.toml"),
+        world.project.join("kendex.toml"),
         format!(
             "schema = 5\n\n[install]\nharnesses = [\"codex\"]\n\n[[custom-hooks]]\n{hook_lines}"
         ),
@@ -78,7 +78,7 @@ fn an_every_agent_hook_registers_on_codex_and_removal_reverses_it() {
 
     // Removing the entry removes the registration, like any owned artifact.
     fs::write(
-        w.project.join("vstack.toml"),
+        w.project.join("kendex.toml"),
         "schema = 5\n\n[install]\nharnesses = [\"codex\"]\n",
     )
     .unwrap();
@@ -151,7 +151,7 @@ fn an_every_agent_hook_on_claude_lives_in_settings_not_agent_files() {
     let w = world();
     fs::create_dir_all(w.project.join(".claude")).unwrap();
     fs::write(
-        w.project.join("vstack.toml"),
+        w.project.join("kendex.toml"),
         "schema = 5\n\n[install]\nharnesses = [\"claude\"]\n\n[[custom-hooks]]\nname = \"guard-pretooluse\"\nevent = \"PreToolUse\"\nmatcher = \"Bash\"\ncommand = \"./scripts/guard.sh\"\nagents = \"all\"\n",
     )
     .unwrap();

@@ -27,7 +27,7 @@ fn codex_and_pi_share_one_project_variant_and_claude_links_while_equal() {
     )
     .unwrap();
     fs::write(
-        project.join("vstack.toml"),
+        project.join("kendex.toml"),
         format!(
             "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\", \"codex\", \"pi\"]\nmethod = \"symlink\"\n\n[skills.gh]\nsource = \"cat\"\n",
             source.display()
@@ -51,7 +51,7 @@ fn codex_and_pi_share_one_project_variant_and_claude_links_while_equal() {
     assert_eq!(fs::read_link(&claude).unwrap(), shared);
 
     let lock: serde_json::Value =
-        serde_json::from_str(&fs::read_to_string(project.join(".vstack-lock.json")).unwrap())
+        serde_json::from_str(&fs::read_to_string(project.join(".kendex-lock.json")).unwrap())
             .unwrap();
     for key in ["skill:gh:claude", "skill:gh:codex", "skill:gh:pi"] {
         assert!(lock["entries"].get(key).is_some(), "{key} missing");
@@ -83,7 +83,7 @@ fn an_oversized_skill_splits_per_surface_instead_of_truncating() {
     assert!(body.len() > 8192);
     fs::write(source.join("skills/big/SKILL.md"), &body).unwrap();
     fs::write(
-        project.join("vstack.toml"),
+        project.join("kendex.toml"),
         format!(
             "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\", \"codex\", \"pi\"]\nmethod = \"symlink\"\n\n[skills.big]\nsource = \"cat\"\n",
             source.display()

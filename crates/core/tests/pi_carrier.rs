@@ -57,7 +57,7 @@ fn declare_hook(world: &World, event: &str) {
     )
     .unwrap();
     fs::write(
-        world.project.join("vstack.toml"),
+        world.project.join("kendex.toml"),
         format!(
             "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"pi\"]\nmethod = \"symlink\"\n\n[hooks.guard]\nsource = \"cat\"\n",
             catalog.display()

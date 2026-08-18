@@ -57,7 +57,7 @@ fn fixture(declarations: &str) -> Fixture {
     fs::write(source.join("mcp/gh.toml"), GH_MCP).unwrap();
 
     fs::write(
-        project.join("vstack.toml"),
+        project.join("kendex.toml"),
         format!(
             "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"gemini\"]\nmethod = \"symlink\"\n\n{declarations}",
             source.display()

@@ -19,10 +19,10 @@ fn an_optional_dependency_installs_only_once_it_is_chosen() {
     assert!(!installed(&f, "linear"));
 
     fs::write(
-        f.project.join("vstack.toml"),
+        f.project.join("kendex.toml"),
         format!(
             "{}\n[optional-dependencies]\ndev = [\"linear\"]\n",
-            fs::read_to_string(f.project.join("vstack.toml")).unwrap()
+            fs::read_to_string(f.project.join("kendex.toml")).unwrap()
         ),
     )
     .unwrap();

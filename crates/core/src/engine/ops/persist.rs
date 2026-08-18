@@ -1,7 +1,7 @@
 use crate::engine::EngineReport;
 use crate::env::Env;
 use crate::error::Result;
-use crate::manifest::{self, Manifest};
+use crate::manifest::Manifest;
 use crate::model::Scope;
 
 /// The plan must persist the mutated manifest exactly once; plan_scope adds
@@ -20,17 +20,5 @@ pub(super) fn ensure_manifest_persisted(
     if already {
         return Ok(());
     }
-    let path = manifest::manifest_path(env, scope);
-    report.plan.ops.insert(
-        0,
-        crate::apply::PlannedOp {
-            description: "Save vstack.toml".into(),
-            op: crate::apply::Op::WriteManifest {
-                pre: crate::apply::Pre::observed(&path)?,
-                path,
-                manifest: Box::new(manifest.clone()),
-            },
-        },
-    );
-    Ok(())
+    crate::rename::insert_manifest_save(env, scope, &mut report.plan, manifest.clone())
 }

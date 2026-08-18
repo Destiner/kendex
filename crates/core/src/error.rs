@@ -45,6 +45,11 @@ pub enum CoreError {
     #[error("{path} is a v1 vstack lock — migration required; v2 never modifies v1 files")]
     LegacyLock { path: PathBuf },
 
+    #[error(
+        "both {new} and {old} exist — one scope cannot carry both generations; keep the contents you mean, delete the other file, and run again"
+    )]
+    BothGenerations { new: PathBuf, old: PathBuf },
+
     #[error("{path}: this lock file is damaged and could not be read — {message}")]
     LockCorrupt { path: PathBuf, message: String },
 

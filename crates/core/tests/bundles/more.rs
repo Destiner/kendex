@@ -102,7 +102,7 @@ fn a_plugin_registry_plugin_installs_as_a_bundle() {
     );
     write(
         &f.project,
-        "vstack.toml",
+        "kendex.toml",
         &format!(
             "schema = 5\n\n[sources.market]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[bundles.\"data-science\"]\nsource = \"market\"\n",
             market.display()
@@ -270,7 +270,7 @@ fn a_member_two_bundles_carry_stays_until_both_are_gone() {
     super::remove(&f, "extra", false);
     assert!(!installed(&f, ItemKind::Skill, "docs"));
     assert!(
-        fs::read_to_string(f.project.join("vstack.toml"))
+        fs::read_to_string(f.project.join("kendex.toml"))
             .unwrap()
             .find("[bundles")
             .is_none()

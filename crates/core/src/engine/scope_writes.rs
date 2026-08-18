@@ -139,7 +139,10 @@ pub(super) fn plan_schema_upgrade(
     ops: &mut Vec<PlannedOp>,
 ) -> Result<()> {
     let path = manifest::manifest_path(env, scope);
-    let description = "Upgrade vstack.toml to the current format".to_owned();
+    let description = format!(
+        "Upgrade {} to the current format",
+        crate::rename::MANIFEST_FILE
+    );
     let current = crate::fs::read_if_exists(&path)?.unwrap_or_default();
     let mut rewritten = false;
     let upgraded_text: String = current
@@ -208,11 +211,15 @@ pub(super) fn plan_settings_seed(
     if state.settings_env.is_empty() {
         return Ok(());
     }
-    let path = root.join(crate::settings_seed::SETTINGS_FILE);
+    let path = crate::settings_seed::settings_file_path(root);
+    let file = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| crate::settings_seed::SETTINGS_FILE.to_owned());
     if path.is_symlink() || (path.exists() && !path.is_file()) {
         drift.push(DriftRow {
             kind: ItemKind::Skill,
-            name: crate::settings_seed::SETTINGS_FILE.into(),
+            name: file,
             harness: HarnessId::Claude,
             scope: scope.clone(),
             state: DriftState::Conflict,
@@ -249,11 +256,7 @@ pub(super) fn plan_settings_seed(
         said.push(format!("refresh the comments on {}", updated.join(", ")));
     }
     ops.push(PlannedOp {
-        description: format!(
-            "Update {} ({})",
-            crate::settings_seed::SETTINGS_FILE,
-            said.join("; ")
-        ),
+        description: format!("Update {file} ({})", said.join("; ")),
         op: Op::WriteFile {
             pre: crate::apply::Pre::observed(&path)?,
             path,

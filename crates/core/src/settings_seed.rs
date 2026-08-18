@@ -1,5 +1,5 @@
-//! `vstack.settings.toml` seeding — skills ship a
-//! `vstack.settings.toml.example` and their `[env]` entries merge into the
+//! `kendex.settings.toml` seeding — skills ship a
+//! `kendex.settings.toml.example` and their `[env]` entries merge into the
 //! project's settings file, write-if-absent per key (v1 semantics kept
 //! line-for-line: comment blocks travel with their key, and uniqueness is
 //! file-wide because the shell-side reader is not TOML-table-aware).
@@ -20,8 +20,24 @@ use crate::lock::SettingsSeed;
 mod refresh;
 pub use refresh::refresh_comments;
 
-pub const SETTINGS_FILE: &str = "vstack.settings.toml";
-pub const SETTINGS_TEMPLATE: &str = "vstack.settings.toml.example";
+pub const SETTINGS_FILE: &str = "kendex.settings.toml";
+pub const SETTINGS_TEMPLATE: &str = "kendex.settings.toml.example";
+/// Pre-rename spellings, still read: a project seeded before the rename
+/// keeps its file, and catalogs shipping old-name templates keep working.
+pub const LEGACY_SETTINGS_FILE: &str = "vstack.settings.toml";
+pub const LEGACY_SETTINGS_TEMPLATE: &str = "vstack.settings.toml.example";
+
+/// The settings file seeding targets in this project: the new name, or
+/// the old one when only it exists — a key the user set there must keep
+/// counting as set.
+pub fn settings_file_path(project_root: &std::path::Path) -> std::path::PathBuf {
+    let new = project_root.join(SETTINGS_FILE);
+    let old = project_root.join(LEGACY_SETTINGS_FILE);
+    if !new.is_file() && old.is_file() {
+        return old;
+    }
+    new
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnvEntry {

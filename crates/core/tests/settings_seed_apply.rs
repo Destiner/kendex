@@ -1,5 +1,5 @@
 //! Settings seeding through real applies: a skill that ships
-//! `vstack.settings.toml.example` merges its `[env]` defaults into the
+//! `kendex.settings.toml.example` merges its `[env]` defaults into the
 //! project's settings file — write-if-absent per key, user edits win.
 #![cfg(unix)]
 
@@ -37,10 +37,10 @@ fn fixture(enabled: bool) -> Fixture {
         "---\nname: review\ndescription: review changes\n---\nBody.\n",
     )
     .unwrap();
-    fs::write(skill.join("vstack.settings.toml.example"), TEMPLATE).unwrap();
+    fs::write(skill.join("kendex.settings.toml.example"), TEMPLATE).unwrap();
 
     fs::write(
-        project.join("vstack.toml"),
+        project.join("kendex.toml"),
         format!(
             "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.review]\nsource = \"cat\"\nenabled = {enabled}\n",
             source.display()
@@ -70,7 +70,7 @@ fn seeds_env_defaults_and_never_overwrites_user_values() {
     let f = fixture(true);
     apply_now(&f);
 
-    let settings_path = f.project.join("vstack.settings.toml");
+    let settings_path = f.project.join("kendex.settings.toml");
     let seeded = fs::read_to_string(&settings_path).unwrap();
     assert!(seeded.contains("[env]"));
     assert!(seeded.contains("# Which reviewers run by default."));
@@ -91,7 +91,7 @@ fn seeds_env_defaults_and_never_overwrites_user_values() {
             .plan
             .ops
             .iter()
-            .any(|op| op.description.contains("vstack.settings.toml")),
+            .any(|op| op.description.contains("kendex.settings.toml")),
         "clean settings file must not be re-planned"
     );
 
@@ -108,14 +108,14 @@ fn seeds_env_defaults_and_never_overwrites_user_values() {
 fn disabled_skill_does_not_seed() {
     let f = fixture(false);
     apply_now(&f);
-    assert!(!f.project.join("vstack.settings.toml").exists());
+    assert!(!f.project.join("kendex.settings.toml").exists());
 }
 
 #[test]
 #[allow(clippy::unwrap_used)]
 fn occupied_settings_path_is_a_conflict_not_a_clobber() {
     let f = fixture(true);
-    fs::create_dir_all(f.project.join("vstack.settings.toml")).unwrap();
+    fs::create_dir_all(f.project.join("kendex.settings.toml")).unwrap();
     let report = audit(&f.env, &f.scope).unwrap();
     assert!(
         report
@@ -128,7 +128,7 @@ fn occupied_settings_path_is_a_conflict_not_a_clobber() {
             .plan
             .ops
             .iter()
-            .any(|op| op.description.contains("vstack.settings.toml"))
+            .any(|op| op.description.contains("kendex.settings.toml"))
     );
 }
 
@@ -137,7 +137,7 @@ fn occupied_settings_path_is_a_conflict_not_a_clobber() {
 fn a_revised_template_refreshes_an_unedited_comment_through_a_real_apply() {
     let f = fixture(true);
     apply_now(&f);
-    let settings_path = f.project.join("vstack.settings.toml");
+    let settings_path = f.project.join("kendex.settings.toml");
 
     // Upstream improves the comment; the value stays the user's.
     let before = fs::read_to_string(&settings_path).unwrap();
@@ -153,7 +153,7 @@ fn a_revised_template_refreshes_an_unedited_comment_through_a_real_apply() {
             .unwrap()
             .parent()
             .unwrap()
-            .join("catalog/skills/review/vstack.settings.toml.example"),
+            .join("catalog/skills/review/kendex.settings.toml.example"),
         &template_v2,
     )
     .unwrap();
@@ -179,7 +179,7 @@ fn a_revised_template_refreshes_an_unedited_comment_through_a_real_apply() {
             .unwrap()
             .parent()
             .unwrap()
-            .join("catalog/skills/review/vstack.settings.toml.example"),
+            .join("catalog/skills/review/kendex.settings.toml.example"),
         TEMPLATE.replace(
             "# Which reviewers run by default.",
             "# Third revision of the words.",
@@ -216,11 +216,11 @@ fn a_gate_blocked_skill_does_not_seed() {
     )
     .unwrap();
     fs::write(
-        hostile.join("vstack.settings.toml.example"),
+        hostile.join("kendex.settings.toml.example"),
         "[env]\n# Planted.\nHOSTILE_KEY = \"1\"\n",
     )
     .unwrap();
-    let manifest = f.project.join("vstack.toml");
+    let manifest = f.project.join("kendex.toml");
     let text = fs::read_to_string(&manifest).unwrap();
     fs::write(
         &manifest,
@@ -237,7 +237,7 @@ fn a_gate_blocked_skill_does_not_seed() {
         "the fixture's hostile skill is held back"
     );
     apply::execute(&f.env, &report.plan, None).unwrap();
-    let settings = fs::read_to_string(f.project.join("vstack.settings.toml")).unwrap();
+    let settings = fs::read_to_string(f.project.join("kendex.settings.toml")).unwrap();
     assert!(settings.contains("REVIEWERS"), "the clean skill seeds");
     assert!(
         !settings.contains("HOSTILE_KEY"),
@@ -254,7 +254,7 @@ fn a_gate_blocked_skill_does_not_seed() {
 #[allow(clippy::unwrap_used)]
 fn a_skill_installed_on_no_harness_seeds_nothing() {
     let f = fixture(true);
-    let manifest = f.project.join("vstack.toml");
+    let manifest = f.project.join("kendex.toml");
     let text = fs::read_to_string(&manifest).unwrap();
     fs::write(&manifest, text.replace("[\"claude\"]", "[\"cursor\"]")).unwrap();
     let report = audit(&f.env, &f.scope).unwrap();
@@ -263,7 +263,7 @@ fn a_skill_installed_on_no_harness_seeds_nothing() {
             .plan
             .ops
             .iter()
-            .any(|op| op.description.contains("vstack.settings.toml")),
+            .any(|op| op.description.contains("kendex.settings.toml")),
         "{:?}",
         report
             .plan
@@ -273,7 +273,7 @@ fn a_skill_installed_on_no_harness_seeds_nothing() {
             .collect::<Vec<_>>()
     );
     apply::execute(&f.env, &report.plan, None).unwrap();
-    assert!(!f.project.join("vstack.settings.toml").exists());
+    assert!(!f.project.join("kendex.settings.toml").exists());
 }
 
 /// An install predating the ledger adopts its unedited comments on the
@@ -297,7 +297,7 @@ fn an_adoption_only_ledger_change_is_written_to_the_lock() {
             .plan
             .ops
             .iter()
-            .any(|op| op.description.contains("vstack.settings.toml")),
+            .any(|op| op.description.contains("kendex.settings.toml")),
         "adoption changes no file: {:?}",
         report
             .plan
@@ -316,5 +316,48 @@ fn an_adoption_only_ledger_change_is_written_to_the_lock() {
             .as_deref(),
         Some("review"),
         "the adopted record persisted"
+    );
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_settings_file_seeded_under_the_old_name_keeps_receiving_seeds() {
+    let f = fixture(true);
+    // A key set in the pre-rename file must keep counting as set, and new
+    // keys must land beside it — never in a second file under the new name.
+    fs::write(
+        f.project.join("vstack.settings.toml"),
+        "[env]\nREVIEWERS = \"mine\"\n",
+    )
+    .unwrap();
+    apply_now(&f);
+    let old = fs::read_to_string(f.project.join("vstack.settings.toml")).unwrap();
+    assert!(old.contains("REVIEWERS = \"mine\""), "{old}");
+    assert!(old.contains("DEPTH = \"2\""), "{old}");
+    assert!(!f.project.join("kendex.settings.toml").exists());
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_skill_shipping_the_old_template_name_still_seeds() {
+    let f = fixture(true);
+    let skill = f
+        .project
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("catalog/skills/review");
+    fs::remove_file(skill.join("kendex.settings.toml.example")).unwrap();
+    fs::write(
+        skill.join("vstack.settings.toml.example"),
+        "[env]\nNEW_KEY = \"from-old-template\"\n",
+    )
+    .unwrap();
+    apply_now(&f);
+    let seeded = fs::read_to_string(f.project.join("kendex.settings.toml")).unwrap();
+    assert!(
+        seeded.contains("NEW_KEY = \"from-old-template\""),
+        "{seeded}"
     );
 }

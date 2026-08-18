@@ -19,7 +19,7 @@ fn an_unreadable_scope_is_reported_beside_the_decisions_it_hides() {
     let project = home.join("dev/app");
     fs::create_dir_all(project.join(".claude")).unwrap();
     fs::write(
-        project.join("vstack.toml"),
+        project.join("kendex.toml"),
         "schema = 5\n[nonsense]\nx = 1\n",
     )
     .unwrap();

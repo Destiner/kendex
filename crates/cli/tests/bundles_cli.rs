@@ -44,7 +44,7 @@ fn catalog(home: &Path) -> std::path::PathBuf {
     );
     write(
         &catalog,
-        "vstack.toml",
+        "kendex.toml",
         "[bundles.starter]\ndescription = \"the starter set\"\nskills = [\"alpha\", \"beta\"]\nagents = [\"writer\"]\n",
     );
     catalog
@@ -85,7 +85,7 @@ fn a_bundle_installs_whole_and_uninstalls_with_the_split_said_out_loud() {
     assert!(project.join(".claude/skills/beta").exists());
     assert!(project.join(".claude/agents/writer.md").exists());
 
-    let manifest = fs::read_to_string(project.join("vstack.toml")).unwrap();
+    let manifest = fs::read_to_string(project.join("kendex.toml")).unwrap();
     assert!(manifest.contains("[bundles.starter]"), "{manifest}");
     assert!(!manifest.contains("[skills.alpha]"), "{manifest}");
     assert!(manifest.contains("[skills.beta]"), "{manifest}");
@@ -114,7 +114,7 @@ fn a_bundle_installs_whole_and_uninstalls_with_the_split_said_out_loud() {
         project.join(".claude/skills/beta").exists(),
         "a member the user asked for went with the set"
     );
-    let manifest = fs::read_to_string(project.join("vstack.toml")).unwrap();
+    let manifest = fs::read_to_string(project.join("kendex.toml")).unwrap();
     assert!(!manifest.contains("[bundles.starter]"), "{manifest}");
 }
 
@@ -144,5 +144,5 @@ fn a_bundle_the_catalog_lacks_is_refused() {
     assert!(!output.status.success());
     let said = String::from_utf8_lossy(&output.stderr).into_owned();
     assert!(said.contains("no bundle called 'nonesuch'"), "{said}");
-    assert!(!project.join("vstack.toml").exists());
+    assert!(!project.join("kendex.toml").exists());
 }

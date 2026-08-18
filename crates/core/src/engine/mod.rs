@@ -1,15 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
-use specta::Type;
-
 use crate::apply::{Op, Plan, PlannedOp};
 use crate::env::Env;
 use crate::error::Result;
 use crate::lock::{Lock, LockFile, lock_path};
 use crate::manifest::{self, Manifest, ManifestFile};
-use crate::model::{HarnessId, ItemKind, Scope};
+use crate::model::Scope;
 
 pub mod adopt;
 mod adopt_shared;
@@ -75,109 +72,8 @@ pub use set_change::{KeptInstall, SetChange, SetDirection};
 use set_change::{kept_members, set_changes};
 use unmanaged::unmanaged_rows;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "kebab-case")]
-pub enum DriftState {
-    /// Declared but not on disk (or never recorded).
-    Missing,
-    /// On disk but no longer matching declaration + source.
-    Stale,
-    /// Recorded in the lock but no longer declared.
-    Orphaned,
-    /// On disk in a managed surface, but not ours.
-    Unmanaged,
-    /// Needs a human: foreign symlink, occupied target, or provenance clash.
-    Conflict,
-}
-
-/// Why an installation diverged, when the plan can tell. `LocalEdit` and
-/// `Both` are the causes that block writes: the user's bytes are on disk
-/// and only an explicit choice may take them.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "kebab-case")]
-pub enum DriftCause {
-    UpstreamChanged,
-    LocalEdit,
-    Both,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct DriftRow {
-    pub kind: ItemKind,
-    pub name: String,
-    pub harness: HarnessId,
-    pub scope: Scope,
-    pub state: DriftState,
-    pub detail: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cause: Option<DriftCause>,
-}
-
-/// A per-item render or parse warning, with the fix when there is one —
-/// shown in plan previews, the CLI, and the Audit page.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct ItemWarning {
-    pub kind: ItemKind,
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub harness: Option<HarnessId>,
-    pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub remediation: Option<String>,
-}
-
-#[derive(Debug)]
-pub struct EngineReport {
-    pub drift: Vec<DriftRow>,
-    pub plan: Plan,
-    pub notes: Vec<String>,
-    pub warnings: Vec<ItemWarning>,
-    /// What this plan would add to or drop from the installed set.
-    pub set_changes: Vec<SetChange>,
-    /// Installations this plan leaves alone that nothing needs anymore —
-    /// what a removal offers to take with it.
-    pub sweepable: Vec<SetChange>,
-    /// Members of an uninstalled bundle that stay, and what still accounts
-    /// for them — the other half of the preview a bundle removal shows.
-    pub kept: Vec<KeptInstall>,
-    /// What the safety rules found in the content this plan would write.
-    /// Blocked rows also appear as conflicts in `drift`; the rest install
-    /// and are worth reading first.
-    pub safety: Vec<ItemSafety>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct PlanOptions {
-    /// Remove orphaned (locked-but-undeclared) artifacts. Refresh keeps
-    /// them (v1 semantics); reconcile and `remove` clean them up.
-    pub remove_orphans: bool,
-    /// Restrict orphan removal to these names (the `remove` verb).
-    pub removal_filter: Option<Vec<String>>,
-    /// Also remove installations nothing asked for that nothing needs
-    /// anymore — a dependency whose last dependent went away, or one an
-    /// upstream item stopped requiring.
-    pub sweep_unneeded: bool,
-    /// Bundles this plan uninstalls. Their members that survive are named in
-    /// the preview with what keeps them, so an uninstall says both halves:
-    /// what goes, and what stays.
-    pub uninstalled_bundles: Vec<String>,
-    /// Items whose safety findings the user has read and accepted. Each one
-    /// is recorded in the manifest by the same plan that installs it, bound
-    /// to the content, rule set and findings that were reviewed.
-    pub allow_unsafe: Vec<String>,
-    /// Overwrite installations the user edited by hand. Off, an edited
-    /// artifact becomes a conflict and no write touches it; this is the
-    /// explicit "discard my edits" everything destructive has to go
-    /// through.
-    pub overwrite_edited: bool,
-    /// Discard edits for these items only, by kind and name — leaving
-    /// every other edited item in the scope held. The per-package
-    /// "discard" the app offers, which must never take a neighbour's
-    /// edits with it, even one that shares a name across kinds.
-    pub overwrite_edited_names: Option<Vec<(ItemKind, String)>>,
-}
+mod report_types;
+pub use report_types::{DriftCause, DriftRow, DriftState, EngineReport, ItemWarning, PlanOptions};
 
 /// Compute drift and the plan that would fix it, in one pass — the Audit
 /// page and `apply` both consume this.
@@ -218,8 +114,8 @@ pub fn plan_scope(
         let granted = updated.safety_overrides != manifest.safety_overrides;
         ops.push(PlannedOp {
             description: match granted {
-                true => "Update vstack.toml with the safety findings you accepted".into(),
-                false => "Add new catalog skills to vstack.toml".into(),
+                true => "Update kendex.toml with the safety findings you accepted".into(),
+                false => "Add new catalog skills to kendex.toml".into(),
             },
             op: Op::WriteManifest {
                 pre: crate::apply::Pre::observed(&path)?,
@@ -293,6 +189,8 @@ pub fn plan_scope(
     let kept = kept_members(scope, lock, &new_lock, &options.uninstalled_bundles);
     plan_lock_write(env, scope, lock, new_lock, &mut ops)?;
 
+    prepend_rename_generation(env, scope, &mut ops)?;
+
     let mut report = EngineReport {
         drift,
         plan: Plan {
@@ -308,6 +206,19 @@ pub fn plan_scope(
     };
     unmanaged_rows(env, scope, manifest, lock, &state.items, &mut report.drift);
     Ok(report)
+}
+
+/// A scope still under the old product name renames first: everything
+/// planned so far read from — and bound its preconditions to — the
+/// old-name files, and a rename preserves bytes, so retargeting the paths
+/// is all the rest of the plan needs to run after the move.
+fn prepend_rename_generation(env: &Env, scope: &Scope, ops: &mut Vec<PlannedOp>) -> Result<()> {
+    let renames = crate::rename::rename_ops(env, scope)?;
+    if !renames.is_empty() {
+        crate::rename::retarget(env, scope, ops);
+        ops.splice(0..0, renames);
+    }
+    Ok(())
 }
 
 /// Read-only audit for a scope. A legacy or absent manifest still reports

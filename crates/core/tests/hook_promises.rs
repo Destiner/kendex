@@ -35,7 +35,7 @@ fn fixture(harnesses: &str, declarations: &str) -> Fixture {
     fs::write(source.join("hooks/guard.sh"), GUARD).unwrap();
     fs::write(source.join("hooks/loose.sh"), LOOSE).unwrap();
     fs::write(
-        project.join("vstack.toml"),
+        project.join("kendex.toml"),
         format!(
             "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [{harnesses}]\nmethod = \"copy\"\n\n{declarations}",
             source.display()

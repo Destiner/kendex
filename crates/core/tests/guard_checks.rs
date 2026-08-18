@@ -192,7 +192,7 @@ fn size_ratchet_red_green_with_classes_and_seed_refusal() {
     stage(&r, "src/short.rs", "fn main() {}\n");
     stage(
         &r,
-        "vstack.settings.toml",
+        "kendex.settings.toml",
         "[guards.size-ratchet]\nthreshold = 20\nclasses = [\n  { pattern = \"src/short*\", threshold = 1 },\n]\n",
     );
     let out = size_ratchet::run(&ctx(&r), &policy(&r), size_ratchet::Mode::Check).unwrap();
@@ -252,7 +252,7 @@ fn policy_is_read_from_the_index_not_the_worktree() {
     stage(&r, "src/long.rs", &long);
     stage(
         &r,
-        "vstack.settings.toml",
+        "kendex.settings.toml",
         "[guards.size-ratchet]\nthreshold = 20\n",
     );
     let out = size_ratchet::run(&ctx(&r), &policy(&r), size_ratchet::Mode::Check).unwrap();
@@ -261,7 +261,7 @@ fn policy_is_read_from_the_index_not_the_worktree() {
     // The exact fail-open v1 closed: a permissive unstaged settings copy
     // must not authorize stricter staged content.
     std::fs::write(
-        r.root.join("vstack.settings.toml"),
+        r.root.join("kendex.settings.toml"),
         "[guards.size-ratchet]\nthreshold = 4000\n",
     )
     .unwrap();

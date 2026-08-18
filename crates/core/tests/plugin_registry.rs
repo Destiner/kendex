@@ -71,7 +71,7 @@ fn fixture(harnesses: &str, declarations: &str) -> Fixture {
 
     write(
         &project,
-        "vstack.toml",
+        "kendex.toml",
         &format!(
             "schema = 5\n\n[sources.market]\npath = \"{}\"\n\n[sources.plain]\npath = \"{}\"\n\n[install]\nharnesses = [{harnesses}]\nmethod = \"symlink\"\n\n{declarations}",
             market.display(),
@@ -188,9 +188,9 @@ fn every_tool_lists_a_plugin_registry_item_under_its_plugin() {
             .is_file()
     );
 
-    // The name in `vstack.toml` stays the identity: that is what the lock
+    // The name in `kendex.toml` stays the identity: that is what the lock
     // records and what the user removes by.
-    let lock: serde_json::Value = serde_json::from_str(&read(&f, ".vstack-lock.json")).unwrap();
+    let lock: serde_json::Value = serde_json::from_str(&read(&f, ".kendex-lock.json")).unwrap();
     assert!(lock["entries"]["skill:data-science/eda:claude"].is_object());
     assert!(lock["entries"]["agent:code-review/reviewer:opencode"].is_object());
     assert!(is_clean(&f));
@@ -333,7 +333,7 @@ fn adding_everything_a_catalog_offers_writes_names_that_load_again() {
 
     // The manifest is written and read back by vstack itself: a key with a
     // `/` in it has to survive that round trip, quotes and all.
-    let text = read(&f, "vstack.toml");
+    let text = read(&f, "kendex.toml");
     assert!(text.contains("\"data-science/eda\""), "{text}");
     let manifest = ops::manifest_for_mutation(&f.env, &f.scope).unwrap();
     assert!(manifest.skills.contains_key("data-science/eda"));

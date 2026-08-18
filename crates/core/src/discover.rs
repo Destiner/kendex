@@ -13,7 +13,11 @@ const MARKER_DIRS: [&str; 7] = [
     ".agents",
     ".gemini",
 ];
-const MARKER_FILES: [&str; 6] = [
+const MARKER_FILES: [&str; 8] = [
+    // Both generations of kendex's own markers: a project last touched
+    // before the rename is still a project.
+    "kendex.toml",
+    ".kendex-lock.json",
     "vstack.toml",
     ".vstack-lock.json",
     ".mcp.json",
@@ -40,14 +44,17 @@ pub fn is_project(dir: &Path) -> bool {
 }
 
 /// v1's current-project resolution: walk up from `start`; a
-/// `.vstack-lock.json` wins even at the home directory, otherwise the first
-/// directory carrying a harness marker — refusing home itself.
+/// `.kendex-lock.json` — or its old spelling — wins even at the home
+/// directory, otherwise the first directory carrying a harness marker —
+/// refusing home itself.
 pub fn project_root_from(start: &Path, home: &Path) -> Option<PathBuf> {
     let start = start.canonicalize().ok()?;
     let home = home.canonicalize().unwrap_or_else(|_| home.to_path_buf());
     let mut current = Some(start.as_path());
     while let Some(dir) = current {
-        if dir.join(".vstack-lock.json").is_file() {
+        if dir.join(crate::rename::LOCK_FILE).is_file()
+            || dir.join(crate::rename::LEGACY_LOCK_FILE).is_file()
+        {
             return Some(dir.to_path_buf());
         }
         if dir != home && MARKER_DIRS.iter().any(|m| dir.join(m).is_dir()) {
@@ -170,6 +177,31 @@ mod tests {
 
         // …but a lock file there does.
         fs::write(home.join(".vstack-lock.json"), "{}").unwrap();
+        assert_eq!(
+            project_root_from(&home.join("dev"), home).unwrap(),
+            home.canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn both_marker_generations_mark_projects_and_win_at_home() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        fs::create_dir_all(root.join("new")).unwrap();
+        fs::write(root.join("new/kendex.toml"), "").unwrap();
+        fs::create_dir_all(root.join("newlock")).unwrap();
+        fs::write(root.join("newlock/.kendex-lock.json"), "{}").unwrap();
+
+        let found = discover_projects(root).unwrap();
+        let names: Vec<_> = found
+            .iter()
+            .map(|p| p.strip_prefix(root.canonicalize().unwrap()).unwrap())
+            .collect();
+        assert_eq!(names, [Path::new("new"), Path::new("newlock")]);
+
+        let home = root;
+        fs::create_dir_all(home.join("dev")).unwrap();
+        fs::write(home.join(".kendex-lock.json"), "{}").unwrap();
         assert_eq!(
             project_root_from(&home.join("dev"), home).unwrap(),
             home.canonicalize().unwrap()

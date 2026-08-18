@@ -71,7 +71,7 @@ fn refresh_reads_each_installs_own_recorded_source_across_scopes() {
     )
     .unwrap();
     fs::write(
-        w.project.join("vstack.toml"),
+        w.project.join("kendex.toml"),
         format!(
             "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.gh]\nsource = \"cat\"\n",
             w.home.join("catB").display()
@@ -98,14 +98,14 @@ fn refresh_reads_each_installs_own_recorded_source_across_scopes() {
     assert!(project_body.contains("B, revised."), "{project_body}");
 }
 
-/// The #1308 class over vstack.toml: the schema upgrade keeps every byte
+/// The #1308 class over kendex.toml: the schema upgrade keeps every byte
 /// but the schema line, preserves a present trailing newline, and repairs
 /// a missing one exactly once.
 #[test]
 #[allow(clippy::unwrap_used)]
 fn schema_upgrade_is_byte_faithful_and_repairs_a_missing_terminator_once() {
     let w = world();
-    let manifest_path = w.project.join("vstack.toml");
+    let manifest_path = w.project.join("kendex.toml");
     let scope = Scope::Project {
         root: w.project.clone(),
     };
@@ -141,15 +141,15 @@ fn corrupt_state_fails_closed_instead_of_defaulting() {
         root: w.project.clone(),
     };
     fs::write(
-        w.project.join("vstack.toml"),
+        w.project.join("kendex.toml"),
         "schema = 5\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n",
     )
     .unwrap();
 
     // Damaged lock: the audit refuses rather than planning against nothing.
-    fs::write(w.project.join(".vstack-lock.json"), "{torn").unwrap();
+    fs::write(w.project.join(".kendex-lock.json"), "{torn").unwrap();
     assert!(audit(&w.env, &scope).is_err(), "a corrupt lock must refuse");
-    fs::remove_file(w.project.join(".vstack-lock.json")).unwrap();
+    fs::remove_file(w.project.join(".kendex-lock.json")).unwrap();
 
     // Damaged app settings: the safety gate must not fall back to default
     // thresholds the user may have set stricter.
@@ -163,7 +163,7 @@ fn corrupt_state_fails_closed_instead_of_defaulting() {
     fs::remove_file(&settings).unwrap();
 
     // Damaged manifest: same refusal.
-    fs::write(w.project.join("vstack.toml"), "schema = [broken").unwrap();
+    fs::write(w.project.join("kendex.toml"), "schema = [broken").unwrap();
     assert!(audit(&w.env, &scope).is_err());
 }
 
@@ -179,7 +179,7 @@ fn add_writes_nothing_before_validation_and_confirmation() {
         "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n",
         w.home.join("cat").display()
     );
-    fs::write(w.project.join("vstack.toml"), &manifest_text).unwrap();
+    fs::write(w.project.join("kendex.toml"), &manifest_text).unwrap();
     let scope = Scope::Project {
         root: w.project.clone(),
     };
@@ -194,11 +194,11 @@ fn add_writes_nothing_before_validation_and_confirmation() {
     };
     assert!(ops::add(&w.env, &scope, &bad).is_err());
     assert_eq!(
-        fs::read_to_string(w.project.join("vstack.toml")).unwrap(),
+        fs::read_to_string(w.project.join("kendex.toml")).unwrap(),
         manifest_text,
         "a rejected add leaves the manifest untouched"
     );
-    assert!(!w.project.join(".vstack-lock.json").exists());
+    assert!(!w.project.join(".kendex-lock.json").exists());
     assert!(!w.project.join(".agents").exists());
 
     // A valid request plans; until the plan is confirmed and executed,
@@ -210,17 +210,17 @@ fn add_writes_nothing_before_validation_and_confirmation() {
     };
     let report = ops::add(&w.env, &scope, &good).unwrap();
     assert_eq!(
-        fs::read_to_string(w.project.join("vstack.toml")).unwrap(),
+        fs::read_to_string(w.project.join("kendex.toml")).unwrap(),
         manifest_text,
         "planning writes nothing"
     );
-    assert!(!w.project.join(".vstack-lock.json").exists());
+    assert!(!w.project.join(".kendex-lock.json").exists());
     assert!(!w.project.join(".agents").exists());
 
     // Confirmation is the execute; only then does state move.
     apply::execute(&w.env, &report.plan, None).unwrap();
     assert!(
-        fs::read_to_string(w.project.join("vstack.toml"))
+        fs::read_to_string(w.project.join("kendex.toml"))
             .unwrap()
             .contains("[skills.gh]")
     );

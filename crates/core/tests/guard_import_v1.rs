@@ -204,3 +204,26 @@ fn legacy_glob_matches_sh_case_semantics_over_a_corpus() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn import_v1_converts_a_settings_file_carrying_the_new_name() {
+    let r = repo();
+    stage(
+        &r,
+        "kendex.settings.toml",
+        "[env]\nSIZE_RATCHET_THRESHOLD = \"300\"\n",
+    );
+    let report = guard::import::run(&ctx(&r)).unwrap();
+    assert!(report.changed);
+    assert!(
+        report
+            .lines
+            .iter()
+            .any(|l| l.contains("kendex.settings.toml")),
+        "{:?}",
+        report.lines
+    );
+    let text = std::fs::read_to_string(r.root.join("kendex.settings.toml")).unwrap();
+    assert!(text.contains("[guards.size-ratchet]"), "{text}");
+}

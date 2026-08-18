@@ -36,7 +36,7 @@ fn fixture() -> Fixture {
     .unwrap();
 
     fs::write(
-        project.join("vstack.toml"),
+        project.join("kendex.toml"),
         format!(
             "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.hostile]\nsource = \"cat\"\n",
             source.display()

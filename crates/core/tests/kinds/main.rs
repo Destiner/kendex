@@ -54,7 +54,7 @@ pub fn fixture(declarations: &str) -> Fixture {
     fs::write(source.join("commands/ship.md"), "Ship the branch.\n").unwrap();
 
     fs::write(
-        project.join("vstack.toml"),
+        project.join("kendex.toml"),
         format!(
             "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n{declarations}",
             source.display()

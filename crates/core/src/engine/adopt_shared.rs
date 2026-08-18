@@ -200,7 +200,7 @@ mod tests {
         // Content captured; the folder and every link that read it cleared.
         assert!(
             project
-                .join(".vstack-local/skills/browser/SKILL.md")
+                .join(".kendex-local/skills/browser/SKILL.md")
                 .is_file()
         );
         assert!(!shared.exists());

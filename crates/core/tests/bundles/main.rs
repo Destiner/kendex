@@ -75,7 +75,7 @@ pub fn fixture(declarations: &str) -> Fixture {
 
     write(
         &project,
-        "vstack.toml",
+        "kendex.toml",
         &format!(
             "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n{declarations}",
             source.display()
@@ -96,7 +96,7 @@ pub fn fixture(declarations: &str) -> Fixture {
 /// What the catalog says it offers as a set — rewritten whenever a test needs
 /// upstream to change its mind.
 pub fn catalog_bundles(source: &Path, table: &str) {
-    write(source, "vstack.toml", table);
+    write(source, "kendex.toml", table);
 }
 
 #[allow(clippy::unwrap_used)]

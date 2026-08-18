@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn lock_round_trips_and_missing_file_is_empty() {
     let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join(".vstack-lock.json");
+    let path = tmp.path().join(".kendex-lock.json");
     assert_eq!(load(&path).unwrap().entries.len(), 0);
 
     let mut lock = Lock {
@@ -58,7 +58,7 @@ fn lock_round_trips_and_missing_file_is_empty() {
 #[test]
 fn entries_without_reasons_read_as_requested() {
     let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join(".vstack-lock.json");
+    let path = tmp.path().join(".kendex-lock.json");
     std::fs::write(
         &path,
         r#"{"version":2,"entries":{"skill:gh:claude":{"name":"gh","kind":"skill","harness":"claude","source":"vstack","sourceRepo":"vanillagreencom/vstack","method":"symlink","installedAt":"2026-01-01T00:00:00Z","sourceHash":"abc","enabled":true}}}"#,
@@ -83,7 +83,7 @@ fn timestamps_are_iso8601() {
 #[test]
 fn a_v1_lock_reads_as_legacy_not_a_parse_error() {
     let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join(".vstack-lock.json");
+    let path = tmp.path().join(".kendex-lock.json");
     std::fs::write(
         &path,
         r#"{"version":1,"entries":{"gh":{"name":"gh","kind":"skill","source":"vstack","source_repo":"vanillagreencom/vstack","harnesses":["claude-code"],"method":"symlink","installed_at":"2026-01-01T00:00:00Z","source_hash":"abc"}}}"#,
@@ -98,7 +98,7 @@ fn a_v1_lock_reads_as_legacy_not_a_parse_error() {
 #[test]
 fn unparseable_json_is_reported_as_corrupt() {
     let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join(".vstack-lock.json");
+    let path = tmp.path().join(".kendex-lock.json");
     std::fs::write(&path, "{not json").unwrap();
     assert!(matches!(
         load_file(&path),
@@ -112,7 +112,7 @@ fn unparseable_json_is_reported_as_corrupt() {
 #[test]
 fn a_newer_lock_refuses_to_load() {
     let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join(".vstack-lock.json");
+    let path = tmp.path().join(".kendex-lock.json");
     std::fs::write(&path, r#"{"version":99,"entries":{}}"#).unwrap();
     assert!(matches!(
         load_file(&path),
@@ -129,7 +129,7 @@ fn a_newer_lock_refuses_to_load() {
 #[test]
 fn an_empty_lock_reads_as_current() {
     let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join(".vstack-lock.json");
+    let path = tmp.path().join(".kendex-lock.json");
     std::fs::write(&path, r#"{"version":1,"entries":{}}"#).unwrap();
     assert!(matches!(load_file(&path).unwrap(), LockFile::Current(_)));
 }

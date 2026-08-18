@@ -3,9 +3,9 @@
 //! Precedence per key: the process environment
 //! (`KENDEX_GUARDS_<CHECK>_<KEY>`, falling back to the old
 //! `VSTACK_GUARDS_*` spelling — machine-local overrides are set once and
-//! forgotten), then `.kendex/settings.toml` (or the old `.vstack/`), then
-//! the committed `kendex.settings.toml` (or `vstack.settings.toml`), then
-//! the built-in default. Everything
+//! forgotten), then `.kendex/settings.toml`, then the committed
+//! `kendex.settings.toml` — each settings file also read under its
+//! pre-rename spelling — then the built-in default. Everything
 //! that decides a verdict is read from the index (settled decision 5): a
 //! settings file resolves from its staged copy and nothing else — one
 //! staged for deletion, or never staged at all, governs as absent. The
@@ -17,12 +17,13 @@ use crate::error::Result;
 use super::ctx::GuardCtx;
 use super::guard_err;
 
-/// The settings files, in precedence order — the current names ahead of
-/// the ones repositories committed before the product rename.
+/// The settings files, in precedence order. Both product generations are
+/// read — a repo whose settings predate the kendex rename keeps its
+/// policy — with the new spelling outranking the old in each class.
 const SETTINGS_FILES: [&str; 4] = [
     ".kendex/settings.toml",
-    "kendex.settings.toml",
     ".vstack/settings.toml",
+    "kendex.settings.toml",
     "vstack.settings.toml",
 ];
 

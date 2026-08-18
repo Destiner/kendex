@@ -186,7 +186,7 @@ fn credential_theft_still_catches_a_credential_file_going_out() {
 #[test]
 fn naming_a_projects_own_env_file_is_not_a_finding() {
     for line in [
-        "Load order is `.env`, then `vstack.settings.toml`, then `.env.local`.",
+        "Load order is `.env`, then `kendex.settings.toml`, then `.env.local`.",
         "  source \"$PROJECT_ROOT/.env\"",
         "WORKTREE_SYMLINKS=\".env.local .claude/settings.json\"",
         "cat > \"$ROOT/.env.local\" <<'ENV'",

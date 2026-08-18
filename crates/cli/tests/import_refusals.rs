@@ -74,10 +74,10 @@ fn a_stale_v1_lock_never_reimports_over_a_live_v2_record() {
         r#"{"version":1,"entries":{"old":{"name":"old","kind":"skill","source":"x/y","source_repo":"x/y","harnesses":["claude-code"],"method":"symlink","installed_at":"t","source_hash":"aa"}}}"#,
     )
     .unwrap();
-    let v2_dir = home.join(".config/vstack2");
+    let v2_dir = home.join(".config/kendex");
     fs::create_dir_all(&v2_dir).unwrap();
     fs::write(
-        v2_dir.join("vstack.toml"),
+        v2_dir.join("kendex.toml"),
         "schema = 5\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n",
     )
     .unwrap();

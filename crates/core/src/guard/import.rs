@@ -92,20 +92,24 @@ pub fn run(ctx: &GuardCtx) -> Result<ImportReport> {
         lines: Vec::new(),
         changed: false,
     };
-    let path = ctx.root.join("vstack.settings.toml");
+    let path = crate::settings_seed::settings_file_path(&ctx.root);
+    let file = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| crate::settings_seed::SETTINGS_FILE.to_owned());
     let Some(text) = crate::fs::read_if_exists(&path)? else {
         report
             .lines
-            .push("no vstack.settings.toml here — nothing to convert".into());
+            .push(format!("no {file} here — nothing to convert"));
         return Ok(report);
     };
-    let table: toml::Table = text.parse().map_err(|e: toml::de::Error| {
-        guard_err(CHECK, format!("vstack.settings.toml: invalid TOML: {e}"))
-    })?;
+    let table: toml::Table = text
+        .parse()
+        .map_err(|e: toml::de::Error| guard_err(CHECK, format!("{file}: invalid TOML: {e}")))?;
     if table.contains_key("guards") {
-        report.lines.push(
-            "vstack.settings.toml already carries [guards] tables — nothing converted".into(),
-        );
+        report.lines.push(format!(
+            "{file} already carries [guards] tables — nothing converted"
+        ));
         return Ok(report);
     }
     let flat = flat_strings(&table);
@@ -145,9 +149,9 @@ pub fn run(ctx: &GuardCtx) -> Result<ImportReport> {
     }
     crate::fs::atomic_write(&path, &updated)?;
     report.changed = true;
-    report.lines.push(
-        "vstack.settings.toml: [guards] tables appended — review and commit the change".into(),
-    );
+    report.lines.push(format!(
+        "{file}: [guards] tables appended — review and commit the change"
+    ));
     Ok(report)
 }
 

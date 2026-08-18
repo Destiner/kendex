@@ -266,7 +266,7 @@ fn the_local_extension_point_is_environment_only_and_judged_on_the_contract() {
 
     // Named in a repository file only: never run.
     std::fs::write(
-        root.join("vstack.settings.toml"),
+        root.join("kendex.settings.toml"),
         format!("[guards.pre-commit]\nlocal = \"{}\"\n", script.display()),
     )
     .unwrap();

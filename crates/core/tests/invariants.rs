@@ -44,7 +44,7 @@ fn fixture() -> Fixture {
     .unwrap();
 
     fs::write(
-        project.join("vstack.toml"),
+        project.join("kendex.toml"),
         format!(
             "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[agents.rust]\nsource = \"cat\"\n\n[skills.gh]\nsource = \"cat\"\n",
             source.display()
@@ -361,7 +361,7 @@ fn invariant_8_one_writer_per_scope() {
 fn legacy_v1_manifests_stay_byte_identical() {
     let f = fixture();
     let v1 = "[agent-skills]\nrust = [\"clippy\"]\n";
-    fs::write(f.project.join("vstack.toml"), v1).unwrap();
+    fs::write(f.project.join("kendex.toml"), v1).unwrap();
 
     let error = ops::manifest_for_mutation(&f.env, &f.scope).unwrap_err();
     assert!(matches!(error, CoreError::LegacyManifest { .. }));
@@ -369,7 +369,7 @@ fn legacy_v1_manifests_stay_byte_identical() {
     assert!(report.notes.iter().any(|n| n.contains("from version 1")));
     assert!(report.plan.is_empty());
     assert_eq!(
-        fs::read_to_string(f.project.join("vstack.toml")).unwrap(),
+        fs::read_to_string(f.project.join("kendex.toml")).unwrap(),
         v1
     );
 }

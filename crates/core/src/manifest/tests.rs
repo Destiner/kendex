@@ -39,7 +39,7 @@ command = "./guard.sh"
 github = "prefer gh cli"
 "#;
     let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join("vstack.toml");
+    let path = tmp.path().join("kendex.toml");
     std::fs::write(&path, text).unwrap();
 
     let ManifestFile::Current(manifest) = load(&path).unwrap() else {
@@ -71,7 +71,7 @@ github = "prefer gh cli"
 #[test]
 fn schema_less_file_is_legacy_and_never_a_mutation_target() {
     let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join("vstack.toml");
+    let path = tmp.path().join("kendex.toml");
     let v1 = "[agent-skills]\nrust = [\"clippy\"]\n";
     std::fs::write(&path, v1).unwrap();
 

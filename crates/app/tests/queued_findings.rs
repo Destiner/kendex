@@ -26,7 +26,7 @@ fn a_warning_only_install_is_named_before_it_lands() {
     )
     .unwrap();
     fs::write(
-        project.join("vstack.toml"),
+        project.join("kendex.toml"),
         format!(
             "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"copy\"\n\n[skills.mild]\nsource = \"cat\"\n",
             source.display()

@@ -3,6 +3,12 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{CoreError, Result};
 
+/// The one spelling of the app's directory segment under config/cache/data.
+const APP_DIR: &str = "kendex";
+/// Where those directories lived before the product rename — read only by
+/// the first-launch move ([`crate::rename::migrate_global_dirs`]).
+const LEGACY_APP_DIR: &str = "vstack2";
+
 /// Process env vars that relocate harness roots.
 const HARNESS_VARS: [&str; 7] = [
     "CODEX_HOME",
@@ -84,7 +90,27 @@ impl Env {
     }
 
     fn app_config_dir(&self) -> PathBuf {
-        self.config_dir.join("vstack2")
+        self.config_dir.join(APP_DIR)
+    }
+
+    /// `(old, new)` per base directory, for the one-shot move off the old
+    /// product name. Order matters: data first, so the scope-lock dir the
+    /// move itself runs under is settled before anything else migrates.
+    pub(crate) fn app_dir_pairs(&self) -> [(PathBuf, PathBuf); 3] {
+        [
+            (
+                self.data_dir.join(LEGACY_APP_DIR),
+                self.data_dir.join(APP_DIR),
+            ),
+            (
+                self.config_dir.join(LEGACY_APP_DIR),
+                self.config_dir.join(APP_DIR),
+            ),
+            (
+                self.cache_dir.join(LEGACY_APP_DIR),
+                self.cache_dir.join(APP_DIR),
+            ),
+        ]
     }
 
     pub fn settings_file(&self) -> PathBuf {
@@ -92,7 +118,15 @@ impl Env {
     }
 
     pub fn global_manifest_file(&self) -> PathBuf {
-        self.app_config_dir().join("vstack.toml")
+        self.app_config_dir().join(crate::rename::MANIFEST_FILE)
+    }
+
+    /// Where the global manifest sat before the rename — same directory,
+    /// old file name. The dir move keeps the file's own name, so a migrated
+    /// machine holds `vstack.toml` here until its rename op runs.
+    pub fn legacy_global_manifest_file(&self) -> PathBuf {
+        self.app_config_dir()
+            .join(crate::rename::LEGACY_MANIFEST_FILE)
     }
 
     pub fn global_lock_file(&self) -> PathBuf {
@@ -100,35 +134,35 @@ impl Env {
     }
 
     pub fn source_cache_dir(&self) -> PathBuf {
-        self.cache_dir.join("vstack2/sources")
+        self.cache_dir.join(APP_DIR).join("sources")
     }
 
     pub fn trash_dir(&self) -> PathBuf {
-        self.data_dir.join("vstack2/trash")
+        self.data_dir.join(APP_DIR).join("trash")
     }
 
     pub fn journal_dir(&self) -> PathBuf {
-        self.data_dir.join("vstack2/journal")
+        self.data_dir.join(APP_DIR).join("journal")
     }
 
     pub fn scope_locks_dir(&self) -> PathBuf {
-        self.data_dir.join("vstack2/locks")
+        self.data_dir.join(APP_DIR).join("locks")
     }
 
     /// Per-scope drift snapshots — derived, machine-local, rebuildable. The
     /// session-start check reads these instead of doing the deep work.
     pub fn drift_dir(&self) -> PathBuf {
-        self.data_dir.join("vstack2/drift")
+        self.data_dir.join(APP_DIR).join("drift")
     }
 
     pub fn global_local_source_dir(&self) -> PathBuf {
-        self.data_dir.join("vstack2/local-source")
+        self.data_dir.join(APP_DIR).join("local-source")
     }
 
     /// Rendered canonical trees for global-scope skills — the stable target
     /// native dirs link to (never the source cache, which refresh resets).
     pub fn rendered_skills_dir(&self) -> PathBuf {
-        self.data_dir.join("vstack2/rendered/skills")
+        self.data_dir.join(APP_DIR).join("rendered/skills")
     }
 
     /// Home of a per-tool skill variant that diverged from the shared
@@ -136,16 +170,17 @@ impl Env {
     /// skill name can never collide with a variant directory.
     pub fn rendered_skill_variants_dir(&self, harness: &str) -> PathBuf {
         self.data_dir
-            .join("vstack2/rendered/variants")
+            .join(APP_DIR)
+            .join("rendered/variants")
             .join(harness)
     }
 
     pub fn project_manifest_file(project_root: &Path) -> PathBuf {
-        project_root.join("vstack.toml")
+        project_root.join(crate::rename::MANIFEST_FILE)
     }
 
     pub fn project_lock_file(project_root: &Path) -> PathBuf {
-        project_root.join(".vstack-lock.json")
+        project_root.join(crate::rename::LOCK_FILE)
     }
 }
 

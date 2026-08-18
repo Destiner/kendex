@@ -40,7 +40,7 @@ fn lock_scope(env: &Env, scope: &Scope) -> Result<ScopeGuard> {
     lock_key(env, &scope_key(scope))
 }
 
-fn lock_key(env: &Env, key: &str) -> Result<ScopeGuard> {
+pub(crate) fn lock_key(env: &Env, key: &str) -> Result<ScopeGuard> {
     let dir = env.scope_locks_dir();
     fs::create_dir_all(&dir).map_err(|e| CoreError::io(&dir, e))?;
     let path = dir.join(format!("{key}.lock"));

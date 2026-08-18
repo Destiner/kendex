@@ -1,5 +1,5 @@
 //! The apply the user confirms must do what the preview said. A v0.1
-//! manifest's first apply promises "Upgrade vstack.toml to the current
+//! manifest's first apply promises "Upgrade kendex.toml to the current
 //! format" — this pins that the app's apply path actually writes it,
 //! rather than re-planning from a mutation-normalized manifest that no
 //! longer looks old.
@@ -12,7 +12,7 @@ use kendex_core::env::{Env, FakeOs};
 use kendex_core::manifest::MANIFEST_SCHEMA;
 use kendex_core::model::Scope;
 
-const UPGRADE_OP: &str = "Upgrade vstack.toml to the current format";
+const UPGRADE_OP: &str = "Upgrade kendex.toml to the current format";
 
 struct Fixture {
     _tmp: tempfile::TempDir,
@@ -37,7 +37,7 @@ fn v01_fixture() -> Fixture {
     )
     .unwrap();
 
-    let manifest_path = project.join("vstack.toml");
+    let manifest_path = project.join("kendex.toml");
     fs::write(
         &manifest_path,
         format!(
@@ -47,7 +47,7 @@ fn v01_fixture() -> Fixture {
     )
     .unwrap();
     fs::write(
-        project.join(".vstack-lock.json"),
+        project.join(".kendex-lock.json"),
         "{\n  \"version\": 1,\n  \"entries\": {}\n}\n",
     )
     .unwrap();

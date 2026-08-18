@@ -266,6 +266,10 @@ pub fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
     let env = Env::detect()?;
+    // Before any command reads the new-name dirs: running against absent
+    // dirs while the old ones still hold the state would fork it in two,
+    // so a failed move stops the command here.
+    kendex_core::rename::migrate_global_dirs(&env)?;
     let command = match cli.command {
         Some(command) => command,
         None => {
