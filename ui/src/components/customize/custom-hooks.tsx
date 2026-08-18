@@ -1,18 +1,22 @@
 import { Plus, X } from "lucide-react";
-import type { EditorInventory } from "@/bindings";
+import type { EditorInventory, HookDelivery, Scope } from "@/bindings";
 import { CommitInput, Field } from "@/components/customize/controls";
 import { EventPicker } from "@/components/customize/event-picker";
-import { HarnessIcon } from "@/components/harness-icon";
-import { StatusLine } from "@/components/status-note";
+import { HarnessChoice } from "@/components/customize/harness-choice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
-  ADVISORY_EVERYWHERE_ELSE,
   HOOK_AGENTS_LABEL,
   HOOK_COMMAND_HELP,
   HOOK_COMMAND_PLACEHOLDER,
-  hookRunBy,
+  HOOK_DISABLED_NOTE,
+  HOOK_HARNESSES_LABEL,
+  HOOK_NAME_LABEL,
+  HOOK_NAME_PLACEHOLDER,
+  HOOK_TIMEOUT_LABEL,
+  hookDeliverySummary,
   MATCHER_HELP,
 } from "@/lib/copy-customize";
 import {
@@ -24,44 +28,31 @@ import {
   removeCustomHook,
   setCustomHook,
 } from "@/lib/editor-draft";
-import { harnessName } from "@/lib/labels";
+import { useHookDeliveries } from "@/lib/hook-deliveries";
 
 export function CustomHooks({
   draft,
   inventory,
+  scope,
   onChange,
 }: {
   draft: Draft;
   inventory: EditorInventory | null;
+  scope: Scope;
   onChange: (change: (draft: Draft) => Draft) => void;
 }) {
   const hooks = draft["custom-hooks"] ?? [];
-  const enforcedBy = inventory?.hookEnforcedBy ?? [];
+  const deliveries = useHookDeliveries(scope, hooks);
 
   return (
     <div className="flex flex-col gap-3">
-      {hooks.length > 0 && enforcedBy.length > 0 ? (
-        // A guard that only asks nicely, presented as a guard, is worse
-        // than no guard — so where a hook runs is said once, up front.
-        <StatusLine tone="info">
-          <span className="inline-flex items-center gap-1.5">
-            {enforcedBy.map((harness) => (
-              <HarnessIcon
-                key={harness}
-                harness={harness}
-                className="size-3.5"
-              />
-            ))}
-            {hookRunBy(enforcedBy.map(harnessName))} {ADVISORY_EVERYWHERE_ELSE}
-          </span>
-        </StatusLine>
-      ) : null}
       {hooks.map((hook, index) => (
         <HookCard
-          // biome-ignore lint/suspicious/noArrayIndexKey: position is a hook's only identity — [[custom-hooks]] is an ordered list with no names
+          // biome-ignore lint/suspicious/noArrayIndexKey: unsaved hooks have no name yet; position is the draft's identity
           key={index}
           hook={hook}
           inventory={inventory}
+          deliveries={deliveries[index] ?? []}
           onEdit={(next) =>
             onChange((current) => setCustomHook(current, index, next))
           }
@@ -87,19 +78,34 @@ export function CustomHooks({
 function HookCard({
   hook,
   inventory,
+  deliveries,
   onEdit,
   onRemove,
 }: {
   hook: DraftHook;
   inventory: EditorInventory | null;
+  deliveries: HookDelivery[];
   onEdit: (hook: DraftHook) => void;
   onRemove: () => void;
 }) {
   const optional = (text: string) => (text === "" ? null : text);
+  const enabled = hook.enabled ?? true;
+  const ready = hook.event !== "" && hook.command !== "";
+  const summary = ready ? hookDeliverySummary(deliveries) : "";
 
   return (
     <Card>
       <CardContent className="grid gap-3 sm:grid-cols-2">
+        <Field label={HOOK_NAME_LABEL}>
+          <Input
+            aria-label="Name"
+            placeholder={HOOK_NAME_PLACEHOLDER}
+            value={hook.name ?? ""}
+            onChange={(e) =>
+              onEdit({ ...hook, name: optional(e.target.value) })
+            }
+          />
+        </Field>
         <Field label="Event">
           <EventPicker
             value={hook.event}
@@ -125,15 +131,6 @@ function HookCard({
             onChange={(e) => onEdit({ ...hook, command: e.target.value })}
           />
         </Field>
-        <Field label="Description (optional)">
-          <Input
-            aria-label="Description"
-            value={hook.description ?? ""}
-            onChange={(e) =>
-              onEdit({ ...hook, description: optional(e.target.value) })
-            }
-          />
-        </Field>
         <Field label={HOOK_AGENTS_LABEL}>
           <CommitInput
             label="Agents"
@@ -144,16 +141,57 @@ function HookCard({
             }
           />
         </Field>
-        <div className="flex items-end justify-end">
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Remove hook"
-            onClick={onRemove}
-          >
-            <X className="size-4" />
-            Remove
-          </Button>
+        <Field label={HOOK_TIMEOUT_LABEL}>
+          <Input
+            aria-label="Timeout"
+            type="number"
+            min={1}
+            max={3600}
+            value={hook.timeout ?? ""}
+            onChange={(e) =>
+              onEdit({
+                ...hook,
+                timeout: e.target.value === "" ? null : Number(e.target.value),
+              })
+            }
+          />
+        </Field>
+        <Field label="Description (optional)">
+          <Input
+            aria-label="Description"
+            value={hook.description ?? ""}
+            onChange={(e) =>
+              onEdit({ ...hook, description: optional(e.target.value) })
+            }
+          />
+        </Field>
+        <Field label={HOOK_HARNESSES_LABEL}>
+          <HarnessChoice
+            all={inventory?.harnesses ?? []}
+            chosen={hook.harnesses ?? null}
+            onChoose={(harnesses) => onEdit({ ...hook, harnesses })}
+          />
+        </Field>
+        <div className="flex items-center justify-between sm:col-span-2">
+          <span className="text-[13px] text-muted-foreground">
+            {enabled ? summary : HOOK_DISABLED_NOTE}
+          </span>
+          <span className="flex items-center gap-2">
+            <Switch
+              aria-label="Hook enabled"
+              checked={enabled}
+              onCheckedChange={(on) => onEdit({ ...hook, enabled: on })}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Remove hook"
+              onClick={onRemove}
+            >
+              <X className="size-4" />
+              Remove
+            </Button>
+          </span>
         </div>
       </CardContent>
     </Card>

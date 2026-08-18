@@ -306,6 +306,7 @@ fn convert_lock(
             lock.entries.insert(
                 crate::lock::entry_key(kind, name, *harness),
                 LockEntry {
+                    registration: None,
                     name: name.clone(),
                     kind,
                     harness: *harness,

@@ -98,19 +98,44 @@ pub fn merge_overrides(
     merged
 }
 
-pub fn hooks_for_agent<'a>(manifest: &'a Manifest, agent: &SourceAgent) -> Vec<&'a CustomHook> {
+/// The custom hooks one agent file carries on one harness: the ones whose
+/// selector matches this agent, minus every hook `delivery()` sends through
+/// a real registration instead — writing those here too would keep a second,
+/// weaker copy of the same rule.
+pub fn hooks_for_agent<'a>(
+    env: &crate::env::Env,
+    scope: &Scope,
+    harness: HarnessId,
+    manifest: &'a Manifest,
+    agent: &SourceAgent,
+) -> Vec<&'a CustomHook> {
+    use crate::hook::{Delivery, HookSpec, delivery};
     let role = agent.role.map(Role::name);
+    let names = crate::hook::custom_hook_names(manifest);
     manifest
         .custom_hooks
         .iter()
-        .filter(|hook| match &hook.agents {
-            HookAgents::One(sel) => {
-                sel == "all" || Some(sel.as_str()) == role || sel == &agent.name
-            }
-            HookAgents::Many(list) => list
-                .iter()
-                .any(|sel| sel == &agent.name || Some(sel.as_str()) == role),
+        .zip(names)
+        .filter(|(hook, _)| {
+            hook.enabled
+                && match &hook.agents {
+                    HookAgents::One(sel) => {
+                        sel == "all" || Some(sel.as_str()) == role || sel == &agent.name
+                    }
+                    HookAgents::Many(list) => list
+                        .iter()
+                        .any(|sel| sel == &agent.name || Some(sel.as_str()) == role),
+                }
         })
+        .filter(|(hook, name)| {
+            let spec = HookSpec::custom(hook, name.clone());
+            spec.applies_to(harness)
+                && matches!(
+                    delivery(env, scope, harness, &spec),
+                    Delivery::InAgentFile | Delivery::Advisory
+                )
+        })
+        .map(|(hook, _)| hook)
         .collect()
 }
 

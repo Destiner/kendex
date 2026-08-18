@@ -13,6 +13,7 @@ fn lock_round_trips_and_missing_file_is_empty() {
     lock.entries.insert(
         entry_key(ItemKind::Skill, "github", HarnessId::Claude),
         LockEntry {
+            registration: None,
             name: "github".into(),
             kind: ItemKind::Skill,
             harness: HarnessId::Claude,

@@ -1,9 +1,14 @@
 use std::path::Path;
 
-use crate::model::HarnessId;
+pub mod delivery;
+pub mod spec;
+
+pub use delivery::{AgentScoping, Delivery, agent_scoping, delivery};
+pub use spec::{HookBody, HookSpec, Registration};
 
 /// A hook source: shell script with YAML-in-comments frontmatter between
-/// `# ---` delimiter lines (v1 format, preserved verbatim).
+/// `# ---` delimiter lines (v1 format, preserved verbatim). A parser only —
+/// the engine speaks `HookSpec`, which this converts into.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HookSource {
     pub name: String,
@@ -15,65 +20,6 @@ pub struct HookSource {
     /// Harness allowlist; `None` = every harness.
     pub harnesses: Option<Vec<String>>,
     pub script: String,
-}
-
-impl HookSource {
-    pub fn applies_to(&self, harness: HarnessId) -> bool {
-        match &self.harnesses {
-            None => true,
-            Some(list) => list.iter().any(|h| HarnessId::parse(h) == Some(harness)),
-        }
-    }
-
-    /// Advisory prose for harnesses without native hook support (codex
-    /// unmapped events, cursor rules).
-    pub fn safety_prose(&self) -> String {
-        let mut prose = format!("**Safety: {}**\n", self.description);
-        if let Some(safety) = &self.safety {
-            prose.push_str(safety);
-            prose.push('\n');
-        }
-        let action = match self.event.as_str() {
-            "PreToolUse" => "Before executing",
-            "PostToolUse" => "After executing",
-            "PermissionRequest" => "When requesting permission for",
-            "PostCompact" => "After context compaction",
-            "TaskCompleted" => "Before marking a task complete",
-            _ => "When handling",
-        };
-        let target = self.matcher.as_deref().unwrap_or("any tool");
-        prose.push_str(&format!(
-            "{action} {target} operations, the agent must verify this constraint is met.\n"
-        ));
-        prose
-    }
-}
-
-/// One hook as a harness registers it: the harness's own event name, and the
-/// matcher in the harness's own tool names.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Registration {
-    pub hook: HookSource,
-    /// The matcher carries regex syntax around a tool name, so it is
-    /// registered exactly as authored and may match nothing here.
-    pub matcher_as_authored: bool,
-}
-
-impl Registration {
-    pub fn new(source: &HookSource, harness: HarnessId, event: &str) -> Registration {
-        let said = source
-            .matcher
-            .as_deref()
-            .map(|matcher| crate::render::vocab::hook_matcher(matcher, harness));
-        Registration {
-            hook: HookSource {
-                event: event.to_owned(),
-                matcher: said.as_ref().map(|(pattern, _)| pattern.clone()),
-                ..source.clone()
-            },
-            matcher_as_authored: said.is_some_and(|(_, said)| !said),
-        }
-    }
 }
 
 pub fn parse_hook(text: &str) -> Result<HookSource, String> {
@@ -206,18 +152,6 @@ pub fn known_event(name: &str) -> bool {
     EVENTS.iter().any(|event| event.name == name)
 }
 
-/// Whether a custom hook is *run* on this harness or merely *read*.
-///
-/// A custom hook lives inside an agent's own file, and Claude Code is the
-/// only harness that takes hooks there and executes them. Everywhere else
-/// the same hook is written into the agent as instructions: a model may
-/// follow them, nothing enforces them. Said plainly wherever a custom hook
-/// is written or listed — a guard that only asks nicely, presented as a
-/// guard, is worse than no guard.
-pub fn custom_hook_enforced(harness: HarnessId) -> bool {
-    harness == HarnessId::Claude
-}
-
 /// v1's codex event mapping: identity for the events codex understands,
 /// `None` for events that fall back to advisory prose in agent files.
 pub fn codex_event(event: &str) -> Option<&str> {
@@ -226,6 +160,71 @@ pub fn codex_event(event: &str) -> Option<&str> {
         | "PostCompact" | "PermissionRequest" | "Stop" => Some(event),
         _ => None,
     }
+}
+
+/// The derived name for one custom hook: command stem + event, lower-kebab.
+fn derived_hook_slug(hook: &crate::manifest::CustomHook) -> String {
+    let raw = format!("{}-{}", command_stem(&hook.command), hook.event);
+    let mut slug = String::with_capacity(raw.len());
+    for c in raw.chars() {
+        if c.is_ascii_alphanumeric() {
+            slug.push(c.to_ascii_lowercase());
+        } else if !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    let slug = slug.trim_matches('-');
+    if slug.is_empty() {
+        "hook".to_owned()
+    } else {
+        slug.to_owned()
+    }
+}
+
+/// Every custom hook's resolved name, in list order: explicit names as
+/// written, derived slugs for the rest, de-duplicated within the list
+/// (`guard-pretooluse`, `guard-pretooluse-2`) and against the manifest's
+/// installed hooks, whose lock keys share the same shape. Deterministic, so
+/// a plan over a hand-written unnamed entry and the editor's write-back
+/// agree.
+pub fn custom_hook_names(manifest: &crate::manifest::Manifest) -> Vec<String> {
+    let hooks = &manifest.custom_hooks;
+    let mut taken: Vec<String> = hooks
+        .iter()
+        .filter_map(|h| h.name.clone())
+        .chain(manifest.hooks.keys().cloned())
+        .collect();
+    hooks
+        .iter()
+        .map(|hook| {
+            if let Some(name) = &hook.name {
+                return name.clone();
+            }
+            let slug = derived_hook_slug(hook);
+            let mut candidate = slug.clone();
+            let mut n = 1;
+            while taken.contains(&candidate) {
+                n += 1;
+                candidate = format!("{slug}-{n}");
+            }
+            taken.push(candidate.clone());
+            candidate
+        })
+        .collect()
+}
+
+/// Write derived names into the manifest so they stop being derived —
+/// called on the editor's save. Returns whether anything changed.
+pub fn name_custom_hooks(manifest: &mut crate::manifest::Manifest) -> bool {
+    let names = custom_hook_names(manifest);
+    let mut changed = false;
+    for (hook, name) in manifest.custom_hooks.iter_mut().zip(names) {
+        if hook.name.is_none() {
+            hook.name = Some(name);
+            changed = true;
+        }
+    }
+    changed
 }
 
 /// A short recognizable handle for a shell command: the file stem of its
@@ -247,6 +246,7 @@ pub fn command_stem(command: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::HarnessId;
 
     const SCRIPT: &str = "#!/usr/bin/env bash\n# ---\n# name: guard\n# event: PreToolUse\n# matcher: Bash\n# description: block dangerous commands\n# timeout: 10\n# harnesses: [claude-code, codex]\n# ---\nexit 0\n";
 
@@ -257,16 +257,93 @@ mod tests {
         assert_eq!(hook.event, "PreToolUse");
         assert_eq!(hook.matcher.as_deref(), Some("Bash"));
         assert_eq!(hook.timeout, Some(10));
-        assert!(hook.applies_to(HarnessId::Claude));
-        assert!(hook.applies_to(HarnessId::Codex));
-        assert!(!hook.applies_to(HarnessId::Pi));
-        assert!(hook.script.contains("exit 0"));
+        let spec = HookSpec::from(hook);
+        assert!(spec.applies_to(HarnessId::Claude));
+        assert!(spec.applies_to(HarnessId::Codex));
+        assert!(!spec.applies_to(HarnessId::Pi));
+        assert!(matches!(&spec.body, HookBody::Script(s) if s.contains("exit 0")));
     }
 
     #[test]
     fn missing_frontmatter_or_fields_is_an_error() {
         assert!(parse_hook("#!/bin/sh\nexit 0\n").is_err());
         assert!(parse_hook("# ---\n# name: x\n# ---\n").is_err());
+    }
+
+    fn custom(name: Option<&str>, command: &str, event: &str) -> crate::manifest::CustomHook {
+        crate::manifest::CustomHook {
+            name: name.map(str::to_owned),
+            event: event.to_owned(),
+            matcher: None,
+            command: command.to_owned(),
+            description: None,
+            timeout: None,
+            harnesses: None,
+            enabled: true,
+            agents: crate::manifest::HookAgents::One("all".to_owned()),
+        }
+    }
+
+    fn with_hooks(hooks: Vec<crate::manifest::CustomHook>) -> crate::manifest::Manifest {
+        crate::manifest::Manifest {
+            custom_hooks: hooks,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn derived_names_are_stable_slugs_and_never_collide() {
+        let manifest = with_hooks(vec![
+            custom(None, "./scripts/Guard.sh --strict", "PreToolUse"),
+            custom(None, "guard.sh", "PreToolUse"),
+            custom(Some("mine"), "anything", "Stop"),
+            custom(None, "npx lint_staged.js", "Stop"),
+        ]);
+        assert_eq!(
+            custom_hook_names(&manifest),
+            [
+                "guard-pretooluse",
+                "guard-pretooluse-2",
+                "mine",
+                "lint-staged-stop"
+            ]
+        );
+        // Same inputs, same names — a plan over unnamed entries and the
+        // editor's write-back must agree.
+        assert_eq!(custom_hook_names(&manifest), custom_hook_names(&manifest));
+    }
+
+    #[test]
+    fn a_derived_name_avoids_installed_hooks_and_explicit_names() {
+        let mut manifest = with_hooks(vec![
+            custom(None, "guard.sh", "PreToolUse"),
+            custom(Some("guard-pretooluse-2"), "other.sh", "Stop"),
+        ]);
+        // An installed hook already owns `guard-pretooluse`, and its lock
+        // key has the same shape a custom hook's would.
+        manifest.hooks.insert(
+            "guard-pretooluse".to_owned(),
+            crate::manifest::ItemDecl::from_source("vstack"),
+        );
+        assert_eq!(
+            custom_hook_names(&manifest),
+            ["guard-pretooluse-3", "guard-pretooluse-2"]
+        );
+    }
+
+    #[test]
+    fn write_back_names_only_the_unnamed() {
+        let mut manifest = crate::manifest::Manifest {
+            custom_hooks: vec![
+                custom(Some("kept"), "a.sh", "Stop"),
+                custom(None, "b.sh", "Stop"),
+            ],
+            ..Default::default()
+        };
+        assert!(name_custom_hooks(&mut manifest));
+        assert_eq!(manifest.custom_hooks[0].name.as_deref(), Some("kept"));
+        assert_eq!(manifest.custom_hooks[1].name.as_deref(), Some("b-stop"));
+        assert!(!name_custom_hooks(&mut manifest));
     }
 
     #[test]

@@ -28,9 +28,6 @@ pub struct EditorInventory {
     /// rather than spelled out in the UI so the picker cannot offer an
     /// event the validator would then reject.
     pub hook_events: Vec<HookEvent>,
-    /// Harnesses that run a custom hook rather than only reading it as
-    /// instructions — see `vstack_core::hook::custom_hook_enforced`.
-    pub hook_enforced_by: Vec<HarnessId>,
 }
 
 #[derive(Serialize, Type)]
@@ -38,6 +35,82 @@ pub struct EditorInventory {
 pub struct HookEvent {
     pub name: String,
     pub fires: String,
+}
+
+/// How one custom hook reaches one harness, for the editor's per-hook line.
+/// Computed by `vstack_core::hook::delivery` — the same decision the engine
+/// installs by — so the words on screen cannot drift from what applies.
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct HookDelivery {
+    pub harness: HarnessId,
+    pub mode: HookDeliveryMode,
+    /// Why nothing installs, for `unavailable` rows.
+    pub note: Option<String>,
+}
+
+#[derive(Serialize, Type, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum HookDeliveryMode {
+    /// Registered in the harness's own hook configuration — it runs.
+    Runs,
+    /// Claude's per-agent hooks block — it runs, for the chosen agents.
+    RunsInAgentFile,
+    /// Written into the agents as instructions — nothing enforces it.
+    Instructions,
+    /// No surface for it here at all.
+    Unavailable,
+}
+
+/// Per-hook, per-harness delivery for the hooks as currently drafted in the
+/// editor — outer Vec in the order the hooks were passed.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn custom_hook_deliveries(
+    scope: Scope,
+    hooks: Vec<vstack_core::manifest::CustomHook>,
+) -> Result<Vec<Vec<HookDelivery>>, String> {
+    use vstack_core::hook::{Delivery, HookSpec, custom_hook_names, delivery};
+    let env = env()?;
+    let loaded = manifest::load_for_mutation(&manifest::manifest_path(&env, &scope))
+        .map_err(|e| e.to_string())?;
+    let mut draft = loaded.unwrap_or_default();
+    draft.custom_hooks = hooks;
+    let harnesses: Vec<HarnessId> = match draft.install.harnesses.is_empty() {
+        true => HarnessId::ALL
+            .into_iter()
+            .filter(|h| vstack_core::harness::installable(*h))
+            .collect(),
+        false => draft.install.harnesses.clone(),
+    };
+    let names = custom_hook_names(&draft);
+    Ok(draft
+        .custom_hooks
+        .iter()
+        .zip(names)
+        .map(|(hook, name)| {
+            let spec = HookSpec::custom(hook, name);
+            harnesses
+                .iter()
+                .filter(|harness| spec.applies_to(**harness))
+                .map(|harness| {
+                    let (mode, note) = match delivery(&env, &scope, *harness, &spec) {
+                        Delivery::Registered => (HookDeliveryMode::Runs, None),
+                        Delivery::InAgentFile => (HookDeliveryMode::RunsInAgentFile, None),
+                        Delivery::Advisory => (HookDeliveryMode::Instructions, None),
+                        Delivery::NotInstallable(reason) => {
+                            (HookDeliveryMode::Unavailable, Some(reason))
+                        }
+                    };
+                    HookDelivery {
+                        harness: *harness,
+                        mode,
+                        note,
+                    }
+                })
+                .collect()
+        })
+        .collect())
 }
 
 #[tauri::command(async)]
@@ -82,13 +155,16 @@ fn on_first_creation(mut manifest: Manifest, seed: Manifest) -> Manifest {
 pub fn update_manifest(scope: Scope, manifest: Manifest) -> Result<AuditView, String> {
     let env = env()?;
     let path = manifest::manifest_path(&env, &scope);
-    let manifest = match manifest::load_for_mutation(&path).map_err(|e| e.to_string())? {
+    let mut manifest = match manifest::load_for_mutation(&path).map_err(|e| e.to_string())? {
         Some(_) => manifest,
         None => on_first_creation(
             manifest,
             ops::manifest_for_mutation(&env, &scope).map_err(|e| e.to_string())?,
         ),
     };
+    // A custom hook's name is its identity everywhere downstream; saving is
+    // when a derived one stops being derived.
+    vstack_core::hook::name_custom_hooks(&mut manifest);
     check(&manifest)?;
     let lock = load_lock(&lock_path(&env, &scope)).map_err(|e| e.to_string())?;
     let mut report = engine::plan_scope(&env, &scope, &manifest, &lock, &PlanOptions::default())
@@ -137,11 +213,6 @@ pub fn editor_inventory(scope: Scope) -> Result<EditorInventory, String> {
                 name: event.name.to_owned(),
                 fires: event.fires.to_owned(),
             })
-            .collect(),
-        hook_enforced_by: HarnessId::ALL
-            .into_iter()
-            .filter(|h| vstack_core::harness::installable(*h))
-            .filter(|h| vstack_core::hook::custom_hook_enforced(*h))
             .collect(),
     };
     let Some(manifest) = loaded else {
@@ -221,10 +292,14 @@ mod tests {
             .agent_launch_instructions
             .insert("all".to_owned(), "read the plan".to_owned());
         edited.custom_hooks.push(vstack_core::manifest::CustomHook {
+            name: None,
             event: "PreToolUse".to_owned(),
             matcher: Some("Bash".to_owned()),
             command: "./guard.sh".to_owned(),
             description: None,
+            timeout: None,
+            harnesses: None,
+            enabled: true,
             agents: vstack_core::manifest::HookAgents::One("all".to_owned()),
         });
         assert_eq!(check(&edited), Ok(()));

@@ -46,7 +46,7 @@ pub(super) fn advisory_notice(
 /// take the same matcher-with-handlers object; Copilot's hook files are a
 /// `{version, hooks}` document whose entries carry the command themselves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum HookFormat {
+pub(crate) enum HookFormat {
     Nested,
     Copilot,
 }
@@ -55,7 +55,7 @@ pub(super) enum HookFormat {
 /// removal both read this, so the command string they register and strip can
 /// never disagree.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum HookTarget {
+pub(crate) enum HookTarget {
     /// A shell script the harness runs, registered in a JSON hooks file.
     Script {
         path: PathBuf,
@@ -76,7 +76,7 @@ pub(super) enum HookTarget {
     Rule { path: PathBuf },
 }
 
-pub(super) fn hook_target(
+pub(crate) fn hook_target(
     env: &Env,
     scope: &Scope,
     harness: HarnessId,

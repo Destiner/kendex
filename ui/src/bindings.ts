@@ -122,6 +122,11 @@ export const commands = {
 	updateManifest: (scope: Scope, manifest: Manifest_Deserialize) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("update_manifest", { scope, manifest })),
 	editorInventory: (scope: Scope) => typedError<EditorInventory, string>(__TAURI_INVOKE("editor_inventory", { scope })),
 	/**
+	 *  Per-hook, per-harness delivery for the hooks as currently drafted in the
+	 *  editor — outer Vec in the order the hooks were passed.
+	 */
+	customHookDeliveries: (scope: Scope, hooks: CustomHook_Deserialize[]) => typedError<HookDelivery[][], string>(__TAURI_INVOKE("custom_hook_deliveries", { scope, hooks })),
+	/**
 	 *  The primary file behind one installed item, for the Library preview
 	 *  pane — SKILL.md for a skill, the document itself for everything else
 	 *  that has its own file.
@@ -365,18 +370,42 @@ export type CatalogGroupMeta = {
 export type CustomHook = CustomHook_Serialize | CustomHook_Deserialize;
 
 export type CustomHook_Deserialize = {
+	/**
+	 *  Stable identity: the registry key, the lock key, the UI row. Absent
+	 *  in a hand-written entry until the editor's first save writes the
+	 *  derived slug back (`hook::name_custom_hooks`); derivation is
+	 *  deterministic, so an unnamed entry still plans consistently.
+	 */
+	name?: string | null,
 	event: string,
 	matcher: string | null,
 	command: string,
 	description: string | null,
+	/**  Seconds; harnesses that count milliseconds convert on render. */
+	timeout?: number | null,
+	/**  Harness allowlist; `None` = every declared harness. */
+	harnesses?: string[] | null,
+	enabled?: boolean,
 	agents?: HookAgents,
 };
 
 export type CustomHook_Serialize = {
+	/**
+	 *  Stable identity: the registry key, the lock key, the UI row. Absent
+	 *  in a hand-written entry until the editor's first save writes the
+	 *  derived slug back (`hook::name_custom_hooks`); derivation is
+	 *  deterministic, so an unnamed entry still plans consistently.
+	 */
+	name?: string | null,
 	event: string,
 	matcher?: string | null,
 	command: string,
 	description?: string | null,
+	/**  Seconds; harnesses that count milliseconds convert on render. */
+	timeout?: number | null,
+	/**  Harness allowlist; `None` = every declared harness. */
+	harnesses?: string[] | null,
+	enabled?: boolean,
 	agents: HookAgents,
 };
 
@@ -636,11 +665,6 @@ export type EditorInventory = {
 	 *  event the validator would then reject.
 	 */
 	hookEvents: HookEvent[],
-	/**
-	 *  Harnesses that run a custom hook rather than only reading it as
-	 *  instructions — see `vstack_core::hook::custom_hook_enforced`.
-	 */
-	hookEnforcedBy: HarnessId[],
 };
 
 /**
@@ -835,6 +859,28 @@ export type HarnessId = "claude" | "codex" | "opencode" | "cursor" | "pi" | "gem
 export type HookAgents = 
 /**  `"all"`, a role name, or a single agent name. */
 string | string[];
+
+/**
+ *  How one custom hook reaches one harness, for the editor's per-hook line.
+ *  Computed by `vstack_core::hook::delivery` — the same decision the engine
+ *  installs by — so the words on screen cannot drift from what applies.
+ */
+export type HookDelivery = {
+	harness: HarnessId,
+	mode: HookDeliveryMode,
+	/**  Why nothing installs, for `unavailable` rows. */
+	note: string | null,
+};
+
+export type HookDeliveryMode = 
+/**  Registered in the harness's own hook configuration — it runs. */
+"runs" | 
+/**  Claude's per-agent hooks block — it runs, for the chosen agents. */
+"runs-in-agent-file" | 
+/**  Written into the agents as instructions — nothing enforces it. */
+"instructions" | 
+/**  No surface for it here at all. */
+"unavailable";
 
 export type HookEvent = {
 	name: string,

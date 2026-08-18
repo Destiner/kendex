@@ -1,3 +1,4 @@
+import type { HookDelivery } from "@/bindings";
 import type { ItemCustomization } from "@/lib/customization";
 import type { GroupStatus } from "@/lib/derive";
 import { harnessName } from "@/lib/labels";
@@ -61,12 +62,37 @@ export const HOOK_COMMAND_HELP =
 export const HOOK_COMMAND_PLACEHOLDER = "./scripts/guard.sh, or a full path";
 export const HOOK_AGENTS_LABEL =
   "Agents — all, a role, or a comma-separated list";
-/** Named harnesses run the hook; everywhere else only reads it. */
-export const hookRunBy = (harnesses: string[]): string =>
-  `${harnesses.join(" and ")} ${harnesses.length === 1 ? "runs" : "run"} these.`;
-export const ADVISORY_EVERYWHERE_ELSE =
-  "Every other harness gets them written into the agent as instructions, which nothing enforces.";
-export const HOOKS_HELP = "Written into your agents' own files when you save.";
+export const HOOK_NAME_LABEL = "Name";
+export const HOOK_NAME_PLACEHOLDER = "picked for you on save";
+export const HOOK_TIMEOUT_LABEL = "Timeout — seconds it may run (optional)";
+export const HOOK_HARNESSES_LABEL = "Where it installs";
+export const HOOK_DISABLED_NOTE = "Switched off — kept here, nothing runs it.";
+export const HOOKS_HELP =
+  "Run where a harness can run them; written in as guidance where none can. Each hook says which below.";
+
+/** The truth line under each hook, built from what the engine will actually
+ *  do — never from prose in the UI. */
+export function hookDeliverySummary(rows: HookDelivery[]): string {
+  const list = (names: string[]) =>
+    names.length === 2 ? names.join(" and ") : names.join(", ");
+  const named = (modes: HookDelivery["mode"][]) =>
+    rows
+      .filter((row) => modes.includes(row.mode))
+      .map((row) => harnessName(row.harness));
+  const runs = named(["runs", "runs-in-agent-file"]);
+  const guidance = named(["instructions"]);
+  const nowhere = named(["unavailable"]);
+  const parts: string[] = [];
+  if (runs.length > 0) parts.push(`Runs in ${list(runs)}`);
+  if (guidance.length > 0)
+    parts.push(
+      `guidance only in ${list(guidance)} — nothing enforces it there`,
+    );
+  if (nowhere.length > 0) parts.push(`can't run in ${list(nowhere)}`);
+  if (parts.length === 0) return "";
+  const line = parts.join(" · ");
+  return line.charAt(0).toUpperCase() + line.slice(1);
+}
 export const SKILLS_DIR_SECTION = "Project skills folder";
 export const SKILLS_DIR_HELP =
   "Skills you own live here, then get linked into each harness's own skill folder, so the generated copies don't need to be committed.";

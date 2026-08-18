@@ -59,6 +59,8 @@ a hook.
   replaces.
 - **Mode:** `primary`, `subagent` or `all`; vstack's default is `subagent`,
   and `all` from a source is spelled `subagent` too.
+- **Agent scoping:** not applicable — hooks are advisory here, whoever
+  they are scoped to.
 
 ## Permissions
 

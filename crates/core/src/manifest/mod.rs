@@ -160,12 +160,26 @@ fn default_plugin_harness() -> HarnessId {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "kebab-case")]
 pub struct CustomHook {
+    /// Stable identity: the registry key, the lock key, the UI row. Absent
+    /// in a hand-written entry until the editor's first save writes the
+    /// derived slug back (`hook::name_custom_hooks`); derivation is
+    /// deterministic, so an unnamed entry still plans consistently.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub event: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matcher: Option<String>,
     pub command: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Seconds; harnesses that count milliseconds convert on render.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<u32>,
+    /// Harness allowlist; `None` = every declared harness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harnesses: Option<Vec<String>>,
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub enabled: bool,
     #[serde(default = "default_hook_agents")]
     pub agents: HookAgents,
 }
@@ -180,6 +194,10 @@ pub enum HookAgents {
 
 fn default_hook_agents() -> HookAgents {
     HookAgents::One("all".to_owned())
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 /// Where a fork came from. A fork keeps the item's installed name — the

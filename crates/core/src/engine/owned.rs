@@ -50,42 +50,7 @@ pub(super) fn installed(env: &Env, scope: &Scope, entry: &LockEntry) -> Owned {
                 }
             }
         },
-        ItemKind::Hook => match hook_target(env, scope, entry.harness, &entry.name) {
-            Some(HookTarget::Script {
-                path,
-                command,
-                registry,
-                format,
-                ..
-            }) => {
-                files.push(path);
-                // The feature flag codex needed stays on: other hooks may
-                // still rely on it, and it enables nothing by itself.
-                edits.push((
-                    registry,
-                    match format {
-                        HookFormat::Nested => ConfigEdit::RemoveHook {
-                            event: None,
-                            command,
-                        },
-                        HookFormat::Copilot => ConfigEdit::RemoveCopilotHook {
-                            event: None,
-                            command,
-                        },
-                    },
-                ));
-            }
-            Some(HookTarget::Instruction {
-                path,
-                config,
-                reference,
-            }) => {
-                files.push(path);
-                edits.push((config, ConfigEdit::OpencodeRemoveInstruction { reference }));
-            }
-            Some(HookTarget::Rule { path }) => files.push(path),
-            None => {}
-        },
+        ItemKind::Hook => hook_owned(env, scope, entry, &mut files, &mut edits),
         ItemKind::McpServer => {
             if let Some(registry) = mcp_registry(env, scope, entry.harness) {
                 edits.push((
@@ -125,4 +90,54 @@ pub(super) fn installed(env: &Env, scope: &Scope, entry: &LockEntry) -> Owned {
         ItemKind::PiExtension => {}
     }
     Owned { files, edits }
+}
+
+/// A hook's remains. A script-less hook (custom) registered the person's own
+/// command and the lock recorded it, so removal names exactly that entry; a
+/// hook with a script re-derives its command from the target it was placed
+/// at. Codex's feature flag stays on either way: other hooks may still rely
+/// on it, and it enables nothing by itself.
+fn hook_owned(
+    env: &Env,
+    scope: &Scope,
+    entry: &LockEntry,
+    files: &mut Vec<PathBuf>,
+    edits: &mut Vec<(PathBuf, ConfigEdit)>,
+) {
+    let removal = |event: Option<String>, command: String, format: &HookFormat| match format {
+        HookFormat::Nested => ConfigEdit::RemoveHook { event, command },
+        HookFormat::Copilot => ConfigEdit::RemoveCopilotHook { event, command },
+    };
+    match hook_target(env, scope, entry.harness, &entry.name) {
+        Some(HookTarget::Script {
+            path,
+            command,
+            registry,
+            format,
+            ..
+        }) => match &entry.registration {
+            Some(recorded) => edits.push((
+                registry,
+                removal(
+                    Some(recorded.event.clone()),
+                    recorded.command.clone(),
+                    &format,
+                ),
+            )),
+            None => {
+                files.push(path);
+                edits.push((registry, removal(None, command, &format)));
+            }
+        },
+        Some(HookTarget::Instruction {
+            path,
+            config,
+            reference,
+        }) => {
+            files.push(path);
+            edits.push((config, ConfigEdit::OpencodeRemoveInstruction { reference }));
+        }
+        Some(HookTarget::Rule { path }) => files.push(path),
+        None => {}
+    }
 }

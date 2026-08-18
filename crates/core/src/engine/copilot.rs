@@ -10,8 +10,9 @@ use serde_json::Value;
 
 use super::ItemWarning;
 use super::desired::{DesiredState, ItemCtx};
+use crate::env::Env;
 use crate::harness::copilot::settings;
-use crate::hook::HookSource;
+use crate::hook::HookSpec;
 use crate::model::{HarnessId, ItemKind, Scope};
 
 fn warning(
@@ -34,21 +35,28 @@ fn warning(
 /// switched off machine-wide still installs — it is written where Copilot
 /// looks, and the warning says it will sit there doing nothing.
 pub(super) fn hook(
-    ctx: &ItemCtx,
-    hook: &HookSource,
+    env: &Env,
+    scope: &Scope,
+    name: &str,
+    hook: &HookSpec,
     state: &mut DesiredState,
-) -> Option<HookSource> {
+) -> Option<HookSpec> {
+    let named = |message: String, remediation: Option<String>| ItemWarning {
+        kind: ItemKind::Hook,
+        name: name.to_owned(),
+        harness: Some(HarnessId::Copilot),
+        message,
+        remediation,
+    };
     let Some(registered) = crate::harness::copilot::hook_for(hook) else {
         state.notes.push(format!(
-            "hook {}: event {} has no Copilot counterpart, and hanging it on a near-miss would run it at the wrong moment",
-            ctx.name, hook.event
+            "hook {name}: event {} has no Copilot counterpart, and hanging it on a near-miss would run it at the wrong moment",
+            hook.event
         ));
         return None;
     };
     if registered.matcher_as_authored {
-        state.warnings.push(warning(
-            ctx,
-            ItemKind::Hook,
+        state.warnings.push(named(
             format!(
                 "Copilot matches `{}` against its own tool names, and this matcher carries syntax vstack cannot restate in them — it installs as written and may never match",
                 hook.matcher.as_deref().unwrap_or_default()
@@ -59,10 +67,8 @@ pub(super) fn hook(
             ),
         ));
     }
-    if let Some(path) = settings::hooks_switched_off_by(ctx.env, ctx.scope) {
-        state.warnings.push(warning(
-            ctx,
-            ItemKind::Hook,
+    if let Some(path) = settings::hooks_switched_off_by(env, scope) {
+        state.warnings.push(named(
             format!(
                 "`disableAllHooks` is on in {}, which switches off every Copilot hook — as configured, this one installs but stays inert",
                 path.display()

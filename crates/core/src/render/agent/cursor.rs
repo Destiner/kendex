@@ -108,10 +108,14 @@ mod tests {
             root: "/tmp/proj".into(),
         };
         let hook = CustomHook {
+            name: None,
             event: "PreToolUse".into(),
             matcher: Some("Bash".into()),
             command: "./guard.sh".into(),
             description: None,
+            timeout: None,
+            harnesses: None,
+            enabled: true,
             agents: HookAgents::One("all".into()),
         };
         let rendered = generate(&effective(&source, &scope, vec![&hook]));

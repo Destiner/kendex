@@ -8,6 +8,22 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- Custom hooks now run wherever a harness can run them. A hook for all
+  agents registers in the harness's own hook configuration on Claude
+  Code, Codex, Gemini, Copilot, and Pi (through its carrier) — before,
+  every harness but Claude only read it as instructions. On Claude it
+  registers in settings.json, so it covers the main session, not only
+  subagents. Each hook's editor card now says exactly where it runs and
+  where it is only guidance, computed from the same decision the
+  installer makes; hooks also gain a name (picked from the command on
+  first save, editable), a timeout, a per-harness install list, and an
+  off switch. A hook aimed at specific agents stays enforced only on
+  Claude Code, because no other harness can tell agents apart at runtime
+  — the card says so instead of presenting a request as a guard.
+- Custom hook commands pass the safety check installed hooks already
+  passed. A dangerous command — fetch-and-run, secrets in plain sight —
+  is held back before it lands anywhere, with the same review-and-accept
+  flow, instead of being written unexamined into every agent file.
 - Custom hooks are picked, not typed. The event comes from a searchable
   list of the events harnesses actually fire, each with a line saying when
   it fires, and a manifest naming an event nobody fires is now rejected

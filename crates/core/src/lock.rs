@@ -150,11 +150,25 @@ pub struct LockEntry {
     /// never took.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub emitted: Option<EmittedArtifact>,
+    /// The registry entry a script-less hook registered (custom hooks: the
+    /// person's own command, verbatim). Removal must name that command to
+    /// take the entry back out, and it cannot be re-derived once the
+    /// manifest entry that carried it is gone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registration: Option<HookRegistration>,
     /// Every reason this installation exists. Never empty once written: an
     /// installation nothing can account for would be swept the moment
     /// anything looked at it.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub reasons: BTreeSet<Reason>,
+}
+
+/// One hook entry as a harness's registry keys it: event plus command.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct HookRegistration {
+    pub event: String,
+    pub command: String,
 }
 
 /// The artifact one installation actually put on disk, in the harness's own

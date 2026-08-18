@@ -35,6 +35,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         editor::get_manifest,
         editor::update_manifest,
         editor::editor_inventory,
+        editor::custom_hook_deliveries,
         editor::item_source,
         native::pick_folder,
         native::reveal_path,

@@ -232,7 +232,7 @@ pub(super) fn desired_agent(
                 &ctx.manifest.agent_additional_instructions,
                 ctx.name,
             ),
-            custom_hooks: hooks_for_agent(ctx.manifest, &parsed),
+            custom_hooks: hooks_for_agent(ctx.env, ctx.scope, harness, ctx.manifest, &parsed),
         };
         let rendered = match generate(&effective) {
             Ok(rendered) => rendered,

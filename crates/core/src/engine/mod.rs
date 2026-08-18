@@ -22,6 +22,7 @@ pub mod deps;
 pub mod desired;
 mod desired_agent;
 mod desired_command;
+mod desired_custom_hooks;
 mod desired_kinds;
 mod desired_mcp;
 mod desired_skill;
@@ -54,6 +55,7 @@ pub use planned::{PlannedDeclaration, planned_declarations};
 
 /// The conservative "cannot prove these bytes are our render" hold.
 pub use removal::edit_holds;
+pub(crate) use targets::hook_target;
 
 /// Every file path one lock entry put on this machine — what a cheap
 /// existence check can stat without reading any source.

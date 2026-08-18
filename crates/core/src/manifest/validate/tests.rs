@@ -202,3 +202,75 @@ command = "./guard.sh"
         "{findings:?}"
     );
 }
+
+#[test]
+fn custom_hook_identity_and_parity_fields_are_checked() {
+    let table: toml::Table = r#"
+schema = 1
+[hooks.guard]
+source = "local"
+[[custom-hooks]]
+name = "guard"
+event = "PreToolUse"
+command = "./a.sh"
+[[custom-hooks]]
+name = "Bad Name"
+event = "Stop"
+command = "./b.sh"
+timeout = 0
+harnesses = ["claude", "emacs"]
+typo-key = 1
+[[custom-hooks]]
+name = "twice"
+event = "Stop"
+command = "./c.sh"
+[[custom-hooks]]
+name = "twice"
+event = "Stop"
+command = "./d.sh"
+"#
+    .parse()
+    .unwrap();
+
+    let findings = validate(&table);
+    let at = |loc: &str| {
+        findings
+            .iter()
+            .find(|f| f.location == loc)
+            .unwrap_or_else(|| panic!("expected a finding at {loc}: {findings:?}"))
+    };
+    assert!(
+        at("custom-hooks[0].name")
+            .problem
+            .contains("installed hook")
+    );
+    assert!(at("custom-hooks[1].name").problem.contains("Bad Name"));
+    assert!(at("custom-hooks[1].timeout").problem.contains("1 to 3600"));
+    assert!(at("custom-hooks[1].harnesses").problem.contains("emacs"));
+    assert!(at("custom-hooks[1]").problem.contains("typo-key"));
+    assert!(at("custom-hooks[3].name").problem.contains("names two"));
+    assert!(
+        !findings
+            .iter()
+            .any(|f| f.location.starts_with("custom-hooks[2]")),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn a_clean_named_custom_hook_validates_empty() {
+    let table: toml::Table = r#"
+schema = 1
+[[custom-hooks]]
+name = "guard-pretooluse"
+event = "PreToolUse"
+matcher = "Bash"
+command = "./guard.sh"
+timeout = 30
+harnesses = ["claude"]
+agents = "all"
+"#
+    .parse()
+    .unwrap();
+    assert_eq!(validate(&table), Vec::new());
+}

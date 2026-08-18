@@ -77,6 +77,9 @@ declined with a note saying to remove the declaration instead.
   which is narrower, never wider. Six of the eight mappings in general
   circulation are wrong, and a wrong one drops the tool in silence — hence
   the table (`crates/core/src/render/vocab/mod.rs`).
+- **Agent scoping:** none — a registered hook cannot tell which agent
+  triggered it, so only `agents = "all"` custom hooks are enforced here;
+  scoped ones stay advisory prose in the agent files.
 
 ## Permissions
 

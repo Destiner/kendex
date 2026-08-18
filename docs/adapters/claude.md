@@ -49,6 +49,9 @@ scope and to the repository's `.mcp.json` at project scope
   vocabulary, so bodies pass through unrewritten and manifest tool names are
   only case-normalized — an unmapped lowercase name would silently fail to
   deny (`claude_tool_name`, `crates/core/src/render/vocab/mod.rs`).
+- **Agent scoping:** per-agent file — hooks live in the agent's own
+  `hooks:` block, so a scoped custom hook is enforced; every-agent custom
+  hooks register in `settings.json`, covering the main session too.
 
 ## Hooks
 

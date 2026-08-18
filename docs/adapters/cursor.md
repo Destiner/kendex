@@ -49,6 +49,8 @@ surfaces do exist and are scanned.
 - **Frontmatter keys Cursor honors:** `description`, `globs`, `alwaysApply`.
   Anything else is advisory folklore, and the validator says so with that
   word (`CURSOR_KEYS`, `crates/core/src/render/validate/agent.rs`).
+- **Agent scoping:** not applicable — hooks are advisory here, whoever
+  they are scoped to.
 
 ## Permissions
 

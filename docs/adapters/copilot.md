@@ -73,6 +73,10 @@ needs marketplace resolution vstack cannot do yet.
   `notebookedit`. A name Copilot does not document is left alone rather than
   guessed at — an allowlist entry it does not recognize grants nothing, which
   is narrower than asked for, never wider.
+- **Agent scoping:** none — a registered hook cannot tell which agent
+  triggered it (it does fire `subagentStart`/`subagentStop`, which is what
+  the payload research would have to read), so only `agents = "all"`
+  custom hooks are enforced here.
 
 ## Permissions
 

@@ -217,14 +217,56 @@ fn validate_frontmatter(table: &Table, findings: &mut Vec<Finding>) {
     }
 }
 
+const HOOK_KEYS: &[&str] = &[
+    "name",
+    "event",
+    "matcher",
+    "command",
+    "description",
+    "timeout",
+    "harnesses",
+    "enabled",
+    "agents",
+];
+
+/// Longest hook run any harness accepts; Gemini counts milliseconds in a
+/// u32, and an hour stays far inside that after the ×1000.
+const HOOK_TIMEOUT_MAX: i64 = 3600;
+
+fn valid_hook_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 fn validate_hooks(table: &Table, findings: &mut Vec<Finding>) {
     let Some(hooks) = table.get("custom-hooks").and_then(Value::as_array) else {
         return;
     };
+    // A custom hook's lock key is `hook:<name>:<harness>`, the same shape a
+    // catalog hook gets — so its name must not collide with one, or with a
+    // sibling's, or the two would own each other's artifacts.
+    let catalog_names: Vec<&str> = table
+        .get("hooks")
+        .and_then(Value::as_table)
+        .map(|t| t.keys().map(String::as_str).collect())
+        .unwrap_or_default();
+    let mut seen: Vec<&str> = Vec::new();
     for (index, hook) in hooks.iter().enumerate() {
         let Some(hook) = hook.as_table() else {
             continue;
         };
+        for key in hook.keys() {
+            if !HOOK_KEYS.contains(&key.as_str()) {
+                findings.push(Finding {
+                    location: format!("custom-hooks[{index}]"),
+                    problem: format!("unknown key '{key}'"),
+                    fix: format!("remove it, or use one of: {}", HOOK_KEYS.join(", ")),
+                });
+            }
+        }
         for required in ["event", "command"] {
             if !hook.get(required).is_some_and(|v| v.is_str()) {
                 findings.push(Finding {
@@ -244,6 +286,59 @@ fn validate_hooks(table: &Table, findings: &mut Vec<Finding>) {
                 problem: format!("no harness fires '{event}'"),
                 fix: format!("use one of: {}", known_events()),
             });
+        }
+        if let Some(name) = hook.get("name") {
+            let location = format!("custom-hooks[{index}].name");
+            match name.as_str() {
+                None => findings.push(Finding {
+                    location,
+                    problem: "name must be a string".into(),
+                    fix: "write name = \"my-hook\"".into(),
+                }),
+                Some(name) if !valid_hook_name(name) => findings.push(Finding {
+                    location,
+                    problem: format!("'{name}' is not a usable hook name"),
+                    fix:
+                        "use lowercase letters, digits and dashes, starting with a letter or digit"
+                            .into(),
+                }),
+                Some(name) if seen.contains(&name) => findings.push(Finding {
+                    location,
+                    problem: format!("'{name}' names two custom hooks"),
+                    fix: "give each custom hook its own name".into(),
+                }),
+                Some(name) if catalog_names.contains(&name) => findings.push(Finding {
+                    location,
+                    problem: format!("'{name}' is already an installed hook"),
+                    fix: "pick a name no [hooks] entry uses".into(),
+                }),
+                Some(name) => seen.push(name),
+            }
+        }
+        if let Some(timeout) = hook.get("timeout") {
+            let seconds = timeout.as_integer();
+            if !seconds.is_some_and(|s| (1..=HOOK_TIMEOUT_MAX).contains(&s)) {
+                findings.push(Finding {
+                    location: format!("custom-hooks[{index}].timeout"),
+                    problem: "timeout must be whole seconds, 1 to 3600".into(),
+                    fix: "write timeout = 30".into(),
+                });
+            }
+        }
+        for entry in hook
+            .get("harnesses")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let name = entry.as_str().unwrap_or_default();
+            if !harnesses().contains(&name) {
+                findings.push(Finding {
+                    location: format!("custom-hooks[{index}].harnesses"),
+                    problem: format!("unknown harness '{name}'"),
+                    fix: format!("use one of: {}", harnesses().join(", ")),
+                });
+            }
         }
     }
 }

@@ -188,10 +188,14 @@ mod tests {
         source.role = Some(Role::Analyst);
         let scope = Scope::Global;
         let hook = CustomHook {
+            name: None,
             event: "PreToolUse".into(),
             matcher: Some("Bash".into()),
             command: "./guard.sh".into(),
             description: None,
+            timeout: None,
+            harnesses: None,
+            enabled: true,
             agents: HookAgents::One("all".into()),
         };
         let text = generate(&effective(&source, &scope, vec![&hook])).text;

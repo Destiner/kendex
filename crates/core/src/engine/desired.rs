@@ -305,6 +305,7 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
         }
     }
     desired_kinds::desired_plugins(env, scope, manifest, &mut state);
+    super::desired_custom_hooks::desired_custom_hooks(env, scope, manifest, &mut state);
 
     if manifest_changed {
         state.manifest_update = Some(updated_manifest);

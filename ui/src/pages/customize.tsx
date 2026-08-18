@@ -139,6 +139,7 @@ export function CustomizePage() {
                 <CustomHooks
                   draft={draft}
                   inventory={inventory}
+                  scope={scope}
                   onChange={edit}
                 />
               </Section>

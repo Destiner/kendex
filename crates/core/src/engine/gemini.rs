@@ -10,11 +10,12 @@ use serde_json::Value;
 use super::ItemWarning;
 use super::desired::{DesiredState, ItemCtx};
 use crate::configedit::ConfigEdit;
+use crate::env::Env;
 use crate::harness::gemini::settings::{
     Settings, mcp_enablement_file, mcp_gated_out, mcp_switched_off, read, settings_file,
     system_defines, system_settings_file,
 };
-use crate::hook::HookSource;
+use crate::hook::HookSpec;
 use crate::model::{HarnessId, ItemKind, Scope};
 
 fn settings(ctx: &ItemCtx) -> Settings {
@@ -26,16 +27,20 @@ fn settings(ctx: &ItemCtx) -> Settings {
 /// is on disk is observable, so the wording says how things are configured
 /// and never claims what a run will do (matrix §R2).
 fn overridden(ctx: &ItemCtx, kind: ItemKind, key: &str) -> Option<ItemWarning> {
-    system_defines(ctx.env, key).then(|| ItemWarning {
+    overridden_named(ctx.env, ctx.name, kind, key)
+}
+
+fn overridden_named(env: &Env, name: &str, kind: ItemKind, key: &str) -> Option<ItemWarning> {
+    system_defines(env, key).then(|| ItemWarning {
         kind,
-        name: ctx.name.to_owned(),
+        name: name.to_owned(),
         harness: Some(HarnessId::Gemini),
         message: format!(
             "this machine's system-wide Gemini settings also set `{key}`, which outranks both your settings and this project — as configured, what vstack writes here can be overridden"
         ),
         remediation: Some(format!(
             "ask whoever manages {} to make room for it, or install this at a scope that file leaves alone",
-            system_settings_file(ctx.env).display()
+            system_settings_file(env).display()
         )),
     })
 }
@@ -69,28 +74,29 @@ pub(super) fn agent_notices(ctx: &ItemCtx, state: &mut DesiredState) {
 /// nothing is registered: an event Gemini has no counterpart for, or a
 /// settings file the installed CLI would not read back.
 pub(super) fn hook(
-    ctx: &ItemCtx,
-    hook: &HookSource,
+    env: &Env,
+    scope: &Scope,
+    name: &str,
+    hook: &HookSpec,
     state: &mut DesiredState,
-) -> Option<HookSource> {
-    if let Some(reason) = settings(ctx).unmanageable() {
+) -> Option<HookSpec> {
+    if let Some(reason) = read(&settings_file(env, scope)).unmanageable() {
         state.notes.push(format!(
-            "hook {}: {reason} — nothing was registered for Gemini",
-            ctx.name
+            "hook {name}: {reason} — nothing was registered for Gemini"
         ));
         return None;
     }
     let Some(registered) = crate::harness::gemini::hook_for(hook) else {
         state.notes.push(format!(
-            "hook {}: event {} has no Gemini counterpart, and hanging it on a near-miss would run it at the wrong moment",
-            ctx.name, hook.event
+            "hook {name}: event {} has no Gemini counterpart, and hanging it on a near-miss would run it at the wrong moment",
+            hook.event
         ));
         return None;
     };
     if registered.matcher_as_authored {
         state.warnings.push(ItemWarning {
             kind: ItemKind::Hook,
-            name: ctx.name.to_owned(),
+            name: name.to_owned(),
             harness: Some(HarnessId::Gemini),
             message: format!(
                 "Gemini matches `{}` against its own tool names, and this matcher carries syntax vstack cannot restate in them — it installs as written and may never match",
@@ -104,7 +110,7 @@ pub(super) fn hook(
     }
     state
         .warnings
-        .extend(overridden(ctx, ItemKind::Hook, "hooks"));
+        .extend(overridden_named(env, name, ItemKind::Hook, "hooks"));
     Some(registered.hook)
 }
 

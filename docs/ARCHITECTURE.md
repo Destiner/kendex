@@ -248,11 +248,32 @@ lives in one capability table read by core and UI.
   The picker offers that list, the validator rejects anything outside it,
   and the renderers read it: three surfaces that would otherwise drift,
   and an event nobody fires is a hook that installs cleanly and never
-  runs. A custom hook lives in an agent's own file, which only Claude Code
-  executes; everywhere else it is written in as instructions and the UI
-  says so rather than presenting a guard that merely asks nicely. Cursor
-  used to drop them silently — a rule carries no hook field — and now
-  carries the words plus a warning.
+  runs.
+- **One hook model, two authors, and delivery is decided by capability.**
+  A catalog hook and a manifest `[[custom-hooks]]` entry both become a
+  `HookSpec` (`core/hook/spec.rs`) — script-bodied for the catalog,
+  command-bodied for the person — and one function,
+  `core/hook/delivery.rs::delivery()`, says how a spec reaches each
+  harness × scope: `Registered` (the harness's own hook file — enforced),
+  `InAgentFile` (Claude's per-agent `hooks:` block — enforced, for scoped
+  hooks), `Advisory` (prose in the agent file, matcher restated, warning
+  attached), or `NotInstallable` with the reason. Every surface reads the
+  same decision — the engine installs by it, the agent renderer filters by
+  it (a registered hook never also renders as prose: that would be a
+  second, weaker copy of the same rule), and the editor's per-hook line is
+  computed from it, never hardcoded. What decides scoped enforcement is
+  `agent_scoping()`: Claude carries hooks in the agent's own file;
+  everything else is honest `None` until a vendor's payload reference
+  proves the agent is named at runtime — a hook that fires for every agent
+  when the person asked for one is worse than one that says it could not
+  be enforced. An every-agent custom hook on Claude registers in
+  `settings.json`, where it also covers the main session. A custom hook's
+  name is its identity (lock key `hook:<name>:<harness>`, same shape as a
+  catalog hook's); the editor derives one from command + event on first
+  save and writes it back, and a script-less registration records its
+  event + command in the lock so removal can reverse an entry whose
+  manifest line is already gone. Custom hook commands pass the same safety
+  gate as catalog hook scripts.
 - A section with nothing in it is not rendered. An empty state earns its
   place only when the page would otherwise be blank.
 - "Nothing here" and "not counted yet" are different sentences. A list

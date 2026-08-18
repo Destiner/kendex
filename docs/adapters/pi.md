@@ -22,16 +22,20 @@ Project markers: a `.pi/` or `.agents/` directory. Owner:
 | agent | `~/.pi/agent/agents/*.md` | `.pi/agents/*.md` | managed, both |
 | skill | `~/.pi/agent/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` — **shared with Codex** | managed, both |
 | command | `~/.pi/agent/prompts/*.md` | `.pi/prompts/*.md` | observe only, both |
-| hook | — | — | unsupported |
+| hook | `~/.pi/agent/hooks/<name>.sh` + `hooks.json` | `.pi/hooks/<name>.sh` + `.pi/hooks.json` | managed, both — enforced while the `pi-hooks` carrier is registered |
 | mcp-server | — | — | unsupported |
 | plugin | — | — | unsupported |
 | pi-extension | `~/.pi/agent/settings.json` `packages[]`, and `~/.pi/agent/extensions/*.{ts,js}` | `.pi/settings.json` `packages[]`, and `.pi/extensions/*.{ts,js}` | managed, both |
 
-Pi hooks belong to the `pi-hooks` extension, not to files vstack manages, so
-the kind is unsupported rather than shimmed — and Pi's hook row is one of the
-two that say nothing about enforcement, because there is no surface to
-enforce anything on. Pi reads no MCP servers at all, which is why its
-transport list is empty.
+Pi executes nothing per hook itself: the `pi-hooks` carrier extension hosts
+native listeners, and hook content rides in the registry vstack renders
+beside them — `hooks/<name>.sh` plus `hooks.json`, keyed by Pi's own
+listener names (`pi_listener`: tool call, tool result, turn end, session
+start). An event outside that map installs nothing on Pi, said as a note.
+Enforcement is read live (`pi_ext::carrier::enforcement`): with the carrier
+registered in either scope's settings the hook is enforced; with no carrier
+anywhere Pi loads, the install downgrades to advisory, said per item. Pi
+reads no MCP servers at all, which is why its transport list is empty.
 
 ## Format facts
 
@@ -48,6 +52,9 @@ transport list is empty.
   suffix on the model id.
 - **Frontmatter schema:** Pi reads plain markdown and enforces none, so the
   name rule is the whole of what the validator can check.
+- **Agent scoping:** none — a listener cannot tell which agent triggered
+  it, so only `agents = "all"` custom hooks are enforced (carrier
+  permitting); scoped ones stay advisory prose in the agent files.
 
 ## Permissions
 

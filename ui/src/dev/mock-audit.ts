@@ -149,7 +149,21 @@ export const auditHandlers: Record<string, Handler> = {
       availableSkills: AVAILABLE_SKILLS,
       harnesses: m?.install.harnesses ?? ["claude"],
       hookEvents: HOOK_EVENTS,
-      hookEnforcedBy: ["claude"],
     };
+  },
+  // The dev shell has no engine to ask, so every drafted hook reads as
+  // running everywhere the mock scope installs to.
+  custom_hook_deliveries: ({
+    scope,
+    hooks,
+  }: {
+    scope: Scope;
+    hooks: unknown[];
+  }) => {
+    const m = store.state.manifests[label(scope)];
+    const harnesses = m?.install.harnesses ?? ["claude"];
+    return hooks.map(() =>
+      harnesses.map((harness) => ({ harness, mode: "runs", note: null })),
+    );
   },
 };

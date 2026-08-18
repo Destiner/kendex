@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use super::{HarnessAdapter, ProjectMarker, Reader, Surface};
 use crate::env::Env;
-use crate::hook::{HookSource, Registration};
+use crate::hook::{HookSpec, Registration};
 use crate::model::{HarnessId, ItemKind};
 
 pub mod settings;
@@ -16,7 +16,7 @@ pub struct Copilot;
 /// writes, so that is what vstack registers. An event with no counterpart
 /// stays unmapped rather than hung on a near-miss — a safety hook on the
 /// wrong event is worse than one the user is told did not install.
-fn event(fleet: &str) -> Option<&'static str> {
+pub(crate) fn event(fleet: &str) -> Option<&'static str> {
     match fleet {
         "PreToolUse" => Some("preToolUse"),
         "PostToolUse" => Some("postToolUse"),
@@ -36,7 +36,7 @@ fn event(fleet: &str) -> Option<&'static str> {
 /// in its own tool names. `timeoutSec` is the seconds the source already
 /// declares, so the timeout travels as written. `None` when Copilot has no
 /// event that means what this one means.
-pub fn hook_for(hook: &HookSource) -> Option<Registration> {
+pub fn hook_for(hook: &HookSpec) -> Option<Registration> {
     Some(Registration::new(
         hook,
         HarnessId::Copilot,

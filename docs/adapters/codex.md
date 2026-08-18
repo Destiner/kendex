@@ -52,6 +52,9 @@ still scanned, but nothing is ever written there.
 - **Tool vocabulary:** Codex's docs name actions rather than tools, so prose
   is rewritten to phrases — `Read` becomes "open the file", `Bash` becomes
   "run a shell command" (`crates/core/src/render/vocab/mod.rs`).
+- **Agent scoping:** none — a registered hook cannot tell which agent
+  triggered it, so only `agents = "all"` custom hooks are enforced here;
+  scoped ones stay advisory prose in the agent files.
 
 ## Hooks
 
