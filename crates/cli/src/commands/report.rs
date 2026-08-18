@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-use vstack_core::env::Env;
-use vstack_core::lock::{load as load_lock, lock_path};
-use vstack_core::model::ItemKind;
-use vstack_core::process::Hardened;
-use vstack_core::report::DEFAULT_UPSTREAM;
+use kendex_core::env::Env;
+use kendex_core::lock::{load as load_lock, lock_path};
+use kendex_core::model::ItemKind;
+use kendex_core::process::Hardened;
+use kendex_core::report::DEFAULT_UPSTREAM;
 
 use super::{CliResult, out, resolve_scopes, say};
 use crate::scope::ScopeFilter;
@@ -103,7 +103,7 @@ pub fn run(env: &Env, args: ReportArgs) -> CliResult {
     }
     let route = selector
         .as_ref()
-        .map(|(name, kind)| vstack_core::report::route(env, &scope, &lock, name, *kind, &upstream));
+        .map(|(name, kind)| kendex_core::report::route(env, &scope, &lock, name, *kind, &upstream));
     let vstack_owned = route.as_ref().is_some_and(|r| r.vstack_owned);
 
     let mut gh_args = vec!["issue".to_owned(), "create".to_owned()];

@@ -6,8 +6,8 @@
 
 use std::path::{Path, PathBuf};
 
-use vstack_core::guard::{self, GuardCtx, settings::Policy, size_ratchet};
-use vstack_core::process::Hardened;
+use kendex_core::guard::{self, GuardCtx, settings::Policy, size_ratchet};
+use kendex_core::process::Hardened;
 
 struct Repo {
     _tmp: tempfile::TempDir,

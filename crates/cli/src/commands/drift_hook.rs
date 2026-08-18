@@ -1,6 +1,6 @@
-use vstack_core::drift::hook;
-use vstack_core::env::Env;
-use vstack_core::model::Scope;
+use kendex_core::drift::hook;
+use kendex_core::env::Env;
+use kendex_core::model::Scope;
 
 use super::engine_common::confirm_and_execute;
 use super::{CliResult, resolve_scopes, say};
@@ -29,7 +29,7 @@ pub fn install(env: &Env, scope: &Scope, yes: bool) -> CliResult {
         for op in &plan.ops {
             say(&format!("  - {}", op.description));
         }
-        let report = vstack_core::engine::EngineReport {
+        let report = kendex_core::engine::EngineReport {
             drift: Vec::new(),
             plan,
             notes: Vec::new(),
@@ -44,7 +44,7 @@ pub fn install(env: &Env, scope: &Scope, yes: bool) -> CliResult {
     // Render what was just declared — the same refresh any declaration
     // gets, previewed and confirmed the same way.
     let report =
-        vstack_core::engine::plan_apply(env, scope, &vstack_core::engine::PlanOptions::default())?;
+        kendex_core::engine::plan_apply(env, scope, &kendex_core::engine::PlanOptions::default())?;
     if !report.plan.is_empty() {
         for op in &report.plan.ops {
             say(&format!("  - {}", op.description));

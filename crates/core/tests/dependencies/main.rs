@@ -8,12 +8,12 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::apply;
-use vstack_core::engine::{SetDirection, audit, ops, plan_refresh};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::lock::{Lock, Reason, load as load_lock, lock_path};
-use vstack_core::manifest::{self, ManifestFile};
-use vstack_core::model::{HarnessId, ItemKind, Scope};
+use kendex_core::apply;
+use kendex_core::engine::{SetDirection, audit, ops, plan_refresh};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::lock::{Lock, Reason, load as load_lock, lock_path};
+use kendex_core::manifest::{self, ManifestFile};
+use kendex_core::model::{HarnessId, ItemKind, Scope};
 
 struct Fixture {
     _tmp: tempfile::TempDir,
@@ -80,7 +80,7 @@ fn lock_of(f: &Fixture) -> Lock {
 }
 
 #[allow(clippy::unwrap_used)]
-fn manifest_of(f: &Fixture) -> vstack_core::manifest::Manifest {
+fn manifest_of(f: &Fixture) -> kendex_core::manifest::Manifest {
     match manifest::load(&manifest::manifest_path(&f.env, &f.scope)).unwrap() {
         ManifestFile::Current(manifest) => *manifest,
         other => panic!("expected a current manifest, got {other:?}"),
@@ -89,7 +89,7 @@ fn manifest_of(f: &Fixture) -> vstack_core::manifest::Manifest {
 
 fn required_by(source: &str, name: &str, scope: &Scope) -> Reason {
     Reason::RequiredBy {
-        by: vstack_core::lock::InstallRef {
+        by: kendex_core::lock::InstallRef {
             source: source.to_owned(),
             kind: ItemKind::Skill,
             name: name.to_owned(),
@@ -100,7 +100,7 @@ fn required_by(source: &str, name: &str, scope: &Scope) -> Reason {
 }
 
 #[allow(clippy::unwrap_used)]
-fn remove(f: &Fixture, name: &str, sweep: bool) -> vstack_core::engine::EngineReport {
+fn remove(f: &Fixture, name: &str, sweep: bool) -> kendex_core::engine::EngineReport {
     let report = ops::remove(&f.env, &f.scope, &[name.to_owned()], None, sweep).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     report

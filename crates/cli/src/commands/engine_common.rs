@@ -1,9 +1,9 @@
 use std::io::{IsTerminal, Write};
 
-use vstack_core::engine::EngineReport;
-use vstack_core::env::Env;
-use vstack_core::error::CoreError;
-use vstack_core::model::HarnessId;
+use kendex_core::engine::EngineReport;
+use kendex_core::env::Env;
+use kendex_core::error::CoreError;
+use kendex_core::model::HarnessId;
 
 use super::{CliResult, say};
 
@@ -49,7 +49,7 @@ pub fn print_report(report: &EngineReport) {
 /// because "nothing was found" and "nothing could be looked at" are
 /// different answers and only one of them is a pass.
 pub fn print_safety(report: &EngineReport) {
-    let mut rows: Vec<&vstack_core::engine::ItemSafety> = report
+    let mut rows: Vec<&kendex_core::engine::ItemSafety> = report
         .safety
         .iter()
         .filter(|row| !row.findings.is_empty() || !row.skipped.is_empty())
@@ -82,14 +82,14 @@ pub fn print_safety(report: &EngineReport) {
         {
             say(&format!(
                 "    to install it anyway, review the findings above and re-run with --allow-unsafe {}",
-                vstack_core::engine::allow_unsafe_flag(&row.name, review_hash)
+                kendex_core::engine::allow_unsafe_flag(&row.name, review_hash)
             ));
         }
     }
 }
 
 /// The rules that apply to this kind and had no bytes to read here.
-fn print_skipped(row: &vstack_core::engine::ItemSafety) {
+fn print_skipped(row: &kendex_core::engine::ItemSafety) {
     let Some(first) = row.skipped.first() else {
         return;
     };
@@ -117,7 +117,7 @@ pub fn confirm_and_execute(env: &Env, report: &EngineReport, yes: bool) -> CliRe
             return Err("apply cancelled".into());
         }
     }
-    let outcome = vstack_core::apply::execute(env, &report.plan, None)?;
+    let outcome = kendex_core::apply::execute(env, &report.plan, None)?;
     say(&format!("applied {} change(s)", outcome.applied));
     Ok(())
 }

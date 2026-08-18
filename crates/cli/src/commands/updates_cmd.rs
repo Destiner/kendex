@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 
-use vstack_core::env::Env;
+use kendex_core::env::Env;
 
 use super::pin::parse_kind;
 use super::{CliResult, resolve_scopes, say};
@@ -63,11 +63,11 @@ pub fn run(env: &Env, args: UpdatesArgs) -> CliResult {
         None => {}
     }
     if refresh {
-        let path = vstack_core::manifest::manifest_path(env, &scope);
-        if let Ok(vstack_core::manifest::ManifestFile::Current(manifest)) =
-            vstack_core::manifest::load(&path)
+        let path = kendex_core::manifest::manifest_path(env, &scope);
+        if let Ok(kendex_core::manifest::ManifestFile::Current(manifest)) =
+            kendex_core::manifest::load(&path)
         {
-            for warning in vstack_core::remote::fetch_all(env, &manifest) {
+            for warning in kendex_core::remote::fetch_all(env, &manifest) {
                 say(&format!("warning: {warning}"));
             }
         }
@@ -75,7 +75,7 @@ pub fn run(env: &Env, args: UpdatesArgs) -> CliResult {
     if apply {
         return super::refresh::run(env, filter, false, yes, false);
     }
-    let report = vstack_core::package::updates::updates(env, &scope)?;
+    let report = kendex_core::package::updates::updates(env, &scope)?;
     let mut shown = 0;
     for row in &report.rows {
         // Mixed installs and packages gone upstream are standing facts worth
@@ -129,13 +129,13 @@ pub fn run(env: &Env, args: UpdatesArgs) -> CliResult {
     }
     // The deep work just ran; write it down so the next session-start check
     // reads verdicts instead of guesses.
-    if let Err(error) = vstack_core::drift::snapshot::record(env, &scope) {
+    if let Err(error) = kendex_core::drift::snapshot::record(env, &scope) {
         say(&format!("warning: snapshot not derived ({error})"));
     }
     Ok(())
 }
 
-fn show_version(version: &vstack_core::package::updates::VersionRef) -> String {
+fn show_version(version: &kendex_core::package::updates::VersionRef) -> String {
     match &version.label {
         Some(label) => label.clone(),
         None => version.commit[..7.min(version.commit.len())].to_owned(),
@@ -144,14 +144,14 @@ fn show_version(version: &vstack_core::package::updates::VersionRef) -> String {
 
 fn set_ignored(
     env: &Env,
-    scope: &vstack_core::model::Scope,
+    scope: &kendex_core::model::Scope,
     kind: String,
     name: String,
     ignored: bool,
 ) -> CliResult {
     let kind = parse_kind(&kind)?;
     // The ignore is keyed by repository too, so it needs the row's identity.
-    let rows = vstack_core::package::updates::updates(env, scope)?.rows;
+    let rows = kendex_core::package::updates::updates(env, scope)?.rows;
     let Some(row) = rows.iter().find(|row| row.kind == kind && row.name == name) else {
         return Err(format!(
             "no declared {} named '{name}' with a repo source here",
@@ -159,7 +159,7 @@ fn set_ignored(
         )
         .into());
     };
-    vstack_core::package::updates::set_ignored(env, scope, kind, &name, &row.repo, ignored)?;
+    kendex_core::package::updates::set_ignored(env, scope, kind, &name, &row.repo, ignored)?;
     match ignored {
         true => say(&format!(
             "updates for {name} are muted — `vstack updates unignore` brings them back"

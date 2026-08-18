@@ -1,9 +1,9 @@
 use std::io::{IsTerminal, Write};
 
-use vstack_core::apply::Op;
-use vstack_core::engine::{EngineReport, ops};
-use vstack_core::env::Env;
-use vstack_core::model::Scope;
+use kendex_core::apply::Op;
+use kendex_core::engine::{EngineReport, ops};
+use kendex_core::env::Env;
+use kendex_core::model::Scope;
 
 use super::{CliResult, resolve_scopes, say};
 use crate::scope::ScopeFilter;
@@ -39,7 +39,7 @@ pub fn run(env: &Env, names: Vec<String>, filter: ScopeFilter, sweep: Option<boo
         if touches_artifacts {
             removed_any = true;
             say_split(&report);
-            vstack_core::apply::execute(env, &report.plan, None)?;
+            kendex_core::apply::execute(env, &report.plan, None)?;
             for op in &report.plan.ops {
                 say(&format!("  - {}", op.description));
             }
@@ -57,7 +57,7 @@ pub fn run(env: &Env, names: Vec<String>, filter: ScopeFilter, sweep: Option<boo
 /// survived and why.
 fn say_split(report: &EngineReport) {
     for change in &report.set_changes {
-        if change.direction == vstack_core::engine::SetDirection::Remove {
+        if change.direction == kendex_core::engine::SetDirection::Remove {
             say(&format!(
                 "removing {} {} for {} — {}",
                 change.kind.name(),

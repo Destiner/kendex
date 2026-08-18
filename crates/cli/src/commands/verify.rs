@@ -1,8 +1,8 @@
 use std::process::ExitCode;
 
-use vstack_core::engine::{DriftState, audit};
-use vstack_core::env::Env;
-use vstack_core::lock::{load as load_lock, lock_path};
+use kendex_core::engine::{DriftState, audit};
+use kendex_core::env::Env;
+use kendex_core::lock::{load as load_lock, lock_path};
 
 use super::{resolve_scopes, say};
 use crate::scope::ScopeFilter;

@@ -6,12 +6,12 @@
 use std::fs;
 use std::path::PathBuf;
 
-use vstack_core::engine::{DriftState, audit, ops};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::error::CoreError;
-use vstack_core::manifest;
-use vstack_core::model::Scope;
-use vstack_core::{apply, hash};
+use kendex_core::engine::{DriftState, audit, ops};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::error::CoreError;
+use kendex_core::manifest;
+use kendex_core::model::Scope;
+use kendex_core::{apply, hash};
 
 struct Fixture {
     _tmp: tempfile::TempDir,
@@ -112,7 +112,7 @@ fn invariant_1_generated_artifacts_regenerate_but_never_over_an_edit() {
             .drift
             .iter()
             .all(|row| row.state == DriftState::Conflict
-                && row.cause == Some(vstack_core::engine::DriftCause::LocalEdit)),
+                && row.cause == Some(kendex_core::engine::DriftCause::LocalEdit)),
         "{:?}",
         report.drift
     );
@@ -120,14 +120,14 @@ fn invariant_1_generated_artifacts_regenerate_but_never_over_an_edit() {
     assert_eq!(fs::read_to_string(agent_file(&f)).unwrap(), "hand edit");
 
     // Discarding the edits is the explicit act that restores regeneration.
-    let report = vstack_core::engine::plan_scope(
+    let report = kendex_core::engine::plan_scope(
         &f.env,
         &f.scope,
         &manifest::load_for_mutation(&manifest::manifest_path(&f.env, &f.scope))
             .unwrap()
             .unwrap(),
-        &vstack_core::lock::load(&vstack_core::lock::lock_path(&f.env, &f.scope)).unwrap(),
-        &vstack_core::engine::PlanOptions {
+        &kendex_core::lock::load(&kendex_core::lock::lock_path(&f.env, &f.scope)).unwrap(),
+        &kendex_core::engine::PlanOptions {
             overwrite_edited: true,
             ..Default::default()
         },

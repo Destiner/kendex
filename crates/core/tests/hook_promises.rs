@@ -6,9 +6,9 @@
 use std::fs;
 use std::path::PathBuf;
 
-use vstack_core::engine::{EngineReport, audit};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::model::{HarnessId, Scope};
+use kendex_core::engine::{EngineReport, audit};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::model::{HarnessId, Scope};
 
 /// Authored in Claude's vocabulary, like every hook a catalog ships.
 const GUARD: &str = "#!/usr/bin/env bash\n# ---\n# name: guard\n# event: PreToolUse\n# matcher: Bash\n# description: check shell commands\n# ---\nexit 0\n";
@@ -140,7 +140,7 @@ fn a_matcher_that_cannot_be_translated_installs_as_written_and_is_named() {
         report.warnings
     );
 
-    vstack_core::apply::execute(&f.env, &report.plan, None).unwrap();
+    kendex_core::apply::execute(&f.env, &report.plan, None).unwrap();
     let Scope::Project { root } = &f.scope else {
         panic!("the fixture is a project");
     };

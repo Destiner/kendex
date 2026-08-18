@@ -2122,6 +2122,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "kendex-app"
+version = "0.1.0"
+dependencies = [
+ "kendex-core",
+ "serde",
+ "specta",
+ "specta-typescript",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tauri-specta",
+ "tempfile",
+ "toml 1.1.4+spec-1.1.0",
+]
+
+[[package]]
+name = "kendex-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "kendex-core",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "kendex-core"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "fd-lock",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "similar",
+ "specta",
+ "tempfile",
+ "thiserror 2.0.20",
+ "toml 1.1.4+spec-1.1.0",
+ "unicode-normalization",
+ "yaml-rust2",
+]
+
+[[package]]
 name = "keyboard-types"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4522,51 +4567,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "vstack-app"
-version = "0.1.0"
-dependencies = [
- "serde",
- "specta",
- "specta-typescript",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tauri-specta",
- "tempfile",
- "toml 1.1.4+spec-1.1.0",
- "vstack-core",
-]
-
-[[package]]
-name = "vstack-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "serde_json",
- "tempfile",
- "vstack-core",
-]
-
-[[package]]
-name = "vstack-core"
-version = "0.1.0"
-dependencies = [
- "dirs",
- "fd-lock",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "similar",
- "specta",
- "tempfile",
- "thiserror 2.0.20",
- "toml 1.1.4+spec-1.1.0",
- "unicode-normalization",
- "yaml-rust2",
-]
 
 [[package]]
 name = "vswhom"

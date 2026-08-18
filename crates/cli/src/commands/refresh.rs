@@ -1,6 +1,6 @@
-use vstack_core::engine::{PlanOptions, plan_apply};
-use vstack_core::env::Env;
-use vstack_core::lock::{load as load_lock, lock_path};
+use kendex_core::engine::{PlanOptions, plan_apply};
+use kendex_core::env::Env;
+use kendex_core::lock::{load as load_lock, lock_path};
 
 use super::engine_common::{confirm_and_execute, refresh_failures};
 use super::{CliResult, resolve_scopes, say};
@@ -47,13 +47,13 @@ pub fn run(
 
     for scope in &scopes {
         let scope = scope.clone();
-        let manifest_path = vstack_core::manifest::manifest_path(env, &scope);
-        if let Ok(vstack_core::manifest::ManifestFile::Current(manifest)) =
-            vstack_core::manifest::load(&manifest_path)
+        let manifest_path = kendex_core::manifest::manifest_path(env, &scope);
+        if let Ok(kendex_core::manifest::ManifestFile::Current(manifest)) =
+            kendex_core::manifest::load(&manifest_path)
         {
             // An unreachable catalog is reported, not fatal: what came from
             // every other catalog still refreshes.
-            for note in vstack_core::remote::sync_declared_sources(env, &manifest) {
+            for note in kendex_core::remote::sync_declared_sources(env, &manifest) {
                 say(&format!("warning: {note}"));
             }
         }
@@ -98,8 +98,8 @@ pub fn run(
             ));
             for change in &report.set_changes {
                 let verb = match change.direction {
-                    vstack_core::engine::SetDirection::Add => "install",
-                    vstack_core::engine::SetDirection::Remove => "remove",
+                    kendex_core::engine::SetDirection::Add => "install",
+                    kendex_core::engine::SetDirection::Remove => "remove",
                 };
                 say(&format!(
                     "  - {verb} {} {} for {} — {}",
@@ -114,7 +114,7 @@ pub fn run(
             }
             continue;
         }
-        match vstack_core::apply::execute(env, &report.plan, None) {
+        match kendex_core::apply::execute(env, &report.plan, None) {
             Ok(outcome) => say(&format!(
                 "{}: refreshed {} change(s)",
                 scope.label(),
@@ -128,9 +128,9 @@ pub fn run(
     // session-start check reads instead of redoing it.
     for scope in &scopes {
         if matches!(
-            vstack_core::manifest::load(&vstack_core::manifest::manifest_path(env, scope)),
-            Ok(vstack_core::manifest::ManifestFile::Current(_))
-        ) && let Err(error) = vstack_core::drift::snapshot::record(env, scope)
+            kendex_core::manifest::load(&kendex_core::manifest::manifest_path(env, scope)),
+            Ok(kendex_core::manifest::ManifestFile::Current(_))
+        ) && let Err(error) = kendex_core::drift::snapshot::record(env, scope)
         {
             say(&format!("warning: snapshot not derived ({error})"));
         }

@@ -5,9 +5,9 @@
 
 use std::path::{Path, PathBuf};
 
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::githooks;
-use vstack_core::process::Hardened;
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::githooks;
+use kendex_core::process::Hardened;
 
 struct World {
     _tmp: tempfile::TempDir,
@@ -261,11 +261,11 @@ fn a_crashed_install_is_recovered_through_the_common_journal() {
 
     // Simulate a crash mid-mutation: the common journal holds the
     // pre-image, the mutation half-landed, the journal was never cleared.
-    let key = vstack_core::apply::common_key(&repo.common_dir);
-    let journal_dir = vstack_core::apply::journal::journal_dir_for(&w.env.journal_dir(), &key);
+    let key = kendex_core::apply::common_key(&repo.common_dir);
+    let journal_dir = kendex_core::apply::journal::journal_dir_for(&w.env.journal_dir(), &key);
     let victim = hooks.join("pre-commit");
     let before = std::fs::read_to_string(&victim).unwrap();
-    vstack_core::apply::journal::write(&journal_dir, std::slice::from_ref(&victim)).unwrap();
+    kendex_core::apply::journal::write(&journal_dir, std::slice::from_ref(&victim)).unwrap();
     std::fs::write(&victim, "torn write").unwrap();
 
     // Another worktree's next hook mutation recovers first, under the same

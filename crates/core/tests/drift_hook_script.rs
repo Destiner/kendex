@@ -6,7 +6,7 @@
 use std::fs;
 use std::path::Path;
 
-use vstack_core::drift;
+use kendex_core::drift;
 
 /// The hook script's contract, exercised against /bin/sh with a stub
 /// `vstack` on PATH: every failure path emits exactly one line, and the

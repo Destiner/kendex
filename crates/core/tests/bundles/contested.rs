@@ -3,9 +3,9 @@
 
 use std::fs;
 
-use vstack_core::apply;
-use vstack_core::engine::{audit, plan_refresh};
-use vstack_core::model::ItemKind;
+use kendex_core::apply;
+use kendex_core::engine::{audit, plan_refresh};
+use kendex_core::model::ItemKind;
 
 use super::{apply_now, catalog_bundles, fixture, installed, lock_of, manifest_of, remove};
 

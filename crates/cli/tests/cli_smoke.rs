@@ -136,7 +136,7 @@ fn stage(home: &Path) -> PathBuf {
     // Every harness by name rather than by detection: a fresh temporary
     // home has none of their marker directories, and this must stage the
     // same trees whether or not the machine happens to run these tools.
-    let vstack = env!("CARGO_BIN_EXE_vstack");
+    let vstack = env!("CARGO_BIN_EXE_kendex");
     let out = run(
         vstack,
         home,

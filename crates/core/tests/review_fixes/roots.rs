@@ -1,8 +1,8 @@
 //! Where a tool keeps its files, and what the audit sees when that is not
 //! the default place.
 
-use vstack_core::engine::{DriftState, audit};
-use vstack_core::model::{HarnessId, Scope};
+use kendex_core::engine::{DriftState, audit};
+use kendex_core::model::{HarnessId, Scope};
 
 use super::{put, world};
 
@@ -13,11 +13,11 @@ use super::{put, world};
 fn a_relocated_tool_folder_is_still_scanned_for_unmanaged_items() {
     let w = world();
     let elsewhere = w.home.join("elsewhere/claude");
-    let mut settings = vstack_core::settings::load(&w.env).unwrap();
+    let mut settings = kendex_core::settings::load(&w.env).unwrap();
     settings
         .harness_roots
         .insert("claude".into(), elsewhere.clone());
-    vstack_core::settings::save(&w.env, &settings).unwrap();
+    kendex_core::settings::save(&w.env, &settings).unwrap();
 
     put(
         &elsewhere.join("skills/handmade/SKILL.md"),

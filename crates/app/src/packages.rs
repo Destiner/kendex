@@ -2,12 +2,12 @@
 //! provenance, holds, forks, and the update check — thin shells over core,
 //! like every other command here.
 
-use vstack_core::apply;
-use vstack_core::engine;
-use vstack_core::env::Env;
-use vstack_core::model::{HarnessId, ItemKind, Scope};
-use vstack_core::package::{self, detail, diff, updates};
-use vstack_core::{manifest, remote};
+use kendex_core::apply;
+use kendex_core::engine;
+use kendex_core::env::Env;
+use kendex_core::model::{HarnessId, ItemKind, Scope};
+use kendex_core::package::{self, detail, diff, updates};
+use kendex_core::{manifest, remote};
 
 use crate::audit::{AuditView, view};
 
@@ -16,7 +16,7 @@ fn env() -> Result<Env, String> {
 }
 
 fn all_scopes(env: &Env) -> Result<Vec<Scope>, String> {
-    let settings = vstack_core::settings::load(env).map_err(|e| e.to_string())?;
+    let settings = kendex_core::settings::load(env).map_err(|e| e.to_string())?;
     let mut scopes = vec![Scope::Global];
     scopes.extend(
         settings
@@ -55,9 +55,9 @@ pub fn updates_overview() -> Result<updates::UpdatesReport, String> {
         // The deep work just ran; the session-start check reads this. A
         // failure is a warning on the page, never silence — the CLI paths
         // say the same thing.
-        if let Err(error) = vstack_core::drift::snapshot::record_with(&env, &scope, &report) {
-            merged.warnings.push(vstack_core::engine::ItemWarning {
-                kind: vstack_core::model::ItemKind::Skill,
+        if let Err(error) = kendex_core::drift::snapshot::record_with(&env, &scope, &report) {
+            merged.warnings.push(kendex_core::engine::ItemWarning {
+                kind: kendex_core::model::ItemKind::Skill,
                 name: scope.label(),
                 harness: None,
                 message: format!("drift snapshot not derived: {error}"),
@@ -164,13 +164,13 @@ pub fn fork_rename(
     apply::execute(&env, &plan, None).map_err(|e| e.to_string())?;
     // The old name's artifacts come off disk with the rename — the user
     // asked for this by name, which is what an explicit removal is.
-    let report = vstack_core::engine::plan_scope(
+    let report = kendex_core::engine::plan_scope(
         &env,
         &scope,
         &manifest::load_for_mutation(&manifest::manifest_path(&env, &scope))
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "no manifest".to_owned())?,
-        &vstack_core::lock::load(&vstack_core::lock::lock_path(&env, &scope))
+        &kendex_core::lock::load(&kendex_core::lock::lock_path(&env, &scope))
             .map_err(|e| e.to_string())?,
         &engine::PlanOptions {
             remove_orphans: true,
@@ -197,9 +197,9 @@ pub fn apply_discard_edits(
     let manifest = manifest::load_for_mutation(&manifest::manifest_path(&env, &scope))
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "no manifest".to_owned())?;
-    let lock = vstack_core::lock::load(&vstack_core::lock::lock_path(&env, &scope))
+    let lock = kendex_core::lock::load(&kendex_core::lock::lock_path(&env, &scope))
         .map_err(|e| e.to_string())?;
-    let report = vstack_core::engine::plan_scope(
+    let report = kendex_core::engine::plan_scope(
         &env,
         &scope,
         &manifest,

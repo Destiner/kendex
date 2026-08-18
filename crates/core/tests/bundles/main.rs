@@ -9,12 +9,12 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::apply;
-use vstack_core::engine::{EngineReport, SetDirection, audit, ops};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::lock::{BundleRef, InstallRef, Lock, Reason, load as load_lock, lock_path};
-use vstack_core::manifest::{self, ManifestFile};
-use vstack_core::model::{HarnessId, ItemKind, Scope};
+use kendex_core::apply;
+use kendex_core::engine::{EngineReport, SetDirection, audit, ops};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::lock::{BundleRef, InstallRef, Lock, Reason, load as load_lock, lock_path};
+use kendex_core::manifest::{self, ManifestFile};
+use kendex_core::model::{HarnessId, ItemKind, Scope};
 
 /// A set whose members include the skill the manifest also asks for and
 /// another member requires — three edges on one installation.
@@ -111,7 +111,7 @@ pub fn lock_of(f: &Fixture) -> Lock {
 }
 
 #[allow(clippy::unwrap_used)]
-pub fn manifest_of(f: &Fixture) -> vstack_core::manifest::Manifest {
+pub fn manifest_of(f: &Fixture) -> kendex_core::manifest::Manifest {
     match manifest::load(&manifest::manifest_path(&f.env, &f.scope)).unwrap() {
         ManifestFile::Current(manifest) => *manifest,
         other => panic!("expected a current manifest, got {other:?}"),
@@ -300,7 +300,7 @@ fn a_member_removed_from_a_bundle_stays_removed() {
     assert!(!installed(&f, ItemKind::Skill, "docs"));
     assert!(manifest_of(&f).is_suppressed(ItemKind::Skill, "docs"));
 
-    let report = vstack_core::engine::plan_refresh(&f.env, &f.scope).unwrap();
+    let report = kendex_core::engine::plan_refresh(&f.env, &f.scope).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     assert!(
         !installed(&f, ItemKind::Skill, "docs"),
@@ -308,7 +308,7 @@ fn a_member_removed_from_a_bundle_stays_removed() {
     );
 
     fs::remove_file(lock_path(&f.env, &f.scope)).unwrap();
-    let report = vstack_core::engine::plan_refresh(&f.env, &f.scope).unwrap();
+    let report = kendex_core::engine::plan_refresh(&f.env, &f.scope).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     assert!(
         !installed(&f, ItemKind::Skill, "docs"),

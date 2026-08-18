@@ -8,11 +8,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::engine::audit;
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::harness::{Enforcement, pi_listener};
-use vstack_core::model::Scope;
-use vstack_core::pi_ext::carrier;
+use kendex_core::engine::audit;
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::harness::{Enforcement, pi_listener};
+use kendex_core::model::Scope;
+use kendex_core::pi_ext::carrier;
 
 struct World {
     _tmp: tempfile::TempDir,
@@ -135,7 +135,7 @@ fn a_mappable_event_renders_the_registry_in_pi_listener_names() {
     declare_hook(&w, "PreToolUse");
 
     let report = audit(&w.env, &scope(&w)).unwrap();
-    vstack_core::apply::execute(&w.env, &report.plan, None).unwrap();
+    kendex_core::apply::execute(&w.env, &report.plan, None).unwrap();
 
     let script = w.project.join(".pi/hooks/guard.sh");
     assert!(
@@ -181,7 +181,7 @@ fn an_unmappable_event_installs_nothing_on_pi() {
         "{:?}",
         report.notes
     );
-    vstack_core::apply::execute(&w.env, &report.plan, None).unwrap();
+    kendex_core::apply::execute(&w.env, &report.plan, None).unwrap();
     assert!(
         !w.project.join(".pi/hooks/guard.sh").exists(),
         "no stale advisory artifact for an event pi cannot fire"

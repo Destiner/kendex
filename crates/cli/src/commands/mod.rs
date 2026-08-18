@@ -28,9 +28,9 @@ pub mod versions;
 use std::io::Write;
 use std::path::PathBuf;
 
-use vstack_core::discover;
-use vstack_core::env::Env;
-use vstack_core::model::Scope;
+use kendex_core::discover;
+use kendex_core::env::Env;
+use kendex_core::model::Scope;
 
 use crate::scope::ScopeFilter;
 

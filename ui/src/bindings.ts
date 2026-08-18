@@ -862,7 +862,7 @@ string | string[];
 
 /**
  *  How one custom hook reaches one harness, for the editor's per-hook line.
- *  Computed by `vstack_core::hook::delivery` — the same decision the engine
+ *  Computed by `kendex_core::hook::delivery` — the same decision the engine
  *  installs by — so the words on screen cannot drift from what applies.
  */
 export type HookDelivery = {

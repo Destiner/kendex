@@ -8,11 +8,11 @@
 use std::fs;
 use std::path::PathBuf;
 
+use kendex_core::apply;
+use kendex_core::engine::{EngineReport, audit};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::model::Scope;
 use serde_json::Value;
-use vstack_core::apply;
-use vstack_core::engine::{EngineReport, audit};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::model::Scope;
 
 const AGENT: &str = "---\nname: rust\ndescription: Rust engineer\nmodel: claude-sonnet-4.6\nrole: engineer\n---\nUse the Grep tool.\n";
 
@@ -181,7 +181,7 @@ fn a_skill_installed_for_another_tool_is_noted_as_visible_to_copilot() {
         !report
             .drift
             .iter()
-            .any(|row| row.harness == vstack_core::model::HarnessId::Copilot)
+            .any(|row| row.harness == kendex_core::model::HarnessId::Copilot)
     );
 }
 

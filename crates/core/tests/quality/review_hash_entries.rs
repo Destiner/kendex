@@ -4,8 +4,8 @@
 
 use std::fs;
 
-use vstack_core::engine::observed_rows;
-use vstack_core::manifest;
+use kendex_core::engine::observed_rows;
+use kendex_core::manifest;
 
 use super::fixture::fixture;
 use super::review_hash::{install_skill, row};
@@ -30,7 +30,7 @@ fn an_mcp_decision_survives_the_write_that_acts_on_it() {
         fs::read_to_string(&manifest_path).unwrap() + "\n[mcp-servers.leaky]\nsource = \"cat\"\n";
     fs::write(&manifest_path, declared).unwrap();
 
-    let report = vstack_core::engine::audit(&f.env, &f.scope).unwrap();
+    let report = kendex_core::engine::audit(&f.env, &f.scope).unwrap();
     let planned = report
         .safety
         .iter()
@@ -40,7 +40,7 @@ fn an_mcp_decision_survives_the_write_that_acts_on_it() {
         .review_hash
         .clone()
         .expect("the entry a plan would write is always readable");
-    vstack_core::apply::execute(&f.env, &report.plan, None).unwrap();
+    kendex_core::apply::execute(&f.env, &report.plan, None).unwrap();
 
     assert_eq!(
         row(&f.env, &f.scope, "leaky").review_hash.as_deref(),
@@ -73,16 +73,16 @@ fn a_hook_registration_hashes_in_both_file_shapes() {
     .unwrap();
 
     let rows = observed_rows(&f.env, &f.scope).unwrap();
-    let hook = |harness: vstack_core::model::HarnessId| {
+    let hook = |harness: kendex_core::model::HarnessId| {
         rows.iter()
-            .find(|row| row.kind == vstack_core::model::ItemKind::Hook && row.harness == harness)
+            .find(|row| row.kind == kendex_core::model::ItemKind::Hook && row.harness == harness)
             .unwrap_or_else(|| panic!("a {} hook is observed", harness.name()))
             .review_hash
             .clone()
             .expect("a readable registration has a hash")
     };
-    let nested = hook(vstack_core::model::HarnessId::Claude);
-    let inline = hook(vstack_core::model::HarnessId::Copilot);
+    let nested = hook(kendex_core::model::HarnessId::Claude);
+    let inline = hook(kendex_core::model::HarnessId::Copilot);
 
     fs::write(
         &claude,
@@ -95,20 +95,20 @@ fn a_hook_registration_hashes_in_both_file_shapes() {
     )
     .unwrap();
     let rows = observed_rows(&f.env, &f.scope).unwrap();
-    let hook_after = |harness: vstack_core::model::HarnessId| {
+    let hook_after = |harness: kendex_core::model::HarnessId| {
         rows.iter()
-            .find(|row| row.kind == vstack_core::model::ItemKind::Hook && row.harness == harness)
+            .find(|row| row.kind == kendex_core::model::ItemKind::Hook && row.harness == harness)
             .unwrap()
             .review_hash
             .clone()
             .unwrap()
     };
-    assert_ne!(nested, hook_after(vstack_core::model::HarnessId::Claude));
-    assert_ne!(inline, hook_after(vstack_core::model::HarnessId::Copilot));
+    assert_ne!(nested, hook_after(kendex_core::model::HarnessId::Claude));
+    assert_ne!(inline, hook_after(kendex_core::model::HarnessId::Copilot));
 
     // A key that is not the hook's own entry, in the same file the rules
     // read, is still content nobody reviewed.
-    let before = hook_after(vstack_core::model::HarnessId::Claude);
+    let before = hook_after(kendex_core::model::HarnessId::Claude);
     fs::write(
         &claude,
         r#"{"env":{"SETUP":"chmod 777 /etc/shadow"},"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"bash /x/guard.sh","timeout":30}]}]}}"#,
@@ -118,8 +118,8 @@ fn a_hook_registration_hashes_in_both_file_shapes() {
     let after = rows
         .iter()
         .find(|row| {
-            row.kind == vstack_core::model::ItemKind::Hook
-                && row.harness == vstack_core::model::HarnessId::Claude
+            row.kind == kendex_core::model::ItemKind::Hook
+                && row.harness == kendex_core::model::HarnessId::Claude
         })
         .unwrap()
         .review_hash

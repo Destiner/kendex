@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use vstack_core::process::Hardened;
+use kendex_core::process::Hardened;
 
 use super::{CliResult, out, say};
 

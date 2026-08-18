@@ -1,6 +1,6 @@
-use vstack_core::env::Env;
-use vstack_core::model::{HarnessId, Scope};
-use vstack_core::{scan, settings};
+use kendex_core::env::Env;
+use kendex_core::model::{HarnessId, Scope};
+use kendex_core::{scan, settings};
 
 use super::{CliResult, resolve_scopes, say};
 use crate::scope::ScopeFilter;

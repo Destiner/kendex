@@ -1,14 +1,14 @@
 [package]
-name = "vstack-app"
+name = "kendex-app"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
 [lib]
-name = "vstack_app"
+name = "kendex_app"
 
 [dependencies]
-vstack-core.workspace = true
+kendex-core.workspace = true
 serde.workspace = true
 toml.workspace = true
 tauri.workspace = true

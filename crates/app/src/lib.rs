@@ -109,7 +109,7 @@ pub fn run() -> tauri::Result<()> {
     }
     use std::io::Write;
     let mut stderr = std::io::stderr();
-    match vstack_core::env::Env::detect() {
+    match kendex_core::env::Env::detect() {
         Ok(env) => {
             for message in recovery::recover_on_launch(&env) {
                 let _ = writeln!(stderr, "recovery: {message}");

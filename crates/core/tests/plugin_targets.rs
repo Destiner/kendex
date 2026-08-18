@@ -7,11 +7,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use kendex_core::apply;
+use kendex_core::engine::audit;
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::model::Scope;
 use serde_json::Value;
-use vstack_core::apply;
-use vstack_core::engine::audit;
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::model::Scope;
 
 struct Fixture {
     _tmp: tempfile::TempDir,
@@ -37,7 +37,7 @@ fn fixture(plugins: &str) -> Fixture {
 }
 
 #[allow(clippy::unwrap_used)]
-fn apply_now(f: &Fixture) -> vstack_core::engine::EngineReport {
+fn apply_now(f: &Fixture) -> kendex_core::engine::EngineReport {
     let report = audit(&f.env, &Scope::Global).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     report
@@ -89,10 +89,10 @@ fn a_declaration_with_no_harness_stays_claude_codes() {
 
     // The next write records what was read, so the file stops relying on the
     // default the moment anything touches it.
-    let manifest = vstack_core::engine::ops::manifest_for_mutation(&f.env, &Scope::Global).unwrap();
+    let manifest = kendex_core::engine::ops::manifest_for_mutation(&f.env, &Scope::Global).unwrap();
     assert_eq!(
         manifest.plugins["fmt@marketplace"].harness,
-        vstack_core::model::HarnessId::Claude
+        kendex_core::model::HarnessId::Claude
     );
 }
 

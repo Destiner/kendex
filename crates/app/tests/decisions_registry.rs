@@ -6,9 +6,9 @@
 
 use std::fs;
 
-use vstack_app::audit::ScopeErrorKind;
-use vstack_app::decisions::decisions_view;
-use vstack_core::env::{Env, FakeOs};
+use kendex_app::audit::ScopeErrorKind;
+use kendex_app::decisions::decisions_view;
+use kendex_core::env::{Env, FakeOs};
 
 #[test]
 #[allow(clippy::unwrap_used)]
@@ -23,9 +23,9 @@ fn an_unreadable_scope_is_reported_beside_the_decisions_it_hides() {
         "schema = 5\n[nonsense]\nx = 1\n",
     )
     .unwrap();
-    let mut settings = vstack_core::settings::load(&env).unwrap();
+    let mut settings = kendex_core::settings::load(&env).unwrap();
     settings.projects.push(project);
-    vstack_core::settings::save(&env, &settings).unwrap();
+    kendex_core::settings::save(&env, &settings).unwrap();
 
     let view = decisions_view(&env).unwrap();
     assert!(view.decisions.is_empty());

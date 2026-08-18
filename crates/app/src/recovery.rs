@@ -1,7 +1,7 @@
-use vstack_core::apply;
-use vstack_core::env::Env;
-use vstack_core::error::CoreError;
-use vstack_core::model::Scope;
+use kendex_core::apply;
+use kendex_core::env::Env;
+use kendex_core::error::CoreError;
+use kendex_core::model::Scope;
 
 /// Roll back any apply a crash left half-finished, for every scope this
 /// machine knows about — before the first scan, so the UI only ever sees
@@ -10,7 +10,7 @@ use vstack_core::model::Scope;
 pub fn recover_on_launch(env: &Env) -> Vec<String> {
     let mut messages = Vec::new();
     let mut scopes = vec![Scope::Global];
-    match vstack_core::settings::load(env) {
+    match kendex_core::settings::load(env) {
         Ok(settings) => scopes.extend(
             settings
                 .projects

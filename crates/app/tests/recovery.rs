@@ -4,9 +4,9 @@
 
 use std::fs;
 
-use vstack_core::apply::{journal, scope_key};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::model::Scope;
+use kendex_core::apply::{journal, scope_key};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::model::Scope;
 
 #[test]
 #[allow(clippy::unwrap_used)]
@@ -15,7 +15,7 @@ fn launch_recovery_rolls_back_pending_journals_in_registered_projects() {
     let env = Env::fake(tmp.path(), FakeOs::Linux);
     let project = tmp.path().join("dev/app");
     fs::create_dir_all(&project).unwrap();
-    vstack_core::settings::register_project(&env, &project).unwrap();
+    kendex_core::settings::register_project(&env, &project).unwrap();
     let scope = Scope::Project {
         root: project.clone(),
     };
@@ -29,7 +29,7 @@ fn launch_recovery_rolls_back_pending_journals_in_registered_projects() {
     fs::write(&victim, "half-written").unwrap();
     assert!(journal::pending(&dir));
 
-    let messages = vstack_app::recovery::recover_on_launch(&env);
+    let messages = kendex_app::recovery::recover_on_launch(&env);
     assert_eq!(fs::read_to_string(&victim).unwrap(), "original");
     assert!(!journal::pending(&dir));
     assert!(
@@ -38,13 +38,13 @@ fn launch_recovery_rolls_back_pending_journals_in_registered_projects() {
     );
 
     // Nothing pending: the next launch is silent.
-    assert!(vstack_app::recovery::recover_on_launch(&env).is_empty());
+    assert!(kendex_app::recovery::recover_on_launch(&env).is_empty());
 }
 
 #[test]
 fn wayland_gets_the_dmabuf_workaround_unless_the_user_chose() {
-    assert_eq!(vstack_app::webview_env(Some("wayland"), None), Some("1"));
-    assert_eq!(vstack_app::webview_env(Some("wayland"), Some("0")), None);
-    assert_eq!(vstack_app::webview_env(Some("x11"), None), None);
-    assert_eq!(vstack_app::webview_env(None, None), None);
+    assert_eq!(kendex_app::webview_env(Some("wayland"), None), Some("1"));
+    assert_eq!(kendex_app::webview_env(Some("wayland"), Some("0")), None);
+    assert_eq!(kendex_app::webview_env(Some("x11"), None), None);
+    assert_eq!(kendex_app::webview_env(None, None), None);
 }

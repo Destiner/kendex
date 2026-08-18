@@ -1,8 +1,8 @@
 use clap::Args;
 
-use vstack_core::engine::audit;
-use vstack_core::env::Env;
-use vstack_core::model::HarnessId;
+use kendex_core::engine::audit;
+use kendex_core::env::Env;
+use kendex_core::model::HarnessId;
 
 use super::pin::parse_kind;
 use super::{CliResult, resolve_scopes, say};
@@ -38,28 +38,28 @@ pub fn run(env: &Env, args: ForkArgs) -> CliResult {
     let scope = resolve_scopes(env, filter)?.remove(0);
 
     let plan = match &args.rename {
-        Some(new) => vstack_core::engine::fork::rename_fork(env, &scope, kind, &args.name, new)?,
-        None => vstack_core::engine::fork::fork(env, &scope, kind, &args.name, harness)?,
+        Some(new) => kendex_core::engine::fork::rename_fork(env, &scope, kind, &args.name, new)?,
+        None => kendex_core::engine::fork::fork(env, &scope, kind, &args.name, harness)?,
     };
     for op in &plan.ops {
         say(&format!("  - {}", op.description));
     }
-    vstack_core::apply::execute(env, &plan, None)?;
+    kendex_core::apply::execute(env, &plan, None)?;
 
     // Second transaction renders the fork (or the renamed fork) in place.
     // A rename leaves the old name's artifacts and lock entries behind as
     // orphans, so its follow-up removes them by name — otherwise the tool
     // ends up with both names installed.
     let report = match &args.rename {
-        Some(_) => vstack_core::engine::plan_scope(
+        Some(_) => kendex_core::engine::plan_scope(
             env,
             &scope,
-            &vstack_core::manifest::load_for_mutation(&vstack_core::manifest::manifest_path(
+            &kendex_core::manifest::load_for_mutation(&kendex_core::manifest::manifest_path(
                 env, &scope,
             ))?
             .ok_or("no manifest")?,
-            &vstack_core::lock::load(&vstack_core::lock::lock_path(env, &scope))?,
-            &vstack_core::engine::PlanOptions {
+            &kendex_core::lock::load(&kendex_core::lock::lock_path(env, &scope))?,
+            &kendex_core::engine::PlanOptions {
                 remove_orphans: true,
                 removal_filter: Some(vec![args.name.clone()]),
                 ..Default::default()
@@ -67,7 +67,7 @@ pub fn run(env: &Env, args: ForkArgs) -> CliResult {
         )?,
         None => audit(env, &scope)?,
     };
-    vstack_core::apply::execute(env, &report.plan, None)?;
+    kendex_core::apply::execute(env, &report.plan, None)?;
     match args.rename {
         Some(new) => say(&format!("fork renamed to {new}")),
         None => say(&format!(

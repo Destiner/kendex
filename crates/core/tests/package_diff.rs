@@ -6,14 +6,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::apply;
-use vstack_core::engine::audit;
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::manifest;
-use vstack_core::model::{ItemKind, Scope};
-use vstack_core::package::diff::{FileStatus, LineKind, VersionSel, package_diff};
-use vstack_core::process::Hardened;
-use vstack_core::remote;
+use kendex_core::apply;
+use kendex_core::engine::audit;
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::manifest;
+use kendex_core::model::{ItemKind, Scope};
+use kendex_core::package::diff::{FileStatus, LineKind, VersionSel, package_diff};
+use kendex_core::process::Hardened;
+use kendex_core::remote;
 
 const REPO: &str = "owner/catalog";
 

@@ -10,14 +10,14 @@ mod forks;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::apply;
-use vstack_core::engine::{DriftCause, DriftState, PlanOptions, audit, fork, plan_scope};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::lock::{load as load_lock, lock_path};
-use vstack_core::manifest;
-use vstack_core::model::{HarnessId, ItemKind, Scope};
-use vstack_core::process::Hardened;
-use vstack_core::remote;
+use kendex_core::apply;
+use kendex_core::engine::{DriftCause, DriftState, PlanOptions, audit, fork, plan_scope};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::lock::{load as load_lock, lock_path};
+use kendex_core::manifest;
+use kendex_core::model::{HarnessId, ItemKind, Scope};
+use kendex_core::process::Hardened;
+use kendex_core::remote;
 
 const REPO: &str = "owner/catalog";
 
@@ -308,7 +308,7 @@ fn updates_survives_a_source_that_cannot_resolve() {
         "schema = 5\n\n[sources.cat]\nrepo = \"owner/gone\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.gh]\nsource = \"cat\"\n",
     )
     .unwrap();
-    let rows = vstack_core::package::updates::updates(&w.env, &w.scope);
+    let rows = kendex_core::package::updates::updates(&w.env, &w.scope);
     assert!(
         rows.is_ok(),
         "updates must survive an unresolvable source: {rows:?}"
@@ -369,7 +369,7 @@ fn an_automatic_sweep_never_takes_edited_bytes() {
         .unwrap()
         .unwrap();
     remote::sync_sources(&w.env, &loaded).unwrap();
-    let report = vstack_core::engine::plan_refresh(&w.env, &w.scope).unwrap();
+    let report = kendex_core::engine::plan_refresh(&w.env, &w.scope).unwrap();
     apply::execute(&w.env, &report.plan, None).unwrap();
     assert_eq!(
         fs::read_to_string(w.home.join("app/.agents/skills/helper/SKILL.md")).unwrap(),

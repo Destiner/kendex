@@ -6,12 +6,12 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
+use kendex_core::apply;
+use kendex_core::configedit::ConfigEdit;
+use kendex_core::engine::{DriftState, audit};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::model::Scope;
 use serde_json::json;
-use vstack_core::apply;
-use vstack_core::configedit::ConfigEdit;
-use vstack_core::engine::{DriftState, audit};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::model::Scope;
 
 /// Applying the same structured edit twice must be byte-identical the
 /// second time, trailing newline included — that equality is the drift

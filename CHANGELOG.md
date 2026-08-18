@@ -6,6 +6,17 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking** — vstack is now **kendex**. The app, the CLI binary
+  (`kendex`), the crates, and the app identifier are renamed. A `vstack`
+  alias binary ships for one release cycle so repositories whose commit
+  checks call `vstack guard run` keep committing; `kendex guard repair`
+  rewrites those entrypoints to the new name. Project files keep loading
+  under their old names and are renamed by a previewed plan step — never
+  silently. Environment variables are now `KENDEX_*` (the guard still
+  reads `VSTACK_GUARD_*` during the alias cycle).
+
 ### Added
 
 - Custom hooks now run wherever a harness can run them. A hook for all

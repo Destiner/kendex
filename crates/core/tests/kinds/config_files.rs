@@ -4,8 +4,8 @@
 
 use std::fs;
 
+use kendex_core::engine::{DriftState, audit};
 use serde_json::Value;
-use vstack_core::engine::{DriftState, audit};
 
 use super::{apply_now, fixture, is_clean, json, settings};
 

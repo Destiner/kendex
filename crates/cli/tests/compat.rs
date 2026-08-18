@@ -8,11 +8,11 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use vstack_core::manifest::MANIFEST_SCHEMA;
+use kendex_core::manifest::MANIFEST_SCHEMA;
 
 #[allow(clippy::expect_used)]
 fn vstack_in(home: &Path, cwd: &Path, args: &[&str], envs: &[(&str, String)]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_vstack"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_kendex"));
     command
         .args(args)
         .current_dir(cwd)
@@ -181,7 +181,7 @@ fn update_replaces_the_binary_from_a_local_feed() {
     let bin = home.join("bin");
     fs::create_dir_all(&bin).unwrap();
     let me = bin.join("vstack");
-    fs::copy(env!("CARGO_BIN_EXE_vstack"), &me).unwrap();
+    fs::copy(env!("CARGO_BIN_EXE_kendex"), &me).unwrap();
     fs::set_permissions(&me, fs::Permissions::from_mode(0o755)).unwrap();
 
     fs::write(home.join("new-binary"), "#!/bin/sh\necho v9\n").unwrap();

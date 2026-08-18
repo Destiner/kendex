@@ -5,12 +5,12 @@
 
 use std::fs;
 
-use vstack_core::engine::ops;
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::harness::installable;
-use vstack_core::model::{HarnessId, Scope};
-use vstack_core::scan;
-use vstack_core::settings::AppSettings;
+use kendex_core::engine::ops;
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::harness::installable;
+use kendex_core::model::{HarnessId, Scope};
+use kendex_core::scan;
+use kendex_core::settings::AppSettings;
 
 #[test]
 #[allow(clippy::unwrap_used)]

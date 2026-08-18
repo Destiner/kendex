@@ -5,8 +5,8 @@
 
 use std::collections::BTreeMap;
 
-use vstack_core::model::ItemKind;
-use vstack_core::quality::{
+use kendex_core::model::ItemKind;
+use kendex_core::quality::{
     AuditInput, AuditResult, Content, McpEntry, PluginSources, Severity, audit,
 };
 
@@ -76,7 +76,7 @@ fn plugin_rules_are_not_applicable_without_readable_sources() {
         harness: None,
         location: "settings.json".into(),
         content: Content::Unread {
-            why: vstack_core::quality::UNREADABLE_PLUGIN,
+            why: kendex_core::quality::UNREADABLE_PLUGIN,
         },
     });
     let skipped: Vec<&str> = result
@@ -117,7 +117,7 @@ fn an_unread_mcp_entry_reports_its_three_rules_as_not_applicable() {
         harness: None,
         location: ".mcp.json".into(),
         content: Content::Unread {
-            why: vstack_core::quality::UNREAD_MCP_ENTRY,
+            why: kendex_core::quality::UNREAD_MCP_ENTRY,
         },
     });
     let skipped: Vec<&str> = result

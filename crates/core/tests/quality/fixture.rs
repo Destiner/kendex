@@ -4,11 +4,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::engine::{PlanOptions, allow_unsafe_flag, audit, plan_scope};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::lock::{load as load_lock, lock_path};
-use vstack_core::manifest::{self, ManifestFile};
-use vstack_core::model::Scope;
+use kendex_core::engine::{PlanOptions, allow_unsafe_flag, audit, plan_scope};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::lock::{load as load_lock, lock_path};
+use kendex_core::manifest::{self, ManifestFile};
+use kendex_core::model::Scope;
 
 pub struct Fixture {
     _tmp: tempfile::TempDir,
@@ -78,7 +78,7 @@ pub fn fixture_with_method(method: &str) -> Fixture {
 }
 
 #[allow(clippy::unwrap_used)]
-pub fn manifest_of(f: &Fixture) -> vstack_core::manifest::Manifest {
+pub fn manifest_of(f: &Fixture) -> kendex_core::manifest::Manifest {
     match manifest::load(&manifest::manifest_path(&f.env, &f.scope)).unwrap() {
         ManifestFile::Current(manifest) => *manifest,
         other => panic!("expected a current manifest, got {other:?}"),
@@ -86,7 +86,7 @@ pub fn manifest_of(f: &Fixture) -> vstack_core::manifest::Manifest {
 }
 
 #[allow(clippy::unwrap_used)]
-pub fn plan(f: &Fixture, allow_unsafe: &[&str]) -> vstack_core::engine::EngineReport {
+pub fn plan(f: &Fixture, allow_unsafe: &[&str]) -> kendex_core::engine::EngineReport {
     let manifest = manifest_of(f);
     let lock = load_lock(&lock_path(&f.env, &f.scope)).unwrap();
     plan_scope(

@@ -10,7 +10,7 @@ use std::process::{Command, Output};
 
 #[allow(clippy::expect_used)]
 fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_vstack"))
+    Command::new(env!("CARGO_BIN_EXE_kendex"))
         .args(args)
         .current_dir(cwd)
         .env_clear()

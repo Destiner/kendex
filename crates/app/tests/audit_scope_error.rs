@@ -6,9 +6,9 @@
 
 use std::fs;
 
-use vstack_app::audit::{ScopeErrorKind, view};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::model::Scope;
+use kendex_app::audit::{ScopeErrorKind, view};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::model::Scope;
 
 struct Fixture {
     _tmp: tempfile::TempDir,

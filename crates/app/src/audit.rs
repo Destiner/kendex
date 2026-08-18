@@ -1,10 +1,10 @@
+use kendex_core::engine::{self, DriftRow, ItemSafety, ItemWarning, PlanOptions, ops};
+use kendex_core::env::Env;
+use kendex_core::error::CoreError;
+use kendex_core::model::{HarnessId, ItemKind, Scope};
+use kendex_core::{apply, manifest};
 use serde::Serialize;
 use specta::Type;
-use vstack_core::engine::{self, DriftRow, ItemSafety, ItemWarning, PlanOptions, ops};
-use vstack_core::env::Env;
-use vstack_core::error::CoreError;
-use vstack_core::model::{HarnessId, ItemKind, Scope};
-use vstack_core::{apply, manifest};
 
 fn env() -> Result<Env, String> {
     Env::detect().map_err(|e| e.to_string())
@@ -132,7 +132,7 @@ pub fn view(env: &Env, scope: &Scope) -> AuditView {
 #[specta::specta]
 pub fn audit_all() -> Result<Vec<AuditView>, String> {
     let env = env()?;
-    let settings = vstack_core::settings::load(&env).map_err(|e| e.to_string())?;
+    let settings = kendex_core::settings::load(&env).map_err(|e| e.to_string())?;
     let mut scopes = vec![Scope::Global];
     scopes.extend(
         settings

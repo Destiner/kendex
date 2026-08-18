@@ -6,7 +6,7 @@ use std::io::Write;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use vstack_core::env::Env;
+use kendex_core::env::Env;
 
 use commands::project::ProjectCommand;
 use flags::{AddFlags, ReportFlags};
@@ -14,12 +14,12 @@ use scope::ScopeFilter;
 
 #[derive(Parser)]
 #[command(
-    name = "vstack",
+    name = "kendex",
     version,
     about = "Skills, agents, hooks. Cross-harness."
 )]
 struct Cli {
-    /// Bare form: `vstack <source> [flags]` maps to `add`.
+    /// Bare form: `kendex <source> [flags]` maps to `add`.
     source: Option<String>,
     #[command(flatten)]
     add_flags: AddFlags,
@@ -245,7 +245,7 @@ fn remove(
     commands::remove::run(env, names, filter, sweep)
 }
 
-fn main() -> ExitCode {
+pub fn main() -> ExitCode {
     let cli = Cli::parse();
     // The machine check's whole contract is its exit code: 1 means "drift,
     // report on stdout". A failure before the check could run — settings

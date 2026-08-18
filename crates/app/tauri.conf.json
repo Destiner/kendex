@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "vstack2",
+  "productName": "kendex",
   "version": "0.1.0",
-  "identifier": "com.vanillagreen.vstack2",
+  "identifier": "ai.kendex.app",
   "build": {
     "beforeDevCommand": {
       "cwd": "../../ui",
@@ -18,7 +18,7 @@
   "app": {
     "windows": [
       {
-        "title": "vstack2",
+        "title": "kendex",
         "width": 1280,
         "height": 840,
         "minWidth": 900,

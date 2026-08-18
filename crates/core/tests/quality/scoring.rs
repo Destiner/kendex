@@ -2,8 +2,8 @@
 //! secrets never do, and deobfuscation is itself reported — plus the
 //! scoring arithmetic and the advisory quality score.
 
-use vstack_core::model::ItemKind;
-use vstack_core::quality::{Severity, Thresholds, Verdict, fingerprint_secret, verdict};
+use kendex_core::model::ItemKind;
+use kendex_core::quality::{Severity, Thresholds, Verdict, fingerprint_secret, verdict};
 
 use super::rules::{document, rules_hit, skill};
 
@@ -121,7 +121,7 @@ fn a_secret_in_a_test_fixture_is_not_downgraded() {
     );
 }
 
-fn severity_in(result: &vstack_core::quality::AuditResult, rule: &str) -> Option<Severity> {
+fn severity_in(result: &kendex_core::quality::AuditResult, rule: &str) -> Option<Severity> {
     result
         .findings
         .iter()
@@ -329,7 +329,7 @@ fn quality_scores_separately_from_safety() {
 
 #[test]
 fn a_kind_with_no_authored_prose_has_no_quality_score() {
-    let result = super::rules::mcp(vstack_core::quality::McpEntry {
+    let result = super::rules::mcp(kendex_core::quality::McpEntry {
         command: Some("server".into()),
         ..Default::default()
     });

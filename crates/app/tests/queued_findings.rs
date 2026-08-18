@@ -6,9 +6,9 @@
 
 use std::fs;
 
-use vstack_app::audit::{apply_scope, view};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::model::Scope;
+use kendex_app::audit::{apply_scope, view};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::model::Scope;
 
 #[test]
 #[allow(clippy::unwrap_used)]
@@ -51,7 +51,7 @@ fn a_warning_only_install_is_named_before_it_lands() {
     assert_eq!(queued.findings.len(), 1);
     assert!(matches!(
         queued.decisions[0].state,
-        vstack_core::engine::decisions::DecisionState::Open { .. }
+        kendex_core::engine::decisions::DecisionState::Open { .. }
     ));
 
     apply_scope(&env, &scope, false, Vec::new()).unwrap();

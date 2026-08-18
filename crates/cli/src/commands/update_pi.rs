@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use vstack_core::env::Env;
-use vstack_core::harness::HarnessAdapter;
-use vstack_core::harness::pi::Pi;
-use vstack_core::manifest::ManifestFile;
-use vstack_core::model::Scope;
-use vstack_core::process::Hardened;
-use vstack_core::{manifest, pi_ext, settings, source};
+use kendex_core::env::Env;
+use kendex_core::harness::HarnessAdapter;
+use kendex_core::harness::pi::Pi;
+use kendex_core::manifest::ManifestFile;
+use kendex_core::model::Scope;
+use kendex_core::process::Hardened;
+use kendex_core::{manifest, pi_ext, settings, source};
 
 use super::{CliResult, out, resolve_scopes, say};
 use crate::scope::ScopeFilter;

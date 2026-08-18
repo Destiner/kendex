@@ -7,11 +7,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use kendex_core::apply;
+use kendex_core::engine::{audit, ops};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::model::Scope;
 use serde_json::Value;
-use vstack_core::apply;
-use vstack_core::engine::{audit, ops};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::model::Scope;
 
 mod config_files;
 

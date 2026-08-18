@@ -50,7 +50,7 @@ fn fork_keeps_the_name_pauses_updates_and_survives_refresh() {
     assert!(audit(&w.env, &w.scope).unwrap().drift.is_empty());
 
     // The updates projection knows it is a fork now, not an update.
-    let rows = vstack_core::package::updates::updates(&w.env, &w.scope)
+    let rows = kendex_core::package::updates::updates(&w.env, &w.scope)
         .unwrap()
         .rows;
     let gh = rows.iter().find(|row| row.name == "gh").unwrap();
@@ -117,7 +117,7 @@ fn forking_a_codex_agent_is_refused_with_the_fix_named() {
 
     // Codex renders agents as TOML, which cannot round-trip as source.
     let error =
-        vstack_core::engine::fork::fork(&w.env, &w.scope, ItemKind::Agent, "rev", HarnessId::Codex)
+        kendex_core::engine::fork::fork(&w.env, &w.scope, ItemKind::Agent, "rev", HarnessId::Codex)
             .unwrap_err();
     assert!(
         error.to_string().contains("Claude"),
@@ -143,10 +143,10 @@ fn forking_a_skill_with_a_symlink_inside_refuses_rather_than_dropping_it() {
     )
     .unwrap();
     let error =
-        vstack_core::engine::fork::fork(&w.env, &w.scope, ItemKind::Skill, "gh", HarnessId::Claude)
+        kendex_core::engine::fork::fork(&w.env, &w.scope, ItemKind::Skill, "gh", HarnessId::Claude)
             .unwrap_err();
     assert!(
-        matches!(error, vstack_core::error::CoreError::ForeignSymlink { .. }),
+        matches!(error, kendex_core::error::CoreError::ForeignSymlink { .. }),
         "a symlink in the tree is refused, never silently dropped: {error}"
     );
 }
@@ -176,7 +176,7 @@ fn forking_a_skill_whose_native_link_was_repointed_reads_the_managed_tree() {
     std::os::unix::fs::symlink(&foreign, &native).unwrap();
 
     let plan =
-        vstack_core::engine::fork::fork(&w.env, &w.scope, ItemKind::Skill, "gh", HarnessId::Claude)
+        kendex_core::engine::fork::fork(&w.env, &w.scope, ItemKind::Skill, "gh", HarnessId::Claude)
             .unwrap();
     // The captured content is the canonical tree, and nothing trashes the
     // foreign directory.

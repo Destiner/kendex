@@ -1,7 +1,7 @@
 use clap::Args;
 
-use vstack_core::env::Env;
-use vstack_core::model::ItemKind;
+use kendex_core::env::Env;
+use kendex_core::model::ItemKind;
 
 use super::engine_common::{confirm_and_execute, print_report};
 use super::{CliResult, resolve_scopes, say};
@@ -51,7 +51,7 @@ pub fn run(env: &Env, args: PinArgs) -> CliResult {
     let filter = ScopeFilter::resolve(args.scope.as_deref(), args.global, ScopeFilter::Project)?;
     let scope = resolve_scopes(env, filter)?.remove(0);
     let report =
-        vstack_core::package::set_rev(env, &scope, kind, &args.name, args.version.as_deref())?;
+        kendex_core::package::set_rev(env, &scope, kind, &args.name, args.version.as_deref())?;
     print_report(&report);
     confirm_and_execute(env, &report, args.yes)?;
     match args.version {

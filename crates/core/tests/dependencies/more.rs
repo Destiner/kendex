@@ -85,7 +85,7 @@ fn a_file_changed_after_the_preview_aborts_its_removal() {
     fs::write(&skill_md, "edited after the preview\n").unwrap();
     let error = apply::execute(&f.env, &report.plan, None).unwrap_err();
     assert!(
-        matches!(error, vstack_core::error::CoreError::RolledBack { .. }),
+        matches!(error, kendex_core::error::CoreError::RolledBack { .. }),
         "{error:?}"
     );
     assert_eq!(

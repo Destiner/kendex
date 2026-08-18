@@ -3,12 +3,12 @@
 
 use std::fs;
 
-use vstack_core::apply;
-use vstack_core::engine::audit;
-use vstack_core::engine::decisions::DecisionState;
-use vstack_core::engine::ops;
-use vstack_core::manifest;
-use vstack_core::quality::reviews::DismissReason;
+use kendex_core::apply;
+use kendex_core::engine::audit;
+use kendex_core::engine::decisions::DecisionState;
+use kendex_core::engine::ops;
+use kendex_core::manifest;
+use kendex_core::quality::reviews::DismissReason;
 
 use super::decisions::{MILD_KEY, dismiss_first, row, with_mild};
 use super::fixture::{fixture, installed, manifest_of, skill};
@@ -36,12 +36,12 @@ fn a_trusted_source_dismissal_binds_to_the_source() {
 
     // A fork keeps the name and the bytes and rebinds the item to the local
     // source — exactly the move a trusted-source decision must not survive.
-    let forked = vstack_core::engine::fork::fork(
+    let forked = kendex_core::engine::fork::fork(
         &f.env,
         &f.scope,
-        vstack_core::model::ItemKind::Skill,
+        kendex_core::model::ItemKind::Skill,
         "mild",
-        vstack_core::model::HarnessId::Claude,
+        kendex_core::model::HarnessId::Claude,
     )
     .unwrap();
     apply::execute(&f.env, &forked, None).unwrap();
@@ -62,9 +62,9 @@ fn a_trusted_source_dismissal_binds_to_the_source() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn renaming_an_item_carries_its_decision_and_leaves_nothing_behind() {
-    use vstack_core::model::{HarnessId, ItemKind};
+    use kendex_core::model::{HarnessId, ItemKind};
     let f = with_mild();
-    let forked = vstack_core::engine::fork::fork(
+    let forked = kendex_core::engine::fork::fork(
         &f.env,
         &f.scope,
         ItemKind::Skill,
@@ -77,7 +77,7 @@ fn renaming_an_item_carries_its_decision_and_leaves_nothing_behind() {
     dismiss_first(&f, "mild", DismissReason::Intended);
 
     let renamed =
-        vstack_core::engine::fork::rename_fork(&f.env, &f.scope, ItemKind::Skill, "mild", "gentle")
+        kendex_core::engine::fork::rename_fork(&f.env, &f.scope, ItemKind::Skill, "mild", "gentle")
             .unwrap();
     apply::execute(&f.env, &renamed, None).unwrap();
 

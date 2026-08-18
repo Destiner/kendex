@@ -5,10 +5,10 @@
 
 use std::fs;
 
-use vstack_core::apply;
-use vstack_core::engine::{DriftState, audit};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::model::{HarnessId, Scope};
+use kendex_core::apply;
+use kendex_core::engine::{DriftState, audit};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::model::{HarnessId, Scope};
 
 #[test]
 #[allow(clippy::unwrap_used)]

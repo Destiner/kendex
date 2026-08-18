@@ -7,15 +7,15 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::apply;
-use vstack_core::drift;
-use vstack_core::engine::audit;
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::manifest;
-use vstack_core::model::Scope;
-use vstack_core::package::updates;
-use vstack_core::process::Hardened;
-use vstack_core::remote;
+use kendex_core::apply;
+use kendex_core::drift;
+use kendex_core::engine::audit;
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::manifest;
+use kendex_core::model::Scope;
+use kendex_core::package::updates;
+use kendex_core::process::Hardened;
+use kendex_core::remote;
 
 const REPO: &str = "owner/catalog";
 
@@ -228,12 +228,12 @@ fn an_unreadable_history_is_a_warning_never_current() {
 
     // A recorded commit the mirror does not hold — a force-pushed source,
     // or a hand-edited lock — makes the installed version unreadable.
-    let lock_path = vstack_core::lock::lock_path(&w.env, &w.scope);
-    let mut lock = vstack_core::lock::load(&lock_path).unwrap();
+    let lock_path = kendex_core::lock::lock_path(&w.env, &w.scope);
+    let mut lock = kendex_core::lock::load(&lock_path).unwrap();
     for entry in lock.entries.values_mut() {
         entry.source_commit = Some("f".repeat(40));
     }
-    vstack_core::lock::save(&lock_path, &lock).unwrap();
+    kendex_core::lock::save(&lock_path, &lock).unwrap();
 
     let report = updates::updates(&w.env, &w.scope).unwrap();
     let gh = row(&report.rows, "gh");
@@ -317,20 +317,20 @@ fn installations_disagreeing_on_their_commit_read_as_mixed() {
 
     // Two installations of one package recorded at different commits —
     // mid-apply state, or a partial refresh.
-    let lock_path = vstack_core::lock::lock_path(&w.env, &w.scope);
-    let mut lock = vstack_core::lock::load(&lock_path).unwrap();
+    let lock_path = kendex_core::lock::lock_path(&w.env, &w.scope);
+    let mut lock = kendex_core::lock::load(&lock_path).unwrap();
     let mut cloned = None;
     for (key, entry) in lock.entries.iter() {
         if entry.name == "gh" {
             let mut other = entry.clone();
-            other.harness = vstack_core::model::HarnessId::Codex;
+            other.harness = kendex_core::model::HarnessId::Codex;
             other.source_commit = Some(second.clone());
             cloned = Some((key.replace("claude", "codex"), other));
         }
     }
     let (key, entry) = cloned.unwrap();
     lock.entries.insert(key, entry);
-    vstack_core::lock::save(&lock_path, &lock).unwrap();
+    kendex_core::lock::save(&lock_path, &lock).unwrap();
 
     let report = updates::updates(&w.env, &w.scope).unwrap();
     assert!(row(&report.rows, "gh").mixed, "{report:?}");
@@ -357,8 +357,8 @@ fn the_drift_hook_installs_as_a_declared_item_and_is_idempotent() {
         decl.harnesses.as_deref(),
         Some(
             &[
-                vstack_core::model::HarnessId::Claude,
-                vstack_core::model::HarnessId::Pi
+                kendex_core::model::HarnessId::Claude,
+                kendex_core::model::HarnessId::Pi
             ][..]
         )
     );

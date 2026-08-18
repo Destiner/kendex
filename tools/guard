@@ -109,7 +109,7 @@ hits=$(scan 'Command::new' '^crates/(core|cli)/src/' | grep -v '^crates/core/src
 [ "$(readlink .claude/CLAUDE.md 2>/dev/null)" = "../AGENTS.md" ] ||
   say ".claude/CLAUDE.md must be a symlink to ../AGENTS.md"
 
-if [ -f Cargo.toml ] && cargo tree -p vstack-core -e normal 2>/dev/null | grep -qE '\btauri v'; then
+if [ -f Cargo.toml ] && cargo tree -p kendex-core -e normal 2>/dev/null | grep -qE '\btauri v'; then
   say "crates/core must not depend on tauri"
 fi
 

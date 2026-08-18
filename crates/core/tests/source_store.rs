@@ -6,15 +6,15 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::apply;
-use vstack_core::engine::{DriftState, audit};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::lock::{load as load_lock, lock_path};
-use vstack_core::manifest;
-use vstack_core::model::Scope;
-use vstack_core::process::Hardened;
-use vstack_core::remote;
-use vstack_core::source::{self, SourceState};
+use kendex_core::apply;
+use kendex_core::engine::{DriftState, audit};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::lock::{load as load_lock, lock_path};
+use kendex_core::manifest;
+use kendex_core::model::Scope;
+use kendex_core::process::Hardened;
+use kendex_core::remote;
+use kendex_core::source::{self, SourceState};
 
 struct World {
     _tmp: tempfile::TempDir,

@@ -7,10 +7,10 @@
 
 use std::fs;
 
-use vstack_app::audit::{apply_scope, view};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::manifest::MANIFEST_SCHEMA;
-use vstack_core::model::Scope;
+use kendex_app::audit::{apply_scope, view};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::manifest::MANIFEST_SCHEMA;
+use kendex_core::model::Scope;
 
 const UPGRADE_OP: &str = "Upgrade vstack.toml to the current format";
 

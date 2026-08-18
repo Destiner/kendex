@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Subcommand;
-use vstack_core::env::Env;
-use vstack_core::guard::{self, GuardCtx, Outcome};
+use kendex_core::env::Env;
+use kendex_core::guard::{self, GuardCtx, Outcome};
 
 use super::out;
 
@@ -83,7 +83,7 @@ fn read_message(file: Option<&PathBuf>) -> Result<String, String> {
     }
 }
 
-fn verdict(outcome: Result<Outcome, vstack_core::error::CoreError>) -> ExitCode {
+fn verdict(outcome: Result<Outcome, kendex_core::error::CoreError>) -> ExitCode {
     match outcome {
         Ok(outcome) => {
             for line in &outcome.lines {
@@ -137,11 +137,11 @@ pub fn run(env: &Env, command: GuardCommand) -> Result<ExitCode, Box<dyn std::er
     // machinery; everything else is a read-only verdict over the index.
     match &command {
         GuardCommand::Install => {
-            let hooks = vstack_core::githooks::install(env, &cwd)?;
+            let hooks = kendex_core::githooks::install(env, &cwd)?;
             return Ok(report(&hooks.lines, 0));
         }
         GuardCommand::Uninstall => {
-            let hooks = vstack_core::githooks::uninstall(env, &cwd)?;
+            let hooks = kendex_core::githooks::uninstall(env, &cwd)?;
             return Ok(report(&hooks.lines, 0));
         }
         _ => {}

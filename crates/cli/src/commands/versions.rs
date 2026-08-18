@@ -1,6 +1,6 @@
 use clap::Args;
 
-use vstack_core::env::Env;
+use kendex_core::env::Env;
 
 use super::pin::parse_kind;
 use super::{CliResult, resolve_scopes, say};
@@ -23,7 +23,7 @@ pub fn run(env: &Env, args: VersionsArgs) -> CliResult {
     let name = args.name;
     let filter = ScopeFilter::resolve(args.scope.as_deref(), args.global, ScopeFilter::Project)?;
     let scope = resolve_scopes(env, filter)?.remove(0);
-    let rows = vstack_core::package::versions(env, &scope, kind, &name)?;
+    let rows = kendex_core::package::versions(env, &scope, kind, &name)?;
     if rows.is_empty() {
         say("no versions known — refresh the source first");
         return Ok(());

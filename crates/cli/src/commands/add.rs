@@ -1,7 +1,7 @@
-use vstack_core::engine::ops::{self, AddRequest};
-use vstack_core::env::Env;
-use vstack_core::lock::{load as load_lock, lock_path};
-use vstack_core::model::Scope;
+use kendex_core::engine::ops::{self, AddRequest};
+use kendex_core::env::Env;
+use kendex_core::lock::{load as load_lock, lock_path};
+use kendex_core::model::Scope;
 
 use super::engine_common::{confirm_and_execute, parse_harnesses, print_report};
 use super::{CliResult, resolve_scopes, say};
@@ -81,9 +81,9 @@ pub fn run(env: &Env, args: AddArgs) -> CliResult {
         hold: args.hold,
     };
     let report = match ops::add(env, &scope, &request) {
-        Err(vstack_core::error::CoreError::SourcePending { .. }) => {
+        Err(kendex_core::error::CoreError::SourcePending { .. }) => {
             let manifest = ops::manifest_for_mutation(env, &scope)?;
-            for warning in vstack_core::remote::sync_sources(env, &manifest)? {
+            for warning in kendex_core::remote::sync_sources(env, &manifest)? {
                 say(&format!("warning: {warning}"));
             }
             ops::add(env, &scope, &request)?

@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 
-use vstack_core::drift::report::{self, CheckReport};
-use vstack_core::env::Env;
+use kendex_core::drift::report::{self, CheckReport};
+use kendex_core::env::Env;
 
 use super::{out, resolve_scopes, say};
 use crate::scope::ScopeFilter;
@@ -28,7 +28,7 @@ pub fn run(
     if report::wants_background_refresh(env, &scopes)
         && std::env::var("VSTACK_BACKGROUND_REFRESH").as_deref() != Ok("off")
     {
-        vstack_core::process::respawn_detached(&["source", "refresh", "--stale"]);
+        kendex_core::process::respawn_detached(&["source", "refresh", "--stale"]);
     }
 
     if json {

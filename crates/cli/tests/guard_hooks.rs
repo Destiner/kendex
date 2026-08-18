@@ -24,7 +24,7 @@ fn run_with(
     args: &[&str],
     extra: &[(&str, &str)],
 ) -> Output {
-    let bin_dir = PathBuf::from(env!("CARGO_BIN_EXE_vstack"))
+    let bin_dir = PathBuf::from(env!("CARGO_BIN_EXE_kendex"))
         .parent()
         .expect("binary has a parent")
         .to_path_buf();

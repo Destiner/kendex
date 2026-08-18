@@ -6,10 +6,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::apply::{self, Op};
-use vstack_core::engine::{DriftState, audit};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::model::Scope;
+use kendex_core::apply::{self, Op};
+use kendex_core::engine::{DriftState, audit};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::model::Scope;
 
 #[allow(clippy::unwrap_used)]
 fn put(path: &Path, text: &str) {
@@ -45,7 +45,7 @@ fn apply_now(env: &Env, scope: &Scope) {
     apply::execute(env, &report.plan, None).unwrap();
 }
 
-fn trashes(report: &vstack_core::engine::EngineReport, path: &Path) -> usize {
+fn trashes(report: &kendex_core::engine::EngineReport, path: &Path) -> usize {
     report
         .plan
         .ops

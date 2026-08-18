@@ -1,11 +1,11 @@
+use kendex_core::env::Env;
+use kendex_core::harness::{KindCaps, capabilities};
+use kendex_core::model::{HarnessId, ItemKind};
+use kendex_core::scan::ScanResult;
+use kendex_core::settings::{self, AppSettings};
+use kendex_core::{discover, scan};
 use serde::Serialize;
 use specta::Type;
-use vstack_core::env::Env;
-use vstack_core::harness::{KindCaps, capabilities};
-use vstack_core::model::{HarnessId, ItemKind};
-use vstack_core::scan::ScanResult;
-use vstack_core::settings::{self, AppSettings};
-use vstack_core::{discover, scan};
 
 fn env() -> Result<Env, String> {
     Env::detect().map_err(|e| e.to_string())
@@ -72,20 +72,20 @@ pub fn unregister_project(path: String) -> Result<AppSettings, String> {
 /// Review page's ordinary preview-and-apply finishes the job.
 #[tauri::command(async)]
 #[specta::specta]
-pub fn install_drift_hook(scope: vstack_core::model::Scope) -> Result<bool, String> {
+pub fn install_drift_hook(scope: kendex_core::model::Scope) -> Result<bool, String> {
     let env = env()?;
-    let options = vstack_core::engine::PlanOptions::default();
-    let pending = vstack_core::engine::plan_apply(&env, &scope, &options)
+    let options = kendex_core::engine::PlanOptions::default();
+    let pending = kendex_core::engine::plan_apply(&env, &scope, &options)
         .map_err(|e| e.to_string())?
         .plan;
-    let plan = vstack_core::drift::hook::install_plan(&env, &scope).map_err(|e| e.to_string())?;
-    vstack_core::apply::execute(&env, &plan, None).map_err(|e| e.to_string())?;
+    let plan = kendex_core::drift::hook::install_plan(&env, &scope).map_err(|e| e.to_string())?;
+    kendex_core::apply::execute(&env, &plan, None).map_err(|e| e.to_string())?;
     if !pending.is_empty() {
         return Ok(false);
     }
     let report =
-        vstack_core::engine::plan_apply(&env, &scope, &options).map_err(|e| e.to_string())?;
-    vstack_core::apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
+        kendex_core::engine::plan_apply(&env, &scope, &options).map_err(|e| e.to_string())?;
+    kendex_core::apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
     Ok(true)
 }
 
@@ -156,28 +156,28 @@ fn urlencode(text: &str) -> String {
 #[tauri::command(async)]
 #[specta::specta]
 pub fn report_route(
-    scope: vstack_core::model::Scope,
+    scope: kendex_core::model::Scope,
     name: String,
     kind: Option<ItemKind>,
 ) -> Result<ReportRouteView, String> {
     let env = env()?;
     // Read-only lookup: a v1 lock degrades to "no provenance" like the rest
     // of the read surface, instead of blocking the report dialog outright.
-    let lock = match vstack_core::lock::load_file(&vstack_core::lock::lock_path(&env, &scope))
+    let lock = match kendex_core::lock::load_file(&kendex_core::lock::lock_path(&env, &scope))
         .map_err(|e| e.to_string())?
     {
-        vstack_core::lock::LockFile::Current(lock) => lock,
-        vstack_core::lock::LockFile::Absent | vstack_core::lock::LockFile::Legacy { .. } => {
-            vstack_core::lock::Lock::default()
+        kendex_core::lock::LockFile::Current(lock) => lock,
+        kendex_core::lock::LockFile::Absent | kendex_core::lock::LockFile::Legacy { .. } => {
+            kendex_core::lock::Lock::default()
         }
     };
-    let route = vstack_core::report::route(
+    let route = kendex_core::report::route(
         &env,
         &scope,
         &lock,
         &name,
         kind,
-        vstack_core::report::DEFAULT_UPSTREAM,
+        kendex_core::report::DEFAULT_UPSTREAM,
     );
     let issue_url = route.repo.as_ref().map(|repo| {
         let mut url = format!(
@@ -200,7 +200,7 @@ pub fn report_route(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vstack_core::env::FakeOs;
+    use kendex_core::env::FakeOs;
 
     fn env_in(dir: &std::path::Path) -> Env {
         Env::fake(dir, FakeOs::Linux)

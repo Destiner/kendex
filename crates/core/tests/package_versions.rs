@@ -7,14 +7,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::apply;
-use vstack_core::engine::audit;
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::manifest;
-use vstack_core::model::{ItemKind, Scope};
-use vstack_core::package::{self, updates};
-use vstack_core::process::Hardened;
-use vstack_core::remote;
+use kendex_core::apply;
+use kendex_core::engine::audit;
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::manifest;
+use kendex_core::model::{ItemKind, Scope};
+use kendex_core::package::{self, updates};
+use kendex_core::process::Hardened;
+use kendex_core::remote;
 
 const REPO: &str = "owner/catalog";
 
@@ -280,13 +280,13 @@ fn a_hostile_source_commit_never_reaches_git_as_an_option() {
     // handed to git as a positional — `--output=<path>` would clobber
     // that path. The updates/versions projections must simply not answer
     // for that entry, and write nothing outside the scope.
-    let lock_path = vstack_core::lock::lock_path(&w.env, &w.scope);
-    let mut lock = vstack_core::lock::load(&lock_path).unwrap();
+    let lock_path = kendex_core::lock::lock_path(&w.env, &w.scope);
+    let mut lock = kendex_core::lock::load(&lock_path).unwrap();
     let marker = w.home.join("PWNED");
     for entry in lock.entries.values_mut() {
         entry.source_commit = Some(format!("--output={}", marker.display()));
     }
-    vstack_core::lock::save(&lock_path, &lock).unwrap();
+    kendex_core::lock::save(&lock_path, &lock).unwrap();
 
     let _ = package::versions(&w.env, &w.scope, ItemKind::Skill, "gh");
     let _ = updates::updates(&w.env, &w.scope);

@@ -2,8 +2,8 @@
 
 use std::path::PathBuf;
 
-use vstack_core::model::ItemKind;
-use vstack_core::quality::{AuditInput, AuditResult, Content, McpEntry, Severity, TreeFile, audit};
+use kendex_core::model::ItemKind;
+use kendex_core::quality::{AuditInput, AuditResult, Content, McpEntry, Severity, TreeFile, audit};
 
 pub fn document(kind: ItemKind, text: &str) -> AuditResult {
     audit(AuditInput {

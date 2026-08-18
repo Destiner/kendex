@@ -8,7 +8,7 @@ use std::process::{Command, Output};
 // allow-unwrap-in-tests does not reach them.
 #[allow(clippy::expect_used)]
 fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_vstack"))
+    Command::new(env!("CARGO_BIN_EXE_kendex"))
         .args(args)
         .current_dir(cwd)
         .env_clear()
@@ -156,4 +156,20 @@ fn verify_names_an_installation_that_cannot_act() {
         printed.contains("!") && printed.contains("stays inert"),
         "{printed}"
     );
+}
+
+/// The rename ships a `vstack` alias binary for one release cycle:
+/// consuming repos' git-hook entrypoints hard-code `vstack guard run` and
+/// fail closed while the alias is missing.
+#[test]
+fn vstack_alias_binary_answers() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_vstack"))
+        .arg("--version")
+        .env_clear()
+        .env("HOME", tmp.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains("kendex"));
 }

@@ -7,14 +7,14 @@
 //! never dismiss whatever replaced what was read.
 
 use clap::Args;
-use vstack_core::apply;
-use vstack_core::engine::decisions::{DecisionState, DecisionToken, short_token};
-use vstack_core::engine::ops::{
+use kendex_core::apply;
+use kendex_core::engine::decisions::{DecisionState, DecisionToken, short_token};
+use kendex_core::engine::ops::{
     DecisionRecord, RecordState, dismiss, list_decisions, revoke_dismissal, revoke_override,
 };
-use vstack_core::engine::{ItemSafety, allow_unsafe_flag, observed_safety};
-use vstack_core::env::Env;
-use vstack_core::quality::reviews::DismissReason;
+use kendex_core::engine::{ItemSafety, allow_unsafe_flag, observed_safety};
+use kendex_core::env::Env;
+use kendex_core::quality::reviews::DismissReason;
 
 use super::{CliResult, resolve_scopes, say};
 use crate::scope::ScopeFilter;

@@ -1,5 +1,5 @@
-use vstack_core::env::Env;
-use vstack_core::import_v1::migrate;
+use kendex_core::env::Env;
+use kendex_core::import_v1::migrate;
 
 use super::{CliResult, out, resolve_scopes, say};
 use crate::scope::ScopeFilter;

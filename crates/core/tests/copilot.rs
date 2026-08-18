@@ -7,11 +7,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use kendex_core::apply;
+use kendex_core::engine::{EngineReport, audit, ops};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::model::Scope;
 use serde_json::Value;
-use vstack_core::apply;
-use vstack_core::engine::{EngineReport, audit, ops};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::model::Scope;
 
 const AGENT: &str = "---\nname: rust\ndescription: Rust engineer\nmodel: opus\nrole: engineer\n---\nUse the Grep tool.\n";
 
@@ -200,7 +200,7 @@ fn a_registered_hook_is_read_back_from_copilots_own_directory() {
     let f = fixture("[hooks.audit]\nsource = \"cat\"\n");
     apply_now(&f);
 
-    let scanned = vstack_core::scan::scan_scopes(
+    let scanned = kendex_core::scan::scan_scopes(
         &f.env,
         &std::collections::BTreeMap::new(),
         std::slice::from_ref(&f.scope),
@@ -209,7 +209,7 @@ fn a_registered_hook_is_read_back_from_copilots_own_directory() {
     let hooks: Vec<_> = scanned
         .items
         .iter()
-        .filter(|item| item.harness == vstack_core::model::HarnessId::Copilot)
+        .filter(|item| item.harness == kendex_core::model::HarnessId::Copilot)
         .map(|item| (item.name.as_str(), item.enabled))
         .collect();
     assert_eq!(hooks, [("preToolUse:bash:audit", Some(true))]);

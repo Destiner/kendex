@@ -1,7 +1,7 @@
 //! The manifest findings that keep a hold honest: an item's rev is a full
 //! commit id from a repo source, or it is a finding naming the fix.
 
-use vstack_core::manifest;
+use kendex_core::manifest;
 
 const REPO: &str = "owner/catalog";
 

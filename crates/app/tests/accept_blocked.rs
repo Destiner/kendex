@@ -6,11 +6,11 @@
 
 use std::fs;
 
-use vstack_app::audit::{apply_scope, view};
-use vstack_core::engine::allow_unsafe_flag;
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::manifest::{self, ManifestFile};
-use vstack_core::model::Scope;
+use kendex_app::audit::{apply_scope, view};
+use kendex_core::engine::allow_unsafe_flag;
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::manifest::{self, ManifestFile};
+use kendex_core::model::Scope;
 
 struct Fixture {
     _tmp: tempfile::TempDir,

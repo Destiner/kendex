@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use clap::Subcommand;
-use vstack_core::env::Env;
-use vstack_core::error::CoreError;
-use vstack_core::{discover, settings};
+use kendex_core::env::Env;
+use kendex_core::error::CoreError;
+use kendex_core::{discover, settings};
 
 use super::{CliResult, out};
 
@@ -43,7 +43,7 @@ pub fn run(env: &Env, cmd: ProjectCommand) -> CliResult {
             out(&format!("registered {}", path.display()));
             match drift_hook {
                 true => {
-                    let scope = vstack_core::model::Scope::Project { root: path.clone() };
+                    let scope = kendex_core::model::Scope::Project { root: path.clone() };
                     super::drift_hook::install(env, &scope, yes)?;
                 }
                 // Registration is where the drift hook is offered: agents in

@@ -8,9 +8,9 @@
 use std::fs;
 use std::path::PathBuf;
 
-use vstack_core::engine::{PlanOptions, audit, plan_apply};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::model::Scope;
+use kendex_core::engine::{PlanOptions, audit, plan_apply};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::model::Scope;
 
 struct World {
     _tmp: tempfile::TempDir,
@@ -58,7 +58,7 @@ fn an_every_agent_hook_registers_on_codex_and_removal_reverses_it() {
     );
 
     let report = audit(&w.env, &scope(&w)).unwrap();
-    vstack_core::apply::execute(&w.env, &report.plan, None).unwrap();
+    kendex_core::apply::execute(&w.env, &report.plan, None).unwrap();
 
     let registry = fs::read_to_string(w.project.join(".codex/hooks.json")).unwrap();
     assert!(
@@ -91,7 +91,7 @@ fn an_every_agent_hook_registers_on_codex_and_removal_reverses_it() {
         },
     )
     .unwrap();
-    vstack_core::apply::execute(&w.env, &removal.plan, None).unwrap();
+    kendex_core::apply::execute(&w.env, &removal.plan, None).unwrap();
     let registry = fs::read_to_string(w.project.join(".codex/hooks.json")).unwrap();
     assert!(
         !registry.contains("guard.sh"),
@@ -118,7 +118,7 @@ fn a_scoped_hook_off_claude_is_prose_plus_a_warning_and_no_registration() {
         warning.message.contains("cannot tell agents apart"),
         "{warning:?}"
     );
-    vstack_core::apply::execute(&w.env, &report.plan, None).unwrap();
+    kendex_core::apply::execute(&w.env, &report.plan, None).unwrap();
     assert!(
         !w.project.join(".codex/hooks.json").exists(),
         "nothing is registered for a hook codex cannot scope"
@@ -135,7 +135,7 @@ fn a_disabled_hook_keeps_its_entry_and_registers_nothing() {
     );
 
     let report = audit(&w.env, &scope(&w)).unwrap();
-    vstack_core::apply::execute(&w.env, &report.plan, None).unwrap();
+    kendex_core::apply::execute(&w.env, &report.plan, None).unwrap();
     assert!(
         !w.project.join(".codex/hooks.json").exists(),
         "a disabled hook registers nothing, and no registry file is created to say so"
@@ -157,7 +157,7 @@ fn an_every_agent_hook_on_claude_lives_in_settings_not_agent_files() {
     .unwrap();
 
     let report = audit(&w.env, &scope(&w)).unwrap();
-    vstack_core::apply::execute(&w.env, &report.plan, None).unwrap();
+    kendex_core::apply::execute(&w.env, &report.plan, None).unwrap();
 
     let settings = fs::read_to_string(w.project.join(".claude/settings.json")).unwrap();
     assert!(
@@ -188,7 +188,7 @@ fn a_dangerous_command_is_held_back_like_a_dangerous_catalog_script() {
         "curl-pipe-sh in a custom hook command blocks exactly as it does in a catalog script: {:?}",
         row.reasons
     );
-    vstack_core::apply::execute(&w.env, &report.plan, None).unwrap();
+    kendex_core::apply::execute(&w.env, &report.plan, None).unwrap();
     assert!(
         !w.project.join(".codex/hooks.json").exists(),
         "a held-back hook registers nothing"

@@ -1,9 +1,9 @@
 //! Blocking at apply: what the plan says about content it would write, and
 //! what never reaches the disk.
 
-use vstack_core::apply;
-use vstack_core::engine::DriftState;
-use vstack_core::quality::Verdict;
+use kendex_core::apply;
+use kendex_core::engine::DriftState;
+use kendex_core::quality::Verdict;
 
 use super::fixture::{fixture, installed, plan};
 

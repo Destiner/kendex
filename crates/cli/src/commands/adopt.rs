@@ -1,6 +1,6 @@
-use vstack_core::engine::{adopt, audit};
-use vstack_core::env::Env;
-use vstack_core::model::{HarnessId, ItemKind};
+use kendex_core::engine::{adopt, audit};
+use kendex_core::env::Env;
+use kendex_core::model::{HarnessId, ItemKind};
 
 use super::{CliResult, resolve_scopes, say};
 use crate::scope::ScopeFilter;
@@ -29,11 +29,11 @@ pub fn run(
     for op in &move_plan.ops {
         say(&format!("  - {}", op.description));
     }
-    vstack_core::apply::execute(env, &move_plan, None)?;
+    kendex_core::apply::execute(env, &move_plan, None)?;
 
     // Second transaction renders the managed replacement.
     let report = audit(env, &scope)?;
-    vstack_core::apply::execute(env, &report.plan, None)?;
+    kendex_core::apply::execute(env, &report.plan, None)?;
     say(&format!(
         "adopted {} '{}' into the local source",
         kind.name(),

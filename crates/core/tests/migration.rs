@@ -3,13 +3,13 @@
 
 use std::fs;
 
-use vstack_core::apply;
-use vstack_core::engine::audit;
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::error::CoreError;
-use vstack_core::lock::{load as load_lock, lock_path};
-use vstack_core::manifest::MANIFEST_SCHEMA;
-use vstack_core::model::Scope;
+use kendex_core::apply;
+use kendex_core::engine::audit;
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::error::CoreError;
+use kendex_core::lock::{load as load_lock, lock_path};
+use kendex_core::manifest::MANIFEST_SCHEMA;
+use kendex_core::model::Scope;
 
 struct Fixture {
     _tmp: tempfile::TempDir,
@@ -81,7 +81,7 @@ fn a_v01_scope_upgrades_in_place_changing_only_the_schema_line() {
             .replacen("schema = 1", &format!("schema = {MANIFEST_SCHEMA}"), 1)
     );
     let lock = load_lock(&lock_path(&f.env, &f.scope)).unwrap();
-    assert_eq!(lock.version, vstack_core::lock::LOCK_VERSION);
+    assert_eq!(lock.version, kendex_core::lock::LOCK_VERSION);
     assert!(lock.entries.contains_key("skill:gh:claude"));
 
     // Idempotent: the migrated scope plans no further upgrade.

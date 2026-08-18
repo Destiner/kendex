@@ -11,11 +11,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::engine::{ItemSafety, observed_safety};
-use vstack_core::env::Env;
-use vstack_core::manifest::{self, MANIFEST_SCHEMA, Manifest, ManifestFile};
-use vstack_core::model::Scope;
-use vstack_core::quality::overrides::{OverrideState, mint};
+use kendex_core::engine::{ItemSafety, observed_safety};
+use kendex_core::env::Env;
+use kendex_core::manifest::{self, MANIFEST_SCHEMA, Manifest, ManifestFile};
+use kendex_core::model::Scope;
+use kendex_core::quality::overrides::{OverrideState, mint};
 
 use super::fixture::{Fixture, fixture};
 
@@ -36,7 +36,7 @@ pub fn row(env: &Env, scope: &Scope, name: &str) -> ItemSafety {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 fn accept(env: &Env, scope: &Scope, name: &str, path: &Path) {
     let observed = row(env, scope, name);
-    let key = vstack_core::lock::entry_key(observed.kind, name, observed.harness);
+    let key = kendex_core::lock::entry_key(observed.kind, name, observed.harness);
     let review_hash = observed
         .review_hash
         .expect("installed bytes are readable here");
@@ -233,7 +233,7 @@ fn a_decision_with_nothing_to_read_stops_applying() {
         },
     };
     manifest.safety_overrides.insert(
-        vstack_core::lock::entry_key(observed.kind, "ghost@mkt", observed.harness),
+        kendex_core::lock::entry_key(observed.kind, "ghost@mkt", observed.harness),
         mint(&observed.content_hash, &observed.findings, "", None),
     );
     fs::create_dir_all(manifest_path.parent().unwrap()).unwrap();

@@ -6,15 +6,15 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::apply;
-use vstack_core::engine::audit;
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::error::CoreError;
-use vstack_core::manifest;
-use vstack_core::model::{ItemKind, Scope};
-use vstack_core::package::detail;
-use vstack_core::process::Hardened;
-use vstack_core::remote;
+use kendex_core::apply;
+use kendex_core::engine::audit;
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::error::CoreError;
+use kendex_core::manifest;
+use kendex_core::model::{ItemKind, Scope};
+use kendex_core::package::detail;
+use kendex_core::process::Hardened;
+use kendex_core::remote;
 
 const REPO: &str = "owner/catalog";
 
@@ -251,12 +251,12 @@ fn meta_names_the_version_the_link_and_the_fork() {
         "---\nname: gh\ndescription: mine\n---\nMine.\n",
     )
     .unwrap();
-    let plan = vstack_core::engine::fork::fork(
+    let plan = kendex_core::engine::fork::fork(
         &w.env,
         &w.scope,
         ItemKind::Skill,
         "gh",
-        vstack_core::model::HarnessId::Claude,
+        kendex_core::model::HarnessId::Claude,
     )
     .unwrap();
     apply::execute(&w.env, &plan, None).unwrap();

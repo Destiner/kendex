@@ -5,12 +5,12 @@
 
 use std::fs;
 
-use vstack_core::apply;
-use vstack_core::engine::decisions::{DecisionState, DecisionToken};
-use vstack_core::engine::ops::{self, dismiss};
-use vstack_core::error::CoreError;
-use vstack_core::manifest;
-use vstack_core::quality::reviews::DismissReason;
+use kendex_core::apply;
+use kendex_core::engine::decisions::{DecisionState, DecisionToken};
+use kendex_core::engine::ops::{self, dismiss};
+use kendex_core::error::CoreError;
+use kendex_core::manifest;
+use kendex_core::quality::reviews::DismissReason;
 
 use super::decisions::{first_token, row, with_mild};
 use super::fixture::{fixture, grant, manifest_of, plan};
@@ -94,7 +94,7 @@ fn a_held_back_items_findings_cannot_be_dismissed() {
         key: "skill:hostile:claude".to_owned(),
         fingerprint: hostile.decisions[0].fingerprint.clone(),
         hash: hostile.review_hash.clone().unwrap(),
-        scope: vstack_core::engine::decisions::scope_tag(&f.scope),
+        scope: kendex_core::engine::decisions::scope_tag(&f.scope),
     };
     let refused = dismiss(&f.env, &f.scope, &[forged], DismissReason::WrongCall);
     assert!(
@@ -112,7 +112,7 @@ fn a_token_from_another_scope_writes_nothing() {
     let f = with_mild();
     let token = DecisionToken::parse(&first_token(&row(&f, "mild"))).unwrap();
     let elsewhere = DecisionToken {
-        scope: vstack_core::engine::decisions::scope_tag(&vstack_core::model::Scope::Global),
+        scope: kendex_core::engine::decisions::scope_tag(&kendex_core::model::Scope::Global),
         ..token
     };
     let refused = dismiss(&f.env, &f.scope, &[elsewhere], DismissReason::WrongCall);

@@ -3,9 +3,9 @@
 
 use std::fs;
 
-use vstack_core::apply;
-use vstack_core::engine::{DriftState, SetDirection, audit, ops, plan_refresh};
-use vstack_core::model::ItemKind;
+use kendex_core::apply;
+use kendex_core::engine::{DriftState, SetDirection, audit, ops, plan_refresh};
+use kendex_core::model::ItemKind;
 
 use super::{Fixture, apply_now, catalog_bundles, fixture, installed, lock_of, manifest_of, write};
 
@@ -110,8 +110,8 @@ fn a_marketplace_plugin_installs_as_a_bundle() {
     );
     apply_now(&f);
 
-    let skill = vstack_core::harness::rendered_name(
-        vstack_core::model::HarnessId::Claude,
+    let skill = kendex_core::harness::rendered_name(
+        kendex_core::model::HarnessId::Claude,
         "data-science/eda",
     );
     assert!(f.project.join(".claude/skills").join(&skill).exists());

@@ -17,10 +17,10 @@
 
 use std::path::{Path, PathBuf};
 
-use vstack_core::model::{HarnessId, ItemKind};
-use vstack_core::quality::{self, AuditInput, Content, TreeFile, Verdict};
-use vstack_core::render::validate;
-use vstack_core::source_read::SealedSource;
+use kendex_core::model::{HarnessId, ItemKind};
+use kendex_core::quality::{self, AuditInput, Content, TreeFile, Verdict};
+use kendex_core::render::validate;
+use kendex_core::source_read::SealedSource;
 
 use super::{CliResult, say};
 
@@ -96,7 +96,7 @@ fn check_dir(sealed: &SealedSource, kind: ItemKind, dir: &str, tally: &mut Tally
 fn tree_content(
     sealed: &SealedSource,
     dir: &Path,
-) -> Result<Content, vstack_core::error::CoreError> {
+) -> Result<Content, kendex_core::error::CoreError> {
     if !sealed.is_dir(dir) {
         return Ok(Content::Unread {
             why: "a skill is a directory holding SKILL.md",
@@ -135,7 +135,7 @@ fn item_name(path: &Path) -> Option<String> {
 /// something that is not broken.
 fn structural(kind: ItemKind, name: &str, location: &str, content: &Content, tally: &mut Tally) {
     for harness in HarnessId::ALL {
-        if !vstack_core::harness::capabilities(harness, kind)
+        if !kendex_core::harness::capabilities(harness, kind)
             .install
             .global
         {

@@ -8,10 +8,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::apply;
-use vstack_core::engine::{audit, ops};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::model::Scope;
+use kendex_core::apply;
+use kendex_core::engine::{audit, ops};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::model::Scope;
 
 struct World {
     _tmp: tempfile::TempDir,
@@ -121,7 +121,7 @@ fn schema_upgrade_is_byte_faithful_and_repairs_a_missing_terminator_once() {
         upgraded,
         format!(
             "schema =   {}   # my note\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n",
-            vstack_core::manifest::MANIFEST_SCHEMA
+            kendex_core::manifest::MANIFEST_SCHEMA
         ),
         "one line changed, one terminator repaired, nothing else"
     );

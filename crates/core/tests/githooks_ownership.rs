@@ -6,9 +6,9 @@
 
 use std::path::{Path, PathBuf};
 
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::githooks;
-use vstack_core::process::Hardened;
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::githooks;
+use kendex_core::process::Hardened;
 
 struct World {
     _tmp: tempfile::TempDir,
@@ -139,14 +139,14 @@ fn the_launch_pass_recovers_a_crashed_hook_mutation() {
     let w = world();
     githooks::install(&w.env, &w.repo).unwrap();
     let repo = githooks::Repo::at(&w.repo).unwrap();
-    let key = vstack_core::apply::common_key(&repo.common_dir);
-    let journal_dir = vstack_core::apply::journal::journal_dir_for(&w.env.journal_dir(), &key);
+    let key = kendex_core::apply::common_key(&repo.common_dir);
+    let journal_dir = kendex_core::apply::journal::journal_dir_for(&w.env.journal_dir(), &key);
     let victim = repo.hooks_dir().join("pre-commit");
     let before = std::fs::read_to_string(&victim).unwrap();
-    vstack_core::apply::journal::write(&journal_dir, std::slice::from_ref(&victim)).unwrap();
+    kendex_core::apply::journal::write(&journal_dir, std::slice::from_ref(&victim)).unwrap();
     std::fs::write(&victim, "torn write").unwrap();
 
-    let recovered = vstack_core::apply::recover_common_journals(&w.env).unwrap();
+    let recovered = kendex_core::apply::recover_common_journals(&w.env).unwrap();
     assert_eq!(recovered.len(), 1, "{recovered:?}");
     assert!(
         recovered[0].0.starts_with("git-common-proj-"),
@@ -156,13 +156,13 @@ fn the_launch_pass_recovers_a_crashed_hook_mutation() {
     assert!(recovered[0].1.as_ref().unwrap());
     assert_eq!(std::fs::read_to_string(&victim).unwrap(), before);
 
-    let again = vstack_core::apply::recover_common_journals(&w.env).unwrap();
+    let again = kendex_core::apply::recover_common_journals(&w.env).unwrap();
     assert!(again.iter().all(|(_, result)| !result.as_ref().unwrap()));
 
     // A journal dir that cannot be listed is an error, not an empty list.
     std::fs::remove_dir_all(w.env.journal_dir()).unwrap();
     std::fs::write(w.env.journal_dir(), "not a directory").unwrap();
-    assert!(vstack_core::apply::recover_common_journals(&w.env).is_err());
+    assert!(kendex_core::apply::recover_common_journals(&w.env).is_err());
 }
 
 /// git answers `--git-common-dir` relative to where it was asked, not to

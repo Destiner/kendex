@@ -7,12 +7,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::apply;
-use vstack_core::engine::{audit, ops};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::harness::rendered_name;
-use vstack_core::model::{HarnessId, Scope};
-use vstack_core::render::validate::validate_skill_tree;
+use kendex_core::apply;
+use kendex_core::engine::{audit, ops};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::harness::rendered_name;
+use kendex_core::model::{HarnessId, Scope};
+use kendex_core::render::validate::validate_skill_tree;
 
 const REGISTRY: &str = r#"{
   "name": "workflows",
@@ -91,7 +91,7 @@ fn fixture(harnesses: &str, declarations: &str) -> Fixture {
 }
 
 #[allow(clippy::unwrap_used)]
-fn apply_now(f: &Fixture) -> vstack_core::engine::EngineReport {
+fn apply_now(f: &Fixture) -> kendex_core::engine::EngineReport {
     let report = audit(&f.env, &f.scope).unwrap();
     apply::execute(&f.env, &report.plan, None).unwrap();
     report
@@ -219,7 +219,7 @@ fn the_separator_each_tool_gets_is_one_its_own_loader_accepts() {
         let breakage: Vec<String> =
             validate_skill_tree(harness, "data-science/eda", &rendered, &files)
                 .into_iter()
-                .filter(vstack_core::render::validate::Finding::is_breakage)
+                .filter(kendex_core::render::validate::Finding::is_breakage)
                 .map(|finding| finding.message)
                 .collect();
         assert!(

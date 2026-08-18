@@ -6,10 +6,10 @@
 use std::fs;
 use std::path::PathBuf;
 
-use vstack_core::apply;
-use vstack_core::engine::audit;
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::model::Scope;
+use kendex_core::apply;
+use kendex_core::engine::audit;
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::model::Scope;
 
 const TEMPLATE: &str =
     "[env]\n# Which reviewers run by default.\nREVIEWERS = \"arch,security\"\n\nDEPTH = \"2\"\n";
@@ -97,7 +97,7 @@ fn seeds_env_defaults_and_never_overwrites_user_values() {
 
     // Seeding left its evidence: the lock's ledger names the owner and the
     // comment hash for every seeded key.
-    let lock = vstack_core::lock::load(&vstack_core::lock::lock_path(&f.env, &f.scope)).unwrap();
+    let lock = kendex_core::lock::load(&kendex_core::lock::lock_path(&f.env, &f.scope)).unwrap();
     let record = lock.settings_seeds.get("REVIEWERS").unwrap();
     assert_eq!(record.owner.as_deref(), Some("review"));
     assert!(lock.settings_seeds.contains_key("DEPTH"));
@@ -243,7 +243,7 @@ fn a_gate_blocked_skill_does_not_seed() {
         !settings.contains("HOSTILE_KEY"),
         "the blocked skill seeds nothing: {settings}"
     );
-    let lock = vstack_core::lock::load(&vstack_core::lock::lock_path(&f.env, &f.scope)).unwrap();
+    let lock = kendex_core::lock::load(&kendex_core::lock::lock_path(&f.env, &f.scope)).unwrap();
     assert!(!lock.settings_seeds.contains_key("HOSTILE_KEY"));
 }
 
@@ -284,7 +284,7 @@ fn a_skill_installed_on_no_harness_seeds_nothing() {
 fn an_adoption_only_ledger_change_is_written_to_the_lock() {
     let f = fixture(true);
     apply_now(&f);
-    let lock_path = vstack_core::lock::lock_path(&f.env, &f.scope);
+    let lock_path = kendex_core::lock::lock_path(&f.env, &f.scope);
     let mut value: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&lock_path).unwrap()).unwrap();
     assert!(!value["settings-seeds"].as_object().unwrap().is_empty());
@@ -307,7 +307,7 @@ fn an_adoption_only_ledger_change_is_written_to_the_lock() {
             .collect::<Vec<_>>()
     );
     apply::execute(&f.env, &report.plan, None).unwrap();
-    let lock = vstack_core::lock::load(&lock_path).unwrap();
+    let lock = kendex_core::lock::load(&lock_path).unwrap();
     assert_eq!(
         lock.settings_seeds
             .get("REVIEWERS")

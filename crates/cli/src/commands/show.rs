@@ -1,7 +1,7 @@
 use clap::Args;
 
-use vstack_core::env::Env;
-use vstack_core::package::detail;
+use kendex_core::env::Env;
+use kendex_core::package::detail;
 
 use super::pin::parse_kind;
 use super::{CliResult, resolve_scopes, say};

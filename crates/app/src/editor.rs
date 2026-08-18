@@ -1,13 +1,13 @@
+use kendex_core::apply::{Op, PlannedOp, Pre};
+use kendex_core::engine::{self, ItemSource, PlanOptions, ops};
+use kendex_core::env::Env;
+use kendex_core::lock::{load as load_lock, lock_path};
+use kendex_core::manifest::{self, Finding, Manifest};
+use kendex_core::model::{HarnessId, ItemKind, Scope};
+use kendex_core::source::{self, SourceState};
+use kendex_core::{apply, manifest::LOCAL_SOURCE_NAME};
 use serde::Serialize;
 use specta::Type;
-use vstack_core::apply::{Op, PlannedOp, Pre};
-use vstack_core::engine::{self, ItemSource, PlanOptions, ops};
-use vstack_core::env::Env;
-use vstack_core::lock::{load as load_lock, lock_path};
-use vstack_core::manifest::{self, Finding, Manifest};
-use vstack_core::model::{HarnessId, ItemKind, Scope};
-use vstack_core::source::{self, SourceState};
-use vstack_core::{apply, manifest::LOCAL_SOURCE_NAME};
 
 use crate::audit::{AuditView, view};
 
@@ -38,7 +38,7 @@ pub struct HookEvent {
 }
 
 /// How one custom hook reaches one harness, for the editor's per-hook line.
-/// Computed by `vstack_core::hook::delivery` — the same decision the engine
+/// Computed by `kendex_core::hook::delivery` — the same decision the engine
 /// installs by — so the words on screen cannot drift from what applies.
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -68,9 +68,9 @@ pub enum HookDeliveryMode {
 #[specta::specta]
 pub fn custom_hook_deliveries(
     scope: Scope,
-    hooks: Vec<vstack_core::manifest::CustomHook>,
+    hooks: Vec<kendex_core::manifest::CustomHook>,
 ) -> Result<Vec<Vec<HookDelivery>>, String> {
-    use vstack_core::hook::{Delivery, HookSpec, custom_hook_names, delivery};
+    use kendex_core::hook::{Delivery, HookSpec, custom_hook_names, delivery};
     let env = env()?;
     let loaded = manifest::load_for_mutation(&manifest::manifest_path(&env, &scope))
         .map_err(|e| e.to_string())?;
@@ -79,7 +79,7 @@ pub fn custom_hook_deliveries(
     let harnesses: Vec<HarnessId> = match draft.install.harnesses.is_empty() {
         true => HarnessId::ALL
             .into_iter()
-            .filter(|h| vstack_core::harness::installable(*h))
+            .filter(|h| kendex_core::harness::installable(*h))
             .collect(),
         false => draft.install.harnesses.clone(),
     };
@@ -164,7 +164,7 @@ pub fn update_manifest(scope: Scope, manifest: Manifest) -> Result<AuditView, St
     };
     // A custom hook's name is its identity everywhere downstream; saving is
     // when a derived one stops being derived.
-    vstack_core::hook::name_custom_hooks(&mut manifest);
+    kendex_core::hook::name_custom_hooks(&mut manifest);
     check(&manifest)?;
     let lock = load_lock(&lock_path(&env, &scope)).map_err(|e| e.to_string())?;
     let mut report = engine::plan_scope(&env, &scope, &manifest, &lock, &PlanOptions::default())
@@ -205,9 +205,9 @@ pub fn editor_inventory(scope: Scope) -> Result<EditorInventory, String> {
         // writes to.
         harnesses: HarnessId::ALL
             .into_iter()
-            .filter(|h| vstack_core::harness::installable(*h))
+            .filter(|h| kendex_core::harness::installable(*h))
             .collect(),
-        hook_events: vstack_core::hook::EVENTS
+        hook_events: kendex_core::hook::EVENTS
             .iter()
             .map(|event| HookEvent {
                 name: event.name.to_owned(),
@@ -234,7 +234,7 @@ pub fn editor_inventory(scope: Scope) -> Result<EditorInventory, String> {
         };
         // A source that cannot be opened offers nothing; it must not take
         // the whole editor inventory down with it.
-        let Ok(sealed) = vstack_core::source_read::SealedSource::open(&ready.root) else {
+        let Ok(sealed) = kendex_core::source_read::SealedSource::open(&ready.root) else {
             continue;
         };
         let config = source::source_config(&sealed).map_err(|e| e.to_string())?;
@@ -263,8 +263,8 @@ pub fn item_source(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kendex_core::manifest::{FrontmatterOverrides, ItemDecl, MANIFEST_SCHEMA, SourceDecl};
     use std::collections::BTreeMap;
-    use vstack_core::manifest::{FrontmatterOverrides, ItemDecl, MANIFEST_SCHEMA, SourceDecl};
 
     fn manifest() -> Manifest {
         Manifest {
@@ -291,7 +291,7 @@ mod tests {
         edited
             .agent_launch_instructions
             .insert("all".to_owned(), "read the plan".to_owned());
-        edited.custom_hooks.push(vstack_core::manifest::CustomHook {
+        edited.custom_hooks.push(kendex_core::manifest::CustomHook {
             name: None,
             event: "PreToolUse".to_owned(),
             matcher: Some("Bash".to_owned()),
@@ -300,7 +300,7 @@ mod tests {
             timeout: None,
             harnesses: None,
             enabled: true,
-            agents: vstack_core::manifest::HookAgents::One("all".to_owned()),
+            agents: kendex_core::manifest::HookAgents::One("all".to_owned()),
         });
         assert_eq!(check(&edited), Ok(()));
     }

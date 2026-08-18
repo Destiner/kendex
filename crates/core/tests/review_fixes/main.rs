@@ -5,13 +5,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::apply;
-use vstack_core::engine::{DriftState, PlanOptions, adopt::adopt, audit, ops, plan_scope};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::error::CoreError;
-use vstack_core::lock::{load as load_lock, lock_path};
-use vstack_core::manifest;
-use vstack_core::model::{HarnessId, ItemKind, Scope};
+use kendex_core::apply;
+use kendex_core::engine::{DriftState, PlanOptions, adopt::adopt, audit, ops, plan_scope};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::error::CoreError;
+use kendex_core::lock::{load as load_lock, lock_path};
+use kendex_core::manifest;
+use kendex_core::model::{HarnessId, ItemKind, Scope};
 
 struct World {
     _tmp: tempfile::TempDir,
@@ -83,7 +83,7 @@ fn loaded_manifest(w: &World, scope: &Scope) -> manifest::Manifest {
         .unwrap()
 }
 
-fn has(report: &vstack_core::engine::EngineReport, name: &str, state: DriftState) -> bool {
+fn has(report: &kendex_core::engine::EngineReport, name: &str, state: DriftState) -> bool {
     report
         .drift
         .iter()

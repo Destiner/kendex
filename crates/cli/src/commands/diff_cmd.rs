@@ -1,7 +1,7 @@
 use clap::Args;
 
-use vstack_core::env::Env;
-use vstack_core::package::diff::{FileStatus, LineKind, VersionSel};
+use kendex_core::env::Env;
+use kendex_core::package::diff::{FileStatus, LineKind, VersionSel};
 
 use super::pin::parse_kind;
 use super::{CliResult, resolve_scopes, say};
@@ -32,7 +32,7 @@ pub fn run(env: &Env, args: DiffArgs) -> CliResult {
     let kind = parse_kind(&args.kind)?;
     let harness = match &args.harness {
         Some(value) => Some(
-            vstack_core::model::HarnessId::parse(value)
+            kendex_core::model::HarnessId::parse(value)
                 .ok_or_else(|| format!("unknown harness '{value}'"))?,
         ),
         None => None,
@@ -43,13 +43,13 @@ pub fn run(env: &Env, args: DiffArgs) -> CliResult {
         if selector == "installed" {
             return Ok(VersionSel::Installed);
         }
-        Ok(VersionSel::Commit(vstack_core::package::resolve_version(
+        Ok(VersionSel::Commit(kendex_core::package::resolve_version(
             env, &scope, kind, &args.name, selector,
         )?))
     };
     let from = side(&args.from)?;
     let to = side(&args.to)?;
-    let diff = vstack_core::package::diff::package_diff(
+    let diff = kendex_core::package::diff::package_diff(
         env, &scope, kind, &args.name, &from, &to, harness,
     )?;
     if diff.files.is_empty() {

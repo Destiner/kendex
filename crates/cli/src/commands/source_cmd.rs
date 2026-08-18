@@ -1,6 +1,6 @@
 use clap::Subcommand;
-use vstack_core::env::Env;
-use vstack_core::{remote, source_ops};
+use kendex_core::env::Env;
+use kendex_core::{remote, source_ops};
 
 use super::{CliResult, out, resolve_scopes, say};
 use crate::scope::ScopeFilter;
@@ -32,7 +32,7 @@ pub fn run(env: &Env, command: SourceCommand, filter: ScopeFilter) -> CliResult 
     // stale forever (and die outright when run outside a project).
     if let SourceCommand::Refresh { stale: true } = &command {
         let scopes = resolve_scopes(env, ScopeFilter::All)?;
-        for note in vstack_core::drift::refresh::refresh_stale(env, &scopes) {
+        for note in kendex_core::drift::refresh::refresh_stale(env, &scopes) {
             say(&format!("note: {note}"));
         }
         return Ok(());
@@ -58,18 +58,18 @@ pub fn run(env: &Env, command: SourceCommand, filter: ScopeFilter) -> CliResult 
             }
             SourceCommand::Add { name, reference } => {
                 let report = source_ops::add_source(env, &scope, name, reference)?;
-                vstack_core::apply::execute(env, &report.plan, None)?;
+                kendex_core::apply::execute(env, &report.plan, None)?;
                 say(&format!("{}: declared source '{name}'", scope.label()));
             }
             SourceCommand::Remove { name } => {
                 let report = source_ops::remove_source(env, &scope, name)?;
-                vstack_core::apply::execute(env, &report.plan, None)?;
+                kendex_core::apply::execute(env, &report.plan, None)?;
                 say(&format!("{}: removed source '{name}'", scope.label()));
             }
             SourceCommand::Enable { name } | SourceCommand::Disable { name } => {
                 let enabled = matches!(command, SourceCommand::Enable { .. });
                 let report = source_ops::toggle_source(env, &scope, name, enabled)?;
-                vstack_core::apply::execute(env, &report.plan, None)?;
+                kendex_core::apply::execute(env, &report.plan, None)?;
                 say(&format!(
                     "{}: source '{name}' {}",
                     scope.label(),
@@ -78,8 +78,8 @@ pub fn run(env: &Env, command: SourceCommand, filter: ScopeFilter) -> CliResult 
             }
             SourceCommand::Refresh { stale: true } => unreachable!("handled above the scope loop"),
             SourceCommand::Refresh { stale: false } => {
-                let Some(manifest) = vstack_core::manifest::load_for_mutation(
-                    &vstack_core::manifest::manifest_path(env, &scope),
+                let Some(manifest) = kendex_core::manifest::load_for_mutation(
+                    &kendex_core::manifest::manifest_path(env, &scope),
                 )?
                 else {
                     continue;
@@ -89,7 +89,7 @@ pub fn run(env: &Env, command: SourceCommand, filter: ScopeFilter) -> CliResult 
                 }
                 // The fetches above stamped every mirror; the snapshot makes
                 // the fresh verdicts what the next session check reads.
-                if let Err(error) = vstack_core::drift::snapshot::record(env, &scope) {
+                if let Err(error) = kendex_core::drift::snapshot::record(env, &scope) {
                     say(&format!("warning: snapshot not derived ({error})"));
                 }
                 say(&format!("{}: sources refreshed", scope.label()));

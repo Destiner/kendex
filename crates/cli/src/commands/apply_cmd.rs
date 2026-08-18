@@ -1,7 +1,7 @@
-use vstack_core::engine::{PlanOptions, plan_apply};
-use vstack_core::env::Env;
-use vstack_core::error::CoreError;
-use vstack_core::manifest::{self, ManifestFile};
+use kendex_core::engine::{PlanOptions, plan_apply};
+use kendex_core::env::Env;
+use kendex_core::error::CoreError;
+use kendex_core::manifest::{self, ManifestFile};
 
 use super::engine_common::{confirm_and_execute, print_report};
 use super::{CliResult, resolve_scopes, say};
@@ -48,7 +48,7 @@ pub fn run(
         if !plan_only {
             confirm_and_execute(env, &report, yes)?;
             // The deep work just ran; record it for the session-start check.
-            if let Err(error) = vstack_core::drift::snapshot::record(env, &scope) {
+            if let Err(error) = kendex_core::drift::snapshot::record(env, &scope) {
                 say(&format!("warning: snapshot not derived ({error})"));
             }
         }

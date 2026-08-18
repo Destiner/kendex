@@ -8,13 +8,13 @@ use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use vstack_core::engine::ops::{RecordState, list_decisions};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::model::Scope;
+use kendex_core::engine::ops::{RecordState, list_decisions};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::model::Scope;
 
 #[allow(clippy::expect_used)]
 fn vstack(home: &Path, cwd: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_vstack"))
+    Command::new(env!("CARGO_BIN_EXE_kendex"))
         .args(args)
         .current_dir(cwd)
         .env_clear()

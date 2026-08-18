@@ -6,10 +6,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::apply;
-use vstack_core::engine::{DriftState, audit};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::model::Scope;
+use kendex_core::apply;
+use kendex_core::engine::{DriftState, audit};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::model::Scope;
 
 struct Fixture {
     _tmp: tempfile::TempDir,

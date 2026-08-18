@@ -3,15 +3,15 @@
 
 use std::fs;
 
-use vstack_core::apply;
-use vstack_core::engine::decisions::{DecisionState, DecisionToken};
-use vstack_core::engine::ops::{
+use kendex_core::apply;
+use kendex_core::engine::decisions::{DecisionState, DecisionToken};
+use kendex_core::engine::ops::{
     self, DecisionRecord, RecordState, dismiss, list_decisions, revoke_dismissal,
 };
-use vstack_core::engine::{ItemSafety, audit, observed_safety};
-use vstack_core::error::CoreError;
-use vstack_core::manifest::{self, MANIFEST_SCHEMA};
-use vstack_core::quality::reviews::DismissReason;
+use kendex_core::engine::{ItemSafety, audit, observed_safety};
+use kendex_core::error::CoreError;
+use kendex_core::manifest::{self, MANIFEST_SCHEMA};
+use kendex_core::quality::reviews::DismissReason;
 
 use super::fixture::{Fixture, fixture, grant, installed, manifest_of, plan, skill};
 
@@ -89,7 +89,7 @@ fn a_dismissal_settles_one_finding_on_exactly_this_content() {
         Some(review.review_hash.as_str()),
         before.review_hash.as_deref()
     );
-    assert_eq!(review.ruleset, vstack_core::quality::RULESET_VERSION);
+    assert_eq!(review.ruleset, kendex_core::quality::RULESET_VERSION);
     assert_eq!(
         review.dismissed[&parsed.fingerprint].reason,
         DismissReason::WrongCall

@@ -1,15 +1,15 @@
-use vstack_core::engine::ops::{self as engine_ops, AddRequest};
-use vstack_core::env::Env;
-use vstack_core::model::Scope;
-use vstack_core::source_ops::{self, BundleRow, SourceRow};
-use vstack_core::{apply, manifest, remote};
+use kendex_core::engine::ops::{self as engine_ops, AddRequest};
+use kendex_core::env::Env;
+use kendex_core::model::Scope;
+use kendex_core::source_ops::{self, BundleRow, SourceRow};
+use kendex_core::{apply, manifest, remote};
 
 fn env() -> Result<Env, String> {
     Env::detect().map_err(|e| e.to_string())
 }
 
 fn all_scopes(env: &Env) -> Result<Vec<Scope>, String> {
-    let settings = vstack_core::settings::load(env).map_err(|e| e.to_string())?;
+    let settings = kendex_core::settings::load(env).map_err(|e| e.to_string())?;
     let mut scopes = vec![Scope::Global];
     scopes.extend(
         settings
@@ -34,7 +34,7 @@ pub fn sources_overview() -> Result<Vec<SourceRow>, String> {
 
 fn run_and_list(
     env: &Env,
-    report: vstack_core::engine::EngineReport,
+    report: kendex_core::engine::EngineReport,
 ) -> Result<Vec<SourceRow>, String> {
     apply::execute(env, &report.plan, None).map_err(|e| e.to_string())?;
     sources_overview()

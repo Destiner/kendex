@@ -6,15 +6,15 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vstack_core::apply;
-use vstack_core::engine::{DriftState, audit};
-use vstack_core::env::{Env, FakeOs};
-use vstack_core::lock::{entry_key, load as load_lock, lock_path};
-use vstack_core::manifest;
-use vstack_core::model::{HarnessId, ItemKind, Scope};
-use vstack_core::process::Hardened;
-use vstack_core::remote;
-use vstack_core::{error::CoreError, package};
+use kendex_core::apply;
+use kendex_core::engine::{DriftState, audit};
+use kendex_core::env::{Env, FakeOs};
+use kendex_core::lock::{entry_key, load as load_lock, lock_path};
+use kendex_core::manifest;
+use kendex_core::model::{HarnessId, ItemKind, Scope};
+use kendex_core::process::Hardened;
+use kendex_core::remote;
+use kendex_core::{error::CoreError, package};
 
 const REPO: &str = "owner/catalog";
 
@@ -242,13 +242,13 @@ fn hold_at_install_writes_the_resolved_commit_as_rev() {
         .unwrap();
     remote::sync_sources(&w.env, &loaded).unwrap();
 
-    let request = vstack_core::engine::ops::AddRequest {
+    let request = kendex_core::engine::ops::AddRequest {
         source: Some("cat".to_owned()),
         skills: vec!["gh".to_owned()],
         hold: true,
         ..Default::default()
     };
-    let report = vstack_core::engine::ops::add(&w.env, &w.scope, &request).unwrap();
+    let report = kendex_core::engine::ops::add(&w.env, &w.scope, &request).unwrap();
     apply::execute(&w.env, &report.plan, None).unwrap();
 
     let text = fs::read_to_string(manifest::manifest_path(&w.env, &w.scope)).unwrap();
@@ -372,7 +372,7 @@ fn removing_a_plugin_by_kind_does_not_panic() {
     sync_and_apply(&w);
     // A kind-scoped plugin removal must route to the plugins table, never
     // through declared_mut (which panics on Plugin).
-    let report = vstack_core::engine::ops::remove(
+    let report = kendex_core::engine::ops::remove(
         &w.env,
         &w.scope,
         &["anything".to_owned()],

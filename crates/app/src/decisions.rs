@@ -1,14 +1,14 @@
 //! Safety decisions from the app: dismissing a finding, and the registry of
 //! every decision recorded so far.
 
+use kendex_core::engine::decisions::DecisionToken;
+use kendex_core::engine::ops::{self, RecordedDecision};
+use kendex_core::env::Env;
+use kendex_core::model::Scope;
+use kendex_core::quality::reviews::DismissReason;
+use kendex_core::{apply, manifest};
 use serde::Serialize;
 use specta::Type;
-use vstack_core::engine::decisions::DecisionToken;
-use vstack_core::engine::ops::{self, RecordedDecision};
-use vstack_core::env::Env;
-use vstack_core::model::Scope;
-use vstack_core::quality::reviews::DismissReason;
-use vstack_core::{apply, manifest};
 
 use crate::audit::{AuditView, ScopeError, view};
 
@@ -17,7 +17,7 @@ fn env() -> Result<Env, String> {
 }
 
 fn every_scope(env: &Env) -> Result<Vec<Scope>, String> {
-    let settings = vstack_core::settings::load(env).map_err(|e| e.to_string())?;
+    let settings = kendex_core::settings::load(env).map_err(|e| e.to_string())?;
     let mut scopes = vec![Scope::Global];
     scopes.extend(
         settings
