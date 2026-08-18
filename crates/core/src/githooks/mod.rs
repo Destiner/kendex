@@ -1,15 +1,20 @@
-//! A hooks directory vstack owns — provably, not declaratively.
+//! A hooks directory kendex owns — provably, not declaratively.
 //!
-//! Install writes `<git-common-dir>/vstack-hooks/` with two entrypoints
+//! Install writes `<git-common-dir>/kendex-hooks/` with two entrypoints
 //! and a receipt recording the exact files written and the exact
 //! `core.hooksPath` value set. Repair rewrites only receipt-listed files;
 //! uninstall deletes only receipt-listed files, removes the directory only
 //! if empty after, and unsets `core.hooksPath` only while its current
 //! value still equals the receipt's — compare-and-swap on both sides.
-//! vstack never edits a hook file it did not create: a pre-existing or
-//! symlinked `vstack-hooks` directory is a refusal, and so are foreign
+//! kendex never edits a hook file it did not create: a pre-existing or
+//! symlinked `kendex-hooks` directory is a refusal, and so are foreign
 //! files found there at uninstall, because unsetting `core.hooksPath`
 //! around a surviving user hook would silently disable it.
+//!
+//! Repos armed by the vstack-named binary keep their `vstack-hooks`
+//! directory: the receipt and `core.hooksPath` both name it, and moving
+//! it is a different mutation than owning it. Every verb resolves to
+//! whichever generation's directory is live and works there in place.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -25,9 +30,13 @@ use crate::process::Hardened;
 mod entrypoints;
 mod refusals;
 mod uninstall;
-pub use entrypoints::{HOOKS, entrypoint};
+pub use entrypoints::{HOOKS, entrypoint, old_entrypoint};
 
-pub const HOOKS_DIR: &str = "vstack-hooks";
+pub const HOOKS_DIR: &str = "kendex-hooks";
+/// The directory name the vstack-named binary wrote. Installs made under
+/// it stay there — their receipts and `core.hooksPath` name it — until
+/// uninstall takes the whole directory back.
+pub const OLD_HOOKS_DIR: &str = "vstack-hooks";
 pub const RECEIPT_FILE: &str = "receipt.json";
 /// v1's shim sentinel: a hook carrying it is decommissioned, never chained.
 pub const V1_SENTINEL: &str = "# vstack-guards-hook";
@@ -93,8 +102,17 @@ impl Repo {
         }
     }
 
+    /// The owned directory this repository resolves to. An old-generation
+    /// install keeps its name — receipt and `core.hooksPath` both point
+    /// there, and repair rewrites contents, never moves directories — so
+    /// the old name wins only while it is the sole directory present.
     pub fn hooks_dir(&self) -> PathBuf {
-        self.common_dir.join(HOOKS_DIR)
+        let new = self.common_dir.join(HOOKS_DIR);
+        let old = self.common_dir.join(OLD_HOOKS_DIR);
+        match !new.exists() && old.exists() {
+            true => old,
+            false => new,
+        }
     }
 
     pub(super) fn receipt_path(&self) -> PathBuf {
@@ -256,7 +274,64 @@ pub fn uninstall(env: &Env, dir: &Path) -> Result<HooksReport> {
     Ok(HooksReport { lines })
 }
 
-const NOTHING_INSTALLED: &str = "no vstack hooks are installed in this repository";
+const NOTHING_INSTALLED: &str = "no kendex hooks are installed in this repository";
+
+/// Rewrite the receipt-listed entrypoints to the bytes this binary
+/// writes. Everything the receipt records stays put — directory name,
+/// `core.hooksPath`, leases — because entrypoints written by the
+/// vstack-named binary call a name that goes away with the alias cycle,
+/// while the receipt's paths stay true. Without a receipt there is
+/// nothing to rewrite under: install owns the receiptless repairs.
+pub fn repair(env: &Env, dir: &Path) -> Result<HooksReport> {
+    let repo = Repo::at(dir)?;
+    let (_, lines) =
+        crate::apply::execute_common(env, &repo.scope(), &repo.common_dir, || plan_repair(&repo))?;
+    Ok(HooksReport { lines })
+}
+
+fn plan_repair(repo: &Repo) -> Result<(Vec<PlannedOp>, Vec<String>)> {
+    let Some(receipt) = load_receipt(repo)? else {
+        return Err(err(format!(
+            "{NOTHING_INSTALLED} — nothing to repair; `kendex guard install` arms it"
+        )));
+    };
+    let hooks_dir = repo.hooks_dir();
+    let mut ops = Vec::new();
+    for name in &receipt.files {
+        if name == RECEIPT_FILE {
+            continue;
+        }
+        // A receipt listing a file no entrypoint exists for is not ours to
+        // rewrite — refusing beats inventing a script for an unknown name.
+        if !HOOKS.contains(&name.as_str()) {
+            return Err(err(format!(
+                "the receipt lists {name}, which is not a hook this binary writes — refusing to rewrite it"
+            )));
+        }
+        let path = hooks_dir.join(name);
+        if path.is_symlink() {
+            return Err(err(format!(
+                "{} is a symlink — kendex refuses to write through a link it did not create; remove it and rerun",
+                path.display()
+            )));
+        }
+        ops.push(PlannedOp {
+            description: format!("rewrite the {name} entrypoint"),
+            op: Op::WriteExecutable {
+                pre: Pre::observed(&path)?,
+                path,
+                bytes: entrypoint(name).into_bytes(),
+            },
+        });
+    }
+    Ok((
+        ops,
+        vec![format!(
+            "entrypoints rewritten in {} — core.hooksPath and the receipt are untouched",
+            hooks_dir.display()
+        )],
+    ))
+}
 
 /// The `core.hooksPath` a worktree actually resolves, git's own answer.
 pub fn effective_hooks_path(worktree: &Path) -> Result<Option<String>> {

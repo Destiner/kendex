@@ -1,5 +1,5 @@
 //! Every reason the hooks machinery refuses instead of proceeding. Each
-//! guards an ownership invariant — vstack only ever removes or points at
+//! guards an ownership invariant — kendex only ever removes or points at
 //! what it provably wrote — and a refusal is the whole response: no
 //! adoption, no repair, no partial mutation.
 
@@ -15,7 +15,7 @@ pub(super) fn check_install(repo: &Repo, receipt: Option<&Receipt>) -> Result<()
     let hooks_dir = repo.hooks_dir();
     if hooks_dir.is_symlink() {
         return Err(err(format!(
-            "{} is a symlink — vstack refuses to adopt a directory it did not create; remove the link and rerun",
+            "{} is a symlink — kendex refuses to adopt a directory it did not create; remove the link and rerun",
             hooks_dir.display()
         )));
     }
@@ -25,19 +25,19 @@ pub(super) fn check_install(repo: &Repo, receipt: Option<&Receipt>) -> Result<()
         let foreign = super::uninstall::foreign_entries(&hooks_dir)?;
         if !foreign.is_empty() {
             return Err(err(format!(
-                "{} already exists and carries no vstack receipt (holding {}) — a pre-existing directory is a refusal, not an adoption; move it aside and rerun",
+                "{} already exists and carries no kendex receipt (holding {}) — a pre-existing directory is a refusal, not an adoption; move it aside and rerun",
                 hooks_dir.display(),
                 foreign.join(", ")
             )));
         }
     }
     // A write through a symlink lands wherever the link points; a hook
-    // slot that has become a link is not a file vstack wrote.
+    // slot that has become a link is not a file kendex wrote.
     for name in HOOKS.iter().chain(std::iter::once(&RECEIPT_FILE)) {
         let slot = hooks_dir.join(name);
         if slot.is_symlink() {
             return Err(err(format!(
-                "{} is a symlink — vstack refuses to write through a link it did not create; remove it and rerun",
+                "{} is a symlink — kendex refuses to write through a link it did not create; remove it and rerun",
                 slot.display()
             )));
         }
@@ -93,7 +93,7 @@ pub(super) fn check_install(repo: &Repo, receipt: Option<&Receipt>) -> Result<()
                 let (origin, value) = line.split_once('\t').unwrap_or(("", line));
                 if !ours.contains(value) {
                     return Err(err(format!(
-                        "worktree {} already resolves core.hooksPath to '{value}' (from {origin}) — vstack refuses to hijack it; unset it there and rerun",
+                        "worktree {} already resolves core.hooksPath to '{value}' (from {origin}) — kendex refuses to hijack it; unset it there and rerun",
                         worktree.display()
                     )));
                 }
@@ -108,7 +108,7 @@ pub(super) fn check_install(repo: &Repo, receipt: Option<&Receipt>) -> Result<()
     Ok(())
 }
 
-/// Uninstall-time refusal: files vstack didn't write found in the owned
+/// Uninstall-time refusal: files kendex didn't write found in the owned
 /// directory. Unsetting `core.hooksPath` around a surviving user hook
 /// would silently disable it, so partial removal refuses instead.
 pub(super) fn check_uninstall(repo: &Repo, receipt: &Receipt) -> Result<()> {
@@ -128,7 +128,7 @@ pub(super) fn check_uninstall(repo: &Repo, receipt: &Receipt) -> Result<()> {
     }
     if !foreign.is_empty() {
         return Err(err(format!(
-            "{} holds file(s) vstack did not write ({}) — removing around them would silently disable them the moment core.hooksPath is unset; move them into git's own hooks directory (or delete them) and rerun",
+            "{} holds file(s) kendex did not write ({}) — removing around them would silently disable them the moment core.hooksPath is unset; move them into git's own hooks directory (or delete them) and rerun",
             hooks_dir.display(),
             foreign.join(", ")
         )));

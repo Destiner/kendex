@@ -13,7 +13,10 @@ use std::path::Path;
 use crate::apply::{Op, PlannedOp, Pre};
 use crate::error::{CoreError, Result};
 
-use super::{HOOKS, NOTHING_INSTALLED, Receipt, Repo, entrypoint, err, load_receipt, refusals};
+use super::{
+    HOOKS, NOTHING_INSTALLED, Receipt, Repo, entrypoint, err, load_receipt, old_entrypoint,
+    refusals,
+};
 
 pub(super) fn plan(repo: &Repo) -> Result<(Vec<PlannedOp>, Vec<String>)> {
     let Some(receipt) = load_receipt(repo)? else {
@@ -123,7 +126,9 @@ pub(super) fn orphaned(repo: &Repo) -> Result<bool> {
 
 /// The entries of a receiptless hooks directory that are not provably
 /// ours — anything but a regular file whose bytes are exactly one of our
-/// entrypoints under that hook's name.
+/// entrypoints under that hook's name. Either generation's bytes count:
+/// the vstack-named binary wrote real installs whose receipts can be
+/// gone, and their scripts are no less ours for calling the old name.
 pub(super) fn foreign_entries(hooks_dir: &Path) -> Result<Vec<String>> {
     let entries = std::fs::read_dir(hooks_dir).map_err(|e| CoreError::io(hooks_dir, e))?;
     let mut foreign = Vec::new();
@@ -131,11 +136,10 @@ pub(super) fn foreign_entries(hooks_dir: &Path) -> Result<Vec<String>> {
         let entry = entry.map_err(|e| CoreError::io(hooks_dir, e))?;
         let name = entry.file_name().to_string_lossy().into_owned();
         let path = entry.path();
-        let ours = HOOKS.contains(&name.as_str())
-            && !path.is_symlink()
-            && path.is_file()
-            && std::fs::read(&path).map_err(|e| CoreError::io(&path, e))?
-                == entrypoint(&name).into_bytes();
+        let ours = HOOKS.contains(&name.as_str()) && !path.is_symlink() && path.is_file() && {
+            let bytes = std::fs::read(&path).map_err(|e| CoreError::io(&path, e))?;
+            bytes == entrypoint(&name).into_bytes() || bytes == old_entrypoint(&name).into_bytes()
+        };
         if !ours {
             foreign.push(name);
         }
@@ -167,18 +171,18 @@ fn plan_orphan_cleanup(repo: &Repo) -> Result<(Vec<PlannedOp>, Vec<String>)> {
                 },
             });
             lines.push(format!(
-                "{} carried no receipt but only vstack's own entrypoints; removed",
+                "{} carried no receipt but only kendex's own entrypoints; removed",
                 hooks_dir.display()
             ));
         } else if hooks_path.is_some() {
             lines.push(format!(
-                "{} carries no receipt and holds file(s) vstack cannot prove it wrote ({}) — left in place; move them into git's own hooks directory (or delete them)",
+                "{} carries no receipt and holds file(s) kendex cannot prove it wrote ({}) — left in place; move them into git's own hooks directory (or delete them)",
                 hooks_dir.display(),
                 foreign.join(", ")
             ));
         } else {
             return Err(err(format!(
-                "{} carries no vstack receipt and core.hooksPath does not name it — nothing here is provably vstack's; move the directory aside if it is not yours",
+                "{} carries no kendex receipt and core.hooksPath does not name it — nothing here is provably kendex's; move the directory aside if it is not yours",
                 hooks_dir.display()
             )));
         }

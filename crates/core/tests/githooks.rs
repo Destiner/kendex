@@ -63,7 +63,7 @@ fn fresh_install_writes_entrypoints_receipt_and_hooks_path() {
     let w = world();
     githooks::install(&w.env, &w.repo).unwrap();
 
-    let hooks = w.repo.join(".git/vstack-hooks");
+    let hooks = w.repo.join(".git/kendex-hooks");
     for name in ["pre-commit", "commit-msg"] {
         let path = hooks.join(name);
         assert!(path.is_file(), "{name} written");
@@ -71,6 +71,11 @@ fn fresh_install_writes_entrypoints_receipt_and_hooks_path() {
         assert!(
             std::fs::metadata(&path).unwrap().permissions().mode() & 0o100 != 0,
             "{name} is executable"
+        );
+        let script = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            script.contains(&format!("kendex guard run {name}")),
+            "the entrypoint calls the binary that exists going forward: {script}"
         );
     }
     let receipt = githooks::load_receipt(&githooks::Repo::at(&w.repo).unwrap())
@@ -100,7 +105,7 @@ fn repair_after_repo_move_points_config_at_the_new_home() {
     std::fs::rename(&w.repo, &moved).unwrap();
 
     githooks::install(&w.env, &moved).unwrap();
-    let hooks = moved.join(".git/vstack-hooks");
+    let hooks = moved.join(".git/kendex-hooks");
     assert_eq!(
         config_value(&moved, "core.hooksPath").as_deref(),
         Some(hooks.display().to_string().as_str()),
@@ -113,7 +118,7 @@ fn repair_after_repo_move_points_config_at_the_new_home() {
 fn uninstall_is_receipt_scoped_with_compare_and_swap_both_ways() {
     let w = world();
     githooks::install(&w.env, &w.repo).unwrap();
-    let hooks = w.repo.join(".git/vstack-hooks");
+    let hooks = w.repo.join(".git/kendex-hooks");
 
     // A user-added file turns uninstall into a refusal, never a
     // half-removal: unsetting hooksPath around it would disable it.
@@ -146,14 +151,14 @@ fn uninstall_is_receipt_scoped_with_compare_and_swap_both_ways() {
     githooks::install(&w.env, &w.repo).unwrap();
     githooks::uninstall(&w.env, &w.repo).unwrap();
     assert_eq!(config_value(&w.repo, "core.hooksPath"), None);
-    assert!(!w.repo.join(".git/vstack-hooks").exists());
+    assert!(!w.repo.join(".git/kendex-hooks").exists());
 }
 
 #[test]
 #[allow(clippy::unwrap_used)]
 fn pre_existing_or_symlinked_directory_is_a_refusal_not_an_adoption() {
     let w = world();
-    let hooks = w.repo.join(".git/vstack-hooks");
+    let hooks = w.repo.join(".git/kendex-hooks");
     std::fs::create_dir_all(&hooks).unwrap();
     std::fs::write(hooks.join("pre-commit"), "#!/bin/sh\nexit 0\n").unwrap();
     let error = githooks::install(&w.env, &w.repo).unwrap_err();
@@ -223,7 +228,7 @@ fn leases_keep_the_install_armed_until_the_last_release() {
     // The last lease goes: disarmed.
     githooks::uninstall(&w.env, &w.repo).unwrap();
     assert_eq!(config_value(&w.repo, "core.hooksPath"), None);
-    assert!(!w.repo.join(".git/vstack-hooks").exists());
+    assert!(!w.repo.join(".git/kendex-hooks").exists());
 }
 
 #[test]

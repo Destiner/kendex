@@ -364,13 +364,18 @@ lives in one capability table read by core and UI.
   the exact config value set, and one lease per worktree that enabled the
   install — uninstall releases its own lease and disarms only when the
   last one goes, reaping leases git's registry no longer lists. Repair
-  rewrites only receipt-listed files; uninstall deletes only
-  receipt-listed files and unsets `core.hooksPath` only while its current
-  value still equals the receipt's (compare-and-swap both sides). kendex
-  never edits a hook file it did not create: a pre-existing or symlinked
-  directory, a worktree resolving a foreign effective `hooksPath`, v1's
-  shim, and foreign files found at uninstall are all refusals — a refused
-  repo can still call `kendex guard run` from its own hook orchestration.
+  (`guard repair`) rewrites only receipt-listed files — the upgrade path
+  for entrypoints that call the retired `vstack` name — and never moves
+  directories: an install the vstack-named binary made keeps its
+  `vstack-hooks` directory, because the receipt and `core.hooksPath` both
+  name it, and every verb resolves to whichever generation's directory is
+  live and works there in place. Uninstall deletes only receipt-listed
+  files and unsets `core.hooksPath` only while its current value still
+  equals the receipt's (compare-and-swap both sides). kendex never edits
+  a hook file it did not create: a pre-existing or symlinked directory, a
+  worktree resolving a foreign effective `hooksPath`, v1's shim, and
+  foreign files found at uninstall are all refusals — a refused repo can
+  still call `kendex guard run` from its own hook orchestration.
   Hook state is repository-common state: mutations take a common-dir lock
   after the scope lock (one fixed order), build their plan — refusals
   included — only once both are held, and journal into a common-dir
@@ -382,10 +387,12 @@ lives in one capability table read by core and UI.
   v1's shim at commit time as install refused it, so it cannot be chained
   by reappearing. Ownership without a receipt is proven by content: the
   config value is kendex's by name, and a receiptless directory holding
-  nothing but kendex's own entrypoints byte for byte is kendex's by
-  construction — repaired by install, taken back by uninstall — while
-  anything else in it stays where it is, named. A worktree git lists as
-  prunable is dead here: its lease is reaped, its config never asked for.
+  nothing but kendex's own entrypoints byte for byte — either
+  generation's bytes, since the vstack-named binary wrote real installs —
+  is kendex's by construction — repaired by install, taken back by
+  uninstall — while anything else in it stays where it is, named. A
+  worktree git lists as prunable is dead here: its lease is reaped, its
+  config never asked for.
 - **Pi hooks are enforced through the carrier.** Pi has no per-hook
   artifact: the `pi-hooks` extension package hosts native listeners, and
   hook content rides in the registry kendex renders beside them

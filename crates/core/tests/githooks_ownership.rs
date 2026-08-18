@@ -94,13 +94,13 @@ fn a_worktree_reached_through_a_symlink_is_one_live_lease() {
 /// The entrypoint's own fail-closed message tells a user how to remove
 /// the checks by hand; doing only half leaves git resolving hooks from a
 /// directory that is gone — every hook silently off. The config value is
-/// provably vstack's, so uninstall takes it back.
+/// provably kendex's, so uninstall takes it back.
 #[test]
 #[allow(clippy::unwrap_used)]
 fn uninstall_takes_back_a_hooks_path_left_pointing_at_a_deleted_directory() {
     let w = world();
     githooks::install(&w.env, &w.repo).unwrap();
-    let hooks_dir = w.repo.join(".git/vstack-hooks");
+    let hooks_dir = w.repo.join(".git/kendex-hooks");
     std::fs::remove_dir_all(&hooks_dir).unwrap();
     assert!(config_value(&w.repo, "core.hooksPath").is_some());
 
@@ -121,7 +121,7 @@ fn uninstall_takes_back_a_hooks_path_left_pointing_at_a_deleted_directory() {
         report
             .lines
             .iter()
-            .any(|l| l.contains("no vstack hooks are installed")),
+            .any(|l| l.contains("no kendex hooks are installed")),
         "{report:?}"
     );
     assert_eq!(
@@ -177,13 +177,13 @@ fn install_from_a_subdirectory_arms_this_repository_not_its_parent() {
     std::fs::create_dir_all(inner.join("sub")).unwrap();
     git(&inner, &["init", "--quiet", "-b", "main"]);
     githooks::install(&w.env, &inner.join("sub")).unwrap();
-    assert!(inner.join(".git/vstack-hooks/receipt.json").is_file());
-    assert!(!w.repo.join(".git/vstack-hooks").exists());
+    assert!(inner.join(".git/kendex-hooks/receipt.json").is_file());
+    assert!(!w.repo.join(".git/kendex-hooks").exists());
     assert_eq!(config_value(&w.repo, "core.hooksPath"), None);
     assert!(
         config_value(&inner, "core.hooksPath")
             .unwrap()
-            .ends_with("inner/.git/vstack-hooks")
+            .ends_with("inner/.git/kendex-hooks")
     );
 }
 
@@ -208,7 +208,7 @@ fn a_prunable_worktree_is_dead_for_leases_and_refusals() {
         "{report:?}"
     );
     assert_eq!(config_value(&w.repo, "core.hooksPath"), None);
-    assert!(!w.repo.join(".git/vstack-hooks").exists());
+    assert!(!w.repo.join(".git/kendex-hooks").exists());
 }
 
 /// The install-time refusal of v1's shim would be hollow if the shim
@@ -222,7 +222,7 @@ fn the_entrypoints_refuse_v1s_shim_at_commit_time() {
         let refusal = entrypoint.find(githooks::V1_SENTINEL).unwrap();
         let chain = entrypoint.find("exec \"$next\"").unwrap();
         assert!(refusal < chain, "the shim is refused before it is chained");
-        assert!(entrypoint.contains(&format!("vstack guard run {hook}")));
+        assert!(entrypoint.contains(&format!("kendex guard run {hook}")));
     }
     // Install refuses the same set of shims the entrypoints refuse, or a
     // repository installs cleanly and then fails closed on every commit.
@@ -235,7 +235,7 @@ fn the_entrypoints_refuse_v1s_shim_at_commit_time() {
 }
 
 /// Ownership without a receipt is proven by content: a directory holding
-/// nothing but vstack's own entrypoints byte for byte is repaired by
+/// nothing but kendex's own entrypoints byte for byte is repaired by
 /// install and taken back by uninstall; one holding anything else is
 /// refused by install and left in place — named — by uninstall, which
 /// still takes back the config value that is ours by name.
@@ -244,7 +244,7 @@ fn the_entrypoints_refuse_v1s_shim_at_commit_time() {
 fn a_receiptless_directory_is_judged_by_its_contents() {
     let w = world();
     githooks::install(&w.env, &w.repo).unwrap();
-    let hooks_dir = w.repo.join(".git/vstack-hooks");
+    let hooks_dir = w.repo.join(".git/kendex-hooks");
     std::fs::remove_file(hooks_dir.join("receipt.json")).unwrap();
     githooks::install(&w.env, &w.repo).unwrap();
     assert!(hooks_dir.join("receipt.json").is_file(), "repaired");
@@ -256,7 +256,7 @@ fn a_receiptless_directory_is_judged_by_its_contents() {
         report
             .lines
             .iter()
-            .any(|l| l.contains("only vstack's own entrypoints")),
+            .any(|l| l.contains("only kendex's own entrypoints")),
         "{report:?}"
     );
     assert!(!hooks_dir.exists());
@@ -278,14 +278,14 @@ fn a_receiptless_directory_is_judged_by_its_contents() {
     assert_eq!(config_value(&w.repo, "core.hooksPath"), None);
 }
 
-/// A hook slot that has become a symlink is not a file vstack wrote: a
+/// A hook slot that has become a symlink is not a file kendex wrote: a
 /// repair must never write through it to wherever it points.
 #[test]
 #[allow(clippy::unwrap_used)]
 fn a_symlinked_hook_slot_is_a_refusal_not_a_write_through() {
     let w = world();
     githooks::install(&w.env, &w.repo).unwrap();
-    let slot = w.repo.join(".git/vstack-hooks/pre-commit");
+    let slot = w.repo.join(".git/kendex-hooks/pre-commit");
     let target = w.home.join("target.txt");
     std::fs::write(&target, "mine\n").unwrap();
     std::fs::remove_file(&slot).unwrap();
@@ -304,12 +304,12 @@ fn uninstall_from_a_worktree_without_a_lease_changes_nothing() {
     let before = githooks::uninstall(&w.env, &w.repo).unwrap();
     assert_eq!(
         before.lines,
-        ["no vstack hooks are installed in this repository"]
+        ["no kendex hooks are installed in this repository"]
     );
 
     githooks::install(&w.env, &w.repo).unwrap();
     git(&w.repo, &["worktree", "add", "--quiet", "../linked"]);
-    let receipt_path = w.repo.join(".git/vstack-hooks/receipt.json");
+    let receipt_path = w.repo.join(".git/kendex-hooks/receipt.json");
     let receipt = std::fs::read_to_string(&receipt_path).unwrap();
     let report = githooks::uninstall(&w.env, &w.home.join("linked")).unwrap();
     assert!(

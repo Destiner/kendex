@@ -46,6 +46,8 @@ pub enum GuardCommand {
     CommitMsg { file: Option<PathBuf> },
     /// Install the owned hooks directory and point core.hooksPath at it
     Install,
+    /// Rewrite the receipt-listed entrypoints to this binary's bytes
+    Repair,
     /// Release this worktree's lease; disarm when the last one goes
     Uninstall,
     /// Convert v1 guard settings into [guards] tables — one explicit pass
@@ -140,6 +142,10 @@ pub fn run(env: &Env, command: GuardCommand) -> Result<ExitCode, Box<dyn std::er
             let hooks = kendex_core::githooks::install(env, &cwd)?;
             return Ok(report(&hooks.lines, 0));
         }
+        GuardCommand::Repair => {
+            let hooks = kendex_core::githooks::repair(env, &cwd)?;
+            return Ok(report(&hooks.lines, 0));
+        }
         GuardCommand::Uninstall => {
             let hooks = kendex_core::githooks::uninstall(env, &cwd)?;
             return Ok(report(&hooks.lines, 0));
@@ -191,8 +197,8 @@ pub fn run(env: &Env, command: GuardCommand) -> Result<ExitCode, Box<dyn std::er
             let converted = guard::import::run(&ctx)?;
             report(&converted.lines, 0)
         }
-        GuardCommand::Install | GuardCommand::Uninstall => {
-            unreachable!("install and uninstall return before the repository is bound")
+        GuardCommand::Install | GuardCommand::Repair | GuardCommand::Uninstall => {
+            unreachable!("hook installs return before the repository is bound")
         }
     })
 }

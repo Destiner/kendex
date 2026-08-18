@@ -14,8 +14,10 @@ fn run(home: &Path, cwd: &Path, program: &str, args: &[&str]) -> Output {
 }
 
 /// A process in a clean environment: only HOME, a PATH that finds this
-/// build's `vstack`, and whatever `extra` names — the machine-local
-/// knobs a test wants to turn.
+/// build's binary under both its names (`kendex` and the `vstack` alias
+/// — consuming repos live through exactly this alias cycle), and
+/// whatever `extra` names — the machine-local knobs a test wants to
+/// turn.
 #[allow(clippy::expect_used)]
 fn run_with(
     home: &Path,
