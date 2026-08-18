@@ -7,7 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use kendex_core::apply;
-use kendex_core::engine::audit;
+use kendex_core::engine::{DriftState, audit};
 use kendex_core::env::{Env, FakeOs};
 use kendex_core::error::CoreError;
 use kendex_core::model::Scope;
@@ -207,6 +207,8 @@ fn a_global_scope_under_the_old_name_gets_the_rename_op() {
     );
 }
 
+/// A global skill installed by symlink, with its harness link pointing at
+/// the rendered tree under the new app dir. Returns `(link, canonical)`.
 #[test]
 #[allow(clippy::unwrap_used)]
 fn global_dirs_move_off_vstack2_once() {

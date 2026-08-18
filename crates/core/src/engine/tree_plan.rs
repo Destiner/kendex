@@ -12,10 +12,12 @@ use super::DriftState;
 use super::desired::{Artifact, Desired, artifact_disk_hash};
 use super::item_plan::Planned;
 use crate::apply::{Op, PlannedOp, Pre};
+use crate::env::Env;
 use crate::error::Result;
 use crate::hash::hash_tree;
 
 pub(super) fn plan_tree(
+    env: &Env,
     item: &Desired,
     locked: bool,
     owned: &BTreeSet<PathBuf>,
@@ -69,7 +71,9 @@ pub(super) fn plan_tree(
     let Some(link) = link else {
         return Ok(result);
     };
-    plan_link(item, link, canonical, locked, owned, written, ops, result)
+    plan_link(
+        env, item, link, canonical, locked, owned, written, ops, result,
+    )
 }
 
 /// Positions this pass has already planned a write for. Two harnesses can
@@ -144,6 +148,7 @@ fn write_ops(
 /// trash and the link takes its place.
 #[allow(clippy::too_many_arguments)]
 fn plan_link(
+    env: &Env,
     item: &Desired,
     link: &Path,
     canonical: &Path,
@@ -155,14 +160,53 @@ fn plan_link(
 ) -> Result<Planned> {
     if link.is_symlink() {
         let points_to = std::fs::read_link(link).unwrap_or_default();
-        if points_to != canonical {
+        if points_to == canonical {
+            return Ok(result);
+        }
+        // A target that is the canonical tree under its pre-rename spelling
+        // is our own: only kendex ever pointed links there, so the position
+        // is ours to replace (invariant 6). The first-launch move carries
+        // the trees but cannot rewrite links scattered across harness dirs
+        // — this relink is what reconnects them.
+        if env.legacy_app_path(canonical).as_deref() != Some(points_to.as_path()) {
             return Ok(Planned::Conflict(format!(
                 "{} links somewhere kendex does not own ({})",
                 link.display(),
                 points_to.display()
             )));
         }
-        return Ok(result);
+        if written.links.insert(link.to_path_buf()) {
+            ops.push(PlannedOp {
+                description: format!(
+                    "Drop {}'s link to the app's old folder",
+                    item.harness.display_name()
+                ),
+                op: Op::Trash {
+                    path: link.to_path_buf(),
+                    pre: Pre::SymlinkTo { target: points_to },
+                },
+            });
+            ops.push(PlannedOp {
+                description: format!(
+                    "Connect {} to {} {}",
+                    item.harness.display_name(),
+                    item.kind.name(),
+                    item.name
+                ),
+                op: Op::Symlink {
+                    link: link.to_path_buf(),
+                    target: canonical.to_path_buf(),
+                    pre: Pre::Absent,
+                },
+            });
+        }
+        return Ok(Planned::Drift(
+            DriftState::Stale,
+            format!(
+                "{} still reads the app's old folder",
+                item.harness.display_name()
+            ),
+        ));
     }
     let diverged = link.exists();
     if diverged && !locked && !owned.contains(link) {

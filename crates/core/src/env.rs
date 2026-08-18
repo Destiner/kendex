@@ -113,6 +113,23 @@ impl Env {
         ]
     }
 
+    /// The pre-rename spelling of a path under one of the app dirs — what a
+    /// symlink written before the first-launch move still records as its
+    /// target. Purely lexical: by the time a link is compared against it,
+    /// the move has already emptied the old spelling, so nothing there
+    /// resolves. `None` for a path outside the app dirs.
+    pub fn legacy_app_path(&self, path: &Path) -> Option<PathBuf> {
+        self.app_dir_pairs().iter().find_map(|(old, new)| {
+            let rest = path.strip_prefix(new).ok()?;
+            // Joining an empty rest would leave a trailing separator, which
+            // compares unequal to the bare directory path.
+            Some(match rest.as_os_str().is_empty() {
+                true => old.clone(),
+                false => old.join(rest),
+            })
+        })
+    }
+
     pub fn settings_file(&self) -> PathBuf {
         self.app_config_dir().join("settings.toml")
     }

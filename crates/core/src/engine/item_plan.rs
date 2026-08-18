@@ -73,7 +73,7 @@ pub(super) fn plan_item(
 
     let planned = match &item.artifact {
         Artifact::File { .. } => plan_file(env, scope, item, existing.is_some(), ops),
-        Artifact::Tree { .. } => plan_tree(item, existing.is_some(), owned, written, ops),
+        Artifact::Tree { .. } => plan_tree(env, item, existing.is_some(), owned, written, ops),
         Artifact::Registration { .. } => {
             plan_registration(env, scope, item, existing.is_some(), ops, config_edits)
         }
