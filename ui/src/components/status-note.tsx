@@ -30,6 +30,14 @@ const TONES = {
 
 export type StatusTone = keyof typeof TONES;
 
+/** Holds the tone icon in a box as tall as one line of the text beside it,
+ *  so the icon reads as centred on that line however the words wrap. */
+function IconSlot({ line, children }: { line: string; children: ReactNode }) {
+  return (
+    <span className={cn("flex shrink-0 items-center", line)}>{children}</span>
+  );
+}
+
 /** A boxed remark about state — the shape errors, warnings and notices all
  *  take. `title` carries the headline; children carry any detail. */
 export function StatusNote({
@@ -51,7 +59,9 @@ export function StatusNote({
       className={cn("flex gap-3 rounded-lg border p-3", surface, className)}
       role={tone === "critical" ? "alert" : undefined}
     >
-      <Icon className={cn("mt-px size-4 shrink-0", text)} />
+      <IconSlot line="h-5">
+        <Icon className={cn("size-4", text)} />
+      </IconSlot>
       <div className="min-w-0 flex-1 text-sm">
         <p className={cn("font-medium", text)}>{title}</p>
         {children ? (
@@ -80,7 +90,9 @@ export function StatusLine({
       className={cn("flex items-start gap-1.5 text-xs", text, className)}
       role={tone === "critical" ? "alert" : undefined}
     >
-      <Icon className="mt-px size-3.5 shrink-0" />
+      <IconSlot line="h-4">
+        <Icon className="size-3.5" />
+      </IconSlot>
       <span className="min-w-0">{children}</span>
     </p>
   );
