@@ -53,8 +53,20 @@ export const SHARED_SKILL_LABEL = "Extra instructions for skills";
 export const SHARED_ADDITIONAL_HELP = "Added at the end of every agent's file.";
 export const SHARED_SKILL_HELP = "Added to every skill's instructions.";
 export const HOOKS_SECTION = "Custom hooks";
-export const HOOKS_HELP =
-  "Written straight into each harness's configuration when you save.";
+export const PICK_EVENT = "Pick an event";
+export const NO_EVENT_MATCHES = "No event matches that.";
+export const MATCHER_HELP = "Matcher — the tool to watch (optional)";
+export const HOOK_COMMAND_HELP =
+  "Command — runs from the folder the session started in";
+export const HOOK_COMMAND_PLACEHOLDER = "./scripts/guard.sh, or a full path";
+export const HOOK_AGENTS_LABEL =
+  "Agents — all, a role, or a comma-separated list";
+/** Named harnesses run the hook; everywhere else only reads it. */
+export const hookRunBy = (harnesses: string[]): string =>
+  `${harnesses.join(" and ")} ${harnesses.length === 1 ? "runs" : "run"} these.`;
+export const ADVISORY_EVERYWHERE_ELSE =
+  "Every other harness gets them written into the agent as instructions, which nothing enforces.";
+export const HOOKS_HELP = "Written into your agents' own files when you save.";
 export const SKILLS_DIR_SECTION = "Project skills folder";
 export const SKILLS_DIR_HELP =
   "Skills you own live here, then get linked into each harness's own skill folder, so the generated copies don't need to be committed.";

@@ -24,6 +24,20 @@ pub struct EditorInventory {
     pub declared_skills: Vec<String>,
     pub available_skills: Vec<String>,
     pub harnesses: Vec<HarnessId>,
+    /// The events a hook can be written against, and when each fires. Sent
+    /// rather than spelled out in the UI so the picker cannot offer an
+    /// event the validator would then reject.
+    pub hook_events: Vec<HookEvent>,
+    /// Harnesses that run a custom hook rather than only reading it as
+    /// instructions — see `vstack_core::hook::custom_hook_enforced`.
+    pub hook_enforced_by: Vec<HarnessId>,
+}
+
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct HookEvent {
+    pub name: String,
+    pub fires: String,
 }
 
 #[tauri::command(async)]
@@ -111,10 +125,23 @@ pub fn editor_inventory(scope: Scope) -> Result<EditorInventory, String> {
         declared_agents: Vec::new(),
         declared_skills: Vec::new(),
         available_skills: Vec::new(),
-        // Per-tool settings are only offered for tools vstack writes to.
+        // Per-harness settings are only offered for harnesses vstack
+        // writes to.
         harnesses: HarnessId::ALL
             .into_iter()
             .filter(|h| vstack_core::harness::installable(*h))
+            .collect(),
+        hook_events: vstack_core::hook::EVENTS
+            .iter()
+            .map(|event| HookEvent {
+                name: event.name.to_owned(),
+                fires: event.fires.to_owned(),
+            })
+            .collect(),
+        hook_enforced_by: HarnessId::ALL
+            .into_iter()
+            .filter(|h| vstack_core::harness::installable(*h))
+            .filter(|h| vstack_core::hook::custom_hook_enforced(*h))
             .collect(),
     };
     let Some(manifest) = loaded else {

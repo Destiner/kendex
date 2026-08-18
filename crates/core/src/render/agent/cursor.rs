@@ -1,4 +1,4 @@
-use super::{EffectiveAgent, GENERATED_BANNER, RenderedAgent};
+use super::{EffectiveAgent, GENERATED_BANNER, RenderedAgent, hooks_prose};
 use crate::model::HarnessId;
 use crate::render::permission::PermissionIntent;
 use crate::render::vocab::rewrite_prose;
@@ -30,6 +30,16 @@ pub fn generate(agent: &EffectiveAgent) -> RenderedAgent {
     warnings.extend(reworded);
     out.push_str(&prose);
     out.push('\n');
+    // A rule carries no hook field, so a custom hook can only be written
+    // here as words. Dropping it silently was the worse answer: the person
+    // who wrote the hook would have no way to learn Cursor never got it.
+    if let Some(hooks) = hooks_prose(agent) {
+        out.push_str(&format!("\n{hooks}\n"));
+        warnings.push(crate::render::RenderWarning::with_fix(
+            "Cursor cannot run hooks — this agent's custom hooks are written into the rule as instructions only",
+            "exclude Cursor from this agent's harnesses if the hook must be enforced",
+        ));
+    }
     if let Some(additional) = &agent.additional_instructions {
         out.push_str(&format!("\n## Additional Instructions\n\n{additional}\n"));
     }
@@ -92,7 +102,7 @@ mod tests {
     }
 
     #[test]
-    fn skills_and_hooks_are_dropped_but_instructions_survive() {
+    fn skills_are_dropped_but_hooks_are_said_and_instructions_survive() {
         let source = source();
         let scope = Scope::Project {
             root: "/tmp/proj".into(),
@@ -104,12 +114,23 @@ mod tests {
             description: None,
             agents: HookAgents::One("all".into()),
         };
-        let text = generate(&effective(&source, &scope, vec![&hook])).text;
+        let rendered = generate(&effective(&source, &scope, vec![&hook]));
+        let text = rendered.text;
         assert!(!text.contains("Required Skills"));
-        assert!(!text.contains("guard.sh"));
+        // A rule cannot run a hook, but dropping it left the author with no
+        // way to find that out — it lands as words, and the warning says so.
+        assert!(text.contains("guard.sh"), "{text}");
+        assert!(
+            rendered
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("cannot run hooks")),
+            "{:?}",
+            rendered.warnings
+        );
         assert!(text.contains("## Launch Instructions\n\nstart here"));
         assert!(text.contains("Body text."));
-        assert!(text.trim_end().ends_with("end here"));
+        assert!(text.contains("end here"));
     }
 
     #[test]

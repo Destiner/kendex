@@ -166,17 +166,27 @@ pub fn skills_prose(agent: &EffectiveAgent, skill_root_hint: &str) -> Option<Str
     Some(out)
 }
 
-/// Custom hooks rendered as prose for harnesses without native hook wiring.
+/// Custom hooks rendered as prose, for every harness that does not run
+/// hooks out of an agent's own file — which is all of them but Claude Code.
+/// The matcher is said in this harness's own tool names: a hook written
+/// against `Bash` means the same thing here, and printing Claude's word for
+/// it in another harness's file asks the model to match on a name it has
+/// never seen.
 pub fn hooks_prose(agent: &EffectiveAgent) -> Option<String> {
     if agent.custom_hooks.is_empty() {
         return None;
     }
     let mut out = String::new();
     for hook in &agent.custom_hooks {
+        let matcher = hook
+            .matcher
+            .as_deref()
+            .map(|matcher| crate::render::vocab::hook_matcher(matcher, agent.harness).0)
+            .unwrap_or_else(|| "every match".to_owned());
         out.push_str(&format!(
             "## Safety: {} on {}\n\n{}Run: `{}`\n\n",
             hook.event,
-            hook.matcher.as_deref().unwrap_or("every match"),
+            matcher,
             hook.description
                 .as_ref()
                 .map(|d| format!("{d}\n\n"))

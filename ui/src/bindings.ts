@@ -630,6 +630,17 @@ export type EditorInventory = {
 	declaredSkills: string[],
 	availableSkills: string[],
 	harnesses: HarnessId[],
+	/**
+	 *  The events a hook can be written against, and when each fires. Sent
+	 *  rather than spelled out in the UI so the picker cannot offer an
+	 *  event the validator would then reject.
+	 */
+	hookEvents: HookEvent[],
+	/**
+	 *  Harnesses that run a custom hook rather than only reading it as
+	 *  instructions — see `vstack_core::hook::custom_hook_enforced`.
+	 */
+	hookEnforcedBy: HarnessId[],
 };
 
 /**
@@ -824,6 +835,11 @@ export type HarnessId = "claude" | "codex" | "opencode" | "cursor" | "pi" | "gem
 export type HookAgents = 
 /**  `"all"`, a role name, or a single agent name. */
 string | string[];
+
+export type HookEvent = {
+	name: string,
+	fires: string,
+};
 
 export type Hunk = {
 	header: string,

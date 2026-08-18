@@ -186,6 +186,12 @@ mod tests {
         let text = generate(&effective(&source, &scope, vec![&hook])).text;
         assert_eq!(text.lines().filter(|l| l.starts_with("model:")).count(), 1);
         assert!(text.contains("description: \"line one\\nmodel: opus\""));
-        assert!(text.contains("## Safety: PreToolUse on Bash"));
+        // The matcher is said in this harness's own tool name, not
+        // Claude's — the model has never heard of `Bash`.
+        let matcher = crate::render::vocab::hook_matcher("Bash", HarnessId::Gemini).0;
+        assert!(
+            text.contains(&format!("## Safety: PreToolUse on {matcher}")),
+            "{text}"
+        );
     }
 }

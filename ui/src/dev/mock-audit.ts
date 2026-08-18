@@ -16,6 +16,25 @@ import {
   view,
 } from "./mock-state";
 
+// The same list core sends, so the picker can be driven in the browser.
+const HOOK_EVENTS = [
+  { name: "SessionStart", fires: "A session starts" },
+  { name: "SessionEnd", fires: "A session ends" },
+  { name: "UserPromptSubmit", fires: "You send a prompt" },
+  { name: "PreToolUse", fires: "Before the agent runs a tool" },
+  { name: "PostToolUse", fires: "After a tool returns" },
+  {
+    name: "PermissionRequest",
+    fires: "The agent asks permission for something",
+  },
+  { name: "Notification", fires: "The agent sends a notification" },
+  { name: "Stop", fires: "The agent finishes its turn" },
+  { name: "SubagentStop", fires: "A subagent finishes" },
+  { name: "PreCompact", fires: "Before the conversation is compacted" },
+  { name: "PostCompact", fires: "After the conversation is compacted" },
+  { name: "TaskCompleted", fires: "Before a task is marked complete" },
+];
+
 export const auditHandlers: Record<string, Handler> = {
   audit_all: () => store.state.views,
   apply_plan: ({
@@ -129,6 +148,8 @@ export const auditHandlers: Record<string, Handler> = {
       declaredSkills: Object.keys(m?.skills ?? {}),
       availableSkills: AVAILABLE_SKILLS,
       harnesses: m?.install.harnesses ?? ["claude"],
+      hookEvents: HOOK_EVENTS,
+      hookEnforcedBy: ["claude"],
     };
   },
 };

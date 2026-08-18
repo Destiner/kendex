@@ -140,6 +140,84 @@ pub fn parse_hook(text: &str) -> Result<HookSource, String> {
     Ok(hook)
 }
 
+/// The event vocabulary a hook is written against: Claude Code's names,
+/// which every other harness's map is keyed by. One list, so the picker
+/// that offers an event, the validator that accepts one and the renderer
+/// that writes it cannot drift apart. `fires` is the whole explanation a
+/// person needs to choose — anything longer belongs in the harness's own
+/// documentation, not in a dropdown.
+pub struct HookEvent {
+    pub name: &'static str,
+    pub fires: &'static str,
+}
+
+pub const EVENTS: &[HookEvent] = &[
+    HookEvent {
+        name: "SessionStart",
+        fires: "A session starts",
+    },
+    HookEvent {
+        name: "SessionEnd",
+        fires: "A session ends",
+    },
+    HookEvent {
+        name: "UserPromptSubmit",
+        fires: "You send a prompt",
+    },
+    HookEvent {
+        name: "PreToolUse",
+        fires: "Before the agent runs a tool",
+    },
+    HookEvent {
+        name: "PostToolUse",
+        fires: "After a tool returns",
+    },
+    HookEvent {
+        name: "PermissionRequest",
+        fires: "The agent asks permission for something",
+    },
+    HookEvent {
+        name: "Notification",
+        fires: "The agent sends a notification",
+    },
+    HookEvent {
+        name: "Stop",
+        fires: "The agent finishes its turn",
+    },
+    HookEvent {
+        name: "SubagentStop",
+        fires: "A subagent finishes",
+    },
+    HookEvent {
+        name: "PreCompact",
+        fires: "Before the conversation is compacted",
+    },
+    HookEvent {
+        name: "PostCompact",
+        fires: "After the conversation is compacted",
+    },
+    HookEvent {
+        name: "TaskCompleted",
+        fires: "Before a task is marked complete",
+    },
+];
+
+pub fn known_event(name: &str) -> bool {
+    EVENTS.iter().any(|event| event.name == name)
+}
+
+/// Whether a custom hook is *run* on this harness or merely *read*.
+///
+/// A custom hook lives inside an agent's own file, and Claude Code is the
+/// only harness that takes hooks there and executes them. Everywhere else
+/// the same hook is written into the agent as instructions: a model may
+/// follow them, nothing enforces them. Said plainly wherever a custom hook
+/// is written or listed — a guard that only asks nicely, presented as a
+/// guard, is worse than no guard.
+pub fn custom_hook_enforced(harness: HarnessId) -> bool {
+    harness == HarnessId::Claude
+}
+
 /// v1's codex event mapping: identity for the events codex understands,
 /// `None` for events that fall back to advisory prose in agent files.
 pub fn codex_event(event: &str) -> Option<&str> {

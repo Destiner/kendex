@@ -44,6 +44,7 @@ export function CustomizePage() {
   const {
     scope,
     draft,
+    inventory,
     dirty,
     loading,
     saving,
@@ -135,7 +136,11 @@ export function CustomizePage() {
                 />
               </Section>
               <Section title={HOOKS_SECTION} description={HOOKS_HELP}>
-                <CustomHooks draft={draft} onChange={edit} />
+                <CustomHooks
+                  draft={draft}
+                  inventory={inventory}
+                  onChange={edit}
+                />
               </Section>
               {scope.scope === "project" ? (
                 <Section

@@ -50,6 +50,14 @@ const SOURCE_KEYS: &[&str] = &["repo", "path", "rev", "enabled"];
 /// The tools a manifest may name: the ones vstack writes to. Read from the
 /// capability table rather than listed here, so a tool can never be
 /// accepted as a target before anything it declares would be installed.
+fn known_events() -> String {
+    crate::hook::EVENTS
+        .iter()
+        .map(|event| event.name)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn harnesses() -> Vec<&'static str> {
     crate::model::HarnessId::ALL
         .into_iter()
@@ -225,6 +233,17 @@ fn validate_hooks(table: &Table, findings: &mut Vec<Finding>) {
                     fix: format!("add {required} = \"…\""),
                 });
             }
+        }
+        // An event nobody fires is a hook that never runs, and nothing
+        // downstream would have said so: it renders into the agent file
+        // exactly as written and simply never matches.
+        let event = hook.get("event").and_then(Value::as_str);
+        if let Some(event) = event.filter(|name| !crate::hook::known_event(name)) {
+            findings.push(Finding {
+                location: format!("custom-hooks[{index}].event"),
+                problem: format!("no harness fires '{event}'"),
+                fix: format!("use one of: {}", known_events()),
+            });
         }
     }
 }

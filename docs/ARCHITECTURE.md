@@ -243,6 +243,16 @@ lives in one capability table read by core and UI.
   save overwrite the first with no warning, so the Customize page reloads
   only when nothing is unsaved, and `lib/customization.ts` slices that
   one draft per package rather than fetching a second copy.
+- Hook events have one vocabulary — Claude Code's names, in
+  `core/hook.rs::EVENTS` — and every other harness's map is keyed by it.
+  The picker offers that list, the validator rejects anything outside it,
+  and the renderers read it: three surfaces that would otherwise drift,
+  and an event nobody fires is a hook that installs cleanly and never
+  runs. A custom hook lives in an agent's own file, which only Claude Code
+  executes; everywhere else it is written in as instructions and the UI
+  says so rather than presenting a guard that merely asks nicely. Cursor
+  used to drop them silently — a rule carries no hook field — and now
+  carries the words plus a warning.
 - A section with nothing in it is not rendered. An empty state earns its
   place only when the page would otherwise be blank.
 - "Nothing here" and "not counted yet" are different sentences. A list

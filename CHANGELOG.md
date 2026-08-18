@@ -8,6 +8,26 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- Custom hooks are picked, not typed. The event comes from a searchable
+  list of the events harnesses actually fire, each with a line saying when
+  it fires, and a manifest naming an event nobody fires is now rejected
+  with the valid names as its fix — before, a typo installed cleanly and
+  simply never ran. The editor also says who runs these: Claude Code
+  executes a hook written into an agent's file, and every other harness
+  gets it as instructions that nothing enforces.
+
+### Fixed
+
+- Cursor no longer drops an agent's custom hooks without a word. A rule
+  file has nowhere to register a hook, so the hook lands as instructions
+  and the render warns that nothing there enforces it.
+- A custom hook's matcher is said in each harness's own tool names, the
+  way an installed hook's already was — a hook written against `Bash`
+  reads as that harness's word for it instead of asking a model to match
+  on a name it has never seen.
+
+### Added
+
 - A package's own page now carries what you have changed about it. Open
   anything from the Library and a **Customize** tab sits beside its
   overview: the instructions vstack writes into it, the skills an agent

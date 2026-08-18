@@ -170,3 +170,35 @@ rev = 12
         assert!(finding.fix.contains("rev"), "{finding}");
     }
 }
+
+/// An event no harness fires is a hook that would install cleanly and then
+/// never run — nothing downstream reads the name, so this is the only place
+/// it can be caught.
+#[test]
+fn a_custom_hook_event_must_be_one_a_harness_fires() {
+    let table: toml::Table = r#"
+schema = 1
+[[custom-hooks]]
+event = "PreToolUse"
+command = "./guard.sh"
+[[custom-hooks]]
+event = "PreToolUSe"
+command = "./guard.sh"
+"#
+    .parse()
+    .unwrap();
+
+    let findings = validate(&table);
+    let event = findings
+        .iter()
+        .find(|f| f.location == "custom-hooks[1].event")
+        .expect("the typo should be reported");
+    assert!(event.problem.contains("PreToolUSe"), "{event:?}");
+    assert!(event.fix.contains("PreToolUse"), "{event:?}");
+    assert!(
+        !findings
+            .iter()
+            .any(|f| f.location.starts_with("custom-hooks[0]")),
+        "{findings:?}"
+    );
+}
