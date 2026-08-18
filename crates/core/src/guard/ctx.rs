@@ -59,8 +59,21 @@ impl GuardCtx {
     }
 
     /// A git invocation in this repository, reading this commit's index.
+    /// Color is off whatever the user's config says — the specific keys
+    /// too, since `color.grep=always` outranks `color.ui`: the guards
+    /// parse this output, and an escape sequence around a path is not a
+    /// path.
     pub fn git(&self, args: &[&str]) -> Hardened {
-        let hardened = Hardened::git(args, Some(&self.root));
+        let mut plain = vec![
+            "-c",
+            "color.ui=never",
+            "-c",
+            "color.grep=never",
+            "-c",
+            "color.diff=never",
+        ];
+        plain.extend_from_slice(args);
+        let hardened = Hardened::git(&plain, Some(&self.root));
         match &self.index_file {
             Some(index) => hardened.index_file(index),
             None => hardened,
@@ -195,17 +208,9 @@ impl GuardCtx {
         let mut counts = BTreeMap::new();
         let mut rest = raw.as_slice();
         while !rest.is_empty() {
-            let Some(nul) = rest.iter().position(|byte| *byte == 0) else {
-                return Err(guard_err(check, "unparseable count record from git grep"));
-            };
-            let (path, after) = rest.split_at(nul);
-            let after = &after[1..];
-            let newline = after
-                .iter()
-                .position(|byte| *byte == b'\n')
-                .unwrap_or(after.len());
-            let (count, tail) = after.split_at(newline);
-            rest = tail.get(1..).unwrap_or(&[]);
+            let (path, after) = split_at_nul(check, rest)?;
+            let (count, tail) = split_at_newline(after);
+            rest = tail;
             let Ok(path) = std::str::from_utf8(path) else {
                 return Err(guard_err(
                     check,
@@ -223,4 +228,24 @@ impl GuardCtx {
         }
         Ok(counts)
     }
+}
+
+/// The record delimiters git's `-z` output uses: NUL between fields, a
+/// newline ending the record. A missing NUL is a record no guard can read.
+pub(crate) fn split_at_nul<'a>(check: &str, bytes: &'a [u8]) -> Result<(&'a [u8], &'a [u8])> {
+    let nul = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .ok_or_else(|| guard_err(check, "unparseable record from git grep"))?;
+    Ok((&bytes[..nul], &bytes[nul + 1..]))
+}
+
+/// The field up to the record's newline, and everything after it.
+pub(crate) fn split_at_newline(bytes: &[u8]) -> (&[u8], &[u8]) {
+    let newline = bytes
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .unwrap_or(bytes.len());
+    let (field, tail) = bytes.split_at(newline);
+    (field, tail.get(1..).unwrap_or(&[]))
 }

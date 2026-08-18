@@ -106,7 +106,10 @@ fn uninstall_takes_back_a_hooks_path_left_pointing_at_a_deleted_directory() {
 
     let report = githooks::uninstall(&w.env, &w.repo).unwrap();
     assert!(
-        report.lines.iter().any(|l| l.contains("was already gone")),
+        report
+            .lines
+            .iter()
+            .any(|l| l.contains("no receipt behind it; unset")),
         "{report:?}"
     );
     assert_eq!(config_value(&w.repo, "core.hooksPath"), None);
@@ -143,14 +146,69 @@ fn the_launch_pass_recovers_a_crashed_hook_mutation() {
     vstack_core::apply::journal::write(&journal_dir, std::slice::from_ref(&victim)).unwrap();
     std::fs::write(&victim, "torn write").unwrap();
 
-    let recovered = vstack_core::apply::recover_common_journals(&w.env);
+    let recovered = vstack_core::apply::recover_common_journals(&w.env).unwrap();
     assert_eq!(recovered.len(), 1, "{recovered:?}");
-    assert!(recovered[0].0.starts_with("git-common-"));
+    assert!(
+        recovered[0].0.starts_with("git-common-proj-"),
+        "the key names the repository a person recognizes: {}",
+        recovered[0].0
+    );
     assert!(recovered[0].1.as_ref().unwrap());
     assert_eq!(std::fs::read_to_string(&victim).unwrap(), before);
 
-    let again = vstack_core::apply::recover_common_journals(&w.env);
+    let again = vstack_core::apply::recover_common_journals(&w.env).unwrap();
     assert!(again.iter().all(|(_, result)| !result.as_ref().unwrap()));
+
+    // A journal dir that cannot be listed is an error, not an empty list.
+    std::fs::remove_dir_all(w.env.journal_dir()).unwrap();
+    std::fs::write(w.env.journal_dir(), "not a directory").unwrap();
+    assert!(vstack_core::apply::recover_common_journals(&w.env).is_err());
+}
+
+/// git answers `--git-common-dir` relative to where it was asked, not to
+/// the top level: from a subdirectory the answer is `../.git`, and joined
+/// onto the top level it names the parent's repository — which, when the
+/// parent is a repository too, would be armed instead of this one.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn install_from_a_subdirectory_arms_this_repository_not_its_parent() {
+    let w = world();
+    let inner = w.repo.join("inner");
+    std::fs::create_dir_all(inner.join("sub")).unwrap();
+    git(&inner, &["init", "--quiet", "-b", "main"]);
+    githooks::install(&w.env, &inner.join("sub")).unwrap();
+    assert!(inner.join(".git/vstack-hooks/receipt.json").is_file());
+    assert!(!w.repo.join(".git/vstack-hooks").exists());
+    assert_eq!(config_value(&w.repo, "core.hooksPath"), None);
+    assert!(
+        config_value(&inner, "core.hooksPath")
+            .unwrap()
+            .ends_with("inner/.git/vstack-hooks")
+    );
+}
+
+/// A worktree whose directory is gone stays in git's registry as prunable
+/// until someone prunes. It is dead here: its lease is reaped and its
+/// config is not asked for — install and uninstall both keep working
+/// without a manual `git worktree prune` first.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_prunable_worktree_is_dead_for_leases_and_refusals() {
+    let w = world();
+    githooks::install(&w.env, &w.repo).unwrap();
+    git(&w.repo, &["worktree", "add", "--quiet", "../linked"]);
+    let linked = w.home.join("linked");
+    githooks::install(&w.env, &linked).unwrap();
+    std::fs::remove_dir_all(&linked).unwrap();
+
+    githooks::install(&w.env, &w.repo).unwrap();
+    let report = githooks::uninstall(&w.env, &w.repo).unwrap();
+    assert!(
+        report.lines.iter().any(|l| l.contains("reaped")),
+        "{report:?}"
+    );
+    assert_eq!(config_value(&w.repo, "core.hooksPath"), None);
+    assert!(!w.repo.join(".git/vstack-hooks").exists());
 }
 
 /// The install-time refusal of v1's shim would be hollow if the shim
@@ -159,12 +217,108 @@ fn the_launch_pass_recovers_a_crashed_hook_mutation() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn the_entrypoints_refuse_v1s_shim_at_commit_time() {
-    for entrypoint in [
-        githooks::PRE_COMMIT_ENTRYPOINT,
-        githooks::COMMIT_MSG_ENTRYPOINT,
-    ] {
+    for hook in githooks::HOOKS {
+        let entrypoint = githooks::entrypoint(hook);
         let refusal = entrypoint.find(githooks::V1_SENTINEL).unwrap();
         let chain = entrypoint.find("exec \"$next\"").unwrap();
         assert!(refusal < chain, "the shim is refused before it is chained");
+        assert!(entrypoint.contains(&format!("vstack guard run {hook}")));
     }
+    // Install refuses the same set of shims the entrypoints refuse, or a
+    // repository installs cleanly and then fails closed on every commit.
+    let w = world();
+    let v1 = w.repo.join(".git/hooks/commit-msg");
+    std::fs::create_dir_all(v1.parent().unwrap()).unwrap();
+    std::fs::write(&v1, "#!/bin/sh\n# vstack-guards-hook\nexec guards\n").unwrap();
+    let error = githooks::install(&w.env, &w.repo).unwrap_err();
+    assert!(error.to_string().contains("v1"), "{error}");
+}
+
+/// Ownership without a receipt is proven by content: a directory holding
+/// nothing but vstack's own entrypoints byte for byte is repaired by
+/// install and taken back by uninstall; one holding anything else is
+/// refused by install and left in place — named — by uninstall, which
+/// still takes back the config value that is ours by name.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_receiptless_directory_is_judged_by_its_contents() {
+    let w = world();
+    githooks::install(&w.env, &w.repo).unwrap();
+    let hooks_dir = w.repo.join(".git/vstack-hooks");
+    std::fs::remove_file(hooks_dir.join("receipt.json")).unwrap();
+    githooks::install(&w.env, &w.repo).unwrap();
+    assert!(hooks_dir.join("receipt.json").is_file(), "repaired");
+
+    std::fs::remove_file(hooks_dir.join("receipt.json")).unwrap();
+    std::fs::remove_file(hooks_dir.join("commit-msg")).unwrap();
+    let report = githooks::uninstall(&w.env, &w.repo).unwrap();
+    assert!(
+        report
+            .lines
+            .iter()
+            .any(|l| l.contains("only vstack's own entrypoints")),
+        "{report:?}"
+    );
+    assert!(!hooks_dir.exists());
+    assert_eq!(config_value(&w.repo, "core.hooksPath"), None);
+
+    // A foreign file: install refuses; uninstall unsets the config value it
+    // can prove is ours and leaves the directory, naming the file.
+    githooks::install(&w.env, &w.repo).unwrap();
+    std::fs::remove_file(hooks_dir.join("receipt.json")).unwrap();
+    std::fs::write(hooks_dir.join("theirs"), "#!/bin/sh\n").unwrap();
+    let error = githooks::install(&w.env, &w.repo).unwrap_err();
+    assert!(error.to_string().contains("theirs"), "{error}");
+    let report = githooks::uninstall(&w.env, &w.repo).unwrap();
+    assert!(
+        report.lines.iter().any(|l| l.contains("theirs")),
+        "{report:?}"
+    );
+    assert!(hooks_dir.join("theirs").is_file());
+    assert_eq!(config_value(&w.repo, "core.hooksPath"), None);
+}
+
+/// A hook slot that has become a symlink is not a file vstack wrote: a
+/// repair must never write through it to wherever it points.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_symlinked_hook_slot_is_a_refusal_not_a_write_through() {
+    let w = world();
+    githooks::install(&w.env, &w.repo).unwrap();
+    let slot = w.repo.join(".git/vstack-hooks/pre-commit");
+    let target = w.home.join("target.txt");
+    std::fs::write(&target, "mine\n").unwrap();
+    std::fs::remove_file(&slot).unwrap();
+    std::os::unix::fs::symlink(&target, &slot).unwrap();
+    let error = githooks::install(&w.env, &w.repo).unwrap_err();
+    assert!(error.to_string().contains("symlink"), "{error}");
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "mine\n");
+}
+
+/// Uninstall from a worktree that never held a lease says so and rewrites
+/// nothing; a repository with nothing of ours answers without any lock.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn uninstall_from_a_worktree_without_a_lease_changes_nothing() {
+    let w = world();
+    let before = githooks::uninstall(&w.env, &w.repo).unwrap();
+    assert_eq!(
+        before.lines,
+        ["no vstack hooks are installed in this repository"]
+    );
+
+    githooks::install(&w.env, &w.repo).unwrap();
+    git(&w.repo, &["worktree", "add", "--quiet", "../linked"]);
+    let receipt_path = w.repo.join(".git/vstack-hooks/receipt.json");
+    let receipt = std::fs::read_to_string(&receipt_path).unwrap();
+    let report = githooks::uninstall(&w.env, &w.home.join("linked")).unwrap();
+    assert!(
+        report
+            .lines
+            .iter()
+            .any(|l| l.contains("never enabled the commit checks")),
+        "{report:?}"
+    );
+    assert_eq!(std::fs::read_to_string(&receipt_path).unwrap(), receipt);
+    assert!(config_value(&w.repo, "core.hooksPath").is_some());
 }

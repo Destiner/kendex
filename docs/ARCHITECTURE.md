@@ -264,9 +264,12 @@ lives in one capability table read by core and UI.
   closed, naming the one-commit bypass and the two-step manual removal —
   no vendored runner, because copies drift — and the entrypoints refuse
   v1's shim at commit time as install refused it, so it cannot be chained
-  by reappearing. A hooks directory deleted by hand does not strand
-  `core.hooksPath`: the value is provably vstack's, and uninstall takes it
-  back.
+  by reappearing. Ownership without a receipt is proven by content: the
+  config value is vstack's by name, and a receiptless directory holding
+  nothing but vstack's own entrypoints byte for byte is vstack's by
+  construction — repaired by install, taken back by uninstall — while
+  anything else in it stays where it is, named. A worktree git lists as
+  prunable is dead here: its lease is reaped, its config never asked for.
 - **Pi hooks are enforced through the carrier.** Pi has no per-hook
   artifact: the `pi-hooks` extension package hosts native listeners, and
   hook content rides in the registry vstack renders beside them

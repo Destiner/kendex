@@ -15,10 +15,7 @@ use crate::model::Scope;
 use crate::{lock, manifest};
 
 fn err(scope: &Scope, message: impl std::fmt::Display) -> CoreError {
-    CoreError::Guard {
-        check: "import".to_owned(),
-        message: format!("{}: {message}", scope.label()),
-    }
+    crate::guard::guard_err("import", format!("{}: {message}", scope.label()))
 }
 
 /// Where v1 kept this scope's lock. A project shares the v2 path; the

@@ -53,21 +53,19 @@ fn lock_key(env: &Env, key: &str) -> Result<ScopeGuard> {
     let mut lock = fd_lock::RwLock::new(file);
     // fd-lock ties its guard lifetime to the RwLock borrow; the OS lock is
     // really held by the open fd, so forget the guard and keep the file —
-    // the lock releases when ScopeGuard drops (closing the fd).
-    let acquired = match lock.try_write() {
-        Ok(guard) => {
-            std::mem::forget(guard);
-            true
+    // the lock releases when ScopeGuard drops (closing the fd). Only
+    // contention is "busy": a filesystem that cannot lock at all must say
+    // so, or every launch pass would skip recovery there in silence.
+    match lock.try_write() {
+        Ok(guard) => std::mem::forget(guard),
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+            return Err(CoreError::ScopeBusy { lock: path });
         }
-        Err(_) => false,
-    };
-    if acquired {
-        Ok(ScopeGuard {
-            _file: lock.into_inner(),
-        })
-    } else {
-        Err(CoreError::ScopeBusy { lock: path })
+        Err(error) => return Err(CoreError::io(&path, error)),
     }
+    Ok(ScopeGuard {
+        _file: lock.into_inner(),
+    })
 }
 
 /// Recovery under the scope lock, for callers outside an apply (launch
@@ -133,6 +131,11 @@ fn run_journaled(
     key: &str,
     fail_after: Option<usize>,
 ) -> Result<usize> {
+    // Nothing to do leaves nothing behind: an empty journal would read as
+    // an interrupted apply to the next recovery pass.
+    if ops.is_empty() {
+        return Ok(0);
+    }
     let journal_dir = journal::journal_dir_for(&env.journal_dir(), key);
     let mut touched: Vec<PathBuf> = ops.iter().flat_map(|p| p.op.touched()).collect();
     touched.extend(created_dir_roots(&touched));

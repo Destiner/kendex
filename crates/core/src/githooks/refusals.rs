@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use crate::error::{CoreError, Result};
 use crate::process::Hardened;
 
-use super::{Receipt, Repo, V1_SENTINEL, err};
+use super::{HOOKS, RECEIPT_FILE, Receipt, Repo, V1_SENTINEL, err};
 
 /// Install-time refusals, all checked before any mutation is planned.
 pub(super) fn check_install(repo: &Repo, receipt: Option<&Receipt>) -> Result<()> {
@@ -19,23 +19,44 @@ pub(super) fn check_install(repo: &Repo, receipt: Option<&Receipt>) -> Result<()
             hooks_dir.display()
         )));
     }
+    // A directory holding nothing but our own entrypoints byte for byte is
+    // provably ours even without its receipt; anything else in it is not.
     if hooks_dir.exists() && receipt.is_none() {
-        return Err(err(format!(
-            "{} already exists and carries no vstack receipt — a pre-existing directory is a refusal, not an adoption; move it aside and rerun",
-            hooks_dir.display()
-        )));
+        let foreign = super::uninstall::foreign_entries(&hooks_dir)?;
+        if !foreign.is_empty() {
+            return Err(err(format!(
+                "{} already exists and carries no vstack receipt (holding {}) — a pre-existing directory is a refusal, not an adoption; move it aside and rerun",
+                hooks_dir.display(),
+                foreign.join(", ")
+            )));
+        }
+    }
+    // A write through a symlink lands wherever the link points; a hook
+    // slot that has become a link is not a file vstack wrote.
+    for name in HOOKS.iter().chain(std::iter::once(&RECEIPT_FILE)) {
+        let slot = hooks_dir.join(name);
+        if slot.is_symlink() {
+            return Err(err(format!(
+                "{} is a symlink — vstack refuses to write through a link it did not create; remove it and rerun",
+                slot.display()
+            )));
+        }
     }
 
-    // The v1 shim is a decommission, not a chain: chaining would run the
-    // guards twice today and fail closed forever once the v1 skill is gone.
-    let v1_hook = repo.common_dir.join("hooks").join("pre-commit");
-    if let Some(text) = crate::fs::read_if_exists(&v1_hook)?
-        && text.contains(V1_SENTINEL)
-    {
-        return Err(err(format!(
-            "{} is v1's vstack-guards shim — remove it first (v1: install-git-hooks --uninstall, or delete the shim), then rerun",
-            v1_hook.display()
-        )));
+    // The v1 shim is a decommission, not a chain: chained, it runs the
+    // guards twice while the v1 skill is installed and fails closed on
+    // every commit once it is gone. The entrypoints refuse it at commit
+    // time for the same hooks, so install must refuse the same set.
+    for hook in HOOKS {
+        let v1_hook = repo.common_dir.join("hooks").join(hook);
+        if let Some(text) = crate::fs::read_if_exists(&v1_hook)?
+            && text.contains(V1_SENTINEL)
+        {
+            return Err(err(format!(
+                "{} is v1's vstack-guards shim — remove it first (v1: install-git-hooks --uninstall, or delete the shim), then rerun",
+                v1_hook.display()
+            )));
+        }
     }
 
     // `extensions.worktreeConfig` and `includeIf` mean each linked
@@ -52,11 +73,18 @@ pub(super) fn check_install(repo: &Repo, receipt: Option<&Receipt>) -> Result<()
     .filter(|value| !value.is_empty())
     .collect();
     for worktree in repo.worktrees()? {
+        let unreadable = |detail: String| {
+            err(format!(
+                "worktree {} could not be read while checking its effective core.hooksPath — an unreadable worktree is a refusal: {detail}",
+                worktree.display()
+            ))
+        };
         let output = Hardened::git(
             &["config", "--show-origin", "--get", "core.hooksPath"],
             Some(&worktree),
         )
-        .run()?;
+        .run()
+        .map_err(|error| unreadable(error.to_string()))?;
         match output.status.code() {
             Some(1) => continue, // absent here — fine
             Some(0) => {
@@ -71,11 +99,9 @@ pub(super) fn check_install(repo: &Repo, receipt: Option<&Receipt>) -> Result<()
                 }
             }
             _ => {
-                return Err(err(format!(
-                    "worktree {} could not be read while checking its effective core.hooksPath — an unreadable worktree is a refusal: {}",
-                    worktree.display(),
-                    String::from_utf8_lossy(&output.stderr).trim()
-                )));
+                return Err(unreadable(
+                    String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+                ));
             }
         }
     }

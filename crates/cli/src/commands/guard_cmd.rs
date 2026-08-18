@@ -109,9 +109,10 @@ fn report(lines: &[String], code: u8) -> ExitCode {
 }
 
 /// The commit-msg verdicts: the hook lane (which honors the check's
-/// enabled switch, like every hook lane) and the standalone verb. Both
-/// read the message before anything else — its path is relative to the
-/// invoker's directory, never the repo root.
+/// enabled switch, like every hook lane) and the standalone verb. The
+/// message path is resolved against the invoker's directory, never the
+/// repo root — git hands the hook `.git/COMMIT_EDITMSG` relative to where
+/// it ran.
 fn commit_msg(ctx: &GuardCtx, file: Option<&PathBuf>, hook_lane: bool) -> ExitCode {
     let message = match read_message(file) {
         Ok(message) => message,

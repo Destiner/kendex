@@ -326,3 +326,19 @@ pub fn config_path(check: &str, raw: &str) -> Result<String> {
     }
     Ok(joined)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn class_entries_need_positive_thresholds() {
+        assert_eq!(
+            parse_class_entries("t", "*.ts=250; ui/*=200 ;").unwrap(),
+            [("*.ts".to_owned(), 250), ("ui/*".to_owned(), 200)]
+        );
+        assert!(parse_class_entries("t", "*.ts=0").is_err(), "zero");
+        assert!(parse_class_entries("t", "*.ts=-1").is_err(), "negative");
+        assert!(parse_class_entries("t", "*.ts").is_err(), "no threshold");
+    }
+}

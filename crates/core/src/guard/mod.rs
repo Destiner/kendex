@@ -78,14 +78,10 @@ pub(crate) fn grep_lane(
     let raw = ctx.git_grep(check, &args)?;
     let mut rest = raw.as_slice();
     while !rest.is_empty() {
-        let (path, after) = split_at_nul(check, rest)?;
-        let (line, after) = split_at_nul(check, after)?;
-        let newline = after
-            .iter()
-            .position(|byte| *byte == b'\n')
-            .unwrap_or(after.len());
-        let (content, tail) = after.split_at(newline);
-        rest = tail.get(1..).unwrap_or(&[]);
+        let (path, after) = ctx::split_at_nul(check, rest)?;
+        let (line, after) = ctx::split_at_nul(check, after)?;
+        let (content, tail) = ctx::split_at_newline(after);
+        rest = tail;
         let Ok(file) = std::str::from_utf8(path) else {
             return Err(guard_err(
                 check,
@@ -98,6 +94,8 @@ pub(crate) fn grep_lane(
         if excludes.is_excluded(file) {
             continue;
         }
+        // A CRLF file's line keeps its `\r`; the report is text, not bytes.
+        let content = content.strip_suffix(b"\r").unwrap_or(content);
         out.violation(
             format!(
                 "{check} FAIL {label}: {file}:{}:{}",
@@ -108,14 +106,6 @@ pub(crate) fn grep_lane(
         );
     }
     Ok(())
-}
-
-fn split_at_nul<'a>(check: &str, bytes: &'a [u8]) -> Result<(&'a [u8], &'a [u8])> {
-    let nul = bytes
-        .iter()
-        .position(|byte| *byte == 0)
-        .ok_or_else(|| guard_err(check, "unparseable match record from git grep"))?;
-    Ok((&bytes[..nul], &bytes[nul + 1..]))
 }
 
 /// The chain's fold: every step runs, then one verdict. `Err` from a step
@@ -152,6 +142,46 @@ impl ChainReport {
     }
 }
 
+impl ChainReport {
+    /// The policy every lane starts from; a policy that cannot be loaded
+    /// is the lane's one error, and the lane ends there.
+    fn load_policy(&mut self, ctx: &GuardCtx, lane: &str) -> Option<Policy> {
+        match Policy::load(ctx, lane) {
+            Ok(policy) => Some(policy),
+            Err(error) => {
+                self.errors += 1;
+                self.lines.push(format!("{lane}: {error}"));
+                None
+            }
+        }
+    }
+
+    /// One check under its enabled switch, folded.
+    fn step(&mut self, policy: &Policy, name: &str, run: impl FnOnce(&Policy) -> Result<Outcome>) {
+        match policy.enabled(name) {
+            Ok(false) => self.lines.push(format!("=== {name}: disabled — skipped")),
+            Ok(true) => self.fold(name, run(policy)),
+            Err(error) => self.fold(name, Err(error)),
+        }
+    }
+
+    /// The lane's closing line: one verdict after every check has spoken.
+    fn conclude(&mut self, lane: &str) {
+        let verdict = match (self.errors, self.violations) {
+            (0, 0) => format!("{lane}: OK — clean"),
+            (0, violations) => {
+                format!(
+                    "{lane}: {violations} violation(s) — commit blocked; see the failures above"
+                )
+            }
+            _ => {
+                format!("{lane}: a guard could not complete — commit blocked; fix the errors above")
+            }
+        };
+        self.lines.push(verdict);
+    }
+}
+
 /// The staged-scope chain the pre-commit hook runs: every enabled check,
 /// then the machine-local extension point, then one verdict. The extension
 /// point is configured machine-locally only — the environment — never from
@@ -159,71 +189,40 @@ impl ChainReport {
 /// malicious executable (settled decision 6).
 pub fn run_pre_commit(ctx: &GuardCtx) -> ChainReport {
     let mut report = ChainReport::default();
-    let policy = match Policy::load(ctx, "pre-commit") {
-        Ok(policy) => policy,
-        Err(error) => {
-            report.errors += 1;
-            report.lines.push(format!("pre-commit: {error}"));
-            return report;
-        }
+    let Some(policy) = report.load_policy(ctx, "pre-commit") else {
+        return report;
     };
-    type Step = fn(&GuardCtx, &Policy) -> Result<Outcome>;
-    let steps: [(&str, Step); 4] = [
-        ("size-ratchet", |ctx, policy| {
-            size_ratchet::run(ctx, policy, size_ratchet::Mode::Check)
-        }),
-        ("todo-ban", todo_ban),
-        ("byte-ceiling", byte_ceiling::run),
-        ("suppression-ban", |ctx, policy| {
-            suppression_ban::run(ctx, policy, false)
-        }),
-    ];
-    for (name, step) in steps {
-        match policy.enabled(name) {
-            Ok(false) => report.lines.push(format!("=== {name}: disabled — skipped")),
-            Ok(true) => report.fold(name, step(ctx, &policy)),
-            Err(error) => report.fold(name, Err(error)),
-        }
-    }
+    report.step(&policy, "size-ratchet", |policy| {
+        size_ratchet::run(ctx, policy, size_ratchet::Mode::Check)
+    });
+    report.step(&policy, "todo-ban", |policy| todo_ban(ctx, policy));
+    report.step(&policy, "byte-ceiling", |policy| {
+        byte_ceiling::run(ctx, policy)
+    });
+    report.step(&policy, "suppression-ban", |policy| {
+        suppression_ban::run(ctx, policy, false)
+    });
     if let Ok(local) = std::env::var("VSTACK_GUARD_PRE_COMMIT_LOCAL")
         && !local.trim().is_empty()
     {
         report.fold("repo-local", run_local_entry(ctx, &local));
     }
-    let verdict = match (report.errors, report.violations) {
-        (0, 0) => "pre-commit: OK — staged guard chain clean".to_owned(),
-        (0, violations) => {
-            format!(
-                "pre-commit: {violations} violation(s) — commit blocked; see the failures above"
-            )
-        }
-        _ => "pre-commit: a guard could not complete — commit blocked; fix the errors above"
-            .to_owned(),
-    };
-    report.lines.push(verdict);
+    report.conclude("pre-commit");
     report
 }
 
 /// The commit-msg hook lane: the conventional-commit gate over the message
-/// git handed the hook, honoring the same `[guards.commit-msg] enabled`
-/// switch every pre-commit check honors.
+/// git handed the hook, under the same enabled switch and with the same
+/// closing verdict as every other lane.
 pub fn run_commit_msg(ctx: &GuardCtx, message: &str) -> ChainReport {
     let mut report = ChainReport::default();
-    let policy = match Policy::load(ctx, "commit-msg") {
-        Ok(policy) => policy,
-        Err(error) => {
-            report.errors += 1;
-            report.lines.push(format!("commit-msg: {error}"));
-            return report;
-        }
+    let Some(policy) = report.load_policy(ctx, "commit-msg") else {
+        return report;
     };
-    match policy.enabled("commit-msg") {
-        Ok(false) => report
-            .lines
-            .push("=== commit-msg: disabled — skipped".to_owned()),
-        Ok(true) => report.fold("commit-msg", commit_msg::run(&policy, message)),
-        Err(error) => report.fold("commit-msg", Err(error)),
-    }
+    report.step(&policy, "commit-msg", |policy| {
+        commit_msg::run(policy, message)
+    });
+    report.conclude("commit-msg");
     report
 }
 

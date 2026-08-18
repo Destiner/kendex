@@ -90,6 +90,13 @@ fn surface_groups(ctx: &ItemCtx) -> Vec<SurfaceGroup> {
 pub(super) fn desired_skill(ctx: &ItemCtx, state: &mut DesiredState) -> Result<()> {
     let enabled = ctx.decl.enabled;
     let method = ctx.decl.method.unwrap_or(ctx.manifest.install.method);
+    let groups = surface_groups(ctx);
+    if groups.is_empty() {
+        return Ok(());
+    }
+    // A skill's `[env]` defaults ride with an installation: a skill no
+    // harness here installs seeds nothing, so nothing reaches the settings
+    // file without passing the safety gate the installation passes.
     if enabled && matches!(ctx.scope, Scope::Project { .. }) {
         let template = ctx.item_path.join(crate::settings_seed::SETTINGS_TEMPLATE);
         if let Some(text) = ctx.sealed.read_if_exists(&template)? {
@@ -100,10 +107,6 @@ pub(super) fn desired_skill(ctx: &ItemCtx, state: &mut DesiredState) -> Result<(
                 });
             }
         }
-    }
-    let groups = surface_groups(ctx);
-    if groups.is_empty() {
-        return Ok(());
     }
     // Gemini and Copilot read the skill directories other tools own, so one
     // tree can be a definition they see too — said out loud, never counted

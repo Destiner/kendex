@@ -34,7 +34,7 @@ pub fn assert_baseline_representable(check: &str, counts: &BTreeMap<String, u64>
         Some(path) => Err(guard_err(
             check,
             format!(
-                "tracked path contains a tab or newline, unrepresentable in the baseline TSV (exclude it to skip the gate): {path:?}"
+                "tracked path contains a tab or newline, unrepresentable in the baseline TSV (a staged excludes row skips it): {path:?}"
             ),
         )),
     }

@@ -24,7 +24,8 @@ use crate::process::Hardened;
 
 mod entrypoints;
 mod refusals;
-pub use entrypoints::{COMMIT_MSG_ENTRYPOINT, PRE_COMMIT_ENTRYPOINT};
+mod uninstall;
+pub use entrypoints::{HOOKS, entrypoint};
 
 pub const HOOKS_DIR: &str = "vstack-hooks";
 pub const RECEIPT_FILE: &str = "receipt.json";
@@ -66,10 +67,16 @@ impl Repo {
         let worktree = worktree
             .canonicalize()
             .map_err(|e| CoreError::io(&worktree, e))?;
+        // A relative common dir is relative to where git was asked — `dir`
+        // — not to the top level: from a subdirectory git says `../.git`,
+        // and joining that onto the top level names the wrong repository.
         let common = PathBuf::from(common);
         let common_dir = match common.is_absolute() {
             true => common,
-            false => worktree.join(common),
+            false => dir
+                .canonicalize()
+                .map_err(|e| CoreError::io(dir, e))?
+                .join(common),
         };
         let common_dir = common_dir
             .canonicalize()
@@ -90,25 +97,33 @@ impl Repo {
         self.common_dir.join(HOOKS_DIR)
     }
 
-    fn receipt_path(&self) -> PathBuf {
+    pub(super) fn receipt_path(&self) -> PathBuf {
         self.hooks_dir().join(RECEIPT_FILE)
     }
 
-    fn config_file(&self) -> PathBuf {
+    pub(super) fn config_file(&self) -> PathBuf {
         self.common_dir.join("config")
     }
 
-    /// Every worktree git's own registry lists, canonicalized where it
-    /// still exists.
+    /// Every live worktree git's own registry lists, canonicalized. A
+    /// worktree whose directory is gone stays in the registry as
+    /// `prunable` until someone prunes; it is dead for every purpose here
+    /// — its lease is reaped, its config is not asked for.
     pub fn worktrees(&self) -> Result<Vec<PathBuf>> {
         let output =
             Hardened::git(&["worktree", "list", "--porcelain"], Some(&self.worktree)).run()?;
         if !output.status.success() {
             return Err(err("git worktree list failed"));
         }
-        Ok(String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter_map(|line| line.strip_prefix("worktree "))
+        let text = String::from_utf8_lossy(&output.stdout);
+        Ok(text
+            .split("\n\n")
+            .filter(|block| !block.lines().any(|line| line.starts_with("prunable")))
+            .filter_map(|block| {
+                block
+                    .lines()
+                    .find_map(|line| line.strip_prefix("worktree "))
+            })
             .map(|path| {
                 let path = PathBuf::from(path);
                 path.canonicalize().unwrap_or(path)
@@ -173,26 +188,23 @@ fn plan_install(repo: &Repo) -> Result<(Vec<PlannedOp>, String)> {
     let updated = Receipt {
         schema: 1,
         hooks_path: hooks_path.clone(),
-        files: vec![
-            "pre-commit".to_owned(),
-            "commit-msg".to_owned(),
-            RECEIPT_FILE.to_owned(),
-        ],
+        files: HOOKS
+            .iter()
+            .map(|name| (*name).to_owned())
+            .chain(std::iter::once(RECEIPT_FILE.to_owned()))
+            .collect(),
         leases,
     };
 
     let mut ops = Vec::new();
-    for (name, bytes) in [
-        ("pre-commit", PRE_COMMIT_ENTRYPOINT),
-        ("commit-msg", COMMIT_MSG_ENTRYPOINT),
-    ] {
+    for name in HOOKS {
         let path = hooks_dir.join(name);
         ops.push(PlannedOp {
             description: format!("write the {name} entrypoint"),
             op: Op::WriteExecutable {
                 pre: Pre::observed(&path)?,
                 path,
-                bytes: bytes.as_bytes().to_vec(),
+                bytes: entrypoint(name).into_bytes(),
             },
         });
     }
@@ -220,16 +232,20 @@ fn plan_install(repo: &Repo) -> Result<(Vec<PlannedOp>, String)> {
     Ok((ops, hooks_path))
 }
 
-/// Release this worktree's lease; disarm only when the last one goes.
-/// Dead worktrees — leases git's registry no longer lists — are reaped in
-/// passing. Removal is receipt-scoped with compare-and-swap on both
-/// sides: a user-changed hooksPath survives, and a user-added file turns
-/// uninstall into a refusal, never a half-removal.
+/// Release this worktree's lease; disarm only when the last one goes —
+/// see [`uninstall`] for what that entails.
 pub fn uninstall(env: &Env, dir: &Path) -> Result<HooksReport> {
     let repo = Repo::at(dir)?;
+    // A repository with nothing of ours in it gets its answer without
+    // taking any lock: there is nothing to serialize against.
+    if load_receipt(&repo)?.is_none() && !uninstall::orphaned(&repo)? {
+        return Ok(HooksReport {
+            lines: vec![NOTHING_INSTALLED.to_owned()],
+        });
+    }
     let (_, mut lines) =
         crate::apply::execute_common(env, &repo.scope(), &repo.common_dir, || {
-            plan_uninstall(&repo)
+            uninstall::plan(&repo)
         })?;
     // What is effective after decides what the user sees next.
     let effective = effective_hooks_path(&repo.worktree)?;
@@ -240,117 +256,7 @@ pub fn uninstall(env: &Env, dir: &Path) -> Result<HooksReport> {
     Ok(HooksReport { lines })
 }
 
-fn plan_uninstall(repo: &Repo) -> Result<(Vec<PlannedOp>, Vec<String>)> {
-    let Some(receipt) = load_receipt(repo)? else {
-        return plan_orphan_cleanup(repo);
-    };
-    let registry: BTreeSet<String> = repo
-        .worktrees()?
-        .iter()
-        .map(|path| path.display().to_string())
-        .collect();
-    let this = repo.worktree.display().to_string();
-    let mut leases = receipt.leases.clone();
-    let reaped: Vec<String> = leases
-        .iter()
-        .filter(|lease| !registry.contains(*lease))
-        .cloned()
-        .collect();
-    for dead in &reaped {
-        leases.remove(dead);
-    }
-    leases.remove(&this);
-
-    let mut lines: Vec<String> = reaped
-        .iter()
-        .map(|dead| format!("reaped a lease for a worktree git no longer lists: {dead}"))
-        .collect();
-
-    if !leases.is_empty() {
-        let updated = Receipt {
-            leases: leases.clone(),
-            ..receipt
-        };
-        let receipt_path = repo.receipt_path();
-        let ops = vec![PlannedOp {
-            description: "release this worktree's lease".into(),
-            op: Op::WriteFile {
-                pre: Pre::observed(&receipt_path)?,
-                path: receipt_path,
-                bytes: render_receipt(&updated)?,
-            },
-        }];
-        lines.push(format!(
-            "lease released — the commit checks stay armed for {} other worktree(s)",
-            leases.len()
-        ));
-        return Ok((ops, lines));
-    }
-
-    refusals::check_uninstall(repo, &receipt)?;
-    let hooks_dir = repo.hooks_dir();
-    let mut ops = vec![PlannedOp {
-        description: "remove the owned hooks directory".into(),
-        op: Op::Trash {
-            pre: Pre::HashIs {
-                hash: crate::hash::hash_tree(&hooks_dir)?,
-            },
-            path: hooks_dir,
-        },
-    }];
-    let current = crate::apply::read_git_config(&repo.config_file(), "core.hooksPath")?;
-    if current.as_deref() == Some(receipt.hooks_path.as_str()) {
-        ops.push(PlannedOp {
-            description: "unset core.hooksPath".into(),
-            op: Op::GitConfigSwap {
-                file: repo.config_file(),
-                key: "core.hooksPath".into(),
-                expected: current,
-                value: None,
-            },
-        });
-        lines.push("commit checks removed; core.hooksPath unset".into());
-    } else {
-        lines.push(format!(
-            "commit checks removed; core.hooksPath was changed by hand (now {:?}) and was left alone",
-            current
-        ));
-    }
-    Ok((ops, lines))
-}
-
-/// No receipt, but `core.hooksPath` still names the owned directory and
-/// that directory is gone: someone removed the files by hand and left git
-/// resolving hooks from nowhere — which silently runs no hook at all,
-/// including the user's own. The config value is provably vstack's, so
-/// taking it back is still receipt-scoped removal.
-fn plan_orphan_cleanup(repo: &Repo) -> Result<(Vec<PlannedOp>, Vec<String>)> {
-    let hooks_dir = repo.hooks_dir();
-    let current = crate::apply::read_git_config(&repo.config_file(), "core.hooksPath")?;
-    if hooks_dir.exists() || current.as_deref() != Some(hooks_dir.display().to_string().as_str()) {
-        return Ok((
-            Vec::new(),
-            vec!["no vstack hooks are installed in this repository".into()],
-        ));
-    }
-    let ops = vec![PlannedOp {
-        description: "unset the core.hooksPath left behind by a hand-deleted hooks directory"
-            .into(),
-        op: Op::GitConfigSwap {
-            file: repo.config_file(),
-            key: "core.hooksPath".into(),
-            expected: current,
-            value: None,
-        },
-    }];
-    Ok((
-        ops,
-        vec![format!(
-            "the owned hooks directory {} was already gone; core.hooksPath still pointed at it and was unset",
-            hooks_dir.display()
-        )],
-    ))
-}
+const NOTHING_INSTALLED: &str = "no vstack hooks are installed in this repository";
 
 /// The `core.hooksPath` a worktree actually resolves, git's own answer.
 pub fn effective_hooks_path(worktree: &Path) -> Result<Option<String>> {
@@ -367,7 +273,7 @@ pub fn effective_hooks_path(worktree: &Path) -> Result<Option<String>> {
     }
 }
 
-fn render_receipt(receipt: &Receipt) -> Result<Vec<u8>> {
+pub(super) fn render_receipt(receipt: &Receipt) -> Result<Vec<u8>> {
     let mut text = serde_json::to_string_pretty(receipt)
         .map_err(|e| err(format!("unrenderable receipt: {e}")))?;
     text.push('\n');

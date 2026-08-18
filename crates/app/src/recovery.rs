@@ -31,8 +31,13 @@ pub fn recover_on_launch(env: &Env) -> Vec<String> {
     // Hook installs journal under the repository's common dir, not a
     // scope: a crash there leaves core.hooksPath live over a torn
     // entrypoint, and no scope pass would ever find the journal.
-    for (key, result) in apply::recover_common_journals(env) {
-        report(&mut messages, &format!("repository hooks ({key})"), result);
+    match apply::recover_common_journals(env) {
+        Ok(keys) => {
+            for (key, result) in keys {
+                report(&mut messages, &format!("repository hooks ({key})"), result);
+            }
+        }
+        Err(error) => messages.push(format!("repository hooks: recovery failed: {error}")),
     }
     messages
 }

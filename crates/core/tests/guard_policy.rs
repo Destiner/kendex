@@ -124,15 +124,18 @@ fn the_commit_msg_hook_lane_honors_its_enabled_switch() {
 }
 
 /// The refusal for a path the baseline TSV cannot carry names its remedy
-/// — exclude it — so the excludes must apply before the refusal.
+/// — an excludes row — so the excludes must apply before the refusal. A
+/// newline in a path parses (records are NUL-delimited) and is refused
+/// the same way.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn a_tab_in_a_tracked_path_is_curable_by_the_excludes_it_names() {
+fn a_tab_or_newline_in_a_tracked_path_is_curable_by_the_excludes_it_names() {
     let r = repo();
     stage(&r, "src/ok.rs", "fn main() {}\n");
     stage(&r, "assets/a\tb.txt", "x\n");
+    stage(&r, "assets/c\nd.txt", "y\n");
     let error = size_ratchet::run(&ctx(&r), &policy(&r), size_ratchet::Mode::Check).unwrap_err();
-    assert!(error.to_string().contains("exclude it"), "{error}");
+    assert!(error.to_string().contains("excludes row"), "{error}");
     stage(&r, "tools/size-ratchet-excludes", "assets/**\tgenerated\n");
     let out = size_ratchet::run(&ctx(&r), &policy(&r), size_ratchet::Mode::Check).unwrap();
     assert_eq!(out.violations, 0, "{:?}", out.lines);
@@ -164,6 +167,33 @@ fn a_lane_reports_every_hit_by_file_and_line() {
     );
     assert!(
         out.lines.iter().any(|l| l.contains("src/a:b.rs:4:")),
+        "{:?}",
+        out.lines
+    );
+}
+
+/// The guards parse git's output; a user's color settings must never
+/// reach it — an escape sequence around a path is not a path.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_users_color_config_cannot_garble_what_the_guards_parse() {
+    let r = repo();
+    git(&r.root, &["config", "color.ui", "always"]);
+    git(&r.root, &["config", "color.grep", "always"]);
+    let long: String = (0..30).map(|i| format!("line {i}\n")).collect();
+    stage(&r, "src/long.rs", &long);
+    stage(&r, "tools/size-ratchet-baseline.tsv", "src/long.rs\t30\n");
+    stage(
+        &r,
+        "vstack.settings.toml",
+        "[guards.size-ratchet]\nthreshold = 20\n",
+    );
+    let out = size_ratchet::run(&ctx(&r), &policy(&r), size_ratchet::Mode::Check).unwrap();
+    assert_eq!(out.violations, 0, "{:?}", out.lines);
+    stage(&r, "src/lib.rs", &todo_marker());
+    let out = guard::todo_ban(&ctx(&r), &policy(&r)).unwrap();
+    assert!(
+        out.lines.iter().any(|l| l.contains("src/lib.rs:1:")),
         "{:?}",
         out.lines
     );

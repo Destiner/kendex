@@ -199,9 +199,10 @@ fn a_partial_commit_is_judged_on_the_index_git_names() {
     assert!(!full.status.success());
 }
 
-/// The v1 shim was refused at install; if it reappears in git's own hooks
-/// directory afterwards, the chain refuses it too — chaining it would run
-/// the guards twice today and fail closed forever once v1 is gone.
+/// The v1 shim is refused at install; a shim that turns up in git's own
+/// hooks directory later is refused by the chain as well — chained, it
+/// runs the guards twice while v1 is installed and fails closed on every
+/// commit once v1 is gone.
 #[test]
 #[allow(clippy::unwrap_used)]
 fn a_v1_shim_that_reappears_after_install_is_refused_not_chained() {

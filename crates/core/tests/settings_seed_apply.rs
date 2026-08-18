@@ -247,6 +247,35 @@ fn a_gate_blocked_skill_does_not_seed() {
     assert!(!lock.settings_seeds.contains_key("HOSTILE_KEY"));
 }
 
+/// A skill no harness here installs is not an installation: nothing of
+/// it passes the safety gate, so nothing of it may reach the settings
+/// file either.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_skill_installed_on_no_harness_seeds_nothing() {
+    let f = fixture(true);
+    let manifest = f.project.join("vstack.toml");
+    let text = fs::read_to_string(&manifest).unwrap();
+    fs::write(&manifest, text.replace("[\"claude\"]", "[\"cursor\"]")).unwrap();
+    let report = audit(&f.env, &f.scope).unwrap();
+    assert!(
+        !report
+            .plan
+            .ops
+            .iter()
+            .any(|op| op.description.contains("vstack.settings.toml")),
+        "{:?}",
+        report
+            .plan
+            .ops
+            .iter()
+            .map(|op| &op.description)
+            .collect::<Vec<_>>()
+    );
+    apply::execute(&f.env, &report.plan, None).unwrap();
+    assert!(!f.project.join("vstack.settings.toml").exists());
+}
+
 /// An install predating the ledger adopts its unedited comments on the
 /// next pass with no file change — and that ledger-only change must still
 /// reach the lock, or every pass re-adopts and nothing ever persists.
