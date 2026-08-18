@@ -38,7 +38,7 @@ still scanned, but nothing is ever written there.
   the cap is refused for this harness instead of cut mid-fence.
 - **Name rule:** `Any`. Namespace separator `__`.
 - **MCP transports:** stdio and streamable HTTP. Codex never speaks SSE.
-- **Agent file:** TOML, `<name>.toml`. vstack writes `name`,
+- **Agent file:** TOML, `<name>.toml`. kendex writes `name`,
   `nickname_candidates`, `description`, `model?`, `model_reasoning_effort?`,
   `sandbox_mode`, and `developer_instructions` as a triple-quoted string
   carrying the whole prompt (`crates/core/src/render/agent/codex.rs`).

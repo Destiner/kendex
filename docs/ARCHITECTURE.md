@@ -1,4 +1,4 @@
-# vstack2 Architecture
+# kendex Architecture
 
 Cross-platform desktop app (Rust + Tauri) managing AI coding-harness
 customizations — agents, skills, hooks, commands, MCP servers, plugins, Pi
@@ -13,7 +13,7 @@ Four verbs over one model: **scan → declare → diff → apply**.
 
 - **Scan** — read harness-native directories in place, across all scopes.
   Useful read-only with zero adoption; nothing copies into a shadow store.
-- **Declare** — a per-scope `vstack.toml` manifest is the only durable home
+- **Declare** — a per-scope `kendex.toml` manifest is the only durable home
   of user intent.
 - **Diff** — drift = declared vs observed. The Review & apply page is this
   diff.
@@ -79,12 +79,12 @@ lives in one capability table read by core and UI.
    foreign symlinks are conflicts, not clobber targets; adoption merges
    content, never loses it. The one sanctioned exception is a link the
    user explicitly adopts: when it resolves to a real skill folder outside
-   vstack's own trees, adopt captures that folder's content, trashes the
+   kendex's own trees, adopt captures that folder's content, trashes the
    folder (bound to the exact bytes captured) and every sibling link that
-   read it, and the follow-up apply restores the sharing from vstack's
+   read it, and the follow-up apply restores the sharing from kendex's
    copy — a link at anything else stays a conflict, and the confirm names
-   the folder and every tool reading it, because links vstack cannot see
-   will break. Ownership is what vstack wrote, read from the
+   the folder and every tool reading it, because links kendex cannot see
+   will break. Ownership is what kendex wrote, read from the
    lock — including the paths an installation recorded writing under
    another kind's name. A position we put something at is ours to replace
    or clear, whichever entry holds it now; deriving ownership from the
@@ -100,11 +100,11 @@ lives in one capability table read by core and UI.
 8. One writer per scope: every apply (app or CLI) holds an OS-level scope
    lock; journal recovery runs under the same lock; a busy scope is a
    clear error, never an interleaved write.
-9. Never mutate a working tree vstack does not own. Managed scopes are
-   the only writable surface; vstack never stages, commits, or resets in
+9. Never mutate a working tree kendex does not own. Managed scopes are
+   the only writable surface; kendex never stages, commits, or resets in
    a repository it did not create. Work that must produce a commit runs
    in a disposable clone, where none of a live tree's states exist.
-10. Writes are byte-faithful: a file vstack edits round-trips
+10. Writes are byte-faithful: a file kendex edits round-trips
     byte-identically except for the intended edit, trailing newline
     included. Change detection compares exact bytes — a comparison that
     ignores trailing whitespace pins the corruption it hides instead of
@@ -120,7 +120,7 @@ lives in one capability table read by core and UI.
     alone.
 12. Verification compares content, not provenance. Installed artifacts
     are re-hashed against what they should be; a matching lock entry
-    alone never reports OK, and an artifact vstack cannot compare is
+    alone never reports OK, and an artifact kendex cannot compare is
     reported as uncompared, never as passing.
 13. External processes are hardened by construction. One constructor
     builds every invocation: environment that can redirect it
@@ -166,7 +166,7 @@ lives in one capability table read by core and UI.
 - Vercel-inspired design language: monochrome, high contrast, minimal
   chrome. Light/dark/system only — no themes. Every color, space, and
   radius flows through design tokens (guard bans raw hex in UI code).
-- A coding tool vstack writes to is a **harness**, in the code and on
+- A coding tool kendex writes to is a **harness**, in the code and on
   screen alike (`HarnessId` in core, "Harnesses" in the sidebar). "Tool"
   on screen would collide with the tools a model is allowed to call,
   which agent settings also name.
@@ -224,9 +224,9 @@ lives in one capability table read by core and UI.
   other. Where a harness keeps its files is edited on that harness's own
   row, not in a second list of the same harnesses.
 - Content a tool ships with itself — Codex's bundled plugins, Claude
-  Code's — belongs to that tool, not to the person running vstack.
-  `core/vendor.rs` reads ownership off the marketplace a plugin names, an
-  unknown marketplace is always the user's, and vendor-owned content is
+  Code's — belongs to that tool, not to the person running kendex.
+  `core/vendor.rs` reads ownership off the plugin registry a plugin names, an
+  unknown registry is always the user's, and vendor-owned content is
   scored by nothing and asked about nowhere: it is listed in the Library,
   labelled with who ships it, and left alone. A finding nobody can act on
   is noise that teaches people to ignore the ones they can.
@@ -307,7 +307,7 @@ lives in one capability table read by core and UI.
   earns its place if a verb reads it: what a tool's own configuration
   holds down elsewhere (Copilot's `disabledSkills`, which a repository
   may add to but never take from) is reported per item where it is read,
-  because vstack's own switch is a rename it can undo either way and a
+  because kendex's own switch is a rename it can undo either way and a
   column saying otherwise would forbid a working enable.
 - **An adapter claims only its own namespace.** Tools reading each other's
   directories is now common (Copilot reads Claude Code's skills and
@@ -316,13 +316,29 @@ lives in one capability table read by core and UI.
   second installation, which would count one file on disk twice.
 - Fresh manifest schema + one-time v1 importer; no compat shims. v1
   extras/theme packs are not carried over.
+- **The rename to kendex reads the old names as an import, not as a second
+  format** — the one stated amendment to "no compat shims". A scope found
+  only under the old file names (`vstack.toml`, `.vstack-lock.json`,
+  `.vstack-local/`, `vstack.settings.toml`) loads read-only and gets a
+  "Rename to kendex" plan op — a journaled rename, nothing else — as its
+  first mutation, never a silent move; both generations present in one
+  scope is a hard error naming both files. Managed-block markers, report
+  tags and the opencode hook-file prefix write the new spelling and read
+  both, because every consuming repo still carries the old bytes. Env vars
+  are renamed outright to `KENDEX_*`, except the guard's
+  (`VSTACK_GUARD*`), which are read as a fallback while the `vstack`
+  alias binary ships — one release cycle, because consuming repos' git
+  hook entrypoints hard-code `vstack guard run` and fail closed without
+  it; `kendex guard repair` rewrites entrypoints under receipt, and the
+  receiptless by-content ownership proof accepts both generations of
+  entrypoint bytes. The old-name fallback reads retire at 3.0.
 - **Commits walk through the guards whatever tool makes them.** The guard
   family (`core/guard/`) — size-ratchet, todo-ban, byte-ceiling,
   suppression-ban, commit-msg — judges the index git names for the commit
   (`GIT_INDEX_FILE`, captured once and threaded through a validated
   context; the one sanctioned redirect past invariant 13's scrubbing).
   Policy is read from the commit too: the `[guards]` tables in
-  `vstack.settings.toml`, baselines, and excludes all resolve from the
+  `kendex.settings.toml`, baselines, and excludes all resolve from the
   staged copy and nothing else — a file staged for deletion, or never
   staged at all, governs as absent — so a permissive unstaged edit can
   never authorize stricter staged content and an untracked file dropped
@@ -340,9 +356,9 @@ lives in one capability table read by core and UI.
   `guard import-v1` and imported excludes keep v1's legacy-glob dialect,
   marked as such — "same file, new matcher" would silently change what is
   excluded, and a pattern outside the documented dialect is a refusal.
-- **vstack owns its hooks directory — provably, not declaratively.** The
-  guards reach git through `<git-common-dir>/vstack-hooks/`, two
-  entrypoints whose call surface (`vstack guard run <hook>`) is a stable
+- **kendex owns its hooks directory — provably, not declaratively.** The
+  guards reach git through `<git-common-dir>/kendex-hooks/`, two
+  entrypoints whose call surface (`kendex guard run <hook>`) is a stable
   contract, with `core.hooksPath` pointed at them in the repo's shared
   local config. Ownership is a recorded receipt: the exact files written,
   the exact config value set, and one lease per worktree that enabled the
@@ -350,11 +366,11 @@ lives in one capability table read by core and UI.
   last one goes, reaping leases git's registry no longer lists. Repair
   rewrites only receipt-listed files; uninstall deletes only
   receipt-listed files and unsets `core.hooksPath` only while its current
-  value still equals the receipt's (compare-and-swap both sides). vstack
+  value still equals the receipt's (compare-and-swap both sides). kendex
   never edits a hook file it did not create: a pre-existing or symlinked
   directory, a worktree resolving a foreign effective `hooksPath`, v1's
   shim, and foreign files found at uninstall are all refusals — a refused
-  repo can still call `vstack guard run` from its own hook orchestration.
+  repo can still call `kendex guard run` from its own hook orchestration.
   Hook state is repository-common state: mutations take a common-dir lock
   after the scope lock (one fixed order), build their plan — refusals
   included — only once both are held, and journal into a common-dir
@@ -365,14 +381,14 @@ lives in one capability table read by core and UI.
   no vendored runner, because copies drift — and the entrypoints refuse
   v1's shim at commit time as install refused it, so it cannot be chained
   by reappearing. Ownership without a receipt is proven by content: the
-  config value is vstack's by name, and a receiptless directory holding
-  nothing but vstack's own entrypoints byte for byte is vstack's by
+  config value is kendex's by name, and a receiptless directory holding
+  nothing but kendex's own entrypoints byte for byte is kendex's by
   construction — repaired by install, taken back by uninstall — while
   anything else in it stays where it is, named. A worktree git lists as
   prunable is dead here: its lease is reaped, its config never asked for.
 - **Pi hooks are enforced through the carrier.** Pi has no per-hook
   artifact: the `pi-hooks` extension package hosts native listeners, and
-  hook content rides in the registry vstack renders beside them
+  hook content rides in the registry kendex renders beside them
   (`hooks/<name>.sh` plus `hooks.json`, keyed by Pi's own listener names —
   tool call, tool result, turn end, session start). An event outside that
   map cannot fire on Pi and installs nothing there, said as a note —
@@ -386,7 +402,7 @@ lives in one capability table read by core and UI.
   same kill-switch, fire-and-forget into session start, and a reloaded or
   resumed session never repeats it.
 - **A seeded settings comment refreshes only while provably unedited.**
-  Skills seed `[env]` defaults into `vstack.settings.toml` write-if-absent;
+  Skills seed `[env]` defaults into `kendex.settings.toml` write-if-absent;
   the lock keeps, per key, which skill seeded it and the FNV-1a hash of
   the comment block seeding last wrote (v1's algorithm, so imported
   ledgers verify without re-guessing). A template revision rewrites a
@@ -405,7 +421,7 @@ lives in one capability table read by core and UI.
 - **Schemas are versioned and migrations are applies.** The manifest and
   lock carry a format version; older files load, and the upgrade rides
   the normal journaled, previewed plan as a surgical edit (the version
-  line changes, nothing else). Files from a newer vstack refuse to load
+  line changes, nothing else). Files from a newer kendex refuse to load
   — an older build never corrupts a newer file.
 - **Permission intent is typed and never widens.** A source's tool
   allowlist survives parse, merge, and every renderer as
@@ -448,7 +464,7 @@ lives in one capability table read by core and UI.
   or another revision, is never served the previous one under the new
   one's name.
   An item declaration may hold its own `rev`, outranking the source's —
-  and an item's rev is always the full commit id: `vstack pin` and the
+  and an item's rev is always the full commit id: `kendex pin` and the
   version picker resolve tags and branches at write time, because a hold
   a moved tag can move is not a hold. Holds flow through derivation: a
   pinned bundle pins its members, a pinned skill's dependencies read the
@@ -472,7 +488,7 @@ lives in one capability table read by core and UI.
   per commit it has ever resolved, so a tracked branch grows the cache by
   a catalog per upstream change, and nothing prunes it yet — the cache is
   rebuildable, so deleting it is the only cleanup there is.
-- **A marketplace-shaped catalog is recognized, never guessed.** A source
+- **A plugin-registry-shaped catalog is recognized, never guessed.** A source
   is read one plugin deep (`plugins/<name>/{agents,commands,skills}`)
   exactly when it carries `.claude-plugin/marketplace.json`; a `plugins/`
   directory on its own is not evidence, and guessing renames every item in
@@ -522,12 +538,12 @@ lives in one capability table read by core and UI.
   tools are both, a set that is switched on installs it switched on, and
   what neither rule settles is a finding naming both sets, never whichever
   name sorts first. Authoring lives with the catalog —
-  `[bundles.<name>]` in the source's own `vstack.toml`, or nothing at all
-  for a marketplace-shaped catalog, where each plugin is a set already —
+  `[bundles.<name>]` in the source's own `kendex.toml`, or nothing at all
+  for a plugin-registry-shaped catalog, where each plugin is a set already —
   and a set's members are its own catalog's items, since a bare name from
   another source names nothing stable.
 - **A namespaced name is the identity; the separator is per tool.** Items
-  from marketplace-shaped catalogs are named `<plugin>/<item>` in the
+  from plugin-registry-shaped catalogs are named `<plugin>/<item>` in the
   manifest, the lock, and the UI, so two plugins can each ship an
   `analyzer`. The `/` never reaches disk: every loader in the fleet keys an
   item on the single directory or file name it finds and holds the item's
@@ -541,13 +557,13 @@ lives in one capability table read by core and UI.
   filesystem folds together — install neither, naming both. Folding is
   what one filesystem would do to two names: case, trailing dots and
   spaces, and Unicode composition, since macOS hands a composed and a
-  decomposed accent to the same file. Only the kinds a marketplace offers
+  decomposed accent to the same file. Only the kinds a plugin registry offers
   — agents, commands, skills — may carry a plugin segment at all; a hook
   or an MCP server has no namespaced spelling anywhere, so a `/` in one of
   those names is a directory nothing would ever clean up. Names that
   cannot be a path at all (`..`, device names, trailing dots, overlong
   components, a stray `/`) are refused where they are written down, in
-  `vstack.toml`. A catalog's own words travel into findings and onto a
+  `kendex.toml`. A catalog's own words travel into findings and onto a
   terminal, so control characters in them are shown, never acted on.
 - **The surface model.** Rendered skills are per-harness variants,
   deduplicated by content hash. Harnesses that read the same physical
@@ -572,13 +588,13 @@ lives in one capability table read by core and UI.
   harness, `inherit` is expressed in each tool's own dialect, explicit
   vendor ids pass through.
 - **Propagation into consuming repos is local, never a pull request.**
-  vstack detects drift and informs the agent at session start; the repo
+  kendex detects drift and informs the agent at session start; the repo
   is brought current by a local refresh. Opening PRs in consumer repos
   is a permanent non-goal: the managed assets are gitignored there, so
   there is nothing to commit, and the attempt would mean mutating a
   live foreign working tree (invariant 9).
 - **Session start reads a snapshot; the background job earns it.** The
-  drift contract is `vstack check`: exit 0 clean / 1 drift / 2
+  drift contract is `kendex check`: exit 0 clean / 1 drift / 2
   could-not-check (unknown outranks drift — an incomplete report must not
   claim completeness), `--quiet` bounded and silent when clean, `--json`
   for machines. The check reads the manifest, the lock, the per-scope
@@ -586,7 +602,7 @@ lives in one capability table read by core and UI.
   it materializes no source trees, hashes no catalogs, and fans out no
   per-package subprocesses. The deep work runs where time is free:
   `updates`, `refresh`, `apply`, and the detached
-  `vstack source refresh --stale` the check spawns (TTL 6h, per-mirror
+  `kendex source refresh --stale` the check spawns (TTL 6h, per-mirror
   lock, no stdio, never waited on) all re-derive the snapshot. A mirror
   that moved since its last evaluation reads as unevaluated — the honest
   "maybe", never a guessed verdict — and a fetch failure older than twice
@@ -669,7 +685,7 @@ lives in one capability table read by core and UI.
   the exact config entry, with no budget and no decoding, and that is what
   a decision binds to. Where the bytes cannot be reached from here at all
   there is no review hash, and a decision with nothing to compare against
-  never reads as live — the same rule that reports an artifact vstack
+  never reads as live — the same rule that reports an artifact kendex
   cannot compare as uncompared rather than as passing. Budgets stay where
   they belong: they bound what is read for scoring, never what a decision
   covers, so content past a budget going unreviewable is said out loud
@@ -696,11 +712,11 @@ lives in one capability table read by core and UI.
   finding (`kind:name:harness#fingerprint@review-hash/scope-digest`), and
   a dismiss re-audits before it writes, refusing the whole batch if any
   token no longer names what is installed or was minted for another
-  scope's manifest. Trusting a source needs a source vstack itself
+  scope's manifest. Trusting a source needs a source kendex itself
   resolved and recorded in the lock; a remote url found beside unmanaged
   files is not one, since the files could have written it. Every write is one journaled manifest
   op for one scope. Removing an item reaps its decisions; the registry
-  (`vstack decisions`, Recorded decisions) reads every record against what
+  (`kendex decisions`, Recorded decisions) reads every record against what
   is installed now — active, stale with the reason, or obsolete. An undo
   from the app takes back exactly the record it was shown, never a newer
   one at the same key; the CLI's revoke names the record by key.
@@ -751,7 +767,7 @@ lives in one capability table read by core and UI.
   small-capital letters that imitate ASCII; it is not the whole of
   Unicode's data and the module says so rather than implying coverage it
   does not have.
-- vstack never emits a pasteable command line. Errors, hints, and
+- kendex never emits a pasteable command line. Errors, hints, and
   recovery instructions present the verb and its parameters as data —
   cross-platform shell quoting is a cost the product declines to carry,
   and a hint built by concatenation is an injection surface. The one

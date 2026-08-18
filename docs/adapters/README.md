@@ -1,7 +1,7 @@
 # Adapter reference
 
 One page per harness, holding the durable facts about that tool's on-disk
-surfaces: where things live, what format they take, which operations vstack
+surfaces: where things live, what format they take, which operations kendex
 supports there, and why. These are reference docs — when a capability
 changes, the code and the page beside it change together.
 
@@ -21,7 +21,7 @@ matrix, discrepancy log, and risk notes the code cites as `matrix §N`.
 
 ## The capability model
 
-Everything a page says about *what vstack may do* comes from one table,
+Everything a page says about *what kendex may do* comes from one table,
 `crates/core/src/harness/caps.rs`, read by core and by the UI. It has four
 axes.
 
@@ -29,7 +29,7 @@ axes.
 `observe · adopt · install · toggle · remove · refresh`, each as a pair of
 booleans for project and global scope. Three constructors cover almost every
 row: `managed(scopes)` (all six), `observe_only(scopes)` (read, never write),
-`unsupported()` (the harness has no such surface, and vstack never shims one
+`unsupported()` (the harness has no such surface, and kendex never shims one
 in). A row may also carry `installs_as`, naming the kind the harness actually
 stores the item as — the only one today is a Codex command, stored as a
 skill, because the vendor itself retired its prompts directory.
@@ -52,8 +52,8 @@ plan preview, the report and the tool's card.
 
 **Toggle direction** — where a harness's own configuration holds an item down
 from a layer this scope cannot answer (Copilot's `disabledSkills`, which a
-repository may add to but never take from), the table still says vstack's own
-switch works both ways, because it does: the switch is a rename vstack can
+repository may add to but never take from), the table still says kendex's own
+switch works both ways, because it does: the switch is a rename kendex can
 undo. The external hold is reported per item where it is read.
 
 ## The surface model

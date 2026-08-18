@@ -36,7 +36,7 @@ scope and to the repository's `.mcp.json` at project scope
 - **Byte cap:** none. `format_caps` returns the defaults.
 - **Name rule:** `Any` — any single path segment. Namespace separator `__`.
 - **MCP transports:** stdio, streamable HTTP, SSE.
-- **Agent file:** YAML frontmatter + markdown body, `<name>.md`. vstack
+- **Agent file:** YAML frontmatter + markdown body, `<name>.md`. kendex
   writes `name`, `description`, `model`, `effort?`, `background`,
   `isolation?`, `memory?`, `tools` (allowlist, comma-joined), always
   `disallowedTools`, `color?`, `skills`, and a nested `hooks:` block for
@@ -81,7 +81,7 @@ GitHub Copilot CLI reads `.claude/settings.json` and
 ([CLI configuration directory](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference),
 accessed 2026-08-10).
 
-Two consequences. A write vstack makes here changes Copilot's behavior, so
+Two consequences. A write kendex makes here changes Copilot's behavior, so
 the blast radius of a Claude settings edit is wider than the file suggests —
 invariant 2 covers the mechanics, not the reach. And the Copilot adapter
 deliberately does not claim these paths: one file on disk would otherwise

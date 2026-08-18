@@ -10,11 +10,11 @@ git tag v0.1.0 && git push origin v0.1.0
 (linux x86_64, macOS aarch64, windows x86_64) and publishes a **draft**
 GitHub Release with:
 
-- `vstack-<target>[.exe]` — the CLI binary, one per target. These are what
-  `vstack update` downloads.
+- `kendex-<target>[.exe]` — the CLI binary, one per target. These are what
+  `kendex update` downloads.
 - The desktop app bundles Tauri produces per platform (deb/rpm/AppImage,
   dmg, NSIS installer).
-- `feed.json` — the update feed `vstack update` reads from
+- `feed.json` — the update feed `kendex update` reads from
   `releases/latest/download/feed.json`. Publishing the draft is what makes
   a version "latest"; until then existing installs see nothing.
 
@@ -38,6 +38,6 @@ fail on non-Debian hosts — the release runner covers it.
 ## Version bumps
 
 The workspace version in `Cargo.toml` and `crates/app/tauri.conf.json`
-must match the tag (minus the `v`) — `vstack update` compares its build
+must match the tag (minus the `v`) — `kendex update` compares its build
 version against the feed, so a mismatched tag ships a feed that either
 no-ops or loops.

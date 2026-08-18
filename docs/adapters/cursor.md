@@ -27,7 +27,7 @@ Project marker: a `.cursor/` directory. Owner:
 | pi-extension | — | — | unsupported |
 
 **Skills are unsupported on purpose.** They share the rules directory with
-agents and cannot be told apart from them, so vstack declines to guess rather
+agents and cannot be told apart from them, so kendex declines to guess rather
 than reporting one as the other.
 
 **Cursor is managed project-only.** There is no global rules directory, so
@@ -40,7 +40,7 @@ surfaces do exist and are scanned.
 - **Name rule:** `Any`. Namespace separator `__`.
 - **MCP transports:** stdio, streamable HTTP, SSE — a command, an SSE url or
   a streamable-HTTP url ([cursor.com/docs/context/mcp](https://cursor.com/docs/context/mcp)).
-- **Rule file:** `<name>.mdc`, YAML frontmatter + markdown. vstack writes
+- **Rule file:** `<name>.mdc`, YAML frontmatter + markdown. kendex writes
   exactly `description` (the agent's name and description joined) and
   `alwaysApply: false`. Rules carry no model, tool, skill or hook fields, so
   only the prompt survives (`crates/core/src/render/agent/cursor.rs`).
@@ -67,7 +67,7 @@ description and its safety prose with `alwaysApply: true`, and there is no
 registration behind it (`HookTarget::Rule`,
 `crates/core/src/engine/targets.rs`).
 
-Note the asymmetry: `hooks.json` is the surface vstack *observes* at both
+Note the asymmetry: `hooks.json` is the surface kendex *observes* at both
 scopes, while what it *writes* is a rule in the rules directory. Cursor's
 own `hooks.json` is read and never written, and the global scope has no hook
 target at all — a hook declared for Cursor at global scope installs nothing.

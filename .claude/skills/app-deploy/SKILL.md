@@ -1,9 +1,9 @@
 ---
 name: app-deploy
-description: Release a new vstack version — bump versions, finalize the changelog, tag per docs/RELEASING.md. Use when asked to cut, ship, or release a version.
+description: Release a new kendex version — bump versions, finalize the changelog, tag per docs/RELEASING.md. Use when asked to cut, ship, or release a version.
 ---
 
-# Release vstack
+# Release kendex
 
 1. Bump the workspace `version` in `Cargo.toml` and the version in
    `crates/app/tauri.conf.json` — both must equal the tag minus the `v`,

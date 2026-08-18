@@ -27,14 +27,14 @@ project scope; the layout is identical under each.
 |---|---|---|
 | agent | `<base>/agents/*.md` | managed, both |
 | skill | `<base>/skills/<name>/SKILL.md` | managed, both |
-| hook | `<base>/instructions/vstack-hook-<name>.md` | managed, both, **advisory** |
+| hook | `<base>/instructions/kendex-hook-<name>.md` | managed, both, **advisory** |
 | command | `<base>/commands/*.md` and `<base>/command/*.md` (legacy singular) | observe only, both |
 | mcp-server | config `mcp` key — jsonc tolerated, per-entry `enabled` | observe only, both |
 | plugin | `<base>/plugins/*.{js,ts,mjs,cjs}`, plus the config `plugin` array of npm refs | observe only, both |
 | pi-extension | — | unsupported |
 
 The hook surface is restricted by filename prefix: only files starting
-`vstack-hook-` are read, because those are the only ones vstack itself
+`kendex-hook-` are read, because those are the only ones kendex itself
 rendered. OpenCode has no native hook surface, so nothing else there would be
 a hook.
 
@@ -48,7 +48,7 @@ a hook.
 - **MCP transports:** stdio and streamable HTTP. Its servers are `local`
   (command) or `remote` (url); there is no SSE
   ([opencode.ai/docs/mcp-servers](https://opencode.ai/docs/mcp-servers)).
-- **Agent file:** YAML frontmatter + markdown system prompt. vstack writes
+- **Agent file:** YAML frontmatter + markdown system prompt. kendex writes
   `description`, `mode`, `model?`, `color?` (hex only),
   `options.reasoningEffort` and friends, and a `permission:` map of denies
   (`crates/core/src/render/agent/opencode.rs`).
@@ -57,7 +57,7 @@ a hook.
   `provider/model` form and openai is its historical default. Omitting the
   key means inherit — `openai/inherit` is exactly the invalid id this
   replaces.
-- **Mode:** `primary`, `subagent` or `all`; vstack's default is `subagent`,
+- **Mode:** `primary`, `subagent` or `all`; kendex's default is `subagent`,
   and `all` from a source is spelled `subagent` too.
 - **Agent scoping:** not applicable — hooks are advisory here, whoever
   they are scoped to.

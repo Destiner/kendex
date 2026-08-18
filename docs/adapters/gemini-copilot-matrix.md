@@ -20,7 +20,7 @@ Two upstream repos are the ground truth:
 
 Global root is `~/.gemini`. Project root is `<project>/.gemini`. The two
 scopes are symmetric for every file-backed kind, which makes Gemini the
-easiest adapter vstack has added since Claude.
+easiest adapter kendex has added since Claude.
 
 | Kind | Supported | Project location | Personal location | Format / key fields | Enable / disable | Notes |
 |---|---|---|---|---|---|---|
@@ -30,7 +30,7 @@ easiest adapter vstack has added since Claude.
 | **hook** | yes, both scopes | `hooks` key inside `.gemini/settings.json` | `hooks` key inside `~/.gemini/settings.json` | `{"hooks": {"<Event>": [{"matcher": "<regex>", "sequential": false, "hooks": [{"type": "command", "command": "...", "name": "...", "timeout": 60000, "description": "..."}]}]}}`. Events: `BeforeTool`, `AfterTool`, `BeforeModel`, `AfterModel`, `BeforeToolSelection`, `BeforeAgent`, `AfterAgent`, `SessionStart`, `SessionEnd`, `Notification`, `PreCompress` | Remove or edit the entry; no per-hook flag | Extensions ship their own at `<ext>/hooks/hooks.json`. Matchers are regexes over tool names |
 | **mcp-server** | yes, both scopes | `mcpServers` key inside `.gemini/settings.json` | `mcpServers` key inside `~/.gemini/settings.json` | Map of name → `{command, args, env, cwd, url, httpUrl, headers, timeout, trust, description, includeTools, excludeTools}` | `~/.gemini/mcp-server-enablement.json` holds `{<server>: {enabled: bool}}` (global file, applies to all scopes); settings `mcp.allowed[]` / `mcp.excluded[]` also gate | Enablement state is **global-only** even for a project-declared server |
 | **plugin / extension** | yes, **global only** | none — there is no project extension directory | `~/.gemini/extensions/<name>/` | `gemini-extension.json`: `name`, `version`, `description`, `mcpServers`, `contextFileName`, `excludeTools`, `migratedTo`, `plan`, `settings[]`, `themes[]`. Layout: `commands/`, `skills/`, `agents/`, `hooks/hooks.json`, `policies/`, `GEMINI.md`, `.env` | `~/.gemini/extensions/extension-enablement.json` (path-scoped override rules, `!` prefix = disable, trailing `*` = include subdirs) and `extensions.disabled[]` in settings; CLI `gemini extensions enable\|disable <name> --scope <scope>` | An extension is installed once globally but can be enabled per workspace path. Confirmed global-only in `packages/cli/src/config/extensions/storage.ts` — `ExtensionStorage.getExtensionDir()` always resolves under the user extensions dir |
-| **context / instructions** | yes, both scopes | `GEMINI.md` at project root and every ancestor up to a boundary marker (default `.git`), plus just-in-time discovery in subdirectories when a tool touches a file | `~/.gemini/GEMINI.md` | Markdown; `@file.md` imports (relative or absolute) | Rename the file, or change `context.fileName` (accepts a string or an array such as `["AGENTS.md", "CONTEXT.md", "GEMINI.md"]`) | `/memory show`, `/memory reload`. vstack has no ItemKind for this today |
+| **context / instructions** | yes, both scopes | `GEMINI.md` at project root and every ancestor up to a boundary marker (default `.git`), plus just-in-time discovery in subdirectories when a tool touches a file | `~/.gemini/GEMINI.md` | Markdown; `@file.md` imports (relative or absolute) | Rename the file, or change `context.fileName` (accepts a string or an array such as `["AGENTS.md", "CONTEXT.md", "GEMINI.md"]`) | `/memory show`, `/memory reload`. kendex has no ItemKind for this today |
 
 Sources, all accessed 2026-08-10:
 [configuration reference](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md) ·
@@ -58,7 +58,7 @@ defaults
 ```
 
 The system override layer sitting above project scope is unusual and is a
-real footgun: a value vstack writes into `.gemini/settings.json` can be
+real footgun: a value kendex writes into `.gemini/settings.json` can be
 silently overridden on a managed machine. Env overrides for the two system
 paths are `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` and
 `GEMINI_CLI_SYSTEM_SETTINGS_PATH`.
@@ -66,7 +66,7 @@ paths are `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` and
 
 ### Built-in tool identifiers
 
-Needed for any `tools:` allowlist vstack renders:
+Needed for any `tools:` allowlist kendex renders:
 `run_shell_command`, `glob`, `grep_search` (legacy alias `search_file_content`),
 `list_directory`, `read_file`, `read_many_files`, `replace`, `write_file`,
 `ask_user`, `write_todos`, `google_web_search`, `web_fetch`,
@@ -79,7 +79,7 @@ plus experimental `tracker_*`.
 
 ## 2. GitHub Copilot — observation matrix
 
-Copilot is four products sharing filenames. vstack should treat **Copilot
+Copilot is four products sharing filenames. kendex should treat **Copilot
 CLI + repository files** as the harness and ignore the rest; the columns
 below name which surface honors each row, because a file that only VS Code
 reads is not something a CLI-shaped adapter should claim to manage.
@@ -96,7 +96,7 @@ under `.github/`.
 | **hook** | yes, both scopes | `.github/hooks/*.json`, plus a `hooks` key in `.github/copilot/settings.json` and `.github/copilot/settings.local.json` | `~/.copilot/hooks/*.json`, plus a `hooks` key in `~/.copilot/settings.json` | `{"version": 1, "disableAllHooks": false, "hooks": {"<event>": [{...}]}}`. Entry types: `command` (needs one of `bash`, `powershell`, `command`; optional `cwd`, `env`, `timeoutSec` default 30, `matcher` regex), `http` (`url`, `headers`, `allowedEnvVars`), `prompt` (`prompt`). Events: `preToolUse`, `postToolUse`, `postToolUseFailure`, `permissionRequest`, `userPromptSubmitted`, `userPromptTransformed`, `sessionStart`, `sessionEnd`, `preCompact`, `notification`, `subagentStart`, `subagentStop`, `agentStop`, `errorOccurred` (each also accepts a PascalCase spelling) | `disableAllHooks: true` — all-or-nothing, no per-hook flag. File-backed hooks can be toggled by rename | CLI and cloud agent. The cloud agent reads only `.github/hooks/*.json` |
 | **mcp-server** | yes, both scopes | `.mcp.json` in any directory from cwd up to the repo root, and `.github/mcp.json` | `~/.copilot/mcp-config.json` | `{"mcpServers": {"<name>": {"type": "local"\|"stdio"\|"http"\|"sse", "command", "args", "env", "url", "headers", "tools"}}}` | `disabledMcpServers[]` in user or repo settings (union merge); `enabledMcpServers[]` turns on built-ins that ship disabled. `/mcp disable <name>` is session-only | Project config takes precedence over user config on a name clash. Workspace servers load only after the folder is trusted |
 | **plugin** | yes, both scopes | `enabledPlugins` in `.github/copilot/settings.json` (a plugin enabled only here is scoped to that repo and stays disabled elsewhere) | `enabledPlugins` in `~/.copilot/settings.json`; files at `~/.copilot/installed-plugins/<marketplace>/<plugin>/` and `~/.copilot/installed-plugins/_direct/<source-id>/` | `plugin.json`: required `name` (kebab-case, ≤64 chars); optional `$schema`, `description`, `version`, `author`, `homepage`, `repository`, `license`, `keywords`, `category`, `tags`, and component paths `agents`, `skills`, `commands`, `hooks`, `extensions`, `mcpServers`, `lspServers` | `enabledPlugins: {"<plugin>@<marketplace>": true\|false}` — a clean boolean flip. Marketplaces registered via `extraKnownMarketplaces`; `copilot-plugins` and `awesome-copilot` are registered by default | `copilot plugin install\|list\|update\|uninstall`, `copilot plugin marketplace add\|remove\|list\|browse` |
-| **context / instructions** | yes, both scopes | `.github/copilot-instructions.md`; `.github/instructions/*.instructions.md` with required `applyTo` glob frontmatter and optional `excludeAgent` (`code-review`\|`cloud-agent`); `AGENTS.md` anywhere in the tree, nearest wins; `CLAUDE.md` / `GEMINI.md` at repo root only, one each | `~/.copilot/copilot-instructions.md`, `~/.copilot/instructions/*.instructions.md` | Markdown | Delete or rename only | Repository-wide: github.com, VS Code, Visual Studio, JetBrains, Xcode, Eclipse. Path-specific: github.com and cloud agent / code review (not the IDE as documented). vstack has no ItemKind for this |
+| **context / instructions** | yes, both scopes | `.github/copilot-instructions.md`; `.github/instructions/*.instructions.md` with required `applyTo` glob frontmatter and optional `excludeAgent` (`code-review`\|`cloud-agent`); `AGENTS.md` anywhere in the tree, nearest wins; `CLAUDE.md` / `GEMINI.md` at repo root only, one each | `~/.copilot/copilot-instructions.md`, `~/.copilot/instructions/*.instructions.md` | Markdown | Delete or rename only | Repository-wide: github.com, VS Code, Visual Studio, JetBrains, Xcode, Eclipse. Path-specific: github.com and cloud agent / code review (not the IDE as documented). kendex has no ItemKind for this |
 | **CLI extension** | experimental — recommend unsupported | `.github/extensions/<name>/extension.mjs` | `~/.copilot/extensions/<name>/extension.mjs` | Node module using the SDK shipped with the CLI; adds tools and slash commands | Requires `--experimental` or `/experimental on` | Distinct from plugins. Explicitly labelled experimental and subject to change |
 
 Sources, all accessed 2026-08-10:
@@ -134,14 +134,14 @@ are `companyAnnouncements`, `contextTier`, `deniedUrls`, `disableAllHooks`,
 `disabledMcpServers`, `disabledSkills`, `effortLevel`, `enabledPlugins`,
 `extraKnownMarketplaces`, `hooks`, `includeCoAuthoredBy`, `mergeStrategy`,
 `model`, `respectGitignore`. Several merge as a union (repo can add, never
-remove) or tighten-only, so a vstack "disable" at project scope is
+remove) or tighten-only, so a kendex "disable" at project scope is
 expressible but a project-scope "enable" over a user-scope disable is not.
 ([CLI configuration directory](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference), accessed 2026-08-10)
 
 **Copilot CLI also reads `.claude/settings.json` and
 `.claude/settings.local.json`** for a shared cross-tool subset:
 `companyAnnouncements`, `disableAllHooks`, `enabledPlugins`,
-`extraKnownMarketplaces`, `hooks`. This is load-bearing for vstack — see
+`extraKnownMarketplaces`, `hooks`. This is load-bearing for kendex — see
 risk R6.
 
 ---
@@ -203,7 +203,7 @@ Accepted in an agent's `model:` frontmatter, the `--model` flag, and the
 ([model docs](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/model.md) and
 [subagents](https://github.com/google-gemini/gemini-cli/blob/main/docs/core/subagents.md), accessed 2026-08-10)
 
-Suggested vstack tier mapping: top → `gemini-3-pro-preview`,
+Suggested kendex tier mapping: top → `gemini-3-pro-preview`,
 fast → `gemini-3-flash-preview`, inherit → `inherit`. Do **not** hardcode
 2.5 as wshobson does; and prefer `inherit` wherever a tier is unspecified,
 since the 3.x IDs carry a `-preview` suffix that will churn.
@@ -256,7 +256,7 @@ Every row was checked on 2026-08-10. "wshobson" refers to
 | D3 | Gemini tool-name map: `Grep→search`, `Glob→list_files`, `Edit→edit_file`, `WebFetch→fetch_url`, `WebSearch→google_search`, `TodoWrite→todo` | Real identifiers are `grep_search`, `glob`, `replace`, `web_fetch`, `google_web_search`, `write_todos`. Only `Read→read_file` and `Bash→run_shell_command` are correct — **6 of 8 mappings are wrong**, so any generated `tools:` allowlist silently drops those tools | **Official** | [tools reference](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/tools.md) |
 | D4 | Gemini subagent frontmatter is `name`, `description`, `model`, `tools` | Also `kind` (`local`\|`remote`), `mcpServers`, `temperature`, `max_turns`, `timeout_mins`. Only `name` and `description` are required | **Official** (wshobson is incomplete, not wrong) | [subagents](https://github.com/google-gemini/gemini-cli/blob/main/docs/core/subagents.md) |
 | D5 | Gemini item paths are `skills/`, `agents/`, `commands/` at the extension root | Correct **for an extension**, but those are not the scan roots for a user or project install. Those are `~/.gemini/{agents,skills,commands}` and `<project>/.gemini/{agents,skills,commands}` — paths wshobson never writes | Both, for different things | [extensions reference](https://github.com/google-gemini/gemini-cli/blob/main/docs/extensions/reference.md), [skills](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/skills.md) |
-| D6 | Gemini has no plugin/marketplace concept beyond "direct URL install" | Directionally right (no `marketplace.json` equivalent), but it misses the managed surface that matters to vstack: `~/.gemini/extensions/extension-enablement.json` with path-scoped enable/disable rules, `extensions.disabled[]` in settings, and `gemini extensions enable\|disable\|uninstall --scope` | **Official** on the enablement surface | [extensions reference](https://github.com/google-gemini/gemini-cli/blob/main/docs/extensions/reference.md) |
+| D6 | Gemini has no plugin/marketplace concept beyond "direct URL install" | Directionally right (no `marketplace.json` equivalent), but it misses the managed surface that matters to kendex: `~/.gemini/extensions/extension-enablement.json` with path-scoped enable/disable rules, `extensions.disabled[]` in settings, and `gemini extensions enable\|disable\|uninstall --scope` | **Official** on the enablement surface | [extensions reference](https://github.com/google-gemini/gemini-cli/blob/main/docs/extensions/reference.md) |
 | D7 | Copilot agents go to `.copilot/agents/<x>.agent.md` and skills to `.copilot/skills/`, described in harnesses.md as "repo level" | There is no documented repo-level `.copilot/` directory. Repository paths are `.github/agents/` and `.github/skills/`; `~/.copilot/` is the **user config root**. wshobson's `make install-copilot` symlinks `.copilot/ → ~/.copilot/`, so the *personal* scope happens to land correctly — the repo-level claim does not | **Official** | [CLI config directory](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference), [custom agents for the CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/create-custom-agents-for-cli) |
 | D8 | Copilot commands are emitted to `.copilot/commands/<plugin>/<x>.md` ("legacy … for backward compat") | No such surface exists in any Copilot product. Prompt files are `.github/prompts/*.prompt.md` and are IDE-only. wshobson's own `capabilities.py` already sets `commands_native=False`, so the adapter contradicts its own capability table and writes dead files | **Official** | [response customization](https://docs.github.com/en/copilot/concepts/response-customization) |
 | D9 | Copilot has **no hooks** (`hooks=False`) | Copilot has hooks at six load points — `.github/hooks/*.json`, `~/.copilot/hooks/`, the `hooks` key in repo and user settings, `.claude/settings.json`, plugin `hooks.json`, and machine policy files — with 14 events and three entry types (`command`, `http`, `prompt`) | **Official** | [hooks reference](https://docs.github.com/en/copilot/reference/hooks-reference) |
@@ -287,7 +287,7 @@ only; no install, no remove. Toggle only if it shells out to
 `gemini extensions enable|disable --scope`, otherwise leave toggle off too.*
 
 **R2 — Gemini's system settings layer outranks project settings.** On a
-managed machine, a project-scope value vstack writes can be inert. This
+managed machine, a project-scope value kendex writes can be inert. This
 does not block anything, but Audit must not report drift as "applied" when
 an override is winning. *Recommendation: scan the system paths read-only
 and flag the conflict rather than silently disagreeing with reality.*
@@ -304,7 +304,7 @@ through `Env` the way the Claude adapter resolves `home`, with the env var
 checked first.*
 
 **R5 — Copilot hooks are all-or-nothing.** The only documented switch is
-`disableAllHooks`. There is no per-hook enable flag, so vstack's
+`disableAllHooks`. There is no per-hook enable flag, so kendex's
 non-destructive toggle (invariant 5) must be a file rename for
 `.github/hooks/*.json` and `~/.copilot/hooks/*.json`, and must be
 unavailable for hooks declared inline in a settings `hooks` key — the
@@ -318,11 +318,11 @@ problem.** Copilot CLI discovers skills from `.claude/skills` and
 CLI reads `.claude/settings.json` and `.claude/settings.local.json` for
 `enabledPlugins`, `extraKnownMarketplaces`, `hooks`, `disableAllHooks`, and
 `companyAnnouncements`. Gemini symmetrically reads `.agents/skills`.
-Two consequences for vstack:
+Two consequences for kendex:
   1. One file on disk is simultaneously an installation for two harnesses.
      `Installation = item × harness × scope` will double-count unless the
      adapter deliberately does *not* claim the shared directories.
-  2. A write vstack makes to Claude's `settings.json` now changes Copilot's
+  2. A write kendex makes to Claude's `settings.json` now changes Copilot's
      behavior. Invariant 2 (never clobber a user-set value) already covers
      the mechanics, but the *blast radius* is wider than the Claude adapter
      assumes.

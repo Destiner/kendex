@@ -50,12 +50,12 @@ declined with a note saying to remove the declaration instead.
 - **MCP transports:** stdio, streamable HTTP, SSE — but the *keys* differ
   from every other tool. A command server keeps `command`; a streamable-HTTP
   endpoint is `httpUrl`; an SSE one is plain `url`; there is no `type` beside
-  either, and vstack strips one if the source wrote it. Written in another
+  either, and kendex strips one if the source wrote it. Written in another
   tool's shape, an HTTP server would load as SSE and reach nothing
   (`server`, `crates/core/src/engine/gemini.rs`).
 - **Agent file:** YAML frontmatter + markdown body, where the body is the
-  system prompt. vstack writes `name`, `description`, `kind: local`, `model`
-  and `tools`. `kind: local` is explicit because it is the only kind vstack
+  system prompt. kendex writes `name`, `description`, `kind: local`, `model`
+  and `tools`. `kind: local` is explicit because it is the only kind kendex
   manages — a remote subagent runs off this machine. Skills and per-agent
   hooks are not frontmatter fields, so both travel as prose inside the system
   prompt (`crates/core/src/render/agent/gemini.rs`).
@@ -127,8 +127,8 @@ that never runs.
   flags. The system file lives at `/etc/gemini-cli/settings.json`,
   `/Library/Application Support/GeminiCli/settings.json` on macOS, or
   `C:\ProgramData\gemini-cli\settings.json` on Windows, relocatable by
-  `GEMINI_CLI_SYSTEM_SETTINGS_PATH`. When it defines a key vstack is about to
-  write (`agents`, `hooks`, `mcpServers`), the plan warns that what vstack
+  `GEMINI_CLI_SYSTEM_SETTINGS_PATH`. When it defines a key kendex is about to
+  write (`agents`, `hooks`, `mcpServers`), the plan warns that what kendex
   writes can be overridden.
 - **`mcp-server-enablement.json`** — one global file, whatever scope declared
   the server. A server switched off there is declared for the project and
@@ -163,14 +163,14 @@ counted once (`cross_read_note`, `crates/core/src/engine/desired_skill.rs`).
 
 - The research listed `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` alongside the
   settings path. Only `GEMINI_CLI_SYSTEM_SETTINGS_PATH` is read: the defaults
-  layer sits *below* user scope and cannot make a vstack write inert, so
+  layer sits *below* user scope and cannot make a kendex write inert, so
   reading it would buy nothing.
 - The research recommended preferring `inherit` wherever a tier is
   unspecified, since the 3.x ids carry a churning `-preview` suffix. Shipped
   behavior pins the tiers and reserves `inherit` for an explicit request, so
   a declared tier means the same thing on Gemini as everywhere else.
 - Gemini's documented subagent frontmatter also accepts `mcpServers`,
-  `temperature`, `max_turns` and `timeout_mins`. vstack writes none of them.
-- `kind: remote` subagents are observed like any other file. vstack always
+  `temperature`, `max_turns` and `timeout_mins`. kendex writes none of them.
+- `kind: remote` subagents are observed like any other file. kendex always
   writes `kind: local` and never installs a remote one, but the scanner does
   not filter remote agents out of what it reports.

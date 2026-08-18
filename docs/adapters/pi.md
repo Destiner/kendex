@@ -1,6 +1,6 @@
 # Pi
 
-The only harness with an extension kind vstack installs end to end, and the
+The only harness with an extension kind kendex installs end to end, and the
 only one whose tool surface is deny-only over an open-ended vocabulary — an
 allowlist there cannot be expressed and cannot be complemented without
 widening, so it is refused rather than approximated.
@@ -28,7 +28,7 @@ Project markers: a `.pi/` or `.agents/` directory. Owner:
 | pi-extension | `~/.pi/agent/settings.json` `packages[]`, and `~/.pi/agent/extensions/*.{ts,js}` | `.pi/settings.json` `packages[]`, and `.pi/extensions/*.{ts,js}` | managed, both |
 
 Pi executes nothing per hook itself: the `pi-hooks` carrier extension hosts
-native listeners, and hook content rides in the registry vstack renders
+native listeners, and hook content rides in the registry kendex renders
 beside them — `hooks/<name>.sh` plus `hooks.json`, keyed by Pi's own
 listener names (`pi_listener`: tool call, tool result, turn end, session
 start). An event outside that map installs nothing on Pi, said as a note.
@@ -42,7 +42,7 @@ reads no MCP servers at all, which is why its transport list is empty.
 - **Byte cap:** none.
 - **Name rule:** `Any`. Namespace separator `__`.
 - **MCP transports:** none.
-- **Agent file:** YAML frontmatter + markdown body, `<name>.md`. vstack
+- **Agent file:** YAML frontmatter + markdown body, `<name>.md`. kendex
   writes `name`, `description`, `deny-tools?`, `allowed-subagents?`,
   `model?`, `color?` and `pane?` (`crates/core/src/render/agent/pi.rs`).
 - **Model dialect:** `fable` and `opus` omit the key so the child inherits
@@ -74,7 +74,7 @@ harnesses.
 ## Pi extensions
 
 An extension is an npm-shaped package. A source ships
-`pi-extensions/<name>/`; vstack copies it into the scope's `packages/`
+`pi-extensions/<name>/`; kendex copies it into the scope's `packages/`
 directory, resolves its production dependencies with npm
 (`--omit=dev --package-lock=false --legacy-peer-deps --no-audit --no-fund`),
 links its `bin` entries into the scope's `bin/`, registers it in the scope's
@@ -84,7 +84,7 @@ links its `bin` entries into the scope's `bin/`, registers it in the scope's
 **Cross-scope duplicate guard.** Pi loads the global and project scopes
 together and de-duplicates packages by identity, not by the resources they
 register. The same package under two names, or at two scopes, registers twice
-and crashes Pi at startup — so vstack checks for the duplicate before writing
+and crashes Pi at startup — so kendex checks for the duplicate before writing
 (`duplicate_elsewhere`, `crates/core/src/pi_ext/renames.rs`).
 
 ## Migration and old-shape tolerance

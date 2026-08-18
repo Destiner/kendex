@@ -1,6 +1,6 @@
 # GitHub Copilot
 
-Copilot is four products sharing filenames. vstack treats **Copilot CLI plus
+Copilot is four products sharing filenames. kendex treats **Copilot CLI plus
 repository files** as the harness and ignores the rest — a file only VS Code
 reads is not something a CLI-shaped adapter should claim to manage. It also
 reads more configuration than it owns, which is the single biggest modelling
@@ -47,7 +47,7 @@ switch of its own to flip and removing it to disable would be a lossy toggle.
 
 **Plugin install and remove are parked** with the Claude marketplace work.
 `enabledPlugins` is a clean boolean flip, so the toggle ships; installing one
-needs marketplace resolution vstack cannot do yet.
+needs marketplace resolution kendex cannot do yet.
 
 ## Format facts
 
@@ -60,12 +60,12 @@ needs marketplace resolution vstack cannot do yet.
   (`server`, `crates/core/src/engine/copilot.rs`).
 - **Agent file:** `<name>.agent.md` — the double extension is part of what
   the loader looks for, not decoration. YAML frontmatter + markdown body.
-  vstack writes `name`, `description`, `model?` and `tools`. Skills and hooks
+  kendex writes `name`, `description`, `model?` and `tools`. Skills and hooks
   are not frontmatter fields, so both travel as prose
   (`crates/core/src/render/agent/copilot.rs`).
 - **Model dialect:** every tier resolves to `auto`, and `inherit` omits the
   key entirely. Copilot's model list moves monthly and is gated by
-  subscription, org policy and a per-repository allowlist, so vstack pins
+  subscription, org policy and a per-repository allowlist, so kendex pins
   nothing. An explicit user-set id passes through unchanged and is surfaced as
   free text, never validated against an enum.
 - **Tool vocabulary:** `read`, `grep`, `glob`, `bash`, `edit`, `multiedit`,
@@ -103,7 +103,7 @@ Enforced: Copilot runs the command and honors the exit code.
 | `SubagentStop` | `subagentStop` |
 
 Copilot accepts a PascalCase spelling of each name too; the camelCase one is
-what its reference writes, so that is what vstack registers. Its remaining
+what its reference writes, so that is what kendex registers. Its remaining
 events — `postToolUseFailure`, `userPromptTransformed`, `subagentStart`,
 `errorOccurred` — have no fleet counterpart and stay unmapped, with a note
 rather than a near-miss.
@@ -123,7 +123,7 @@ At project scope the command resolves through
 ## Effective state — when an install is inert
 
 - **`disableAllHooks`** switches off every Copilot hook, all or nothing.
-  vstack reads the whole layer stack, lowest first, and reports which file
+  kendex reads the whole layer stack, lowest first, and reports which file
   threw the switch: legacy `~/.copilot/config.json` → `~/.copilot/settings.json`
   → `.claude/settings.json` → `.claude/settings.local.json` →
   `.github/copilot/settings.json` → `.github/copilot/settings.local.json`.
@@ -133,7 +133,7 @@ At project scope the command resolves through
   fixed allowlist of keys is honored at repository scope, and several merge as
   a union: a repository may *add* a name to a disabled list but can never take
   one off. A project-scope enable over a user-scope disable is therefore not
-  expressible, so vstack does not write one — it reports the hold per item,
+  expressible, so kendex does not write one — it reports the hold per item,
   naming the file and the key to edit.
 - **`.github/allowed_models.txt`** restricts model ids with `*` globs (a
   `fallback:` line names what to use when nothing matches and is not itself a
@@ -151,7 +151,7 @@ configured and never claims what a run will do
 Copilot moved its user-editable settings out of `config.json` into
 `settings.json`. The old file is read so an older machine is understood, and
 never written. A global scope still holding `config.json` with no
-`settings.json` has never run a CLI that reads what vstack would write, so
+`settings.json` has never run a CLI that reads what kendex would write, so
 settings-backed writes there are refused with that reason rather than left
 somewhere nothing loads them.
 
@@ -175,7 +175,7 @@ reach matters it is reported: as a note on the plan for skills, and as the
 
 - The research recommended the capability table carry the repository-scope
   asymmetry (`disabledSkills` disable-only at project scope) as a column.
-  It does not. vstack's own switch is a rename it can undo either way, and a
+  It does not. kendex's own switch is a rename it can undo either way, and a
   column saying otherwise would forbid a working enable — so the external hold
   is reported per item, where it is read.
 - The research recommended a file-rename toggle for `.github/hooks/*.json`.
@@ -186,4 +186,4 @@ reach matters it is reported: as a note on the plan for skills, and as the
   behavior maps *every* tier to `auto` and omits the key for `inherit`, since
   which models a user can reach depends on their plan and their organization.
 - `user-invocable` and `disable-model-invocation` are documented agent
-  fields, not skill fields. vstack writes neither on either.
+  fields, not skill fields. kendex writes neither on either.

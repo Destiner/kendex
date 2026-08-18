@@ -1,4 +1,4 @@
-# vstack2
+# kendex
 
 Desktop app + thin CLI (Rust + Tauri + React) for managing AI coding-harness customizations. Read `docs/ARCHITECTURE.md` before structural work; amend it in the same change that reshapes the code.
 
