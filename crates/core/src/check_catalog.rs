@@ -198,13 +198,9 @@ fn content(sealed: &SealedSource, kind: ItemKind, path: &Path) -> Result<Content
             why: "a skill is a directory holding SKILL.md",
         });
     }
-    let skip: &[&str] = match path == sealed.root() {
-        true => &[".git", "node_modules", "target", "dist", "build", ".venv"],
-        false => &[],
-    };
     Ok(Content::SkillTree {
         files: sealed
-            .collect_tree(path, skip)?
+            .collect_skill_tree(path)?
             .into_iter()
             .map(|(path, bytes)| TreeFile::read(path, &bytes))
             .collect(),

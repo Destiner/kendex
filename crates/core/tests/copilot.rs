@@ -52,6 +52,9 @@ fn fixture(declarations: &str) -> Fixture {
     fs::write(source.join("hooks/audit.sh"), AUDIT_HOOK).unwrap();
     fs::write(source.join("mcp/gh.toml"), GH_MCP).unwrap();
     fs::write(source.join("commands/ship.md"), COMMAND).unwrap();
+    // Hooks, commands and MCP servers install only from a catalog that
+    // declares kendex's layout — not guessed from a discovered repo's folders.
+    fs::write(source.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
 
     fs::write(
         project.join("kendex.toml"),

@@ -36,6 +36,8 @@ fn fixture(harnesses: &str, declarations: &str) -> Fixture {
     let source = home.join("catalog");
     fs::create_dir_all(source.join("commands")).unwrap();
     fs::write(source.join("commands/ship.md"), SHIP).unwrap();
+    // Commands install only from a catalog that declares kendex's layout.
+    fs::write(source.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
 
     fs::write(
         project.join("kendex.toml"),

@@ -5,3 +5,4 @@ dist
 tmp/
 docs/roadmaps/
 docs/plans/
+.claude/settings.json

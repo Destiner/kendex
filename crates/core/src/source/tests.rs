@@ -105,18 +105,29 @@ fn disabled_and_missing_and_unknown_sources_are_distinct() {
 fn phase_three_kinds_live_at_fixed_catalog_paths() {
     let tmp = tempfile::tempdir().unwrap();
     let sealed = SealedSource::open(tmp.path()).unwrap();
-    let (root, config) = (sealed.root().to_path_buf(), SourceConfig::default());
+    let root = sealed.root().to_path_buf();
+    // Executable kinds live at fixed paths only when the catalog declared
+    // kendex's layout. A discovered catalog never resolves them by name, so a
+    // repo whose About report offers no hooks cannot hand one over on request.
+    let explicit = SourceConfig {
+        mode: CatalogMode::Explicit,
+        ..SourceConfig::default()
+    };
     for (kind, rel) in [
         (ItemKind::Hook, "hooks/guard.sh"),
         (ItemKind::Command, "commands/ship.md"),
         (ItemKind::McpServer, "mcp/gh.toml"),
     ] {
-        assert_eq!(find_item(&sealed, &config, kind, "guard"), None);
         let path = root.join(rel);
         std::fs::create_dir_all(root.join(rel).parent().unwrap()).unwrap();
         std::fs::write(&path, "x").unwrap();
-        let name = path.file_stem().unwrap().to_string_lossy();
-        assert_eq!(find_item(&sealed, &config, kind, &name), Some(path));
+        let name = path.file_stem().unwrap().to_string_lossy().into_owned();
+        // Present on disk, but a discovered catalog does not offer it.
+        assert_eq!(
+            find_item(&sealed, &SourceConfig::default(), kind, &name),
+            None
+        );
+        assert_eq!(find_item(&sealed, &explicit, kind, &name), Some(path));
     }
 }
 

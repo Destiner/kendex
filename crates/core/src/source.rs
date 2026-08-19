@@ -253,7 +253,7 @@ pub fn require_ready(
 }
 
 mod config;
-pub use config::{SourceConfig, find_item, list_items, source_config};
+pub use config::{SourceConfig, find_item, list_items, source_config, source_config_for};
 
 #[cfg(test)]
 mod tests;

@@ -37,6 +37,10 @@ pub enum InstallState {
     /// Asked for — declared, or carried by a declared bundle — but the
     /// safety gate refuses to install it.
     HeldBackBySafety,
+    /// The bundle names a member the catalog no longer offers — renamed or
+    /// removed upstream. A row saying so, never a dead page: the member list
+    /// is catalog-authored text and one bad entry cannot break the read.
+    NotOffered,
 }
 
 /// One package a subscription offers, as the Packages table lists it.
@@ -105,7 +109,7 @@ pub(crate) fn open(env: &Env, scope: &Scope, source_name: &str) -> Result<Browse
     };
     let source = super::require_ready(env, scope, source_name, &manifest)?;
     let sealed = SealedSource::open(&source.root)?;
-    let config = super::source_config(&sealed, super::repo_leaf(&source.provenance))?;
+    let config = super::source_config_for(&sealed, &source.provenance)?;
     Ok(Browsed {
         manifest,
         lock,
@@ -235,10 +239,22 @@ pub fn bundle(
     let declared = browsed.bundle_declared(bundle_name);
     let mut members = Vec::new();
     for member in &found.members {
+        // A member the catalog names but no longer carries is a row, not a
+        // hard error: state() reaches the safety scan for a declared member
+        // and returns ItemNotInSource, which must not sink the whole page.
+        let state = if browsed.locked_here(member.kind, &member.name) {
+            InstallState::Installed
+        } else if super::find_item(&browsed.sealed, &browsed.config, member.kind, &member.name)
+            .is_none()
+        {
+            InstallState::NotOffered
+        } else {
+            browsed.state(env, member.kind, &member.name, declared)?
+        };
         members.push(BundleMemberRow {
             kind: member.kind,
             name: member.name.clone(),
-            state: browsed.state(env, member.kind, &member.name, declared)?,
+            state,
         });
     }
     let installed = members

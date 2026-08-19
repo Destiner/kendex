@@ -81,6 +81,21 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Fixed
 
+- A marketplace that holds only skills can no longer hand over a hook,
+  command, or MCP server just because you name one: executable content
+  installs only from a repository that declares kendex's layout, never
+  guessed from a folder in a repo the About page says offers none.
+- A one-skill repository installs the skill, not the whole repository —
+  its `.git`, `node_modules`, and build folders stay out of what is
+  scored, shown, and copied onto disk, so a repository's credentials and
+  dependencies never ride in with the skill.
+- One broken or hostile marketplace can no longer block installing by
+  name from every other marketplace you subscribe to: a subscription
+  whose catalog cannot be read is set aside and named, and the others
+  still answer.
+- A curated set whose author renamed or removed a member still opens: the
+  missing member shows as no longer offered instead of breaking the whole
+  set's page.
 - Cursor no longer drops an agent's custom hooks without a word. A rule
   file has nowhere to register a hook, so the hook lands as instructions
   and the render warns that nothing there enforces it.

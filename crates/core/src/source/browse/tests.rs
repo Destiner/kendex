@@ -190,6 +190,40 @@ fn bundle_detail_derives_partly_installed_and_full() {
     );
 }
 
+/// A bundle member the catalog lists but does not carry — renamed or removed
+/// upstream — is one row saying so, never a dead page. Member lists are
+/// catalog-authored text; one bad entry cannot break the whole read.
+#[test]
+fn a_bundle_member_the_catalog_no_longer_carries_is_a_row_not_an_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let catalog = tmp.path().join("catalog");
+    skill(&catalog, "skills", "gh", "body");
+    fs::write(
+        catalog.join("kendex.toml"),
+        "[bundles.starter]\ndescription = \"one real, one gone\"\nskills = [\"gh\", \"gone\"]\n",
+    )
+    .unwrap();
+    // Declared, so members reach the safety scan that returns ItemNotInSource.
+    let manifest = format!(
+        "{}[bundles.starter]\nsource = \"cat\"\n",
+        sources_decl(&catalog)
+    );
+    let (env, scope) = project(tmp.path(), &manifest);
+
+    let detail = bundle(&env, &scope, "cat", "starter").unwrap();
+    assert_eq!(detail.total_members, 2);
+    let state_of = |name: &str| {
+        detail
+            .members
+            .iter()
+            .find(|member| member.name == name)
+            .map(|member| member.state)
+            .expect("member listed")
+    };
+    assert_eq!(state_of("gone"), InstallState::NotOffered);
+    assert_eq!(state_of("gh"), InstallState::Available);
+}
+
 #[test]
 fn a_declared_package_the_gate_refuses_shows_held_back() {
     let tmp = tempfile::tempdir().unwrap();

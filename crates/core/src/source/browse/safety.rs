@@ -194,10 +194,20 @@ fn input_for(browsed: &Browsed, kind: ItemKind, name: &str) -> Result<AuditInput
         ItemKind::Skill => Content::SkillTree {
             files: browsed
                 .sealed
-                .collect_tree(&path, &[])?
+                .collect_skill_tree(&path)?
                 .into_iter()
                 .map(|(rel, bytes)| TreeFile::read(rel, &bytes))
                 .collect(),
+        },
+        // A hook's script is what the harness runs; browse scores it as a hook
+        // so the rules that read event/command/script fire here too, not only
+        // at the install gate. The MCP declaration and command bodies read as
+        // their file text; the install gate stays the authoritative verdict.
+        ItemKind::Hook => Content::Hook {
+            event: String::new(),
+            matcher: None,
+            command: location.clone(),
+            script: Some(browsed.sealed.read_to_string(&path)?),
         },
         _ => Content::Document {
             text: browsed.sealed.read_to_string(&path)?,

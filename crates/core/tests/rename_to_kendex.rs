@@ -149,6 +149,8 @@ fn an_old_name_opencode_hook_converges_instead_of_duplicating() {
     let f = fixture();
     let catalog = f.home.join("catalog");
     fs::create_dir_all(catalog.join("hooks")).unwrap();
+    // Hooks install only from a catalog that declares kendex's layout.
+    fs::write(catalog.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
     fs::write(
         catalog.join("hooks/guard.sh"),
         "#!/usr/bin/env bash\n# ---\n# name: guard\n# event: PreToolUse\n# matcher: Bash\n# description: check shell commands\n# ---\nexit 0\n",

@@ -51,6 +51,9 @@ fn fixture(harnesses: &str, declarations: &str) -> Fixture {
     fs::write(source.join("agents/rust.md"), AGENT).unwrap();
     fs::write(source.join("hooks/audit.sh"), AUDIT_HOOK).unwrap();
     fs::write(source.join("hooks/done.sh"), DONE_HOOK).unwrap();
+    // Hooks and commands install only from a catalog that declares kendex's
+    // layout, never guessed from a discovered repo's folders.
+    fs::write(source.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
 
     fs::write(
         project.join("kendex.toml"),

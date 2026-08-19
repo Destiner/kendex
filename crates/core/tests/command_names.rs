@@ -54,6 +54,10 @@ fn declare(f: &Fixture, declarations: &str) {
 }
 
 fn add_command(f: &Fixture, name: &str, body: &str) {
+    // Commands install only from a catalog that declares kendex's layout — a
+    // bare `commands/` folder in a discovered repo is repository tooling, not
+    // installable content. The marker makes this source an explicit catalog.
+    put(&f.source.join("kendex.toml"), "is_source_catalog = true\n");
     put(
         &f.source.join(format!("commands/{name}.md")),
         &format!("---\ndescription: {name}\n---\n\n{body}\n"),

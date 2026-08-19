@@ -180,6 +180,17 @@ pub enum CoreError {
     )]
     ItemNotOffered { kind: ItemKind, name: String },
 
+    /// Case: a bare name matched nothing, but one or more subscriptions
+    /// could not be read to answer for it — a broken or unfetched catalog
+    /// must not masquerade as "not found", or a hostile marketplace could
+    /// hide a name the user really has by refusing to open.
+    #[error(
+        "could not read {} to search for '{name}': {} — refresh or unsubscribe it, or qualify the name as <marketplace>::{name}",
+        if sources.len() == 1 { "a subscription" } else { "some subscriptions" },
+        sources.join(", ")
+    )]
+    SearchSourcesUnreadable { name: String, sources: Vec<String> },
+
     /// Pi extensions are carrier-only: they ride in with the bundle that
     /// carries them and are never installable on their own.
     #[error(

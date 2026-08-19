@@ -34,6 +34,8 @@ fn fixture(harnesses: &str, declarations: &str) -> Fixture {
     fs::create_dir_all(source.join("hooks")).unwrap();
     fs::write(source.join("hooks/guard.sh"), GUARD).unwrap();
     fs::write(source.join("hooks/loose.sh"), LOOSE).unwrap();
+    // Hooks install only from a catalog that declares kendex's layout.
+    fs::write(source.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
     fs::write(
         project.join("kendex.toml"),
         format!(

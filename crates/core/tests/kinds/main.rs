@@ -52,6 +52,8 @@ pub fn fixture(declarations: &str) -> Fixture {
     fs::write(source.join("mcp/gh.toml"), GH_MCP).unwrap();
     fs::create_dir_all(source.join("commands")).unwrap();
     fs::write(source.join("commands/ship.md"), "Ship the branch.\n").unwrap();
+    // Executable kinds install only from a catalog that declares kendex's layout.
+    fs::write(source.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
 
     fs::write(
         project.join("kendex.toml"),

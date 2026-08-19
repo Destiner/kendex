@@ -1029,7 +1029,13 @@ export type InstallState =
  *  Asked for — declared, or carried by a declared bundle — but the
  *  safety gate refuses to install it.
  */
-"held-back-by-safety";
+"held-back-by-safety" | 
+/**
+ *  The bundle names a member the catalog no longer offers — renamed or
+ *  removed upstream. A row saying so, never a dead page: the member list
+ *  is catalog-authored text and one bad entry cannot break the read.
+ */
+"not-offered";
 
 /**  One declared item: `[agents.<name>]` / `[skills.<name>]`. */
 export type ItemDecl = ItemDecl_Serialize | ItemDecl_Deserialize;

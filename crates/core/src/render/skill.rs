@@ -46,7 +46,7 @@ pub fn render_skill(
     manifest: &Manifest,
     name: &str,
 ) -> Result<Vec<(PathBuf, Vec<u8>)>> {
-    let mut files = sealed.collect_tree(source_dir, &[])?;
+    let mut files = sealed.collect_skill_tree(source_dir)?;
     let instructions = merged_instructions(&manifest.skill_instructions, name);
     for (rel, bytes) in &mut files {
         if rel == Path::new("SKILL.md") {

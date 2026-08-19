@@ -150,6 +150,21 @@ impl SealedSource {
         Ok(files)
     }
 
+    /// The tree of one skill, skipping VCS internals and dependency dirs when
+    /// the skill *is* the whole repository. A repo-root skill's tree is the
+    /// repository itself, whose `.git`, `node_modules` and build dirs are not
+    /// content — reading them would score, publish, and install bytes the skill
+    /// never authored (a `.git/config` carries credentials). Every reader of a
+    /// skill's bytes — render, browse safety, catalog check — goes through here
+    /// so the three never disagree on what the skill contains.
+    pub fn collect_skill_tree(&self, dir: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {
+        let skip: &[&str] = match dir == self.root() {
+            true => &[".git", "node_modules", "target", "dist", "build", ".venv"],
+            false => &[],
+        };
+        self.collect_tree(dir, skip)
+    }
+
     fn collect_into(
         &self,
         dir: &Path,
@@ -309,6 +324,41 @@ mod tests {
             sealed.list_dir(&dir),
             Err(CoreError::SourceEscape { .. })
         ));
+    }
+
+    /// A skill that is the whole repository excludes VCS internals and
+    /// dependency dirs — the same bytes render, browse safety, and catalog
+    /// check must all agree on. A `.git/config` carrying credentials must
+    /// never reach the installed tree.
+    #[test]
+    fn a_repo_root_skill_excludes_vcs_and_dependency_dirs() {
+        let (_tmp, sealed) = fixture();
+        std::fs::create_dir_all(sealed.root().join(".git")).expect("mkdir");
+        std::fs::write(sealed.root().join(".git/config"), "token").expect("write");
+        std::fs::create_dir_all(sealed.root().join("node_modules/dep")).expect("mkdir");
+        std::fs::write(sealed.root().join("node_modules/dep/i.js"), "x").expect("write");
+        std::fs::write(sealed.root().join("SKILL.md"), "# skill").expect("write");
+
+        let files = sealed.collect_skill_tree(sealed.root()).expect("tree");
+        let names: Vec<_> = files.iter().map(|(p, _)| p.to_string_lossy().into_owned()).collect();
+        assert!(names.contains(&"SKILL.md".to_owned()));
+        assert!(!names.iter().any(|n| n.starts_with(".git/")));
+        assert!(!names.iter().any(|n| n.starts_with("node_modules/")));
+    }
+
+    /// A skill nested below the root is scored on all of its own bytes — the
+    /// vendor-dir skip is a repo-root concession, not a general filter that
+    /// would let a nested skill hide content from the safety scan.
+    #[test]
+    fn a_nested_skill_keeps_every_one_of_its_files() {
+        let (_tmp, sealed) = fixture();
+        let dir = sealed.root().join("skills/gh");
+        std::fs::create_dir_all(dir.join("node_modules")).expect("mkdir");
+        std::fs::write(dir.join("node_modules/i.js"), "x").expect("write");
+        std::fs::write(dir.join("SKILL.md"), "# gh").expect("write");
+
+        let files = sealed.collect_skill_tree(&dir).expect("tree");
+        assert_eq!(files.len(), 2);
     }
 
     #[test]

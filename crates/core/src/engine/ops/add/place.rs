@@ -171,11 +171,26 @@ fn search(
     name: &str,
 ) -> Result<String> {
     let mut offers: Vec<(String, String)> = Vec::new();
+    let mut unreadable: Vec<String> = Vec::new();
     for (alias, decl) in &manifest.sources {
         if !decl.enabled {
             continue;
         }
-        let opened = open(env, scope, manifest, cache, alias)?;
+        // A subscription whose catalog bytes cannot be read — a symlinked or
+        // ambiguous control file, an oversized directory, a repo built to fail
+        // on open — must not sink the search: skipped and remembered, it can no
+        // longer block installing by bare name from every other marketplace,
+        // and is only reported if the name turned up nowhere readable. A source
+        // that is merely not fetched yet, disabled, or missing keeps its own
+        // signal so the caller can fetch or report it.
+        let opened = match open(env, scope, manifest, cache, alias) {
+            Ok(opened) => opened,
+            Err(CoreError::CatalogAmbiguous { .. } | CoreError::SourceEscape { .. }) => {
+                unreadable.push(alias.clone());
+                continue;
+            }
+            Err(other) => return Err(other),
+        };
         if list_items(&opened.sealed, &opened.config, kind)
             .iter()
             .any(|offered| offered == name)
@@ -185,6 +200,10 @@ fn search(
     }
     match offers.as_slice() {
         [(alias, _)] => Ok(alias.clone()),
+        [] if !unreadable.is_empty() => Err(CoreError::SearchSourcesUnreadable {
+            name: name.to_owned(),
+            sources: unreadable,
+        }),
         [] => Err(CoreError::ItemNotOffered {
             kind,
             name: name.to_owned(),

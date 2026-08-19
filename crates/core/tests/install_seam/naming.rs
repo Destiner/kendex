@@ -35,6 +35,47 @@ fn a_bare_name_one_subscription_offers_installs_from_it() {
     assert!(f.project.join(".claude/skills/gh").exists());
 }
 
+/// A hostile or broken subscription must not sink the bare-name search:
+/// a repo with two disagreeing control-file generations cannot be read, but
+/// installing `gh` from a healthy sibling still works. Without the skip, the
+/// unreadable catalog's error propagated and blocked every marketplace.
+#[test]
+fn a_broken_subscription_does_not_block_bare_name_installs_from_others() {
+    let f = world();
+    let good = f.home.join("good");
+    skill(&good, "gh");
+    let bad = f.home.join("bad");
+    skill(&bad, "other");
+    fs::write(bad.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
+    fs::write(bad.join("vstack.toml"), "is_source_catalog = false\n").unwrap();
+    manifest_with(&f, &[("good", &good), ("bad", &bad)], "");
+
+    add_and_apply(
+        &f,
+        &ops::AddRequest {
+            skills: vec!["gh".into()],
+            ..ops::AddRequest::default()
+        },
+    );
+    assert_eq!(manifest_of(&f).skills["gh"].source, "good");
+
+    // A name that only the broken source could answer for names it, rather
+    // than reporting a plain "not offered" that hides the real problem.
+    let err = ops::add(
+        &f.env,
+        &f.scope,
+        &ops::AddRequest {
+            skills: vec!["other".into()],
+            ..ops::AddRequest::default()
+        },
+    )
+    .unwrap_err();
+    assert!(
+        matches!(&err, CoreError::SearchSourcesUnreadable { sources, .. } if sources == &["bad"]),
+        "{err:?}"
+    );
+}
+
 #[allow(clippy::unwrap_used)]
 fn git(dir: &Path, args: &[&str]) {
     let output = Command::new("git")

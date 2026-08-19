@@ -49,6 +49,8 @@ fn register_carrier(settings_dir: &Path) {
 fn declare_hook(world: &World, event: &str) {
     let catalog = world.home.join("cat");
     fs::create_dir_all(catalog.join("hooks")).unwrap();
+    // Hooks install only from a catalog that declares kendex's layout.
+    fs::write(catalog.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
     fs::write(
         catalog.join("hooks/guard.sh"),
         format!(

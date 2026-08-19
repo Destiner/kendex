@@ -111,6 +111,8 @@ pub fn full_catalog(f: &Fixture, name: &str) -> PathBuf {
         "mcp/gh.toml",
         "command = \"gh-mcp\"\nargs = [\"--stdio\"]\n",
     );
+    // Executable kinds install only from a catalog that declares kendex's layout.
+    write(&catalog, "kendex.toml", "is_source_catalog = true\n");
     catalog
 }
 

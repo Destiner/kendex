@@ -55,6 +55,8 @@ fn fixture(declarations: &str) -> Fixture {
     fs::write(source.join("hooks/audit.sh"), AUDIT_HOOK).unwrap();
     fs::write(source.join("hooks/done.sh"), DONE_HOOK).unwrap();
     fs::write(source.join("mcp/gh.toml"), GH_MCP).unwrap();
+    // Executable kinds install only from a catalog that declares kendex's layout.
+    fs::write(source.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
 
     fs::write(
         project.join("kendex.toml"),

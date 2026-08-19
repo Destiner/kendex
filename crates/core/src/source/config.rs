@@ -123,6 +123,19 @@ pub fn source_config(sealed: &SealedSource, display: &str) -> Result<SourceConfi
     Ok(config)
 }
 
+/// The catalog behind one resolved source, told apart by its provenance. The
+/// reserved local source is kendex's own authored area — adopt and fork lay it
+/// out in kendex's fixed dirs, so it is an explicit catalog even with no marker
+/// file, and its hooks, commands and MCP servers resolve by name the way a
+/// discovered third-party repo's never do.
+pub fn source_config_for(sealed: &SealedSource, provenance: &str) -> Result<SourceConfig> {
+    let mut config = source_config(sealed, crate::source::repo_leaf(provenance))?;
+    if provenance == crate::manifest::LOCAL_SOURCE_NAME && config.mode == CatalogMode::Discovered {
+        config.mode = CatalogMode::Explicit;
+    }
+    Ok(config)
+}
+
 /// Which of the two file generations governs. Catalogs are foreign repos we
 /// cannot rename: `kendex.toml` is preferred while the two agree, or while
 /// only it parses — but two files that would each govern differently are an
@@ -282,9 +295,18 @@ pub fn find_item(
             .iter()
             .map(|d| root.join(d).join(format!("{name}.md")))
             .find(|p| sealed.is_file(p)),
-        ItemKind::Hook => catalog_file(sealed, "hooks", &format!("{name}.sh")),
-        ItemKind::Command => catalog_file(sealed, "commands", &format!("{name}.md")),
-        ItemKind::McpServer => catalog_file(sealed, "mcp", &format!("{name}.toml")),
+        // Executable kinds resolve only where the catalog declared kendex's
+        // layout, the same gate `list_items` applies. Without it a discovered
+        // repo — one the About report says offers no hooks — would still hand
+        // over and run `hooks/<name>.sh` when asked for it by name, the exact
+        // "executable content is never guessed into existence" rule §5.6 sets.
+        ItemKind::Hook | ItemKind::Command | ItemKind::McpServer
+            if config.mode == CatalogMode::Explicit =>
+        {
+            let (dir, ext) = fixed_kind_dir(kind);
+            catalog_file(sealed, dir, &format!("{name}.{ext}"))
+        }
+        ItemKind::Hook | ItemKind::Command | ItemKind::McpServer => None,
         ItemKind::Plugin | ItemKind::PiExtension => None,
     }
 }

@@ -286,6 +286,9 @@ fn a_hooks_folder_in_a_skills_repo_is_not_offered() {
         report.found.iter().all(|row| row.kind == ItemKind::Skill),
         "{report:?}"
     );
+    // Not listed and not resolvable by name: asking for the hook directly must
+    // refuse too, or a discovered repo would still install and run the script.
+    assert_eq!(find_item(&sealed, &config, ItemKind::Hook, "deploy"), None);
 
     // A repo that declares kendex's layout offers the same folder.
     fs::write(root.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
@@ -298,6 +301,7 @@ fn a_hooks_folder_in_a_skills_repo_is_not_offered() {
             .any(|row| row.kind == ItemKind::Hook && row.root == "hooks" && row.count == 1),
         "{report:?}"
     );
+    assert!(find_item(&sealed, &config, ItemKind::Hook, "deploy").is_some());
 }
 
 #[test]

@@ -9,7 +9,7 @@ use crate::env::Env;
 use crate::error::{CoreError, Result};
 use crate::manifest::{ItemDecl, Manifest};
 use crate::model::Scope;
-use crate::source::{self, SourceConfig, SourceState, source_config};
+use crate::source::{self, SourceConfig, SourceState, source_config_for};
 use crate::source_read::SealedSource;
 
 use super::desired::DesiredState;
@@ -105,7 +105,7 @@ pub(super) fn read_catalog(
             return Ok(None);
         }
     };
-    match source_config(&sealed, crate::source::repo_leaf(provenance)) {
+    match source_config_for(&sealed, provenance) {
         Ok(config) => Ok(Some((sealed, config))),
         Err(CoreError::SourceEscape { path, reason }) => {
             state.notes.push(format!(

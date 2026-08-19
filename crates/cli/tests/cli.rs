@@ -133,6 +133,8 @@ fn verify_names_an_installation_that_cannot_act() {
 
     let catalog = home.join("catalog");
     fs::create_dir_all(catalog.join("hooks")).unwrap();
+    // Hooks install only from a catalog that declares kendex's layout.
+    fs::write(catalog.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
     fs::write(
         catalog.join("hooks/audit.sh"),
         "#!/usr/bin/env bash\n# ---\n# name: audit\n# event: PreToolUse\n# matcher: Bash\n# description: log shell commands\n# ---\nexit 0\n",
