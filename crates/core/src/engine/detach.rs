@@ -52,13 +52,14 @@ pub fn preview(env: &Env, scope: &Scope, source_name: &str) -> Result<Preview> {
     let manifest = super::ops::manifest_for_mutation(env, &scope)?;
     let closure = closure(env, &scope, source_name, &manifest)?;
     let lock = crate::lock::load(&crate::lock::lock_path(env, &scope))?;
-    let edited: std::collections::BTreeSet<String> = edited_items(env, &scope, &closure, &lock)
-        .into_iter()
-        .collect();
+    let edited: std::collections::BTreeSet<(ItemKind, String)> =
+        edited_items(env, &scope, &closure, &lock)
+            .into_iter()
+            .collect();
     let (mut edited_out, mut removable) = (Vec::new(), Vec::new());
     for item in &closure.items {
         let row = (item.kind, item.name.clone());
-        if edited.contains(&item.name) {
+        if edited.contains(&row) {
             edited_out.push(row);
         } else {
             removable.push(row);
@@ -173,7 +174,9 @@ pub fn remove(
     if !discard_edits {
         let edited = edited_items(env, &scope, &closure, &lock);
         if !edited.is_empty() {
-            return Err(CoreError::DetachEdited { names: edited });
+            return Err(CoreError::DetachEdited {
+                names: edited_labels(&edited),
+            });
         }
     }
     let without = without_source(&manifest, source_name);
@@ -202,7 +205,7 @@ fn edited_items(
     scope: &Scope,
     closure: &Closure,
     lock: &crate::lock::Lock,
-) -> Vec<String> {
+) -> Vec<(ItemKind, String)> {
     closure
         .items
         .iter()
@@ -212,7 +215,16 @@ fn edited_items(
                 .filter(|e| e.kind == item.kind && e.name == item.name)
                 .any(|e| super::removal::edit_holds(env, scope, e))
         })
-        .map(|item| item.name.clone())
+        .map(|item| (item.kind, item.name.clone()))
+        .collect()
+}
+
+/// The names an "edited packages" refusal lists — kind and name, so an edited
+/// skill and an unchanged command of the same name are never confused.
+fn edited_labels(edited: &[(ItemKind, String)]) -> Vec<String> {
+    edited
+        .iter()
+        .map(|(kind, name)| format!("{} {name}", kind.name()))
         .collect()
 }
 

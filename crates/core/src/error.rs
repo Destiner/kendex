@@ -206,6 +206,13 @@ pub enum CoreError {
     )]
     DetachEdited { names: Vec<String> },
 
+    /// Keeping a package copies one commit's bytes, but its installations pin
+    /// two different commits — local storage has one path per identity.
+    #[error(
+        "'{name}' is installed at two different revisions — resolve them to one before keeping it as your own"
+    )]
+    DetachCommitConflict { name: String },
+
     /// Detach never overwrites what is already in the local source: a different
     /// package of the same kind and name is already there.
     #[error(

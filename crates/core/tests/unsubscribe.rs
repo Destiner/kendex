@@ -274,6 +274,44 @@ fn a_nested_name_round_trips_through_detach() {
     apply::execute(&env, &after.plan, None).unwrap();
 }
 
+/// Keeping both a parent skill and a nested one under it does not write the
+/// child's bytes twice: the parent's captured tree excludes the nested skill,
+/// so the two land as separate local packages instead of clashing on apply.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn keeping_a_parent_and_a_nested_skill_does_not_clash() {
+    let (_tmp, env, scope, catalog) = world(
+        "[skills.plugin]\nsource = \"cat\"\n[skills.\"plugin/item\"]\nsource = \"cat\"\n",
+        "",
+    );
+    let plugin = catalog.join("skills/plugin");
+    fs::create_dir_all(plugin.join("item")).unwrap();
+    fs::write(catalog.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
+    fs::write(plugin.join("SKILL.md"), "---\nname: plugin\n---\nparent\n").unwrap();
+    fs::write(
+        plugin.join("item/SKILL.md"),
+        "---\nname: item\n---\nchild\n",
+    )
+    .unwrap();
+    apply_now(&env, &scope);
+
+    let plan = detach::source(&env, &scope, "cat").unwrap();
+    apply::execute(&env, &plan, None).unwrap();
+
+    let local = kendex_core::source::local_source_root(&env, &scope);
+    assert!(local.join("skills/plugin/SKILL.md").exists());
+    assert!(local.join("skills/plugin/item/SKILL.md").exists());
+    // The parent's own SKILL.md says "parent"; the child was not folded in over
+    // it, and both declarations now read from local.
+    assert_eq!(
+        fs::read_to_string(local.join("skills/plugin/SKILL.md")).unwrap(),
+        "---\nname: plugin\n---\nparent\n"
+    );
+    let manifest = manifest_of(&env, &scope);
+    assert_eq!(manifest.skills["plugin"].source, "local");
+    assert_eq!(manifest.skills["plugin/item"].source, "local");
+}
+
 /// The plain "nothing installed" case still works through the ordinary source
 /// removal path — a subscription with no installations just drops.
 #[test]

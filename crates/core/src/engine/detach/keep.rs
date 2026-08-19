@@ -14,6 +14,26 @@ use crate::source::local_source_root;
 
 use super::{ClosureItem, closure, edited_items};
 
+/// The commit one item's bytes are copied from: the commit its lock entries
+/// agree on, or its own declared pin when it was never applied. Per-harness
+/// lock entries pinning different commits are a refusal naming both — local
+/// storage has one path per identity, so there is one right set of bytes.
+fn effective_commit(lock: &crate::lock::Lock, item: &ClosureItem) -> Result<Option<String>> {
+    let commits: std::collections::BTreeSet<Option<String>> = lock
+        .entries
+        .values()
+        .filter(|e| e.kind == item.kind && e.name == item.name)
+        .map(|e| e.source_commit.clone())
+        .collect();
+    match commits.len() {
+        0 => Ok(item.decl.rev.clone()),
+        1 => Ok(commits.into_iter().next().unwrap_or_default()),
+        _ => Err(CoreError::DetachCommitConflict {
+            name: item.name.clone(),
+        }),
+    }
+}
+
 /// The path in the local source one detached item's source-form bytes are
 /// written to. A `plugin/item` name nests one directory level, the shape the
 /// local reader lists back.
@@ -55,19 +75,18 @@ pub fn source(env: &Env, scope: &Scope, source_name: &str) -> Result<Plan> {
     // one and refuse rather than lose the edit.
     let edited = edited_items(env, &scope, &closure, &lock);
     if !edited.is_empty() {
-        return Err(CoreError::DetachEdited { names: edited });
+        return Err(CoreError::DetachEdited {
+            names: super::edited_labels(&edited),
+        });
     }
 
     let local_root = local_source_root(env, &scope);
     let mut ops = Vec::new();
     for item in &closure.items {
         // Read this item's source-form bytes at the exact commit it installed
-        // from — not the source head, which may have moved.
-        let commit = lock
-            .entries
-            .values()
-            .find(|e| e.kind == item.kind && e.name == item.name)
-            .and_then(|e| e.source_commit.clone());
+        // from — not the source head, which may have moved. A declared item
+        // that was never applied has no lock entry; its own pin is the commit.
+        let commit = effective_commit(&lock, item)?;
         let files = source_form(env, &scope, &manifest, item, commit.as_deref())?;
         let target = local_target(&local_root, item.kind, &item.name)?;
         ops.extend(capture_to_local(item.kind, &item.name, &target, files)?);
@@ -81,11 +100,7 @@ pub fn source(env: &Env, scope: &Scope, source_name: &str) -> Result<Plan> {
                 .get(&item.decl.source)
                 .and_then(|s| s.repo.clone()),
             source: item.decl.source.clone(),
-            commit: lock
-                .entries
-                .values()
-                .find(|e| e.kind == item.kind && e.name == item.name)
-                .and_then(|e| e.source_commit.clone()),
+            commit: effective_commit(&lock, item)?,
             forked_at: crate::clock::timestamp(),
         };
         // A derived member or dependency becomes a plain declaration; a
@@ -151,7 +166,25 @@ fn source_form(
         });
     };
     match item.kind {
-        ItemKind::Skill => sealed.collect_skill_tree(&path),
+        ItemKind::Skill => {
+            let files = sealed.collect_skill_tree(&path)?;
+            // A subdirectory carrying its own SKILL.md is a nested skill —
+            // captured as its own item, so its files are not this skill's
+            // content. Without this, keeping both `plugin` and `plugin/item`
+            // would write `item`'s bytes twice and the second write would clash.
+            let nested: Vec<PathBuf> = files
+                .iter()
+                .filter_map(|(rel, _)| {
+                    let parent = rel.parent()?;
+                    (!parent.as_os_str().is_empty() && rel.file_name()? == "SKILL.md")
+                        .then(|| parent.to_path_buf())
+                })
+                .collect();
+            Ok(files
+                .into_iter()
+                .filter(|(rel, _)| !nested.iter().any(|dir| rel.starts_with(dir)))
+                .collect())
+        }
         _ => {
             let bytes = sealed.read(&path)?;
             let file = path
@@ -174,6 +207,42 @@ fn capture_to_local(
     target: &std::path::Path,
     files: Vec<(PathBuf, Vec<u8>)>,
 ) -> Result<Vec<PlannedOp>> {
+    let occupied = |path: PathBuf| {
+        Err(CoreError::LocalTargetOccupied {
+            kind,
+            name: name.to_owned(),
+            path,
+        })
+    };
+    // A symlink at the target is not owned local content: never followed, never
+    // trusted as "already the same bytes" — a foreign link outside kendex's
+    // trees must not be adopted as the local source.
+    if target
+        .symlink_metadata()
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+    {
+        return occupied(target.to_path_buf());
+    }
+    // A sibling that folds to the same name on a case- or composition-folding
+    // filesystem would alias or overwrite this one on macOS or Windows, even
+    // where an exact-path check on this planning host sees no collision.
+    if let Some(parent) = target.parent()
+        && let Some(leaf) = target.file_name().and_then(|n| n.to_str())
+    {
+        let folded = crate::names::fold(leaf);
+        if let Ok(entries) = std::fs::read_dir(parent) {
+            for entry in entries.flatten() {
+                let sibling = entry.file_name();
+                let Some(sibling) = sibling.to_str() else {
+                    continue;
+                };
+                if sibling != leaf && crate::names::fold(sibling) == folded {
+                    return occupied(parent.join(sibling));
+                }
+            }
+        }
+    }
     if target.exists() {
         let existing = crate::hash::hash_tree(target)?;
         let incoming = match kind {
@@ -183,11 +252,7 @@ fn capture_to_local(
         if existing == incoming {
             return Ok(Vec::new());
         }
-        return Err(CoreError::LocalTargetOccupied {
-            kind,
-            name: name.to_owned(),
-            path: target.to_path_buf(),
-        });
+        return occupied(target.to_path_buf());
     }
     let op = match kind {
         ItemKind::Skill => Op::WriteTree {
