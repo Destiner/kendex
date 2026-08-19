@@ -233,10 +233,15 @@ pub(super) fn orphans(
             && !state.processed.contains(&(entry.kind, entry.name.clone()));
         // The caller named this installation: an instruction about this exact
         // item, not a judgement about what anything still wants.
-        let named = options
-            .removal_filter
-            .as_ref()
-            .is_some_and(|names| names.contains(&entry.name));
+        let named = match &options.removal_filter_typed {
+            Some(pairs) => pairs
+                .iter()
+                .any(|(kind, name)| *kind == entry.kind && name == &entry.name),
+            None => options
+                .removal_filter
+                .as_ref()
+                .is_some_and(|names| names.contains(&entry.name)),
+        };
         // An installation nobody declared was derived from one that was, and
         // the catalog it came from is where its reason is written down. With
         // that catalog offline, "nothing requires it anymore" is not
@@ -250,7 +255,8 @@ pub(super) fn orphans(
             continue;
         }
         let unneeded = derived_only(entry);
-        let removable = (options.remove_orphans && (named || options.removal_filter.is_none()))
+        let unfiltered = options.removal_filter.is_none() && options.removal_filter_typed.is_none();
+        let removable = (options.remove_orphans && (named || unfiltered))
             || (options.sweep_unneeded && unneeded);
         drift.push(DriftRow {
             kind: entry.kind,

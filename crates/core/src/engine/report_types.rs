@@ -90,6 +90,10 @@ pub struct PlanOptions {
     pub remove_orphans: bool,
     /// Restrict orphan removal to these names (the `remove` verb).
     pub removal_filter: Option<Vec<String>>,
+    /// Restrict orphan removal to these exact kind+name pairs (the unsubscribe
+    /// closure). Preferred over `removal_filter` where set, so a same-named
+    /// orphan of another kind is never swept along.
+    pub removal_filter_typed: Option<Vec<(ItemKind, String)>>,
     /// Also remove installations nothing asked for that nothing needs
     /// anymore — a dependency whose last dependent went away, or one an
     /// upstream item stopped requiring.
