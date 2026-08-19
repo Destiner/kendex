@@ -65,7 +65,7 @@ pub fn about(sealed: &SealedSource, config: &SourceConfig) -> AboutReport {
                             &mut found,
                             dir,
                             ItemKind::Skill,
-                            super::config::flat_skills(sealed, dir).len(),
+                            super::layout::flat_skills(sealed, dir).len(),
                         );
                     }
                 }
@@ -84,17 +84,17 @@ pub fn about(sealed: &SealedSource, config: &SourceConfig) -> AboutReport {
                     &mut found,
                     dir,
                     ItemKind::Agent,
-                    super::config::agent_stems(sealed, dir).len(),
+                    super::layout::agent_stems(sealed, dir).len(),
                 );
             }
             if config.mode == CatalogMode::Explicit {
                 for kind in [ItemKind::Hook, ItemKind::Command, ItemKind::McpServer] {
-                    let (dir, ext) = super::config::fixed_kind_dir(kind);
+                    let (dir, ext) = super::layout::fixed_kind_dir(kind);
                     push_count(
                         &mut found,
                         dir,
                         kind,
-                        super::config::ext_stems(sealed, dir, ext).len(),
+                        super::layout::ext_stems(sealed, dir, ext).len(),
                     );
                 }
             }

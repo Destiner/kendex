@@ -206,8 +206,13 @@ pub fn packages(env: &Env, scope: &Scope, source_name: &str) -> Result<Vec<Avail
     for kind in ItemKind::ALL {
         for name in super::list_items(&browsed.sealed, &browsed.config, kind) {
             let header = item_header(&browsed, kind, &name);
-            let bundles = carried.remove(&(kind, name.clone())).unwrap_or_default();
-            let in_declared_bundle = bundles.iter().any(|bundle| browsed.bundle_declared(bundle));
+            let carried_bundles = carried.remove(&(kind, name.clone())).unwrap_or_default();
+            let in_declared_bundle = carried_bundles
+                .iter()
+                .any(|bundle| browsed.bundle_declared(bundle));
+            // Catalog-authored bundle names are shown with control and
+            // deceptive characters escaped rather than acted on.
+            let bundles: Vec<String> = carried_bundles.iter().map(|b| names::shown(b)).collect();
             out.push(AvailablePackage {
                 state: browsed.state(env, kind, &name, in_declared_bundle)?,
                 collision: browsed.collision(kind, &name),
@@ -253,7 +258,9 @@ pub fn bundle(
         };
         members.push(BundleMemberRow {
             kind: member.kind,
-            name: member.name.clone(),
+            // Catalog-authored, so shown with any control or deceptive
+            // character escaped rather than acted on.
+            name: names::shown(&member.name),
             state,
         });
     }
@@ -262,7 +269,7 @@ pub fn bundle(
         .filter(|member| member.state == InstallState::Installed)
         .count();
     Ok(BundleDetail {
-        name: found.name,
+        name: names::shown(&found.name),
         description: found.description.as_deref().map(names::shown),
         version: found.version,
         category: found.category,

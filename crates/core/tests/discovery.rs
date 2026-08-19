@@ -38,6 +38,25 @@ fn read(root: &Path) -> (SealedSource, SourceConfig) {
     (sealed, config)
 }
 
+/// A repository with more skills than the cap yields exactly the cap and a
+/// finding, and the walk stops rather than reading the rest of a hostile tree.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_repo_past_the_cap_yields_the_cap_and_says_so() {
+    let (_tmp, root) = repo();
+    for n in 0..600 {
+        skill(&root, &format!("skills/s{n:04}"), &format!("s{n:04}"));
+    }
+    let (sealed, config) = read(&root);
+    assert_eq!(list_items(&sealed, &config, ItemKind::Skill).len(), 512);
+    assert!(
+        config
+            .findings()
+            .any(|f| f.problem.contains("more than 512 skills")),
+        "the cap is a finding"
+    );
+}
+
 #[test]
 #[allow(clippy::unwrap_used)]
 fn a_flat_skills_repo_lists_exactly_its_skills() {

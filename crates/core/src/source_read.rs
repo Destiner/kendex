@@ -340,7 +340,10 @@ mod tests {
         std::fs::write(sealed.root().join("SKILL.md"), "# skill").expect("write");
 
         let files = sealed.collect_skill_tree(sealed.root()).expect("tree");
-        let names: Vec<_> = files.iter().map(|(p, _)| p.to_string_lossy().into_owned()).collect();
+        let names: Vec<_> = files
+            .iter()
+            .map(|(p, _)| p.to_string_lossy().into_owned())
+            .collect();
         assert!(names.contains(&"SKILL.md".to_owned()));
         assert!(!names.iter().any(|n| n.starts_with(".git/")));
         assert!(!names.iter().any(|n| n.starts_with("node_modules/")));

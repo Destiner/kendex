@@ -130,7 +130,14 @@ fn marketplace_browse_lists_a_subscriptions_packages() {
     let output = kendex(
         home,
         &project,
-        &["marketplace", "browse", "cat", "--json", "--scope", "project"],
+        &[
+            "marketplace",
+            "browse",
+            "cat",
+            "--json",
+            "--scope",
+            "project",
+        ],
     );
     assert!(
         output.status.success(),

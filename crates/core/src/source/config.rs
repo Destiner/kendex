@@ -303,7 +303,7 @@ pub fn find_item(
         ItemKind::Hook | ItemKind::Command | ItemKind::McpServer
             if config.mode == CatalogMode::Explicit =>
         {
-            let (dir, ext) = fixed_kind_dir(kind);
+            let (dir, ext) = super::layout::fixed_kind_dir(kind);
             catalog_file(sealed, dir, &format!("{name}.{ext}"))
         }
         ItemKind::Hook | ItemKind::Command | ItemKind::McpServer => None,
@@ -328,14 +328,14 @@ pub fn list_items(sealed: &SealedSource, config: &SourceConfig, kind: ItemKind) 
         ItemKind::Skill => match config.mode {
             CatalogMode::Explicit => {
                 for dir in &config.skill_dirs {
-                    names.extend(flat_skills(sealed, dir));
+                    names.extend(super::layout::flat_skills(sealed, dir));
                 }
             }
             _ => names.extend(config.discovery.skills.iter().map(|s| s.name.clone())),
         },
         ItemKind::Agent => {
             for dir in &config.agent_dirs {
-                names.extend(agent_stems(sealed, dir));
+                names.extend(super::layout::agent_stems(sealed, dir));
             }
         }
         // Executable kinds are offered only where the catalog declared
@@ -344,63 +344,12 @@ pub fn list_items(sealed: &SealedSource, config: &SourceConfig, kind: ItemKind) 
         ItemKind::Hook | ItemKind::Command | ItemKind::McpServer
             if config.mode == CatalogMode::Explicit =>
         {
-            let (dir, ext) = fixed_kind_dir(kind);
-            names.extend(ext_stems(sealed, dir, ext));
+            let (dir, ext) = super::layout::fixed_kind_dir(kind);
+            names.extend(super::layout::ext_stems(sealed, dir, ext));
         }
         _ => {}
     }
     names.sort();
     names.dedup();
     names
-}
-
-/// The fixed directory and extension a declared-layout catalog keeps one of
-/// the file-per-item kinds in. Only those kinds have one.
-pub(super) fn fixed_kind_dir(kind: ItemKind) -> (&'static str, &'static str) {
-    match kind {
-        ItemKind::Hook => ("hooks", "sh"),
-        ItemKind::Command => ("commands", "md"),
-        ItemKind::McpServer => ("mcp", "toml"),
-        _ => unreachable!("only file-per-item kinds live in a fixed dir"),
-    }
-}
-
-/// The skills one explicit catalog dir holds, the flat v1 shape.
-pub(super) fn flat_skills(sealed: &SealedSource, dir: &str) -> Vec<String> {
-    let Ok(entries) = sealed.list_dir(&sealed.root().join(dir)) else {
-        return Vec::new();
-    };
-    entries
-        .into_iter()
-        .filter(|path| sealed.is_file(&path.join("SKILL.md")))
-        .filter_map(|path| path.file_name()?.to_str().map(str::to_owned))
-        // A listed name is one that installs: find_item refuses the rest, so
-        // listing them would only draw dead rows and, for a deceptive name,
-        // one whose on-screen spelling is not the name that lands on disk.
-        .filter(|name| crate::names::item_problem(name).is_none())
-        .collect()
-}
-
-pub(super) fn agent_stems(sealed: &SealedSource, dir: &str) -> Vec<String> {
-    file_stems(sealed, dir, "md")
-}
-
-/// The item names one kind dir holds — every file with the kind's
-/// extension, by stem.
-fn file_stems(sealed: &SealedSource, dir: &str, ext: &str) -> Vec<String> {
-    let Ok(entries) = sealed.list_dir(&sealed.root().join(dir)) else {
-        return Vec::new();
-    };
-    entries
-        .into_iter()
-        .filter(|path| path.extension().is_some_and(|e| e == ext) && sealed.is_file(path))
-        .filter_map(|path| path.file_stem()?.to_str().map(str::to_owned))
-        // A listed name is one that installs: find_item refuses the rest.
-        .filter(|name| crate::names::item_problem(name).is_none())
-        .collect()
-}
-
-/// The item names a fixed kind dir holds, by file stem.
-pub(super) fn ext_stems(sealed: &SealedSource, dir: &str, ext: &str) -> Vec<String> {
-    file_stems(sealed, dir, ext)
 }

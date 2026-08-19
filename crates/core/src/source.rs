@@ -10,6 +10,7 @@ pub mod bundles;
 mod catalog;
 pub mod discover;
 pub mod index;
+mod layout;
 mod meta;
 mod plugin_registry;
 

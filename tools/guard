@@ -73,7 +73,11 @@ hits=$(scan 'allow\((dead_code|unused)' | grep -vE "$guard_impl")
   say "allow(dead_code/unused) — delete the code instead of keeping it warm"
 }
 
-hits=$(scan 'std::fs::read|crate::fs::read' '^crates/core/src/(source\.rs|source/(browse|catalog|config|discover|plugin_registry)\.rs|source/browse/preview\.rs|render/skill\.rs|engine/(desired|ops))|^crates/app/src/editor\.rs')
+# Every module that reads a catalog's own bytes is listed, so a raw read of a
+# catalog path is caught wherever it is added. source/browse/safety.rs is not
+# here on purpose: its one fs read is of kendex's own cache record under the
+# store, never a catalog path, and adding it would flag that legitimate read.
+hits=$(scan 'std::fs::read|crate::fs::read' '^crates/core/src/(source\.rs|check_catalog\.rs|library\.rs|source/(about|browse|bundles|catalog|config|discover|index|meta|plugin_registry)\.rs|source/browse/preview\.rs|render/skill\.rs|engine/(desired|ops))|^crates/app/src/editor\.rs')
 [ -n "$hits" ] && {
   echo "$hits" | head -5
   say "raw filesystem read over catalog paths — go through source_read::SealedSource"

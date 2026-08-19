@@ -88,6 +88,9 @@ pub enum CatalogMode {
 /// Run the search table over a source. `display` names a repo-root skill
 /// that does not name itself: the repository leaf, passed in because the
 /// store directory the source resolves to is a commit id.
+mod realities;
+use realities::{frontmatter_name, submodule_findings};
+
 pub fn discover(sealed: &SealedSource, display: &str) -> Result<Discovery> {
     let mut walk = Walk {
         sealed,
@@ -126,7 +129,16 @@ struct Walk<'a> {
 
 impl Walk<'_> {
     fn dir(&mut self, root: &str, dir: &Path, rel: &Path, depth: usize) -> Result<()> {
+        // Once the cap is hit the walk stops rather than reading the rest of a
+        // hostile tree: the bound is on the work, not just the output, so a
+        // repository of a million directories costs the cap, not the tree.
+        if self.full {
+            return Ok(());
+        }
         for path in self.sealed.list_dir(dir)? {
+            if self.full {
+                break;
+            }
             let Some(name) = path.file_name() else {
                 continue;
             };
@@ -171,13 +183,9 @@ impl Walk<'_> {
             ));
             return Ok(());
         }
-        // One directory reachable under two recognized roots is one item.
-        if !self.taken_rels.insert(rel.to_path_buf()) {
-            return Ok(());
-        }
-        if self.full {
-            return Ok(());
-        }
+        // Bound the retained paths as well as the output: the cap is checked
+        // before this skill's path is remembered, so a hostile tree cannot
+        // grow the dedup set past the cap.
         if self.discovery.skills.len() >= MAX_SKILLS {
             self.full = true;
             self.discovery.findings.push(CatalogFinding::new(
@@ -185,6 +193,10 @@ impl Walk<'_> {
                 format!("more than {MAX_SKILLS} skills — the rest are not read"),
                 "split the repository; no real catalog ships this many",
             ));
+            return Ok(());
+        }
+        // One directory reachable under two recognized roots is one item.
+        if !self.taken_rels.insert(rel.to_path_buf()) {
             return Ok(());
         }
         let location = rel.display().to_string();
@@ -229,7 +241,9 @@ impl Walk<'_> {
                 return Ok(());
             }
             self.poisoned_names.insert(fold.clone());
-            self.discovery.skills.retain(|s| names::fold(&s.name) != fold);
+            self.discovery
+                .skills
+                .retain(|s| names::fold(&s.name) != fold);
             self.discovery.findings.push(CatalogFinding::new(
                 location.clone(),
                 format!(
@@ -307,7 +321,9 @@ impl Walk<'_> {
             // Both spellings are skipped, so which the walk reached first can
             // never decide the winner.
             self.poisoned_names.insert(fold.clone());
-            self.discovery.skills.retain(|s| names::fold(&s.name) != fold);
+            self.discovery
+                .skills
+                .retain(|s| names::fold(&s.name) != fold);
             self.discovery.findings.push(CatalogFinding::new(
                 location,
                 format!(
@@ -349,47 +365,6 @@ impl Walk<'_> {
         }
         Ok(Some(text))
     }
-}
-
-fn frontmatter_name(text: &str) -> Option<String> {
-    let (yaml, _) = crate::frontmatter::split(text).ok()?;
-    let parsed = crate::frontmatter::parse_tolerant(yaml).ok()?;
-    parsed
-        .map
-        .get("name")
-        .and_then(|value| value.as_str())
-        .map(str::to_owned)
-}
-
-/// Submodules are stated, not discovered: a pointer under a recognized root
-/// would read as an empty skill, so it is named instead of hydrated.
-fn submodule_findings(sealed: &SealedSource, findings: &mut Vec<CatalogFinding>) -> Result<()> {
-    let Some(text) = sealed.read_if_exists(&sealed.root().join(".gitmodules"))? else {
-        return Ok(());
-    };
-    for line in text.lines() {
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        if key.trim() != "path" {
-            continue;
-        }
-        let path = value.trim();
-        if SKILL_ROOTS
-            .iter()
-            .any(|root| path == *root || path.starts_with(&format!("{root}/")))
-        {
-            findings.push(CatalogFinding::new(
-                ".gitmodules",
-                format!(
-                    "`{}` is a submodule — its content is not fetched",
-                    names::shown(path)
-                ),
-                "vendor the files in, or publish that repository as its own marketplace",
-            ));
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
