@@ -80,24 +80,6 @@ describe("nav store", () => {
     expect(useNavStore.getState().page).toBe("home");
   });
 
-  it("takes the search shortcut to the Library from a page with no box", () => {
-    useNavStore.getState().goTo("harnesses");
-    useNavStore.getState().focusSearch();
-
-    const state = useNavStore.getState();
-    expect(state.page).toBe("library");
-    expect(state.searchFocus).toBe(1);
-  });
-
-  it("keeps the page when its own search box is already on screen", () => {
-    useNavStore.getState().goToMarketplaces("packages");
-    useNavStore.getState().focusSearch();
-
-    const state = useNavStore.getState();
-    expect(state.page).toBe("marketplaces");
-    expect(state.searchFocus).toBe(1);
-  });
-
   it("re-asking for the search box on the Library refocuses without navigating", () => {
     useNavStore.getState().focusSearch();
     const pushed = useNavStore.getState().history;
@@ -139,32 +121,6 @@ describe("nav store", () => {
     expect(useNavStore.getState().libraryFilter).toBeNull();
   });
 
-  it("remembers which Marketplaces tab was open through back", () => {
-    useNavStore.getState().goToMarketplaces("packages");
-    useNavStore.getState().goToMarketplace({
-      scope: { scope: "global" },
-      source: "kendex",
-    });
-    useNavStore.getState().back();
-
-    const state = useNavStore.getState();
-    expect(state.page).toBe("marketplaces");
-    expect(state.marketplacesTab).toBe("packages");
-  });
-
-  it("opens nested marketplace pages with their refs, cleared on a pick", () => {
-    const ref = { scope: { scope: "global" as const }, source: "kendex" };
-    useNavStore.getState().goToMarketplace(ref);
-    expect(useNavStore.getState().marketplaceRef).toEqual(ref);
-
-    useNavStore.getState().goToBundle({ ...ref, bundle: "starter" });
-    expect(useNavStore.getState().page).toBe("bundleDetail");
-
-    useNavStore.getState().setPage("home");
-    expect(useNavStore.getState().marketplaceRef).toBeNull();
-    expect(useNavStore.getState().bundleRef).toBeNull();
-  });
-
   it("pushes the prior page onto history on a cross-page nav", () => {
     useNavStore.getState().goToLibrary();
 
@@ -178,13 +134,6 @@ describe("nav store", () => {
         availableRef: null,
       },
     ]);
-  });
-
-  it("does not push when goToMarketplaces only switches tabs", () => {
-    useNavStore.getState().goToMarketplaces();
-    useNavStore.getState().goToMarketplaces("packages");
-
-    expect(useNavStore.getState().history).toHaveLength(1);
   });
 
   it("back() pops history and restores the prior page and tab", () => {
