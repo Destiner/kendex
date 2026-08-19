@@ -7,9 +7,13 @@ import { Sidebar } from "@/components/sidebar";
 import { StatusFooter } from "@/components/status-footer";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { WindowControls } from "@/components/window-controls";
+import { AvailablePackagePage } from "@/pages/available-package";
+import { BundleDetailPage } from "@/pages/bundle-detail";
 import { CustomizePage } from "@/pages/customize";
 import { HarnessesPage } from "@/pages/harnesses";
 import { LibraryPage } from "@/pages/library";
+import { MarketplaceDetailPage } from "@/pages/marketplace-detail";
+import { MarketplacesPage } from "@/pages/marketplaces";
 import { OverviewPage } from "@/pages/overview";
 import { PackagePage } from "@/pages/package";
 import { ProblemsPage } from "@/pages/problems";
@@ -147,6 +151,10 @@ export default function App() {
                 {page === "home" && <OverviewPage />}
                 {page === "library" && <LibraryPage />}
                 {page === "package" && <PackagePage key={packageKey} />}
+                {page === "marketplaces" && <MarketplacesPage />}
+                {page === "marketplaceDetail" && <MarketplaceDetailPage />}
+                {page === "bundleDetail" && <BundleDetailPage />}
+                {page === "availablePackage" && <AvailablePackagePage />}
                 {page === "updates" && <UpdatesPage />}
                 {page === "harnesses" && <HarnessesPage />}
                 {page === "projects" && <ProjectsPage />}

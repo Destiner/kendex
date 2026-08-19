@@ -126,16 +126,35 @@ describe("labels", () => {
   });
 });
 
-describe("breadcrumbLabel for a package", () => {
-  it("reads Library / <name>, with hooks by display name", () => {
+describe("breadcrumbLabel for nested pages", () => {
+  it("reads My Library / <name>, with hooks by display name", () => {
     expect(
       breadcrumbLabel({
         page: "package",
-        libraryTab: "installed",
         packageName: packageDisplayName({ kind: "skill", name: "gh" }),
       }),
-    ).toBe("Library / gh");
+    ).toBe("My Library / gh");
     expect(packageDisplayName({ kind: "hook", name: "block-rm" })).not.toBe("");
+  });
+
+  it("spells the marketplace trail out one level per page", () => {
+    expect(
+      breadcrumbLabel({ page: "marketplaceDetail", marketplaceName: "kendex" }),
+    ).toBe("Marketplaces / kendex");
+    expect(
+      breadcrumbLabel({
+        page: "bundleDetail",
+        marketplaceName: "kendex",
+        bundleName: "starter",
+      }),
+    ).toBe("Marketplaces / kendex / starter");
+    expect(
+      breadcrumbLabel({
+        page: "availablePackage",
+        marketplaceName: "kendex",
+        packageName: "gh",
+      }),
+    ).toBe("Marketplaces / kendex / gh");
   });
 });
 

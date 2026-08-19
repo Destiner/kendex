@@ -1,0 +1,82 @@
+// The vocabulary of places: every page id, the refs that address what a
+// nested page is showing, and the snapshot the back stack keeps.
+import type { HarnessId, ItemKind, Scope } from "@/bindings";
+
+export type Page =
+  | "home"
+  | "review"
+  | "library"
+  | "marketplaces"
+  | "harnesses"
+  | "projects"
+  | "customize"
+  // Reached from Home's attention list and the Review card's footnote —
+  // adopting is an offer, not a sidebar destination.
+  | "unmanaged"
+  | "settings"
+  | "updates"
+  // Reached only from the status footer's problems segment or a review
+  // card's "See all problems" — not in the sidebar, since it isn't a place
+  // you'd navigate to when nothing is wrong.
+  | "problems"
+  // Reached only by opening a package from a list — which package is open
+  // lives in `packageRef`, so the page is never a sidebar destination.
+  | "package"
+  // Nested under Marketplaces, reached only by opening a row — the open
+  // thing lives in its ref, same shape as the package page.
+  | "marketplaceDetail"
+  | "bundleDetail"
+  | "availablePackage";
+
+/** Which of the Marketplaces page's four tabs is showing. */
+export type MarketplacesTab = "subscribed" | "packages" | "community" | "mine";
+
+/** What Library's table should filter to when it first opens. */
+export interface LibraryFilter {
+  harness?: HarnessId;
+  kind?: ItemKind;
+}
+
+/** The package a package page is showing — everything a backend query
+ * needs to address it. */
+export interface PackageRef {
+  kind: ItemKind;
+  name: string;
+  scope: Scope;
+}
+
+/** One subscription, addressed the way every marketplace query is. */
+export interface MarketplaceRef {
+  scope: Scope;
+  source: string;
+}
+
+/** One curated set inside a subscription. */
+export interface BundleRef extends MarketplaceRef {
+  bundle: string;
+}
+
+/** One offered-but-not-installed package inside a subscription. */
+export interface AvailableRef extends MarketplaceRef {
+  kind: ItemKind;
+  name: string;
+}
+
+/** What the package page should open showing, when not its files — e.g.
+ * "Preview" on the Updates page lands straight on the diff. Consumed once
+ * by the page on mount, then cleared. */
+export interface PackageView {
+  mode: "diff";
+  from: string;
+  to: string;
+}
+
+/** Where the back button returns to: a page plus its state at push time. */
+export interface HistoryEntry {
+  page: Page;
+  marketplacesTab: MarketplacesTab;
+  packageRef: PackageRef | null;
+  marketplaceRef: MarketplaceRef | null;
+  bundleRef: BundleRef | null;
+  availableRef: AvailableRef | null;
+}

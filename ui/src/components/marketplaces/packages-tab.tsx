@@ -1,0 +1,191 @@
+import { Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ItemKind, Tag } from "@/bindings";
+import {
+  type PackageEntry,
+  PackagesTable,
+} from "@/components/marketplaces/packages-table";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { scopeLabel } from "@/lib/derive";
+import { kindLabel, scopeName, TAG_LABELS } from "@/lib/labels";
+import { PAGE_BODY, PAGE_GUTTER, WIDE_CONTENT_WIDTH } from "@/lib/layout";
+import { cn } from "@/lib/utils";
+import { marketKey, useMarketplacesStore } from "@/stores/marketplaces";
+import { useNavStore } from "@/stores/nav";
+
+const KINDS: ItemKind[] = [
+  "agent",
+  "skill",
+  "hook",
+  "command",
+  "mcp-server",
+  "plugin",
+  "pi-extension",
+];
+const TAGS = Object.keys(TAG_LABELS) as Tag[];
+
+/** One searchable table across every subscribed marketplace. `Where` is the
+ * destination a package installs to — each row installs into the scope its
+ * subscription lives in, so the filter narrows by that. */
+export function PackagesTab() {
+  const rows = useMarketplacesStore((s) => s.rows);
+  const packages = useMarketplacesStore((s) => s.packages);
+  const loadPackages = useMarketplacesStore((s) => s.loadPackages);
+  const searchFocus = useNavStore((s) => s.searchFocus);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [search, setSearch] = useState("");
+  const [kind, setKind] = useState("any");
+  const [tag, setTag] = useState("any");
+  const [marketplace, setMarketplace] = useState("any");
+  const [where, setWhere] = useState("any");
+
+  // Every enabled subscription's offer lands in the shared cache; a
+  // subscription that cannot be read simply contributes no rows yet.
+  useEffect(() => {
+    for (const row of rows) {
+      if (!row.enabled) continue;
+      if (!packages[marketKey(row.scope, row.name)]) {
+        void loadPackages(row.scope, row.name);
+      }
+    }
+  }, [rows, packages, loadPackages]);
+
+  useEffect(() => {
+    if (searchFocus === 0) return;
+    searchRef.current?.focus();
+  }, [searchFocus]);
+
+  const entries = useMemo(() => {
+    const out: PackageEntry[] = [];
+    for (const row of rows) {
+      if (!row.enabled) continue;
+      if (marketplace !== "any" && row.name !== marketplace) continue;
+      if (where !== "any" && scopeLabel(row.scope) !== where) continue;
+      for (const pkg of packages[marketKey(row.scope, row.name)] ?? []) {
+        if (kind !== "any" && pkg.kind !== kind) continue;
+        if (tag !== "any" && !pkg.tags.includes(tag as Tag)) continue;
+        const needle = search.trim().toLowerCase();
+        if (
+          needle &&
+          !pkg.name.toLowerCase().includes(needle) &&
+          !(pkg.description ?? "").toLowerCase().includes(needle)
+        )
+          continue;
+        out.push({ scope: row.scope, source: row.name, row: pkg });
+      }
+    }
+    return out;
+  }, [rows, packages, search, kind, tag, marketplace, where]);
+
+  const marketplaceNames = [...new Set(rows.map((row) => row.name))];
+  const whereOptions = [
+    ...new Map(rows.map((row) => [scopeLabel(row.scope), row.scope])).values(),
+  ];
+
+  return (
+    <>
+      <div className={cn("pb-3", PAGE_GUTTER)}>
+        <div
+          className={cn(
+            WIDE_CONTENT_WIDTH,
+            "flex flex-wrap items-center gap-2",
+          )}
+        >
+          <div className="relative min-w-56 flex-1">
+            <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              ref={searchRef}
+              className="pl-8"
+              placeholder="Search packages"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <Filter value={kind} onChange={setKind} label="Type">
+            {KINDS.map((k) => (
+              <SelectItem key={k} value={k}>
+                {kindLabel(k)}
+              </SelectItem>
+            ))}
+          </Filter>
+          <Filter value={tag} onChange={setTag} label="For">
+            {TAGS.map((t) => (
+              <SelectItem key={t} value={t}>
+                {TAG_LABELS[t]}
+              </SelectItem>
+            ))}
+          </Filter>
+          <Filter
+            value={marketplace}
+            onChange={setMarketplace}
+            label="Marketplace"
+          >
+            {marketplaceNames.map((name) => (
+              <SelectItem key={name} value={name}>
+                {name}
+              </SelectItem>
+            ))}
+          </Filter>
+          <Filter value={where} onChange={setWhere} label="Where">
+            {whereOptions.map((scope) => (
+              <SelectItem key={scopeLabel(scope)} value={scopeLabel(scope)}>
+                {scopeName(scope)}
+              </SelectItem>
+            ))}
+          </Filter>
+          <span className="ml-auto text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+            {entries.length} package{entries.length === 1 ? "" : "s"}
+          </span>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className={cn(PAGE_BODY, "pt-0")}>
+          <div className={WIDE_CONTENT_WIDTH}>
+            {entries.length === 0 ? (
+              <p className="py-16 text-center text-sm text-muted-foreground">
+                {rows.length === 0
+                  ? "Subscribe to a marketplace to browse its packages here."
+                  : "Nothing matches — clear a filter or try another search."}
+              </p>
+            ) : (
+              <PackagesTable entries={entries} showMarketplace />
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** One narrow dropdown in the filter row: "any" leads, the label names it. */
+function Filter({
+  value,
+  onChange,
+  label,
+  children,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Select value={value} onValueChange={(next) => onChange(next ?? "any")}>
+      <SelectTrigger size="sm" className="w-auto gap-1.5">
+        <span className="text-muted-foreground">{label}</span>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="any">Any</SelectItem>
+        {children}
+      </SelectContent>
+    </Select>
+  );
+}

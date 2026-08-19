@@ -15,7 +15,13 @@ export const WIDE_CONTENT_WIDTH = "mx-auto w-full max-w-[110rem]";
 // Which pages take the window rather than the reading measure. The
 // breadcrumb strip sits outside any page and has to match the one below it,
 // so the choice is named here rather than passed down twice.
-const WIDE_PAGES = new Set(["library", "package"]);
+const WIDE_PAGES = new Set([
+  "library",
+  "package",
+  "marketplaces",
+  "marketplaceDetail",
+  "availablePackage",
+]);
 
 export function isWidePage(page: string): boolean {
   return WIDE_PAGES.has(page);

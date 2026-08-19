@@ -10,7 +10,7 @@ import type {
   Tag,
   Verdict,
 } from "@/bindings";
-import type { LibraryTab, Page } from "@/stores/nav";
+import type { Page } from "@/stores/nav";
 
 export const HARNESS_NAMES: Record<HarnessId, string> = {
   claude: "Claude Code",
@@ -193,7 +193,8 @@ export const moreItemsLabel = (hiddenCount: number): string =>
 export const PAGE_LABELS: Record<Page, string> = {
   home: "Home",
   review: "Review & apply",
-  library: "Library",
+  library: "My Library",
+  marketplaces: "Marketplaces",
   updates: "Updates",
   harnesses: "Harnesses",
   projects: "Projects",
@@ -202,25 +203,33 @@ export const PAGE_LABELS: Record<Page, string> = {
   settings: "Settings",
   problems: "Problems",
   package: "Package",
+  marketplaceDetail: "Marketplace",
+  bundleDetail: "Bundle",
+  availablePackage: "Package",
 };
 
-const LIBRARY_TAB_LABELS: Record<LibraryTab, string> = {
-  installed: "Installed",
-  add: "Add from a catalog",
-};
-
-// Where you are, in one line — pages without tabs read as just their name.
+// Where you are, in one line — only nested pages spell out a trail; a base
+// page reads as just its name.
 export function breadcrumbLabel(nav: {
   page: Page;
-  libraryTab: LibraryTab;
   /** The open package's display name, when the page is a package. */
   packageName?: string | null;
+  /** The open subscription's name, on the marketplace-nested pages. */
+  marketplaceName?: string | null;
+  /** The open bundle's name, on the bundle page. */
+  bundleName?: string | null;
 }): string {
-  if (nav.page === "library") {
-    return `${PAGE_LABELS.library} / ${LIBRARY_TAB_LABELS[nav.libraryTab]}`;
-  }
   if (nav.page === "package" && nav.packageName) {
     return `${PAGE_LABELS.library} / ${nav.packageName}`;
+  }
+  if (nav.page === "marketplaceDetail" && nav.marketplaceName) {
+    return `${PAGE_LABELS.marketplaces} / ${nav.marketplaceName}`;
+  }
+  if (nav.page === "bundleDetail" && nav.marketplaceName && nav.bundleName) {
+    return `${PAGE_LABELS.marketplaces} / ${nav.marketplaceName} / ${nav.bundleName}`;
+  }
+  if (nav.page === "availablePackage" && nav.marketplaceName) {
+    return `${PAGE_LABELS.marketplaces} / ${nav.marketplaceName} / ${nav.packageName ?? ""}`;
   }
   return PAGE_LABELS[nav.page];
 }

@@ -17,8 +17,10 @@ import { useNavStore } from "@/stores/nav";
 // reserves space for it.
 export function NavBar() {
   const page = useNavStore((s) => s.page);
-  const libraryTab = useNavStore((s) => s.libraryTab);
   const packageRef = useNavStore((s) => s.packageRef);
+  const marketplaceRef = useNavStore((s) => s.marketplaceRef);
+  const bundleRef = useNavStore((s) => s.bundleRef);
+  const availableRef = useNavStore((s) => s.availableRef);
   const hasHistory = useNavStore((s) => s.history.length > 0);
   const back = useNavStore((s) => s.back);
 
@@ -51,8 +53,17 @@ export function NavBar() {
         <span className="ml-1 min-w-0 truncate">
           {breadcrumbLabel({
             page,
-            libraryTab,
-            packageName: packageRef ? packageDisplayName(packageRef) : null,
+            packageName: packageRef
+              ? packageDisplayName(packageRef)
+              : availableRef
+                ? packageDisplayName(availableRef)
+                : null,
+            marketplaceName:
+              marketplaceRef?.source ??
+              bundleRef?.source ??
+              availableRef?.source ??
+              null,
+            bundleName: bundleRef?.bundle ?? null,
           })}
         </span>
       </div>

@@ -37,7 +37,7 @@ export function InstalledView() {
   const result = useScanStore((s) => s.result);
   const scope = useNavStore((s) => s.libraryScope);
   const setScope = useNavStore((s) => s.setLibraryScope);
-  const goToLibrary = useNavStore((s) => s.goToLibrary);
+  const goToMarketplaces = useNavStore((s) => s.goToMarketplaces);
   const goToPackage = useNavStore((s) => s.goToPackage);
   const clearLibraryFilter = useNavStore((s) => s.clearLibraryFilter);
   const {
@@ -216,16 +216,16 @@ export function InstalledView() {
                           <div>
                             <p className="font-medium">Nothing installed yet</p>
                             <p className="text-sm text-muted-foreground">
-                              Add a catalog to start installing skills and
-                              agents.
+                              Browse Marketplaces to install skills, agents and
+                              more.
                             </p>
                           </div>
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => goToLibrary({ tab: "add" })}
+                            onClick={() => goToMarketplaces()}
                           >
-                            Add from a catalog
+                            Browse Marketplaces
                           </Button>
                         </div>
                       )}

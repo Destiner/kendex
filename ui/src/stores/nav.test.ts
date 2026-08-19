@@ -8,9 +8,12 @@ describe("nav store", () => {
       libraryScope: "all",
       search: "",
       searchFocus: 0,
-      libraryTab: "installed",
+      marketplacesTab: "subscribed",
       libraryFilter: null,
       packageRef: null,
+      marketplaceRef: null,
+      bundleRef: null,
+      availableRef: null,
       packageView: null,
       history: [],
       future: [],
@@ -77,13 +80,21 @@ describe("nav store", () => {
     expect(useNavStore.getState().page).toBe("home");
   });
 
-  it("takes the search shortcut to the Library's installed tab", () => {
-    useNavStore.getState().goToLibrary({ tab: "add" });
+  it("takes the search shortcut to the Library from a page with no box", () => {
+    useNavStore.getState().goTo("harnesses");
     useNavStore.getState().focusSearch();
 
     const state = useNavStore.getState();
     expect(state.page).toBe("library");
-    expect(state.libraryTab).toBe("installed");
+    expect(state.searchFocus).toBe(1);
+  });
+
+  it("keeps the page when its own search box is already on screen", () => {
+    useNavStore.getState().goToMarketplaces("packages");
+    useNavStore.getState().focusSearch();
+
+    const state = useNavStore.getState();
+    expect(state.page).toBe("marketplaces");
     expect(state.searchFocus).toBe(1);
   });
 
@@ -122,26 +133,36 @@ describe("nav store", () => {
 
     const state = useNavStore.getState();
     expect(state.page).toBe("library");
-    expect(state.libraryTab).toBe("installed");
     expect(state.libraryFilter).toEqual({ harness: "claude", kind: "hook" });
 
     state.clearLibraryFilter();
     expect(useNavStore.getState().libraryFilter).toBeNull();
   });
 
-  it("plays the plain tab-switch case with no filter", () => {
-    useNavStore.getState().goToLibrary({ tab: "add" });
+  it("remembers which Marketplaces tab was open through back", () => {
+    useNavStore.getState().goToMarketplaces("packages");
+    useNavStore.getState().goToMarketplace({
+      scope: { scope: "global" },
+      source: "kendex",
+    });
+    useNavStore.getState().back();
 
     const state = useNavStore.getState();
-    expect(state.page).toBe("library");
-    expect(state.libraryTab).toBe("add");
-    expect(state.libraryFilter).toBeNull();
+    expect(state.page).toBe("marketplaces");
+    expect(state.marketplacesTab).toBe("packages");
   });
 
-  it("defaults to the installed tab when only a filter is given", () => {
-    useNavStore.getState().goToLibrary({ kind: "skill" });
+  it("opens nested marketplace pages with their refs, cleared on a pick", () => {
+    const ref = { scope: { scope: "global" as const }, source: "kendex" };
+    useNavStore.getState().goToMarketplace(ref);
+    expect(useNavStore.getState().marketplaceRef).toEqual(ref);
 
-    expect(useNavStore.getState().libraryTab).toBe("installed");
+    useNavStore.getState().goToBundle({ ...ref, bundle: "starter" });
+    expect(useNavStore.getState().page).toBe("bundleDetail");
+
+    useNavStore.getState().setPage("home");
+    expect(useNavStore.getState().marketplaceRef).toBeNull();
+    expect(useNavStore.getState().bundleRef).toBeNull();
   });
 
   it("pushes the prior page onto history on a cross-page nav", () => {
@@ -150,27 +171,30 @@ describe("nav store", () => {
     expect(useNavStore.getState().history).toEqual([
       {
         page: "home",
-        libraryTab: "installed",
+        marketplacesTab: "subscribed",
         packageRef: null,
+        marketplaceRef: null,
+        bundleRef: null,
+        availableRef: null,
       },
     ]);
   });
 
-  it("does not push when goToLibrary only switches tabs on the same page", () => {
-    useNavStore.getState().goToLibrary();
-    useNavStore.getState().goToLibrary({ tab: "add" });
+  it("does not push when goToMarketplaces only switches tabs", () => {
+    useNavStore.getState().goToMarketplaces();
+    useNavStore.getState().goToMarketplaces("packages");
 
     expect(useNavStore.getState().history).toHaveLength(1);
   });
 
   it("back() pops history and restores the prior page and tab", () => {
-    useNavStore.setState({ libraryTab: "add" });
+    useNavStore.setState({ marketplacesTab: "packages" });
     useNavStore.getState().goTo("harnesses");
     useNavStore.getState().back();
 
     const state = useNavStore.getState();
     expect(state.page).toBe("home");
-    expect(state.libraryTab).toBe("add");
+    expect(state.marketplacesTab).toBe("packages");
     expect(state.history).toEqual([]);
   });
 
@@ -205,8 +229,11 @@ describe("nav store", () => {
     expect(state.history).toEqual([
       {
         page: "home",
-        libraryTab: "installed",
+        marketplacesTab: "subscribed",
         packageRef: null,
+        marketplaceRef: null,
+        bundleRef: null,
+        availableRef: null,
       },
     ]);
   });

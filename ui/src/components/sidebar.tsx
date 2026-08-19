@@ -7,6 +7,7 @@ import {
   RefreshCw,
   Settings,
   SlidersHorizontal,
+  Store,
   TerminalSquare,
 } from "lucide-react";
 import { useEffect } from "react";
@@ -30,7 +31,8 @@ const NAV_ROW =
 const NAV: { page: Page; label: string; icon: typeof Home }[] = [
   { page: "home", label: "Home", icon: Home },
   { page: "review", label: "Review & apply", icon: CircleCheck },
-  { page: "library", label: "Library", icon: Library },
+  { page: "library", label: "My Library", icon: Library },
+  { page: "marketplaces", label: "Marketplaces", icon: Store },
   { page: "updates", label: "Updates", icon: ArrowUpCircle },
   { page: "harnesses", label: "Harnesses", icon: TerminalSquare },
   { page: "projects", label: "Projects", icon: FolderGit2 },
@@ -67,11 +69,11 @@ export function Sidebar() {
         onDoubleClick={() => void commands.windowToggleMaximize()}
         className="flex items-center justify-between px-4 pt-4 pb-3"
       >
-        {/* Weight carries the mark rather than a second typeface: the "v"
-            is the thing to recognise, "stack" is the word it sits in. */}
+        {/* Weight carries the mark rather than a second typeface: the "ken"
+            is the thing to recognise, "dex" is the word it sits in. */}
         <span className="text-[15px] tracking-tight">
-          <span className="font-bold">v</span>
-          <span className="font-light text-foreground/80">stack</span>
+          <span className="font-bold">ken</span>
+          <span className="font-light text-foreground/80">dex</span>
         </span>
         <Button
           variant="ghost"

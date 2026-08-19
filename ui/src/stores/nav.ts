@@ -1,63 +1,30 @@
 import { create } from "zustand";
-import type { HarnessId, ItemKind, Scope } from "@/bindings";
 import type { ScopeSelection } from "@/lib/derive";
+import type {
+  AvailableRef,
+  BundleRef,
+  HistoryEntry,
+  LibraryFilter,
+  MarketplaceRef,
+  MarketplacesTab,
+  PackageRef,
+  PackageView,
+  Page,
+} from "./nav-types";
 
-export type Page =
-  | "home"
-  | "review"
-  | "library"
-  | "harnesses"
-  | "projects"
-  | "customize"
-  // Reached from Home's attention list and the Review card's footnote —
-  // adopting is an offer, not a sidebar destination.
-  | "unmanaged"
-  | "settings"
-  | "updates"
-  // Reached only from the status footer's problems segment or a review
-  // card's "See all problems" — not in the sidebar, since it isn't a place
-  // you'd navigate to when nothing is wrong.
-  | "problems"
-  // Reached only by opening a package from a list — which package is open
-  // lives in `packageRef`, so the page is never a sidebar destination.
-  | "package";
-
-/** Which half of the Library page is showing. */
-export type LibraryTab = "installed" | "add";
-
-/** What Library's Installed view should filter to when it first opens. */
-export interface LibraryFilter {
-  harness?: HarnessId;
-  kind?: ItemKind;
-}
-
-/** The package a package page is showing — everything a backend query
- * needs to address it. */
-export interface PackageRef {
-  kind: ItemKind;
-  name: string;
-  scope: Scope;
-}
-
-/** What the package page should open showing, when not its files — e.g.
- * "Preview" on the Updates page lands straight on the diff. Consumed once
- * by the page on mount, then cleared. */
-export interface PackageView {
-  mode: "diff";
-  from: string;
-  to: string;
-}
-
-/** Where the back button returns to: a page plus its tab state at push time. */
-export interface HistoryEntry {
-  page: Page;
-  libraryTab: LibraryTab;
-  packageRef: PackageRef | null;
-}
+export type * from "./nav-types";
 
 // Small and fixed so a long session of cross-page hops never grows the
 // stack unbounded — nobody needs to back up more than this in practice.
 const HISTORY_CAP = 20;
+
+// The pages that keep a search box on screen: "/" focuses the one that is
+// showing instead of leaving the page the user is reading.
+const SEARCH_PAGES: ReadonlySet<Page> = new Set([
+  "library",
+  "marketplaces",
+  "marketplaceDetail",
+]);
 
 interface NavState {
   page: Page;
@@ -68,15 +35,18 @@ interface NavState {
   /** What the Library's search box holds, kept here so leaving the page and
    * coming back keeps the table narrowed the same way. */
   search: string;
-  /** Bumped whenever something asks for the search box. The box focuses
-   * itself on every change, so the "/" shortcut reaches it from any page
-   * rather than only from the one it happens to be mounted on. */
+  /** Bumped whenever something asks for the search box. The mounted box
+   * focuses itself on every change, so the "/" shortcut reaches whichever
+   * search box is on screen. */
   searchFocus: number;
-  libraryTab: LibraryTab;
-  /** Consumed once by Installed on mount, then cleared. */
+  marketplacesTab: MarketplacesTab;
+  /** Consumed once by the Library on mount, then cleared. */
   libraryFilter: LibraryFilter | null;
   /** Which package the package page shows; null anywhere else. */
   packageRef: PackageRef | null;
+  marketplaceRef: MarketplaceRef | null;
+  bundleRef: BundleRef | null;
+  availableRef: AvailableRef | null;
   /** Consumed once by the package page on mount, then cleared. */
   packageView: PackageView | null;
   history: HistoryEntry[];
@@ -86,14 +56,18 @@ interface NavState {
   setPage: (page: Page) => void;
   setLibraryScope: (scope: ScopeSelection) => void;
   setSearch: (search: string) => void;
-  /** Send the user to the Library with the cursor in its search box. */
+  /** Focus the search box on screen, or the Library's if this page has none. */
   focusSearch: () => void;
-  goToLibrary: (opts?: { tab?: LibraryTab } & LibraryFilter) => void;
+  goToLibrary: (opts?: LibraryFilter) => void;
   /** A cross-page link from chrome that's always on screen (e.g. the status
    * footer) — pushes history like the other goTo* helpers so back and the
    * breadcrumb work, without needing per-tab state of its own. */
   goTo: (page: Page) => void;
   goToPackage: (ref: PackageRef, view?: PackageView) => void;
+  goToMarketplaces: (tab?: MarketplacesTab) => void;
+  goToMarketplace: (ref: MarketplaceRef) => void;
+  goToBundle: (ref: BundleRef) => void;
+  goToAvailablePackage: (ref: AvailableRef) => void;
   clearLibraryFilter: () => void;
   clearPackageView: () => void;
   back: () => void;
@@ -105,9 +79,12 @@ export const useNavStore = create<NavState>((set) => ({
   libraryScope: "all",
   search: "",
   searchFocus: 0,
-  libraryTab: "installed",
+  marketplacesTab: "subscribed",
   libraryFilter: null,
   packageRef: null,
+  marketplaceRef: null,
+  bundleRef: null,
+  availableRef: null,
   packageView: null,
   history: [],
   future: [],
@@ -121,27 +98,28 @@ export const useNavStore = create<NavState>((set) => ({
       future: [],
       libraryFilter: null,
       packageRef: null,
+      marketplaceRef: null,
+      bundleRef: null,
+      availableRef: null,
     }),
   setLibraryScope: (libraryScope) => set({ libraryScope }),
   setSearch: (search) => set({ search }),
-  // Asking to search means "find me this thing", and the only page that can
-  // answer is the Library — so the shortcut takes you there rather than
-  // putting a cursor in a box that filters a list you cannot see.
+  // Asking to search means "find me this thing": the box on screen answers
+  // where there is one, and the Library answers everywhere else.
   focusSearch: () =>
     set((state) => ({
-      page: "library",
-      libraryTab: "installed",
+      ...(SEARCH_PAGES.has(state.page)
+        ? {}
+        : {
+            page: "library" as const,
+            history: pushHistory(state, "library"),
+            future: [],
+          }),
       searchFocus: state.searchFocus + 1,
-      history:
-        state.page === "library"
-          ? state.history
-          : pushHistory(state, "library"),
-      future: state.page === "library" ? state.future : [],
     })),
-  goToLibrary: ({ tab = "installed", harness, kind } = {}) =>
+  goToLibrary: ({ harness, kind } = {}) =>
     set((state) => ({
       page: "library",
-      libraryTab: tab,
       libraryFilter: harness || kind ? { harness, kind } : null,
       history: pushHistory(state, "library"),
       future: [],
@@ -158,6 +136,34 @@ export const useNavStore = create<NavState>((set) => ({
       packageRef: ref,
       packageView: view ?? null,
       history: pushHistory(state, "package"),
+      future: [],
+    })),
+  goToMarketplaces: (tab) =>
+    set((state) => ({
+      page: "marketplaces",
+      ...(tab ? { marketplacesTab: tab } : {}),
+      history: pushHistory(state, "marketplaces"),
+      future: [],
+    })),
+  goToMarketplace: (ref) =>
+    set((state) => ({
+      page: "marketplaceDetail",
+      marketplaceRef: ref,
+      history: pushHistory(state, "marketplaceDetail"),
+      future: [],
+    })),
+  goToBundle: (ref) =>
+    set((state) => ({
+      page: "bundleDetail",
+      bundleRef: ref,
+      history: pushHistory(state, "bundleDetail"),
+      future: [],
+    })),
+  goToAvailablePackage: (ref) =>
+    set((state) => ({
+      page: "availablePackage",
+      availableRef: ref,
+      history: pushHistory(state, "availablePackage"),
       future: [],
     })),
   clearLibraryFilter: () => set({ libraryFilter: null }),
@@ -192,8 +198,11 @@ export const useNavStore = create<NavState>((set) => ({
 function here(state: NavState): HistoryEntry {
   return {
     page: state.page,
-    libraryTab: state.libraryTab,
+    marketplacesTab: state.marketplacesTab,
     packageRef: state.packageRef,
+    marketplaceRef: state.marketplaceRef,
+    bundleRef: state.bundleRef,
+    availableRef: state.availableRef,
   };
 }
 
