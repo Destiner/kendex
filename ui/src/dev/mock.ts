@@ -3,6 +3,7 @@
 // automation, so UI validation runs the real pages in Chromium against
 // this bridge instead.
 import { auditHandlers } from "./mock-audit";
+import { communityHandlers } from "./mock-community";
 import { coreHandlers } from "./mock-core";
 import { decisionHandlers } from "./mock-decisions";
 import { marketplaceHandlers } from "./mock-marketplaces";
@@ -17,6 +18,7 @@ export const handlers: Record<string, Handler> = {
   ...sourceHandlers,
   ...packageHandlers,
   ...marketplaceHandlers,
+  ...communityHandlers,
 };
 
 export { resetState as resetMock };

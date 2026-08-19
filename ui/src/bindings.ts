@@ -209,6 +209,21 @@ export const commands = {
 	 *  `discard_edits` takes hand edits along instead of refusing.
 	 */
 	marketplaceUnsubscribe: (scope: Scope, source: string, keep: boolean, discardEdits: boolean) => typedError<null, string>(__TAURI_INVOKE("marketplace_unsubscribe", { scope, source, keep, discardEdits })),
+	/**
+	 *  The directory as the tab shows it. `refresh` forces a revalidation;
+	 *  otherwise the cached list is served within its TTL.
+	 */
+	communityDirectory: (refresh: boolean) => typedError<DirectoryView, string>(__TAURI_INVOKE("community_directory", { refresh })),
+	/**
+	 *  Search skills.sh directly — public API, no account, only skills.sh
+	 *  sees the query.
+	 */
+	communitySkillsshSearch: (query: string) => typedError<SkillsShHit[], string>(__TAURI_INVOKE("community_skillssh_search", { query })),
+	/**
+	 *  Whether the skills.sh surface is on at all — the tab hides the
+	 *  sub-tab when it is not, rather than showing a dead search box.
+	 */
+	communitySkillsshAvailable: () => typedError<boolean, string>(__TAURI_INVOKE("community_skillssh_available")),
 	marketplaceAbout: (scope: Scope, source: string) => typedError<AboutView, string>(__TAURI_INVOKE("marketplace_about", { scope, source })),
 	/**
 	 *  Where every installation came from, across every scope — the Library
@@ -632,6 +647,42 @@ export type DimensionScore = {
 	dimension: string,
 	weightPercent: number,
 	scorePercent: number,
+};
+
+export type DirectoryBundle = {
+	name: string,
+	description: string | null,
+	memberCount: number,
+};
+
+export type DirectoryPackage = {
+	kind: string,
+	name: string,
+	description: string | null,
+	safetyScore: number | null,
+};
+
+export type DirectoryRow = {
+	repo: string,
+	name: string,
+	description: string | null,
+	tags: string[],
+	featured: boolean,
+	packageCount: number,
+	bundleCount: number,
+	subscribed: boolean,
+	packages: DirectoryPackage[],
+	bundles: DirectoryBundle[],
+};
+
+export type DirectoryView = {
+	rows: DirectoryRow[],
+	/**
+	 *  When the served list was actually fetched (ISO-8601) — the "as of"
+	 *  line when `stale` is true, the "updated" line otherwise.
+	 */
+	fetchedAt: string,
+	stale: boolean,
 };
 
 /**
@@ -1813,6 +1864,14 @@ export type ScopeErrorKind =
 "manifest-invalid" | "other";
 
 export type Severity = "low" | "medium" | "high" | "critical";
+
+export type SkillsShHit = {
+	/**  The skill's directory name inside its repository. */
+	skill: string,
+	/**  `owner/repo` — what an install actually subscribes to. */
+	repo: string,
+	installs: number,
+};
 
 /**  A rule that applies here but could not run, and why. */
 export type SkippedRule = {

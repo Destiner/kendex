@@ -307,6 +307,16 @@ pub enum CoreError {
     #[error("{command} failed: {stderr}")]
     GitFailed { command: String, stderr: String },
 
+    /// The community directory or skills.sh could not be reached and
+    /// nothing cached can stand in.
+    #[error("the community directory is not reachable: {why}")]
+    RegistryUnavailable { why: String },
+
+    /// A registry response that does not parse under the pinned schema is
+    /// refused whole — never partially believed.
+    #[error("the community directory answered something this build does not read: {why}")]
+    RegistryMalformed { why: String },
+
     /// A guard's configuration is wrong or a measurement could not be
     /// taken — the loud exit-2 state, never a silent pass.
     #[error("{check}: {message}")]

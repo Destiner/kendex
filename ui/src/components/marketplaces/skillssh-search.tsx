@@ -1,0 +1,96 @@
+import { Search } from "lucide-react";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useCommunityStore } from "@/stores/community";
+
+/** Search skills.sh's whole index directly — public API, no account, only
+ * skills.sh sees the query. Install hands the skill's URL to the
+ * Subscribe dialog: the repository is subscribed and the skill opens for
+ * install, bound to what kendex's own discovery finds there. */
+export function SkillsShSearch({
+  onInstall,
+}: {
+  onInstall: (url: string) => void;
+}) {
+  const hits = useCommunityStore((s) => s.skillsshHits);
+  const searching = useCommunityStore((s) => s.skillsshSearching);
+  const error = useCommunityStore((s) => s.skillsshError);
+  const search = useCommunityStore((s) => s.searchSkillssh);
+  const [query, setQuery] = useState("");
+
+  return (
+    <div className="space-y-4">
+      <form
+        className="flex max-w-md items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void search(query);
+        }}
+      >
+        <Input
+          placeholder="Search skills.sh"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <Button type="submit" variant="outline" disabled={searching}>
+          <Search className="size-4" />
+          {searching ? "Searching…" : "Search"}
+        </Button>
+      </form>
+
+      {error ? (
+        <p className="text-sm text-critical" role="alert">
+          {error}
+        </p>
+      ) : hits === null ? (
+        <p className="text-sm text-muted-foreground">
+          Search the skills.sh index — installing brings the skill in the kendex
+          way: subscribed, locked and safety-checked.
+        </p>
+      ) : hits.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Nothing on skills.sh matches this search.
+        </p>
+      ) : (
+        <div className="divide-y rounded-lg border">
+          {hits.map((hit) => (
+            <div
+              key={`${hit.repo}/${hit.skill}`}
+              className="flex items-center gap-3 px-4 py-3"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{hit.skill}</p>
+                <p className="truncate font-mono text-xs text-muted-foreground">
+                  {hit.repo}
+                </p>
+              </div>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {installsLabel(hit.installs)} installs
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  onInstall(`https://skills.sh/${hit.repo}/${hit.skill}`)
+                }
+              >
+                Install
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">
+        Search goes straight to skills.sh; installs through kendex do not count
+        on their leaderboard.
+      </p>
+    </div>
+  );
+}
+
+function installsLabel(installs: number): string {
+  if (installs >= 1_000_000) return `${(installs / 1_000_000).toFixed(1)}M`;
+  if (installs >= 1_000) return `${Math.round(installs / 1_000)}k`;
+  return String(installs);
+}

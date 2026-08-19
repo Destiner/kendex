@@ -1,5 +1,6 @@
 pub mod audit;
 mod commands;
+mod community;
 pub mod decisions;
 mod editor;
 mod marketplaces;
@@ -57,6 +58,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         marketplaces::marketplace_subscribe,
         unsubscribe::marketplace_unsubscribe_preview,
         unsubscribe::marketplace_unsubscribe,
+        community::community_directory,
+        community::community_skillssh_search,
+        community::community_skillssh_available,
         marketplaces::marketplace_about,
         marketplaces::library_provenance,
         packages::package_versions,

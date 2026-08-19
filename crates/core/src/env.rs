@@ -154,6 +154,12 @@ impl Env {
         self.cache_dir.join(APP_DIR).join("sources")
     }
 
+    /// The community directory's cached index — derived, rebuildable, and
+    /// the only thing served when the network is away.
+    pub fn registry_cache_dir(&self) -> PathBuf {
+        self.cache_dir.join(APP_DIR).join("registry")
+    }
+
     pub fn trash_dir(&self) -> PathBuf {
         self.data_dir.join(APP_DIR).join("trash")
     }

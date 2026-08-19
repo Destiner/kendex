@@ -30,6 +30,13 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- The Community tab is live: browse the kendex.ai directory (cached on
+  your machine, shown with an "as of" line when you're offline — never
+  blank), subscribe from a row, and search skills.sh's whole index
+  directly. Installing a skills.sh result subscribes to its repository
+  and opens the skill — locked, safety-checked and updatable like every
+  other install. Only skills.sh sees your search; installs through
+  kendex do not feed their leaderboard.
 - The Marketplaces page: subscribe to any repository of skills and
   agents, browse every subscription's packages in one searchable table
   with a pre-install safety dot on each row, open a marketplace's own

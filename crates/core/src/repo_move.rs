@@ -21,6 +21,13 @@ pub const MOVE_DESCRIPTION: &str = "Point kendex at its new repository";
 /// `None` for another host or another shape: a missed spelling here reads
 /// as a per-package source rebind, so matching must be by what the string
 /// names, never by a list of literal spellings.
+/// The public spelling of the normalization for callers outside this
+/// module — the Community tab matches directory rows against existing
+/// subscriptions by what the string names, never by literal spellings.
+pub fn owner_repo(reference: &str) -> Option<String> {
+    github_owner_repo(reference)
+}
+
 pub(crate) fn github_owner_repo(reference: &str) -> Option<String> {
     let lower = reference.trim().to_ascii_lowercase();
     let trimmed = lower.trim_end_matches('/');
