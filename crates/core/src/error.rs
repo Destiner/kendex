@@ -198,6 +198,27 @@ pub enum CoreError {
     )]
     PiExtensionDirect { name: String },
 
+    /// Keeping a marketplace's packages copies each from its source form, which
+    /// would drop a hand edit — so an edited package is decided first.
+    #[error(
+        "these packages have edits that keeping them from source form would drop: {} — fork or discard each first",
+        names.join(", ")
+    )]
+    DetachEdited { names: Vec<String> },
+
+    /// Detach never overwrites what is already in the local source: a different
+    /// package of the same kind and name is already there.
+    #[error(
+        "the local source already holds a different {} called '{name}' at {} — remove it first, or it would be overwritten",
+        kind.name(),
+        path.display()
+    )]
+    LocalTargetOccupied {
+        kind: ItemKind,
+        name: String,
+        path: PathBuf,
+    },
+
     /// Invariant 4 for bundles: `[bundles.<name>]` is keyed by bare name,
     /// so one scope holds one bundle per name, whoever offers it.
     #[error(

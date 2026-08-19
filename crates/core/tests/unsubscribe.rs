@@ -9,7 +9,7 @@ use std::path::Path;
 use kendex_core::engine::detach;
 use kendex_core::env::{Env, FakeOs};
 use kendex_core::manifest::{self, ManifestFile};
-use kendex_core::model::Scope;
+use kendex_core::model::{ItemKind, Scope};
 use kendex_core::{apply, source_ops};
 
 #[allow(clippy::unwrap_used)]
@@ -123,6 +123,59 @@ fn removing_an_unreachable_source_refuses() {
     fs::remove_dir_all(&catalog).unwrap();
     assert!(detach::remove(&env, &scope, "cat").is_err());
     // The subscription is untouched by the refusal.
+    assert!(manifest_of(&env, &scope).sources.contains_key("cat"));
+}
+
+/// Keeping a source's packages converts each to a local fork: the source's
+/// bytes are copied into the local source, the declaration flips to `local`
+/// with fork provenance, the subscription is gone, and the skill still renders
+/// — now from the user's own copy.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn keeping_a_sources_packages_detaches_them_to_local() {
+    let (_tmp, env, scope, catalog) = world("[skills.gh]\nsource = \"cat\"\n", "");
+    skill(&catalog, "gh", "the gh skill");
+    apply_now(&env, &scope);
+    assert!(scope_skill(&scope, "gh").exists());
+
+    let plan = detach::source(&env, &scope, "cat").unwrap();
+    apply::execute(&env, &plan, None).unwrap();
+
+    let manifest = manifest_of(&env, &scope);
+    assert!(!manifest.sources.contains_key("cat"), "source removed");
+    assert_eq!(manifest.skills["gh"].source, "local", "declared from local");
+    assert!(
+        manifest.forks[&ItemKind::Skill].contains_key("gh"),
+        "recorded as a fork"
+    );
+    // The bytes landed in the local source, and the install still resolves.
+    let local = kendex_core::source::local_source_root(&env, &scope);
+    assert!(local.join("skills/gh/SKILL.md").exists(), "copied to local");
+    // A re-plan is clean and the skill is still installed.
+    let after = kendex_core::engine::audit(&env, &scope).unwrap();
+    apply::execute(&env, &after.plan, None).unwrap();
+    assert!(
+        scope_skill(&scope, "gh").exists(),
+        "still installed from local"
+    );
+}
+
+/// Detach refuses while a package is edited — keeping it from source form would
+/// silently drop the edit.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn keeping_an_edited_package_refuses_naming_it() {
+    let (_tmp, env, scope, catalog) = world("[skills.gh]\nsource = \"cat\"\n", "");
+    skill(&catalog, "gh", "the gh skill");
+    apply_now(&env, &scope);
+    // Edit the installed skill by hand.
+    let installed = scope_skill(&scope, "gh").join("SKILL.md");
+    let edited = fs::read_to_string(&installed).unwrap() + "\nhand edit\n";
+    fs::write(&installed, edited).unwrap();
+
+    let err = detach::source(&env, &scope, "cat").unwrap_err();
+    assert!(format!("{err}").contains("gh"), "{err}");
+    // The subscription is untouched.
     assert!(manifest_of(&env, &scope).sources.contains_key("cat"));
 }
 
