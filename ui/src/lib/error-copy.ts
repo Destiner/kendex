@@ -8,7 +8,7 @@ import type { ProblemKind } from "@/stores/problems";
 export const PROBLEM_HEADLINES: Record<ProblemKind, string> = {
   "lock-corrupt": "A kendex file in this project can't be read",
   "schema-too-new": "This project's kendex files come from a newer version",
-  "manifest-invalid": "This project's kendex.toml has a problem",
+  "manifest-invalid": "This project's manifest has a problem",
   other: "Something went wrong in this project",
   "scan-failure": "kendex couldn't scan this machine",
 };
@@ -23,7 +23,7 @@ export const PROBLEM_STEPS: Record<ProblemKind, string[]> = {
     "Rescan once you're up to date",
   ],
   "manifest-invalid": [
-    "Open kendex.toml and check its syntax",
+    "Open the project's manifest (kendex.toml, or vstack.toml before the rename) and check its syntax",
     "Rescan once it's fixed",
   ],
   other: [

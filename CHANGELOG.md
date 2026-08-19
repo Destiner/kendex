@@ -14,8 +14,14 @@ changes carry a **Breaking** call-out with their migration note inline.
   checks call `vstack guard run` keep committing; `kendex guard repair`
   rewrites those entrypoints to the new name. Project files keep loading
   under their old names and are renamed by a previewed plan step — never
-  silently. Environment variables are now `KENDEX_*` (the guard still
-  reads `VSTACK_GUARD_*` during the alias cycle).
+  silently; settings files and catalog configs are read under both names.
+  Global app data moves from the vstack2 folders to kendex on first
+  launch. Environment variables are now `KENDEX_*`: `VSTACK_DRIFT_HOOK`,
+  `VSTACK_EDITOR`, `VSTACK_UPDATE_FEED`, `VSTACK_GIT_BASE`, and
+  `VSTACK_BACKGROUND_REFRESH` stop working — set the `KENDEX_*` spelling,
+  or a drift hook you turned off comes back silently. Only the guard's
+  variables (`VSTACK_GUARDS_*`, `VSTACK_GUARD_PRE_COMMIT_LOCAL`) are
+  still read as a fallback during the alias cycle.
 
 ### Added
 
@@ -57,7 +63,7 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 - A package's own page now carries what you have changed about it. Open
   anything from the Library and a **Customize** tab sits beside its
-  overview: the instructions vstack writes into it, the skills an agent
+  overview: the instructions kendex writes into it, the skills an agent
   gets, and the per-tool settings that beat the catalog's — the same
   manifest the Customize page writes, sliced to the one package you are
   looking at. Its header says **Customized** when anything is set, the
@@ -71,13 +77,13 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 - Content a coding tool ships with itself is now labelled with who ships
   it, and left alone. Codex's bundled plugins are OpenAI's, Claude Code's
-  are Anthropic's — nobody using vstack chose them or can change them, so
+  are Anthropic's — nobody using kendex chose them or can change them, so
   they are listed in the Library with their vendor named and scored by
   nothing, asked about nowhere. Ownership is read off the marketplace a
-  plugin names; a marketplace vstack doesn't recognise stays yours, so
+  plugin names; a marketplace kendex doesn't recognise stays yours, so
   nothing real goes quiet.
 
-- Agents no longer start sessions blind. `vstack check` is now the drift
+- Agents no longer start sessions blind. `kendex check` is now the drift
   contract: exit 0 when everything is current, 1 when something drifted,
   2 when the state could not be read — with `--quiet` printing a short,
   bounded report (silent when clean) and `--json` the machine shape. Each
@@ -91,10 +97,10 @@ changes carry a **Breaking** call-out with their migration note inline.
   source that has been unreachable for over twelve hours becomes a report
   line dated from when it first went dark. The report travels into new
   sessions through a session-start hook — first-party content shipped
-  inside vstack, offered when a project is registered (CLI:
-  `vstack drift-hook`, or `vstack project add --drift-hook`), installed
+  inside kendex, offered when a project is registered (CLI:
+  `kendex drift-hook`, or `kendex project add --drift-hook`), installed
   and removed like any other hook, disabled any time with
-  `VSTACK_DRIFT_HOOK=off`, and never able to block a session.
+  `KENDEX_DRIFT_HOOK=off`, and never able to block a session.
 - The Updates page now says when a package's standing could not be
   checked — a broken mirror or an unreachable source shows under
   "Couldn't be checked" instead of silently reading as up to date — and a
@@ -107,10 +113,10 @@ changes carry a **Breaking** call-out with their migration note inline.
   with the fix named, instead of quietly claiming protection. A carrier
   installed globally covers project hooks too, since Pi reads both. The
   session-start drift report rides along: Pi sessions get the same
-  report, the same `VSTACK_DRIFT_HOOK=off` switch, and no repeats on
+  report, the same `KENDEX_DRIFT_HOOK=off` switch, and no repeats on
   resume or reload.
-- Commit checks now guard every commit, whatever tool makes it. `vstack
-  guard install` puts a vstack-owned hooks directory in front of git for a
+- Commit checks now guard every commit, whatever tool makes it. `kendex
+  guard install` puts a kendex-owned hooks directory in front of git for a
   repository, so Claude Code, Codex, Cursor, and a plain terminal all walk
   through the same five checks before a commit lands: files that grew past
   their size budget (with a tighten-only baseline and `--seed` to start
@@ -120,18 +126,18 @@ changes carry a **Breaking** call-out with their migration note inline.
   what the commit will record — staged content, staged settings, staged
   baselines — so an unstaged edit can never change a verdict, and every
   check runs before the verdict so one attempt reports every blocker.
-  Configuration lives in `[guards]` tables in `vstack.settings.toml`;
-  repos with v1's settings convert once with `vstack guard import-v1`
+  Configuration lives in `[guards]` tables in `kendex.settings.toml`;
+  repos with v1's settings convert once with `kendex guard import-v1`
   (baselines are read as-is, and imported exclusion patterns keep exactly
   the matching behavior they were written for). Removal is as careful as
-  install: `vstack guard uninstall` takes back only what vstack wrote,
+  install: `kendex guard uninstall` takes back only what kendex wrote,
   leaves a hand-changed hooks setting alone, stays armed while another
   worktree still uses the checks, and refuses rather than half-removing
-  around files it doesn't own. If the vstack binary is missing at commit
+  around files it doesn't own. If the kendex binary is missing at commit
   time the checks fail closed with the bypass spelled out
   (`git commit --no-verify`).
 - Seeded settings comments now stay current. When a skill improves the
-  explanation above a `vstack.settings.toml` key it seeded, a refresh
+  explanation above a `kendex.settings.toml` key it seeded, a refresh
   brings the new words in — but only while the comment is provably
   untouched: any hand edit freezes it forever, values are never touched,
   and another skill can never rewrite words a different skill seeded.
@@ -148,15 +154,15 @@ changes carry a **Breaking** call-out with their migration note inline.
   from anywhere else asks again. Dismissing never unblocks a held-back
   item; those are settled by accepting or removing them. Decisions live
   in the same file as acceptances — your personal ones on this machine,
-  a project's in its `vstack.toml`, where a teammate inherits them in
+  a project's in its `kendex.toml`, where a teammate inherits them in
   plain sight. Removing an item takes its decisions with it. On the
-  command line: `vstack findings` prints each finding with the token
+  command line: `kendex findings` prints each finding with the token
   that dismisses it — a token names the finding, the exact content, and
   the project or personal file it belongs to, so one copied from
-  elsewhere records nothing — `vstack dismiss <token> --reason …`
-  records the decision, and `vstack decisions [--revoke <id>]` lists every recorded
+  elsewhere records nothing — `kendex dismiss <token> --reason …`
+  records the decision, and `kendex decisions [--revoke <id>]` lists every recorded
   decision — active, out of date and why, or about an item that is gone
-  — and takes one back. `vstack accepted` is folded into `vstack
+  — and takes one back. `kendex accepted` is folded into `kendex
   decisions`. The project file's format moves to version 5.
 - The Review page's safety warnings each carry **Dismiss…** — one click
   per finding, or one for the same file seen through several tools, never
@@ -178,7 +184,7 @@ changes carry a **Breaking** call-out with their migration note inline.
   one click. Findings that are the same content seen through several tools
   are one step, since one decision honestly covers them.
 - **Start managing** moves from the Review page to the Library's Installed
-  tab, where the item already is: taking over something vstack didn't put
+  tab, where the item already is: taking over something kendex didn't put
   there is an offer, not work the Review page owes, so Review now says how
   many such items a project has and points at the Library. Home's
   "aren't managed yet" row opens the Library too.
@@ -189,7 +195,7 @@ changes carry a **Breaking** call-out with their migration note inline.
 - Settings' **Accepted findings** grows into **Recorded decisions**: every
   acceptance and dismissal on the machine, each saying what it decided,
   when, and whose file it lives in — yours on this machine, or a
-  project's shared `vstack.toml` — so a decision a teammate made is
+  project's shared `kendex.toml` — so a decision a teammate made is
   inherited in plain sight. A decision that no longer applies says why;
   one about an item that is gone says so; each has a way out. A project
   whose file cannot be read is named there with the error, never
@@ -204,21 +210,21 @@ changes carry a **Breaking** call-out with their migration note inline.
   including an install it stopped before anything reached your machine —
   and each one carries **Accept and install**: read the findings, accept
   them, and the item installs in the same step. The acceptance is written
-  into that project's own `vstack.toml`, so on a shared repository the
+  into that project's own `kendex.toml`, so on a shared repository the
   whole team inherits the decision, and it covers exactly the content
   that was read — any change to the file brings the block back. An
   acceptance that no longer matches (the content changed after you read
   it) stops the whole apply out loud rather than quietly installing
   everything else. Settings lists every recorded acceptance with a
-  **Withdraw** button; the CLI mirrors it as `vstack decisions
+  **Withdraw** button; the CLI mirrors it as `kendex decisions
   [--revoke]`.
 - Taking over a skill that several tools share through links now works.
   When tools read one folder through symlinks, **Start managing** shows
   which folder that is and every tool reading it, then moves the
-  folder's content into vstack's keeping (the original goes to the
-  trash, recoverable) and points every tool at vstack's copy — the
+  folder's content into kendex's keeping (the original goes to the
+  trash, recoverable) and points every tool at kendex's copy — the
   sharing survives, with updates and safety checks now applied. A link
-  at anything that is not a skill folder, or at vstack's own files, is
+  at anything that is not a skill folder, or at kendex's own files, is
   still refused, and a folder that changes between preview and apply
   stops the whole operation.
 - The tools now wear their real logos — Anthropic's, OpenAI's, Cursor's,
@@ -252,7 +258,7 @@ changes carry a **Breaking** call-out with their migration note inline.
   carrying hidden characters, or letters chosen to look like other
   letters, is reported as such — content that needs decoding to look
   clean has told you something.
-- `vstack check --catalog <dir>` validates a catalog the way an install
+- `kendex check --catalog <dir>` validates a catalog the way an install
   would, and exits non-zero when something is wrong — so a repository can
   find out in its own CI rather than in someone else's install preview.
   It checks both halves: whether each tool's loader could actually hold
@@ -260,12 +266,12 @@ changes carry a **Breaking** call-out with their migration note inline.
   own folder, a body past the tightest size cap) and whether the content
   is safe. `--strict` also fails on advice. A reusable GitHub Actions
   workflow ships with it — catalog repositories point one line at
-  `.github/workflows/catalog-check.yml` and get the gate. What `vstack
+  `.github/workflows/catalog-check.yml` and get the gate. What `kendex
   init` scaffolds passes it on the first run.
 - Install a whole set at once. A catalog can offer named bundles — a
   starter kit, a review workflow, the tools one team shares — and
   installing one brings in every agent, skill, command and hook it
-  carries: `vstack add <catalog> --bundle <name>`, or the Install button
+  carries: `kendex add <catalog> --bundle <name>`, or the Install button
   now beside each catalog on the Catalogs page. Repositories that ship
   marketplace-style plugins need no extra authoring, because each plugin
   is already a set, with the version and description it publishes.
@@ -300,23 +306,23 @@ changes carry a **Breaking** call-out with their migration note inline.
   written. Migration: the two thresholds are yours to set in app
   settings, and nothing else changes for content that passes. If you have
   read the findings and want it anyway, the preview prints the exact
-  command that installs it — `vstack apply --allow-unsafe <name>@<code>`,
+  command that installs it — `kendex apply --allow-unsafe <name>@<code>`,
   where the code stands for the content you were just shown — and records
-  the review in your `vstack.toml`. The name on its own does nothing, so a
+  the review in your `kendex.toml`. The name on its own does nothing, so a
   line left in a script or a shell history cannot wave through content
   nobody has read. The record is bound to the exact content, the exact
   rules, and the exact problems you were shown; change any of them and it
   stops applying, the item is held back again, and the preview prints the
   new code. The record lives with the project rather than in a global list
   precisely so it cannot quietly become a permanent exemption.
-- **Breaking:** `vstack refresh` no longer changes what is installed
+- **Breaking:** `kendex refresh` no longer changes what is installed
   without asking. Regenerating what is already installed stays
   automatic; anything being added or removed (including dependencies a
   catalog gained or dropped) is shown first and needs confirmation or
   `--yes`. Scripts add `--yes`; a non-interactive run refuses before
   touching anything.
 
-- **Breaking:** vstack can now be pointed at a marketplace-style
+- **Breaking:** kendex can now be pointed at a marketplace-style
   catalog — a repository that ships its content one plugin at a time,
   with a `marketplace.json` listing what it offers — and install straight
   from it, alongside the plain catalogs it has always read. Nothing is
@@ -333,7 +339,7 @@ changes carry a **Breaking** call-out with their migration note inline.
   without one hiding the other. *Migration:* nothing changes for catalogs
   already in use — a catalog with no listing installs exactly where it
   always did, under the names it always used. Items from a marketplace
-  catalog are declared and shown as `<plugin>/<item>` (in `vstack.toml`,
+  catalog are declared and shown as `<plugin>/<item>` (in `kendex.toml`,
   write the name in quotes), and each tool spells that its own way in the
   files it reads: `data-science__eda` for most, `data-science-eda` where
   the tool only accepts lowercase words joined by hyphens. If two
@@ -343,12 +349,12 @@ changes carry a **Breaking** call-out with their migration note inline.
   conflict names both so you can rename one. Only agents, commands and
   skills come from these catalogs, so only those carry a plugin in their
   name: a hook or an MCP server is still written without a `/`, and a name
-  that cannot be a file at all is refused when `vstack.toml` is read.
+  that cannot be a file at all is refused when `kendex.toml` is read.
 
 - **Breaking:** a source can now say which revision it reads, and
   downloaded catalogs are kept one folder per version instead of one
   working copy per repository that every refresh reset in place. Add
-  `rev = "<commit, tag or branch>"` to a source in `vstack.toml`, or name
+  `rev = "<commit, tag or branch>"` to a source in `kendex.toml`, or name
   it when adding one as `owner/repo@<rev>`. A full commit id is a pin —
   that exact content, forever, and it keeps working with no network once
   it has been downloaded. A tag or branch is followed instead: each
@@ -365,7 +371,7 @@ changes carry a **Breaking** call-out with their migration note inline.
   projects sit on different ones; a catalog you follow by branch therefore
   gains a folder each time it changes upstream, and nothing tidies them up
   yet. Deleting the whole cache folder is safe whenever it gets large — it
-  is rebuilt on the next refresh. Nothing in `vstack.toml` has to change:
+  is rebuilt on the next refresh. Nothing in `kendex.toml` has to change:
   a source with no `rev` follows its repository's default branch exactly
   as before.
 
@@ -376,7 +382,7 @@ changes carry a **Breaking** call-out with their migration note inline.
   Copilot's own tool names, skills in its skills folder, hooks as a hook
   file of their own that Copilot runs and honors the result of, servers
   keyed the way Copilot expects with the transport named on the entry.
-  Copilot has no slash commands of its own, so vstack does not invent
+  Copilot has no slash commands of its own, so kendex does not invent
   any. Because Copilot reads other tools' files too, three things are now
   said out loud rather than left to surprise you: a skill installed for
   Claude Code is reported as something Copilot already sees — one
@@ -388,16 +394,16 @@ changes carry a **Breaking** call-out with their migration note inline.
   repository add to that list. An agent pinned to a model the repository's
   allowed-models list refuses is flagged the same way. Which model Copilot
   uses is left to Copilot: its list changes monthly and depends on your
-  plan and your organization, so vstack pins nothing it cannot promise.
+  plan and your organization, so kendex pins nothing it cannot promise.
 
 - **Breaking:** a plugin now belongs to one tool. Copilot and Claude Code
   both keep a list of enabled plugins, and a declaration that named
   neither used to be written into every tool's settings — switching on
   software in one tool because it was installed in another. Every plugin
   declaration now carries the tool it belongs to. *Migration:* existing
-  declarations are read as Claude Code's, which is the only tool vstack
+  declarations are read as Claude Code's, which is the only tool kendex
   ever wrote a plugin switch for, and the next save records that in
-  `vstack.toml`; nothing to change by hand. Add `harness = "copilot"` to
+  `kendex.toml`; nothing to change by hand. Add `harness = "copilot"` to
   a plugin declaration to aim it at Copilot instead.
 
 - Gemini CLI is now fully managed — agents, skills, commands, hooks, and
@@ -412,14 +418,14 @@ changes carry a **Breaking** call-out with their migration note inline.
   bring a server in but has to remove it rather than switch it off there;
   and an agent installed while Gemini's subagents are turned off is
   reported as installed-but-doing-nothing rather than as ready. Where the
-  installed Gemini is older than the settings file vstack writes, or where
-  a machine-wide settings file outranks what vstack puts in a project,
-  vstack says so and leaves the file alone instead of writing something
+  installed Gemini is older than the settings file kendex writes, or where
+  a machine-wide settings file outranks what kendex puts in a project,
+  kendex says so and leaves the file alone instead of writing something
   that would never be read. Gemini's extensions stay read-only: they
   install in one place for the whole machine and switch on through a rules
   file nobody has documented.
 
-- vstack now sees Gemini CLI and GitHub Copilot setups, personally and per
+- kendex now sees Gemini CLI and GitHub Copilot setups, personally and per
   project, listed beside every other tool: Gemini's agents, skills,
   commands, hooks, MCP servers, and extensions, and Copilot's agents,
   skills, and MCP servers. Copilot's folder is found where Copilot
@@ -487,7 +493,7 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Changed
 
-- The coding tools vstack writes to are called **harnesses** now, in the
+- The coding tools kendex writes to are called **harnesses** now, in the
   sidebar, the Library's filter and column, and everywhere the words
   appeared. "Tool" was doing two jobs at once — Claude Code is one, and so
   is a thing an agent is allowed to call, which agent settings also list.
@@ -576,7 +582,7 @@ changes carry a **Breaking** call-out with their migration note inline.
   Home each added up one row per tool an item is installed for, so 45
   unmanaged items read as 171 while the page beside them said 45. They
   now count items, from one shared place so they cannot disagree again,
-  and things vstack was never asked to manage are no longer counted as
+  and things kendex was never asked to manage are no longer counted as
   changes waiting to be applied — applying never touched them.
 - A row's second line is a description or nothing. Plugins were showing
   a version folder name (`1.2.0`) where a description belongs, which
@@ -634,7 +640,7 @@ changes carry a **Breaking** call-out with their migration note inline.
   pinned above with a copy-path button — and "Open in…" gives you a
   choice: the file browser, or your code editor (a skill opens as its
   whole folder; VSCodium, VS Code, Cursor, Zed, and Sublime are
-  found automatically, or set VSTACK_EDITOR). The table's scrollbar
+  found automatically, or set KENDEX_EDITOR). The table's scrollbar
   also stopped painting over the last column.
 
 - Safety findings finally read like sentences. Each one collapses to
@@ -648,7 +654,7 @@ changes carry a **Breaking** call-out with their migration note inline.
 - Errors got a real home. Anything that fails when you click now
   opens a small dialog saying what failed, why (in the backend's own
   words), and the steps to fix it — with a Retry where that makes
-  sense. Ongoing problems — a project vstack can't read, a scan that
+  sense. Ongoing problems — a project kendex can't read, a scan that
   failed — stay visible as a red count in the bottom status bar for
   as long as they exist; clicking it opens a Problems page where
   each one carries its resolution actions (rescan, show the file,
@@ -665,7 +671,7 @@ changes carry a **Breaking** call-out with their migration note inline.
   below as an at-a-glance strip. The stray error line at the bottom
   is gone — errors show where they happen now.
 
-- Review & apply explains itself now — "Changes vstack wants to make,
+- Review & apply explains itself now — "Changes kendex wants to make,
   and things it found; nothing touches your files until you apply" —
   and the page reads in order of urgency: held-back items in a tinted
   panel that is unmistakably first, then the changes applying would
@@ -800,9 +806,9 @@ changes carry a **Breaking** call-out with their migration note inline.
   to their own folder rather than to the settings file that lists them,
   and carry a real modification time instead of a dash.
 
-- A package page can show the files of an item vstack did not install.
+- A package page can show the files of an item kendex did not install.
   It read only from the catalog an item was declared in, so every item
-  already on your machine but not managed by vstack — and everything in
+  already on your machine but not managed by kendex — and everything in
   a project whose `vstack.toml` is still v1 — failed with a message
   about version holds that had nothing to do with reading a file. It now
   falls back to the copy on disk, still through the same sealed read. A
@@ -825,10 +831,10 @@ changes carry a **Breaking** call-out with their migration note inline.
   show it still describes what is there. Migration: acceptances recorded
   before this change cannot prove what they covered, so they read as
   out of date and the item is held back until you review it once more.
-  Accept it again and it is bound properly from then on. `vstack
+  Accept it again and it is bound properly from then on. `kendex
   accepted` and Settings both show which acceptances need this. The
   project file's format moves on (to version 5, together with the
-  dismissals above), so an older vstack refuses to read it rather than
+  dismissals above), so an older kendex refuses to read it rather than
   misreading an acceptance.
 - An accepted skill installed as a shared link no longer reads as
   "changed since it was reviewed" the moment it lands: the safety
@@ -837,7 +843,7 @@ changes carry a **Breaking** call-out with their migration note inline.
   audit sampled.
 
 
-- A project carrying files from vstack v1 (or a corrupted vstack
+- A project carrying files from vstack v1 (or a corrupted kendex
   file) no longer breaks the Review & apply page with a raw error.
   A v1 project now shows read-only with a note saying it predates
   this version; a truly unreadable file shows as a problem for that
@@ -862,8 +868,8 @@ changes carry a **Breaking** call-out with their migration note inline.
   a folder for projects, and tool-folder overrides. Before, the `~`
   was taken literally and the add failed.
 
-- Applying from the app (and `vstack apply`) now performs the "Upgrade
-  vstack.toml to the current format" step it promised. Before, the
+- Applying from the app (and `kendex apply`) now performs the "Upgrade
+  kendex.toml to the current format" step it promised. Before, the
   preview listed the upgrade but the apply quietly skipped it, so a v0.1
   setup file stayed old forever and the promise came back after every
   apply. Found by walking the real app through the migration, not by the
@@ -917,8 +923,8 @@ changes carry a **Breaking** call-out with their migration note inline.
 - Removing something while its catalog is unavailable now sticks. If the
   catalog was offline, moved, or not downloaded yet, the removal went
   through and then the next refresh quietly put the item back — silently,
-  under `vstack refresh --yes` in a script. The removal now stands on what
-  vstack already recorded about why the item was installed, so it stays
+  under `kendex refresh --yes` in a script. The removal now stands on what
+  kendex already recorded about why the item was installed, so it stays
   removed when the catalog comes back, and the preview says out loud that
   a catalog it could not read may hold consequences it cannot show you.
 - An item that is both asked for by name and marked as kept-removed now
@@ -946,14 +952,14 @@ changes carry a **Breaking** call-out with their migration note inline.
   GitHub Copilot. Hooks name the tool they guard — "Bash" — and each tool
   has its own name for it, so the name is translated on the way in
   (`run_shell_command` on Gemini, `bash` on Copilot); before, the hook
-  installed looking correct and never fired. A matcher vstack cannot
+  installed looking correct and never fired. A matcher kendex cannot
   translate — a regular expression rather than a plain name — installs
   exactly as written and is flagged as possibly matching nothing.
 - Installing a safety hook on Cursor or OpenCode now says plainly that
   neither tool runs hooks: the plan marks it "(advisory)" and the report
   says it lands as text the model may ignore. Every tool's card also says
   whether it runs safety hooks at all.
-- `vstack verify` no longer prints a clean tick for an installation that
+- `kendex verify` no longer prints a clean tick for an installation that
   cannot do anything — a hook switched off machine-wide, a server Gemini
   gates out, an agent installed while subagents are off. The reason is
   printed beside the row; it still does not fail the run, because nothing
@@ -981,8 +987,8 @@ changes carry a **Breaking** call-out with their migration note inline.
 - The editor's skill list no longer breaks on a machine where nothing
   was ever adopted; the reserved local source reads as missing until
   adopt creates it.
-- A catalog item refused for a hostile read now fails `vstack verify`
-  and `vstack refresh` instead of printing a green tick.
+- A catalog item refused for a hostile read now fails `kendex verify`
+  and `kendex refresh` instead of printing a green tick.
 - OpenCode agents pinned to a bare vendor model id keep loading: the id
   gains OpenCode's default `openai/` provider prefix as before.
 - A project's identity no longer depends on how its path was spelled:
@@ -1034,9 +1040,9 @@ changes carry a **Breaking** call-out with their migration note inline.
   v0.1 files still load; the first apply upgrades them in place through
   the normal journaled, previewed plan — the upgrade changes the schema
   line and nothing else, and an interrupted upgrade rolls back
-  byte-identically. Files written by a newer vstack refuse to load
+  byte-identically. Files written by a newer kendex refuse to load
   instead of being corrupted. Migration: automatic on first apply;
-  `vstack import` still covers v1.
+  `kendex import` still covers v1.
 
 ### Added
 

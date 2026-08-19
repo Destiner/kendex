@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# vstack2 guardrails — deterministic checks, run as the pre-commit hook.
+# kendex guardrails — deterministic checks, run as the pre-commit hook.
 # Checks the working tree, not the staged index — accepted trade-off:
 # agents commit whole files; partial staging is out of scope.
 set -uo pipefail
@@ -96,7 +96,7 @@ hits=$(scan '#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?\b|rgba?\(|hsla?\(' '^ui/src/.*\.ts
 # it has two sanctioned raw spawns, neither a hardened tool invocation —
 # one Command re-execs this app, replacing the process rather than
 # launching a tool, and one launches the user's own GUI editor detached,
-# outliving vstack with no output to capture and no timeout that would
+# outliving kendex with no output to capture and no timeout that would
 # make sense. Integration tests under crates/*/tests run our own binary
 # and are likewise not tool launches.
 hits=$(scan 'Command::new' '^crates/(core|cli)/src/' | grep -v '^crates/core/src/process/')

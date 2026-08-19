@@ -1,6 +1,6 @@
 # Release: build the CLI and the desktop app on a native runner per
 # target, then publish a GitHub Release carrying every artifact plus the
-# feed.json that `vstack update` consumes.
+# feed.json that `kendex update` consumes.
 name: release
 
 on:
@@ -18,13 +18,10 @@ jobs:
         include:
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-            cli-source: target/release/vstack
           - os: macos-14
             target: aarch64-apple-darwin
-            cli-source: target/release/vstack
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            cli-source: target/release/vstack.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +38,7 @@ jobs:
         shell: bash
       - run: npm ci --prefix ui
         shell: bash
-      - run: cargo build --release -p vstack-cli
+      - run: cargo build --release -p kendex-cli
         shell: bash
       - name: Bundle the desktop app
         run: cd crates/app && ../../ui/node_modules/.bin/tauri build
@@ -55,7 +52,9 @@ jobs:
           mkdir -p dist
           ext=""
           [ "${{ runner.os }}" = "Windows" ] && ext=".exe"
-          cp "${{ matrix.cli-source }}" "dist/vstack-${{ matrix.target }}${ext}"
+          cp "target/release/kendex${ext}" "dist/kendex-${{ matrix.target }}${ext}"
+          # Alias binary: consuming repos' git hooks still call `vstack`.
+          cp "target/release/vstack${ext}" "dist/vstack-${{ matrix.target }}${ext}"
           find target/release/bundle -type f \
             \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
                -o -name '*.dmg' -o -name '*.app.tar.gz' \
@@ -85,9 +84,9 @@ jobs:
           {
             "version": "${version}",
             "assets": {
-              "x86_64-unknown-linux-gnu": "${base}/vstack-x86_64-unknown-linux-gnu",
-              "aarch64-apple-darwin": "${base}/vstack-aarch64-apple-darwin",
-              "x86_64-pc-windows-msvc": "${base}/vstack-x86_64-pc-windows-msvc.exe"
+              "x86_64-unknown-linux-gnu": "${base}/kendex-x86_64-unknown-linux-gnu",
+              "aarch64-apple-darwin": "${base}/kendex-aarch64-apple-darwin",
+              "x86_64-pc-windows-msvc": "${base}/kendex-x86_64-pc-windows-msvc.exe"
             }
           }
           EOF

@@ -1,16 +1,16 @@
-# Authoring validation for a vstack catalog, and the round-trip smoke
+# Authoring validation for a kendex catalog, and the round-trip smoke
 # suite for this repository's own renderers.
 #
 # Catalog repositories call the first job from their own workflow:
 #
 #     jobs:
-#       vstack:
-#         uses: vanillagreencom/vstack2/.github/workflows/catalog-check.yml@main
+#       kendex:
+#         uses: vanillagreencom/kendex-app/.github/workflows/catalog-check.yml@main
 #         with:
 #           path: .          # the catalog directory inside the repo
 #           strict: false    # true also fails on advisories
 #
-# `vstack check --catalog` exits non-zero on anything that would not
+# `kendex check --catalog` exits non-zero on anything that would not
 # install: a name a harness's loader will not accept, a SKILL.md that
 # disagrees with its own directory, a body past the tightest cap, or
 # content the safety rules hold back. Every finding prints its fix.
@@ -28,7 +28,7 @@ on:
         type: boolean
         default: false
       ref:
-        description: vstack revision to build the checker from
+        description: kendex revision to build the checker from
         type: string
         default: main
   push:
@@ -37,7 +37,7 @@ on:
 
 jobs:
   check:
-    name: vstack check
+    name: kendex check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,23 +45,23 @@ jobs:
           path: catalog
       - uses: actions/checkout@v4
         with:
-          repository: vanillagreencom/vstack2
+          repository: vanillagreencom/kendex-app
           ref: ${{ inputs.ref || 'main' }}
-          path: vstack
+          path: kendex
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: vstack
+          workspaces: kendex
       - name: Build the checker
-        run: cargo build --release --locked -p vstack-cli
-        working-directory: vstack
+        run: cargo build --release --locked -p kendex-cli
+        working-directory: kendex
       - name: Validate the catalog
         run: |
-          vstack/target/release/vstack check \
+          kendex/target/release/kendex check \
             --catalog "catalog/${{ inputs.path || '.' }}" \
             ${{ (inputs.strict && '--strict') || '' }}
 
-  # The one job that lets somebody other than vstack read vstack's output.
+  # The one job that lets somebody other than kendex read kendex's output.
   # Freely installable without an account or an API key: OpenCode, Gemini
   # CLI, Codex and Claude Code all ship on npm and all answer a local
   # list/version command offline. Cursor's agent CLI and the GitHub Copilot
@@ -89,4 +89,4 @@ jobs:
       - name: Round-trip the emitted trees
         env:
           KENDEX_CLI_SMOKE: "1"
-        run: cargo test -p vstack-cli --test cli_smoke -- --nocapture
+        run: cargo test -p kendex-cli --test cli_smoke -- --nocapture
