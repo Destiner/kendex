@@ -305,23 +305,6 @@ mod tests {
         assert_eq!(check(&edited), Ok(()));
     }
 
-    /// `project-skills-dir` is a bare key declared after the tables, so it
-    /// only survives if serialization emits values before them.
-    #[test]
-    fn a_project_skills_dir_survives_the_round_trip() {
-        let mut edited = manifest();
-        edited.project_skills_dir = Some(".claude/skills-src".to_owned());
-        edited.agent_frontmatter.insert(
-            "claude".to_owned(),
-            BTreeMap::from([("orch".to_owned(), FrontmatterOverrides::default())]),
-        );
-        assert_eq!(check(&edited), Ok(()));
-
-        let text = toml::to_string_pretty(&edited).unwrap();
-        let reparsed: Manifest = toml::from_str(&text).unwrap();
-        assert_eq!(reparsed.project_skills_dir, edited.project_skills_dir);
-    }
-
     #[test]
     fn creating_a_manifest_here_still_seeds_the_default_source() {
         let seeded = on_first_creation(

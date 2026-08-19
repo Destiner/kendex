@@ -39,7 +39,6 @@ const TOP_LEVEL: &[&str] = &[
     "skill-instructions",
     "agent-frontmatter",
     "custom-hooks",
-    "project-skills-dir",
     "forks",
 ];
 

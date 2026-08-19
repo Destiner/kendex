@@ -13,7 +13,6 @@ import {
   setCustomHook,
   setFrontmatterField,
   setInstruction,
-  setProjectSkillsDir,
   toDraft,
 } from "./editor-draft";
 
@@ -50,7 +49,6 @@ describe("toDraft", () => {
       matcher: null,
       description: null,
     });
-    expect(widened["project-skills-dir"]).toBeNull();
   });
 });
 
@@ -166,12 +164,5 @@ describe("field parsing", () => {
     expect(parseHookAgents("orch, review")).toEqual(["orch", "review"]);
     expect(formatHookAgents(["orch", "review"])).toBe("orch, review");
     expect(formatHookAgents(undefined)).toBe("");
-  });
-
-  it("clears project-skills-dir on blank input", () => {
-    expect(setProjectSkillsDir(draft(), "  ")["project-skills-dir"]).toBeNull();
-    expect(
-      setProjectSkillsDir(draft(), " .skills ")["project-skills-dir"],
-    ).toBe(".skills");
   });
 });

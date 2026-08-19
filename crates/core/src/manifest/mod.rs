@@ -307,8 +307,6 @@ pub struct Manifest {
         rename = "custom-hooks"
     )]
     pub custom_hooks: Vec<CustomHook>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_skills_dir: Option<String>,
     /// Forked items by kind and name — `[forks.skill.<name>]`. The name is
     /// the item's installed name, unchanged by forking.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

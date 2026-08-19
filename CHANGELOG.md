@@ -6,6 +6,15 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ## [Unreleased]
 
+### Removed
+
+- **Breaking** — the v1 `project-skills-dir` setting is gone. kendex no
+  longer maintains a separate "source" skills folder that gets linked
+  into each harness's own folder; skills live where they are, and your
+  repository's `.gitignore` decides what gets committed. Importing a v1
+  project drops the key with a note; a manifest still carrying it gets a
+  "remove it" finding from `kendex check`.
+
 ### Changed
 
 - **Breaking** — vstack is now **kendex**. The app, the CLI binary

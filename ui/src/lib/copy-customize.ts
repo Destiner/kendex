@@ -93,9 +93,6 @@ export function hookDeliverySummary(rows: HookDelivery[]): string {
   const line = parts.join(" · ");
   return line.charAt(0).toUpperCase() + line.slice(1);
 }
-export const SKILLS_DIR_SECTION = "Project skills folder";
-export const SKILLS_DIR_HELP =
-  "Skills you own live here, then get linked into each harness's own skill folder, so the generated copies don't need to be committed.";
 export const CUSTOMIZED_SECTION = "Customized packages";
 export const CUSTOMIZED_SECTION_HELP =
   "Each one is edited on its own page, where you can see what it ships with.";

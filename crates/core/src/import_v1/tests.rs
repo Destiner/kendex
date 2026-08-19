@@ -1,5 +1,7 @@
 use super::*;
 const V1_MANIFEST: &str = r#"
+project-skills-dir = ".claude/skills-src"
+
 [agent-launch-instructions]
 generalist = ""
 rust = "Read docs/architecture.md before coding."
@@ -83,6 +85,9 @@ fn converts_tables_with_aliases_and_drops_the_dead_ones() {
     assert!(joined.contains("agent-colors"));
     assert!(joined.contains("legacykey"));
     assert!(joined.contains("tools"));
+    // v1's committed-vs-generated skills split is gone: the key is dropped
+    // with a note, never carried into the new manifest.
+    assert!(joined.contains("project-skills-dir"));
 }
 
 #[test]

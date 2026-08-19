@@ -111,7 +111,6 @@ export const commands = {
 	/**  `[agent-frontmatter.<harness>.<agent>]`. */
 	"agent-frontmatter"?: { [key in string]: { [key in string]: FrontmatterOverrides_Serialize } },
 	"custom-hooks"?: CustomHook_Serialize[],
-	"project-skills-dir"?: string | null,
 	/**
 	 *  Forked items by kind and name — `[forks.skill.<name>]`. The name is
 	 *  the item's installed name, unchanged by forking.
@@ -1381,7 +1380,6 @@ export type Manifest_Deserialize = {
 	/**  `[agent-frontmatter.<harness>.<agent>]`. */
 	"agent-frontmatter"?: { [key in string]: { [key in string]: FrontmatterOverrides_Deserialize } },
 	"custom-hooks"?: CustomHook_Deserialize[],
-	"project-skills-dir": string | null,
 	/**
 	 *  Forked items by kind and name — `[forks.skill.<name>]`. The name is
 	 *  the item's installed name, unchanged by forking.
@@ -1444,7 +1442,6 @@ export type Manifest_Serialize = {
 	/**  `[agent-frontmatter.<harness>.<agent>]`. */
 	"agent-frontmatter"?: { [key in string]: { [key in string]: FrontmatterOverrides_Serialize } },
 	"custom-hooks"?: CustomHook_Serialize[],
-	"project-skills-dir"?: string | null,
 	/**
 	 *  Forked items by kind and name — `[forks.skill.<name>]`. The name is
 	 *  the item's installed name, unchanged by forking.

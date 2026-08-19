@@ -7,7 +7,6 @@ import { DotSpinner } from "@/components/loading";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/section";
 import { StatusNote } from "@/components/status-note";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -23,15 +22,12 @@ import {
   HOOKS_SECTION,
   SHARED_SECTION,
   SHARED_SECTION_HELP,
-  SKILLS_DIR_HELP,
-  SKILLS_DIR_SECTION,
 } from "@/lib/copy-customize";
 import {
   clearItemCustomization,
   customizedItems,
   sharedCustomization,
 } from "@/lib/customization";
-import { setProjectSkillsDir } from "@/lib/editor-draft";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor";
@@ -143,24 +139,6 @@ export function CustomizePage() {
                   onChange={edit}
                 />
               </Section>
-              {scope.scope === "project" ? (
-                <Section
-                  title={SKILLS_DIR_SECTION}
-                  description={SKILLS_DIR_HELP}
-                >
-                  <Input
-                    aria-label="Skills folder"
-                    placeholder=".claude/skills-src"
-                    className="max-w-lg"
-                    value={draft["project-skills-dir"] ?? ""}
-                    onChange={(event) =>
-                      edit((current) =>
-                        setProjectSkillsDir(current, event.target.value),
-                      )
-                    }
-                  />
-                </Section>
-              ) : null}
             </>
           ) : null}
         </div>

@@ -43,7 +43,7 @@ export const EMPTY_FRONTMATTER: DraftFrontmatter = {
 };
 
 export function emptyDraft(): Draft {
-  return { schema: 1, "project-skills-dir": null };
+  return { schema: 1 };
 }
 
 export function emptyHook(): DraftHook {
@@ -106,7 +106,6 @@ export function toDraft(manifest: Manifest_Serialize): Draft {
       mapValues(perAgent, frontmatter),
     ),
     "custom-hooks": manifest["custom-hooks"]?.map(hook),
-    "project-skills-dir": manifest["project-skills-dir"] ?? null,
   };
 }
 
@@ -207,11 +206,6 @@ export function removeCustomHook(draft: Draft, index: number): Draft {
   if (hooks.length === 0) delete next["custom-hooks"];
   else next["custom-hooks"] = hooks;
   return next;
-}
-
-export function setProjectSkillsDir(draft: Draft, dir: string): Draft {
-  const trimmed = dir.trim();
-  return { ...draft, "project-skills-dir": trimmed === "" ? null : trimmed };
 }
 
 export function parseList(text: string): string[] | null {

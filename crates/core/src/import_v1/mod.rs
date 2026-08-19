@@ -83,8 +83,12 @@ fn convert_tables(table: &toml::Table, manifest: &mut Manifest, notes: &mut Vec<
         &["agent-additional-instructions", "agent-instructions"],
     );
     manifest.skill_instructions = string_map(table, &["skill-instructions"]);
-    if let Some(dir) = table.get("project-skills-dir").and_then(Value::as_str) {
-        manifest.project_skills_dir = Some(dir.to_owned());
+    if table.get("project-skills-dir").is_some() {
+        notes.push(
+            "dropped `project-skills-dir` — kendex reads skills where they are; \
+             use git to decide what your repo commits"
+                .to_owned(),
+        );
     }
     if table.get("agent-colors").is_some() {
         notes.push(
