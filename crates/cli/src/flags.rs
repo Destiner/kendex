@@ -31,6 +31,12 @@ pub struct AddFlags {
     /// Install specific hooks (comma-separated)
     #[arg(long)]
     hook: Vec<String>,
+    /// Install specific commands (comma-separated)
+    #[arg(long)]
+    command: Vec<String>,
+    /// Install specific MCP servers (comma-separated)
+    #[arg(long)]
+    mcp_server: Vec<String>,
     /// Install specific Pi extensions (comma-separated)
     #[arg(long, visible_alias = "pi-package")]
     pi_extension: Vec<String>,
@@ -65,6 +71,8 @@ impl AddFlags {
             bundle: self.bundle,
             optional: self.optional,
             hook: self.hook,
+            command: self.command,
+            mcp_server: self.mcp_server,
             pi_extension: self.pi_extension,
             copy: self.copy,
             yes: self.yes,

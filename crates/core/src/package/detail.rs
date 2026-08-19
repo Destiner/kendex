@@ -16,7 +16,7 @@ use crate::source_read::SealedSource;
 
 /// One file inside the package, path relative to the package root with
 /// forward slashes whatever the platform.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageFile {
     pub path: String,

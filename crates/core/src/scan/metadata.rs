@@ -130,7 +130,9 @@ fn read_capped(path: &Path) -> Option<String> {
     Some(String::from_utf8_lossy(head).into_owned())
 }
 
-fn from_markdown(text: &str) -> Metadata {
+/// The header of a markdown item already read — catalog reads arrive as
+/// text through the sealed reader, never as a path this module may open.
+pub fn from_markdown(text: &str) -> Metadata {
     let Ok((yaml, _body)) = frontmatter::split(text) else {
         return Metadata::default();
     };
@@ -150,7 +152,8 @@ fn from_markdown(text: &str) -> Metadata {
     )
 }
 
-fn from_toml(text: &str) -> Metadata {
+/// Like [`from_markdown`], for the TOML kinds.
+pub fn from_toml(text: &str) -> Metadata {
     let Ok(table) = text.parse::<toml::Table>() else {
         return Metadata::default();
     };

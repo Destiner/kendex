@@ -567,6 +567,25 @@ lives in one capability table read by core and UI.
   Installing into a project from a personal subscription copies the
   declaration into the project in that plan — exactly one scope mutated,
   the personal manifest read-only, the cache shared by construction.
+- **A name says where it comes from, or the search does — never a
+  fallback.** Every installable kind declares through `add`
+  (`engine/ops/add`): agents, skills, hooks, commands, MCP servers; Pi
+  extensions are carrier-only and a direct add is a typed refusal. The
+  qualifier is `marketplace::name` (`add/place.rs`) — `::` never appears
+  in an item name, so `/` keeps meaning `plugin/item` or, positionally,
+  `owner/repo` — and it resolves against subscription aliases only,
+  refusing with the subscribed list when nothing matches. A bare name
+  searches every enabled subscription in the scope for its kind: one
+  offer installs, two refuse printing the `::` spellings beside each
+  subscription's canonical repo, and zero is not found with the fix
+  named — the default subscription participates like any other, and
+  `default_source` serves only requests that name no item at all
+  (`--all`, a bare bundle). Installing a whole bundle subsumes, in the
+  same plan, the previously-declared members whose effective options
+  equal what the bundle derives (`add/subsume.rs`) — a member the user
+  shaped keeps its declaration with the preview saying why — and
+  `[bundles.<name>]` stays keyed by bare name, so a second marketplace's
+  same-named bundle is refused naming the first.
 - **A plugin-registry-shaped catalog is recognized, never guessed.** A source
   is read one plugin deep (`plugins/<name>/{agents,commands,skills}`)
   exactly when it carries `.claude-plugin/marketplace.json`; a `plugins/`
@@ -617,6 +636,45 @@ lives in one capability table read by core and UI.
   hydrated. `source/about.rs` renders the one typed report — what was
   found where, plus every finding — that the About tab and `kendex
   index` consume.
+- **Browsing is a read-side join, and installed state is derived, never
+  stored.** `source/browse.rs` answers what one subscription offers — every
+  package across kinds, a bundle's members, a package's preview — with each
+  row's state joined from the scope's manifest and lock on every call:
+  installed is a lock entry from this subscription, held-back-by-safety is
+  asked-for content whose catalog bytes the gate's own verdict refuses, and
+  a bundle's "partly installed (2 of 6)" is counted from its members, so no
+  stored flag can drift from the records it summarizes. A name another
+  source already holds is surfaced on the row (`collision`) before the
+  click; the refusal itself stays in the engine (invariant 4). Pre-install
+  safety (`browse/safety.rs`) scores catalog bytes with the same rules an
+  install runs and caches **findings and scores only**, beside the commit's
+  receipt in the immutable store (`<key>/<commit>.safety/…` — never inside
+  the checkout, whose receipt-signed tree must not change), keyed by the
+  item's content hash plus the rule-set, discovery-table and record-format
+  versions, each recomputed and verified before reuse. The warn/block
+  verdict is derived from the current thresholds at read time — thresholds
+  in the key would re-score on every settings change and imply a different
+  analysis where only the judgment moved. Browse is a preview of the
+  verdict, never a second gate. `library.rs` is the same posture for the
+  Library table: one lock+manifest join mapping every installation to its
+  origin — a subscription, the user's own local content (with what a fork
+  replaced), or observed-and-unmanaged.
+- **The machine seam reads through the same core installing reads
+  through.** `check_catalog.rs` (core) owns the two authoring passes —
+  structural (would each harness's loader hold this item) and safety (the
+  same rules an install runs) — so `kendex check --catalog [--json]`, the
+  indexer's per-package verdicts, and authoring preflight ask one
+  implementation; the CLI only prints, as lines or as a versioned envelope
+  (`schema`, typed findings, counts, `ok`). `source/index.rs` emits the
+  per-marketplace summary the community directory consumes (`kendex index
+  [<dir>] --json`, schema 1, plain directory, no network): metadata from
+  the catalog's own `[marketplace]` table (`source/meta.rs` — read-only,
+  every string capped and control-char-safe), packages built from
+  `list_items` so what the summary offers is exactly what subscribing
+  finds (pinned by test), safety scores from the check passes, bundles
+  with members, About rows, findings. Field order in both JSON shapes is
+  the schema — serde structs, no maps. `kendex marketplace check` is the
+  alias of `check --catalog --strict`, same exit codes.
 - **Intent in the manifest, closure in the plan, edges in the lock.** The
   manifest records choices and never their consequences: the items asked
   for, the bundles installed, which optional dependencies were taken, what

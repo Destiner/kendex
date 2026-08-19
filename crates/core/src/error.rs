@@ -141,6 +141,63 @@ pub enum CoreError {
     #[error("'{name}' not found in source '{source_name}'")]
     ItemNotInSource { name: String, source_name: String },
 
+    /// Case 4 of naming a catalog: a qualifier that names no subscription
+    /// refuses, listing what is subscribed — never a guess, never a
+    /// download.
+    #[error(
+        "no subscription called '{name}' in this scope — subscribed: {}",
+        if subscribed.is_empty() { "none".to_owned() } else { subscribed.join(", ") }
+    )]
+    UnknownMarketplace {
+        name: String,
+        /// Each subscription as `alias (owner/repo)`.
+        subscribed: Vec<String>,
+    },
+
+    /// Case 2: two subscriptions offer the name. The refusal prints the
+    /// qualified spellings — the answer to "which one?" is also the syntax
+    /// for next time — and each subscription's canonical repository, since
+    /// an alias is a local label, not an identity.
+    #[error(
+        "more than one subscription offers a {} called '{name}': {} — say which one, e.g. --{} {}",
+        kind.name(),
+        offers.join(", "),
+        kind.name(),
+        offers.first().map(|o| o.split(' ').next().unwrap_or(o)).unwrap_or_default()
+    )]
+    ItemAmbiguous {
+        kind: ItemKind,
+        name: String,
+        /// Each offer as `alias::name (owner/repo)`.
+        offers: Vec<String>,
+    },
+
+    /// Case: no subscription offers the name. Not found is the whole
+    /// answer — a fallback would install from a source nobody named.
+    #[error(
+        "no subscription in this scope offers a {} called '{name}' — qualify it as <marketplace>::{name}, or subscribe to a marketplace that offers it",
+        kind.name()
+    )]
+    ItemNotOffered { kind: ItemKind, name: String },
+
+    /// Pi extensions are carrier-only: they ride in with the bundle that
+    /// carries them and are never installable on their own.
+    #[error(
+        "pi extension '{name}' installs with its carrier bundle, never on its own — add the bundle that carries it"
+    )]
+    PiExtensionDirect { name: String },
+
+    /// Invariant 4 for bundles: `[bundles.<name>]` is keyed by bare name,
+    /// so one scope holds one bundle per name, whoever offers it.
+    #[error(
+        "bundle '{name}' is already installed from {existing} — refusing to rebind to {requested}; install the members you want individually (--skill, --agent, …) instead"
+    )]
+    BundleCollision {
+        name: String,
+        existing: String,
+        requested: String,
+    },
+
     #[error(
         "source '{source_name}' is not a repository — only items from a repo source have revisions; remove the item's rev"
     )]

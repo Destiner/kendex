@@ -263,6 +263,22 @@ fn add_gh(
     )
 }
 
+/// `--all` with no source named is the one add that still needs a default
+/// marketplace — a bare item name searches instead.
+fn add_all(
+    env: &Env,
+    scope: &Scope,
+) -> kendex_core::error::Result<kendex_core::engine::EngineReport> {
+    ops::add(
+        env,
+        scope,
+        &ops::AddRequest {
+            all: true,
+            ..ops::AddRequest::default()
+        },
+    )
+}
+
 /// The default marketplace is the subscription whose repo is the default
 /// repo — an alias named anything, found by repository.
 #[test]
@@ -287,7 +303,8 @@ fn a_default_add_lands_on_the_subscription_with_the_default_repo() {
 }
 
 /// The migration can leave one repository subscribed twice; the seeded
-/// name wins the tie.
+/// name wins the tie. A bare item name would search both and refuse the
+/// duplicate, so the tie-break is exercised through `--all`.
 #[test]
 #[allow(clippy::unwrap_used)]
 fn two_default_repo_subscriptions_prefer_the_seeded_name() {
@@ -302,7 +319,7 @@ fn two_default_repo_subscriptions_prefer_the_seeded_name() {
     )
     .unwrap();
 
-    let report = add_gh(&env, &scope).unwrap();
+    let report = add_all(&env, &scope).unwrap();
     apply::execute(&env, &report.plan, None).unwrap();
     let manifest = fs::read_to_string(project.join("kendex.toml")).unwrap();
     assert!(manifest.contains("source = \"kendex\""), "{manifest}");
@@ -322,7 +339,7 @@ fn two_default_repo_subscriptions_neither_seeded_refuse_naming_both() {
     )
     .unwrap();
 
-    let error = add_gh(&env, &scope).unwrap_err();
+    let error = add_all(&env, &scope).unwrap_err();
     match error {
         CoreError::DefaultSourceAmbiguous { names, .. } => {
             assert_eq!(names, vec!["alpha".to_owned(), "beta".to_owned()]);
@@ -332,7 +349,8 @@ fn two_default_repo_subscriptions_neither_seeded_refuse_naming_both() {
 }
 
 /// With nothing subscribed to the default repo there is no fallback at
-/// all: the typed error is what the cross-source search layer catches.
+/// all: `--all` with no source named refuses rather than guessing the one
+/// subscription that happens to exist. A bare item name searches instead.
 #[test]
 #[allow(clippy::unwrap_used)]
 fn no_default_subscription_is_a_typed_error_never_a_guess() {
@@ -349,9 +367,16 @@ fn no_default_subscription_is_a_typed_error_never_a_guess() {
     )
     .unwrap();
 
-    let error = add_gh(&env, &scope).unwrap_err();
+    let error = add_all(&env, &scope).unwrap_err();
     assert!(
         matches!(error, CoreError::NoDefaultSource { .. }),
         "expected the typed no-default error, got {error}"
     );
+
+    // The same scope's bare name finds its one subscription by searching —
+    // no default needed, no download, no guess.
+    let report = add_gh(&env, &scope).unwrap();
+    apply::execute(&env, &report.plan, None).unwrap();
+    let manifest = fs::read_to_string(project.join("kendex.toml")).unwrap();
+    assert!(manifest.contains("source = \"other\""), "{manifest}");
 }

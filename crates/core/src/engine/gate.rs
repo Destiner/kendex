@@ -243,7 +243,7 @@ fn refusal(item: &Desired, row: &ItemSafety) -> Refused {
 
 /// The identity of the bytes the rules read, so an override that was
 /// granted against them stops applying when any of them changes.
-pub(super) fn content_hash(input: &AuditInput) -> String {
+pub(crate) fn content_hash(input: &AuditInput) -> String {
     // The location deliberately stays out of the material. The override is
     // keyed by installation already, and the two scoring paths read the
     // same bytes at different paths — the gate at the canonical tree, the

@@ -184,6 +184,14 @@ enum Command {
     /// Subscribe to marketplaces and list subscriptions
     #[command(subcommand)]
     Marketplace(commands::marketplace_cmd::MarketplaceCommand),
+    /// Emit the summary of a marketplace directory the community directory
+    /// consumes (default: the current directory)
+    Index {
+        dir: Option<std::path::PathBuf>,
+        /// Machine-readable summary (schema 1)
+        #[arg(long)]
+        json: bool,
+    },
     /// Scaffold a new catalog item in the current directory
     Init {
         name: Option<String>,
@@ -223,7 +231,9 @@ fn check(
     strict: bool,
 ) -> Result<ExitCode, Box<dyn std::error::Error>> {
     match catalog {
-        Some(catalog) => commands::check_catalog::run(&catalog, strict).map(|()| ExitCode::SUCCESS),
+        Some(catalog) => {
+            commands::check_catalog::run(&catalog, strict, json).map(|()| ExitCode::SUCCESS)
+        }
         None => {
             let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::All)?;
             commands::check::run(env, filter, json, quiet)
@@ -279,18 +289,24 @@ fn move_global_dirs(env: &Env) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// The bare form: `kendex <source> [flags]` maps to `add`.
+fn bare_add(
+    env: &Env,
+    source: Option<String>,
+    flags: AddFlags,
+) -> Result<ExitCode, Box<dyn std::error::Error>> {
+    if source.is_none() {
+        return Err("nothing to do — pass a source to add, or a subcommand".into());
+    }
+    commands::add::run(env, flags.into_args(source))?;
+    Ok(ExitCode::SUCCESS)
+}
+
 fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
     let env = Env::detect()?;
     move_global_dirs(&env)?;
-    let command = match cli.command {
-        Some(command) => command,
-        None => {
-            if cli.source.is_none() {
-                return Err("nothing to do — pass a source to add, or a subcommand".into());
-            }
-            commands::add::run(&env, cli.add_flags.into_args(cli.source))?;
-            return Ok(ExitCode::SUCCESS);
-        }
+    let Some(command) = cli.command else {
+        return bare_add(&env, cli.source, cli.add_flags);
     };
     match command {
         Command::Add { source, flags } => commands::add::run(&env, flags.into_args(source))?,
@@ -376,6 +392,7 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             commands::source_cmd::run(&env, source_command, filter)?;
         }
         Command::Marketplace(command) => commands::marketplace_cmd::run(&env, command)?,
+        Command::Index { dir, json } => commands::index_cmd::run(dir, json)?,
         Command::Init { name, kind } => commands::init::run(name, kind)?,
         Command::Update { force } => commands::update::run(force)?,
     }

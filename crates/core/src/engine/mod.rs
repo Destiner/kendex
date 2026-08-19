@@ -45,6 +45,7 @@ mod targets;
 mod tree_plan;
 mod unmanaged;
 
+pub(crate) use gate::content_hash;
 pub use gate::{ItemSafety, allow_unsafe_flag};
 pub use item_source::{ItemSource, item_source};
 pub use observed::{observed_rows, observed_safety};

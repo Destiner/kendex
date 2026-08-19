@@ -5,15 +5,20 @@ use crate::error::{CoreError, Result};
 use crate::manifest::{LOCAL_SOURCE_NAME, Manifest, SourceDecl};
 use crate::model::Scope;
 mod about;
+pub mod browse;
 pub mod bundles;
 mod catalog;
 pub mod discover;
+pub mod index;
+mod meta;
 mod plugin_registry;
 
 pub use about::{AboutReport, RootCount, about};
 pub use bundles::CatalogBundle;
 pub use catalog::{CatalogGroup, CatalogItem, CatalogMetadata, metadata as catalog_metadata};
 pub use discover::{CatalogMode, DISCOVERY_VERSION, DiscoveredSkill, Discovery};
+pub use index::{INDEX_SCHEMA, MarketplaceIndex};
+pub use meta::MarketplaceMeta;
 pub use plugin_registry::{CatalogFinding, PluginEntry, Registry};
 
 /// The last path segment of a provenance — `owner/repo`, a filesystem path,

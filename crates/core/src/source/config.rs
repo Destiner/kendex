@@ -17,6 +17,7 @@ use crate::source_read::SealedSource;
 use super::bundles::{self, CatalogBundle};
 use super::catalog;
 use super::discover::{self, CatalogMode, Discovery};
+use super::meta::MarketplaceMeta;
 use super::plugin_registry::{self, CatalogFinding, Registry};
 
 /// Source-side layout + mapping tables, read leniently — source catalogs are
@@ -32,6 +33,8 @@ pub struct SourceConfig {
     /// The curated sets this catalog offers by name. Empty for a
     /// plugin-registry-shaped catalog, whose plugins are its sets.
     pub bundles: BTreeMap<String, CatalogBundle>,
+    /// What the catalog says about itself in `[marketplace]`, capped.
+    pub marketplace: Option<MarketplaceMeta>,
     /// Set when the source carries a plugin registry: its items live
     /// one plugin deep and are named `<plugin>/<item>`. The kind directories
     /// at the root are not read in that case — the registry says what the
@@ -188,6 +191,19 @@ fn read_tables(config: &mut SourceConfig, table: &toml::Table) {
             return;
         }
     }
+    match table.get("marketplace") {
+        None => {}
+        Some(value) => match value.clone().try_into::<MarketplaceMeta>() {
+            Ok(meta) => config.marketplace = Some(meta.capped()),
+            // Metadata never gates installs, so bad metadata is a finding
+            // and the catalog keeps working without it.
+            Err(problem) => config.config_findings.push(CatalogFinding::new(
+                crate::rename::MANIFEST_FILE,
+                format!("`[marketplace]` could not be read — {problem}"),
+                "write string fields (name, description, author, license, homepage) and a string list `tags`",
+            )),
+        },
+    }
     config.bundles = bundles::declared(table);
     if let Some(mapping) = table.get("agent-skills").and_then(|t| t.as_table()) {
         for (agent, skills) in mapping {
@@ -300,11 +316,31 @@ pub fn list_items(sealed: &SealedSource, config: &SourceConfig, kind: ItemKind) 
                 names.extend(agent_stems(sealed, dir));
             }
         }
+        // Executable kinds are offered only where the catalog declared
+        // kendex's layout — a `hooks/` folder in a repo that never declared
+        // anything is repository tooling, not installable content.
+        ItemKind::Hook | ItemKind::Command | ItemKind::McpServer
+            if config.mode == CatalogMode::Explicit =>
+        {
+            let (dir, ext) = fixed_kind_dir(kind);
+            names.extend(ext_stems(sealed, dir, ext));
+        }
         _ => {}
     }
     names.sort();
     names.dedup();
     names
+}
+
+/// The fixed directory and extension a declared-layout catalog keeps one of
+/// the file-per-item kinds in. Only those kinds have one.
+pub(super) fn fixed_kind_dir(kind: ItemKind) -> (&'static str, &'static str) {
+    match kind {
+        ItemKind::Hook => ("hooks", "sh"),
+        ItemKind::Command => ("commands", "md"),
+        ItemKind::McpServer => ("mcp", "toml"),
+        _ => unreachable!("only file-per-item kinds live in a fixed dir"),
+    }
 }
 
 /// The skills one explicit catalog dir holds, the flat v1 shape.
@@ -320,23 +356,23 @@ pub(super) fn flat_skills(sealed: &SealedSource, dir: &str) -> Vec<String> {
 }
 
 pub(super) fn agent_stems(sealed: &SealedSource, dir: &str) -> Vec<String> {
+    file_stems(sealed, dir, "md")
+}
+
+/// The item names one kind dir holds — every file with the kind's
+/// extension, by stem.
+fn file_stems(sealed: &SealedSource, dir: &str, ext: &str) -> Vec<String> {
     let Ok(entries) = sealed.list_dir(&sealed.root().join(dir)) else {
         return Vec::new();
     };
     entries
         .into_iter()
-        .filter(|path| path.extension().is_some_and(|e| e == "md") && sealed.is_file(path))
+        .filter(|path| path.extension().is_some_and(|e| e == ext) && sealed.is_file(path))
         .filter_map(|path| path.file_stem()?.to_str().map(str::to_owned))
         .collect()
 }
 
-/// How many files with this extension a fixed kind dir holds.
-pub(super) fn files_with_ext(sealed: &SealedSource, dir: &str, ext: &str) -> usize {
-    let Ok(entries) = sealed.list_dir(&sealed.root().join(dir)) else {
-        return 0;
-    };
-    entries
-        .into_iter()
-        .filter(|path| path.extension().is_some_and(|e| e == ext) && sealed.is_file(path))
-        .count()
+/// The item names a fixed kind dir holds, by file stem.
+pub(super) fn ext_stems(sealed: &SealedSource, dir: &str, ext: &str) -> Vec<String> {
+    file_stems(sealed, dir, ext)
 }

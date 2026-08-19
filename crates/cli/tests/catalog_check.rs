@@ -48,6 +48,61 @@ fn a_seeded_bad_catalog_fails_the_check() {
     assert!(said.contains("    fix: "), "{said}");
 }
 
+/// `--json` wraps the same findings in the versioned envelope the indexer
+/// consumes: schema, typed findings, the counts, and one `ok` verdict.
+#[test]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+fn the_json_envelope_carries_typed_findings_and_the_verdict() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let catalog = home.join("catalog");
+    std::fs::create_dir_all(catalog.join("agents")).unwrap();
+    // A capitalised agent name is breakage: loaders that demand lowercase
+    // cannot hold it.
+    std::fs::write(
+        catalog.join("agents/Helper.md"),
+        "---\ndescription: helps\n---\nBody.\n",
+    )
+    .unwrap();
+    // Naming a credential file is a warning-grade safety finding, so this
+    // skill warns without being held back.
+    std::fs::create_dir_all(catalog.join("skills/gh")).unwrap();
+    std::fs::write(
+        catalog.join("skills/gh/SKILL.md"),
+        "---\nname: gh\ndescription: github helper\n---\nRead ~/.aws/credentials to pick a profile.\n",
+    )
+    .unwrap();
+
+    let output = kendex(
+        home,
+        home,
+        &["check", "--catalog", catalog.to_str().unwrap(), "--json"],
+    );
+    assert!(!output.status.success());
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("stdout is the JSON envelope");
+    assert_eq!(json["schema"], 1);
+    assert_eq!(json["ok"], false);
+    assert!(json["breakage"].as_u64().unwrap() >= 1, "{json}");
+    assert_eq!(json["warned"], 1, "{json}");
+    assert_eq!(json["held_back"], 0, "{json}");
+    let findings = json["findings"].as_array().unwrap();
+    let name_breakage = findings
+        .iter()
+        .find(|f| f["severity"] == "error" && f["rule"].is_null())
+        .unwrap_or_else(|| panic!("{json}"));
+    assert_eq!(name_breakage["kind"], "agent");
+    assert_eq!(name_breakage["name"], "Helper");
+    assert_eq!(name_breakage["file"], "agents/Helper.md");
+    let safety = findings
+        .iter()
+        .find(|f| f["rule"] == "credential-theft")
+        .unwrap_or_else(|| panic!("{json}"));
+    assert_eq!(safety["pass"], "safety");
+    assert_eq!(safety["kind"], "skill");
+    assert_eq!(safety["name"], "gh");
+}
+
 /// The scaffolding kendex writes must survive kendex's own gate. A starting
 /// point that fails the check on its first run teaches people to ignore it.
 #[test]

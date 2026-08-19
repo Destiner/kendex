@@ -82,6 +82,16 @@ pub fn legacy_clone(env: &Env, repo: &str) -> PathBuf {
     env.source_cache_dir().join(repo.replace('/', "_"))
 }
 
+/// Where cached safety scores for one published commit live — beside the
+/// commit's receipt, never inside its tree: a write into the checkout would
+/// break the tree signature the receipt vouches for.
+pub fn safety_cache_dir(env: &Env, key: &str, commit: &str) -> PathBuf {
+    env.source_cache_dir()
+        .join(COMMITS)
+        .join(key)
+        .join(format!("{commit}.safety"))
+}
+
 /// Adopt one repository's cached artifacts under another key — the same
 /// repository reached by a new spelling after it moved hosts or names.
 /// Renaming the directories once is cheaper than teaching every

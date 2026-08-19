@@ -31,6 +31,12 @@ pub enum MarketplaceCommand {
         #[arg(long)]
         scope: Option<String>,
     },
+    /// Validate a marketplace directory — the alias of
+    /// `check --catalog --strict`
+    Check {
+        /// The marketplace directory (default: the current directory)
+        dir: Option<std::path::PathBuf>,
+    },
 }
 
 pub fn run(env: &Env, command: MarketplaceCommand) -> CliResult {
@@ -102,6 +108,13 @@ pub fn run(env: &Env, command: MarketplaceCommand) -> CliResult {
             if let Some(lead) = subscribed.lead {
                 say(&format!("package: {lead}"));
             }
+        }
+        MarketplaceCommand::Check { dir } => {
+            let dir = match dir {
+                Some(dir) => dir,
+                None => std::env::current_dir()?,
+            };
+            super::check_catalog::run(&dir, true, false)?;
         }
     }
     Ok(())

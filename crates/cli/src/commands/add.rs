@@ -16,6 +16,8 @@ pub struct AddArgs {
     pub bundle: Vec<String>,
     pub optional: Vec<String>,
     pub hook: Vec<String>,
+    pub command: Vec<String>,
+    pub mcp_server: Vec<String>,
     pub pi_extension: Vec<String>,
     pub copy: bool,
     pub yes: bool,
@@ -36,9 +38,6 @@ fn split(values: &[String]) -> Vec<String> {
 }
 
 pub fn run(env: &Env, args: AddArgs) -> CliResult {
-    if !args.hook.is_empty() || !args.pi_extension.is_empty() {
-        return Err("hooks and pi-extensions become declarable in Phase 3 — agents and skills are available now".into());
-    }
     let filter = if args.global {
         ScopeFilter::Global
     } else {
@@ -48,8 +47,16 @@ pub fn run(env: &Env, args: AddArgs) -> CliResult {
 
     let agents = split(&args.agent);
     let skills = split(&args.skill);
+    let hooks = split(&args.hook);
+    let commands = split(&args.command);
+    let mcp_servers = split(&args.mcp_server);
     let bundles = split(&args.bundle);
-    if args.global && !args.all && agents.is_empty() && skills.is_empty() && bundles.is_empty() {
+    if args.global
+        && !args.all
+        && [&agents, &skills, &hooks, &commands, &mcp_servers, &bundles]
+            .iter()
+            .all(|names| names.is_empty())
+    {
         return Err(
             "global installs need --all or explicit --agent/--skill/--bundle selections".into(),
         );
@@ -68,6 +75,10 @@ pub fn run(env: &Env, args: AddArgs) -> CliResult {
         source: args.source,
         agents,
         skills,
+        hooks,
+        commands,
+        mcp_servers,
+        pi_extensions: split(&args.pi_extension),
         all: args.all,
         harnesses: if args.harness.is_empty() {
             None

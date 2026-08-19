@@ -10,6 +10,7 @@ pub mod engine_common;
 pub mod fork_cmd;
 pub mod guard_cmd;
 pub mod import;
+pub mod index_cmd;
 pub mod init;
 pub mod list;
 pub mod marketplace_cmd;

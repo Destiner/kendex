@@ -1,4 +1,5 @@
 pub mod apply;
+pub mod check_catalog;
 pub mod clock;
 pub mod configedit;
 pub mod discover;
@@ -14,6 +15,7 @@ pub mod harness;
 pub mod hash;
 pub mod hook;
 pub mod import_v1;
+pub mod library;
 pub mod lock;
 pub mod manifest;
 pub mod mapping;

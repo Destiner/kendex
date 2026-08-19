@@ -73,7 +73,7 @@ hits=$(scan 'allow\((dead_code|unused)' | grep -vE "$guard_impl")
   say "allow(dead_code/unused) — delete the code instead of keeping it warm"
 }
 
-hits=$(scan 'std::fs::read|crate::fs::read' '^crates/core/src/(source\.rs|source/(catalog|config|discover|plugin_registry)\.rs|render/skill\.rs|engine/(desired|ops))|^crates/app/src/editor\.rs')
+hits=$(scan 'std::fs::read|crate::fs::read' '^crates/core/src/(source\.rs|source/(browse|catalog|config|discover|plugin_registry)\.rs|source/browse/preview\.rs|render/skill\.rs|engine/(desired|ops))|^crates/app/src/editor\.rs')
 [ -n "$hits" ] && {
   echo "$hits" | head -5
   say "raw filesystem read over catalog paths — go through source_read::SealedSource"

@@ -14,7 +14,7 @@ pub use entry::RawEntry;
 mod files;
 mod hooks;
 pub(crate) mod jsonc;
-mod metadata;
+pub mod metadata;
 mod pi_packages;
 mod plugins;
 mod provenance;

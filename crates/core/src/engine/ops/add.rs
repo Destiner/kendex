@@ -1,7 +1,7 @@
 //! Declaring what a scope wants: items by name, whole sets by the name their
 //! catalog offers them under, and the optional extras taken along the way.
-//! Every check runs before the first declaration is written, so a request
-//! that cannot be satisfied leaves the manifest exactly as it was.
+//! Every check runs before anything is persisted, so a request that cannot
+//! be satisfied leaves the manifest exactly as it was.
 
 use std::collections::BTreeSet;
 
@@ -17,16 +17,25 @@ use crate::source::{self, find_item, list_items, source_config};
 #[derive(Debug, Default)]
 pub struct AddRequest {
     /// v1 positional source: `owner/repo`, a path, or a declared source
-    /// name. `None` means the default source.
+    /// name. `None` sends bare names through the cross-subscription
+    /// search; a `marketplace::name` spelling names its subscription
+    /// itself.
     pub source: Option<String>,
     pub agents: Vec<String>,
     pub skills: Vec<String>,
+    pub hooks: Vec<String>,
+    pub commands: Vec<String>,
+    pub mcp_servers: Vec<String>,
+    /// Always refused: a Pi extension installs with the bundle that
+    /// carries it, never on its own. The field exists so every shell gets
+    /// the same refusal from the engine.
+    pub pi_extensions: Vec<String>,
     pub all: bool,
     pub harnesses: Option<Vec<HarnessId>>,
     pub copy: bool,
     pub no_auto_skills: bool,
     /// Optional dependencies to take, by name. The choice is recorded under
-    /// every item from this source that offers one by that name.
+    /// every item this request touches that offers one by that name.
     pub optional: Vec<String>,
     /// Curated sets to install whole, by the name the catalog offers them
     /// under. What each holds derives at plan time; the manifest records only
@@ -42,96 +51,49 @@ pub struct AddRequest {
 /// Declare items (and their auto-expanded skills), then plan the scope.
 /// The returned report's plan includes persisting the updated manifest.
 pub fn add(env: &Env, scope: &Scope, request: &AddRequest) -> Result<EngineReport> {
+    if let Some(name) = request.pi_extensions.first() {
+        return Err(CoreError::PiExtensionDirect { name: name.clone() });
+    }
     let mut manifest = manifest_for_mutation(env, scope)?;
-    let source_name = ensure_source(&mut manifest, request.source.as_deref())?;
-    let ready = source::require_ready(env, scope, &source_name, &manifest)?;
-    let hold_at = hold_commit(request, &source_name, &ready)?;
-    let sealed = crate::source_read::SealedSource::open(&ready.root)?;
-    let config = source_config(&sealed, crate::source::repo_leaf(&ready.provenance))?;
     let lock = crate::lock::load(&lock_path(env, scope))?;
-
-    let mut agents = request.agents.clone();
-    let mut skills = request.skills.clone();
-    if request.all {
-        agents = list_items(&sealed, &config, ItemKind::Agent);
-        skills = list_items(&sealed, &config, ItemKind::Skill);
-    }
-    for (kind, names) in [(ItemKind::Agent, &agents), (ItemKind::Skill, &skills)] {
-        for name in names {
-            if find_item(&sealed, &config, kind, name).is_none() {
-                return Err(CoreError::ItemNotInSource {
-                    name: name.clone(),
-                    source_name: source_name.clone(),
-                });
-            }
-        }
+    let (mut groups, context) = place::place(env, scope, &mut manifest, request)?;
+    let all_source = match (request.all, &context) {
+        (false, _) => None,
+        (true, Some(ctx)) => Some(ctx.clone()),
+        (true, None) => Some(pick::default_source(&manifest)?),
+    };
+    if let Some(source_name) = &all_source {
+        groups.entry(source_name.clone()).or_default();
     }
 
-    if !request.no_auto_skills {
-        let available = list_items(&sealed, &config, ItemKind::Skill);
-        let mut wanted: BTreeSet<String> = skills.iter().cloned().collect();
-        for agent in &agents {
-            let path = find_item(&sealed, &config, ItemKind::Agent, agent).ok_or_else(|| {
-                CoreError::ItemNotInSource {
-                    name: agent.clone(),
-                    source_name: source_name.clone(),
-                }
-            })?;
-            let text = sealed.read_if_exists(&path)?.unwrap_or_default();
-            if let Ok(parsed) = crate::render::agent::parse_source_agent(&text) {
-                for skill in
-                    crate::mapping::upstream_skills(agent, parsed.role, &config, &available)
-                {
-                    wanted.insert(skill);
-                }
-            }
-        }
-        skills = wanted.into_iter().collect();
-    }
-
-    // Every check runs before the first declaration is written (invariant
-    // 11): a choice naming an optional dependency nothing offers is an error
-    // that leaves the manifest exactly as it was.
-    let chosen = optional_choices(&sealed, &config, &manifest, &skills, &source_name, request)?;
-    let mut sets = Vec::new();
-    for name in &request.bundles {
-        match crate::source::bundles::find(&sealed, &config, name)? {
-            Some(bundle) => sets.push(bundle),
-            None => {
-                return Err(CoreError::NoSuchBundle {
-                    name: name.clone(),
-                    source_name: source_name.clone(),
-                });
-            }
-        }
-    }
-
-    for bundle in sets {
-        declare_bundle(
+    let mut notes = Vec::new();
+    let mut optional_offers: Vec<(String, String)> = Vec::new();
+    for (source_name, wanted) in &groups {
+        add_from(
+            env,
+            scope,
             &mut manifest,
-            &bundle,
-            &source_name,
+            &lock,
             request,
-            hold_at.as_deref(),
-        );
+            source_name,
+            wanted,
+            all_source.as_deref() == Some(source_name),
+            &mut notes,
+            &mut optional_offers,
+        )?;
     }
-
-    for (kind, names) in [(ItemKind::Agent, agents), (ItemKind::Skill, skills)] {
-        for name in names {
-            declare(
-                env,
-                scope,
-                &mut manifest,
-                &lock,
-                kind,
-                &name,
-                &source_name,
-                request,
-                hold_at.as_deref(),
-            )?;
+    // A choice naming an optional dependency nothing offers is an error
+    // that leaves the manifest exactly as it was — never a silently
+    // ignored flag.
+    for wanted in &request.optional {
+        if !optional_offers.iter().any(|(_, name)| name == wanted) {
+            return Err(CoreError::NoSuchOptional {
+                name: wanted.clone(),
+                source_name: groups.keys().cloned().collect::<Vec<_>>().join(", "),
+            });
         }
     }
-    for (parent, name) in chosen {
+    for (parent, name) in optional_offers {
         let taken = manifest.optional_dependencies.entry(parent).or_default();
         if !taken.contains(&name) {
             taken.push(name);
@@ -140,8 +102,135 @@ pub fn add(env: &Env, scope: &Scope, request: &AddRequest) -> Result<EngineRepor
     }
 
     let mut report = plan_scope(env, scope, &manifest, &lock, &PlanOptions::default())?;
+    report.notes.extend(notes);
     ensure_manifest_persisted(env, scope, &manifest, &mut report)?;
     Ok(report)
+}
+
+/// Everything this request takes from one subscription: existence checks,
+/// agent-to-skill expansion, item declarations, then bundles — bundles
+/// last, so installing a whole set can subsume the members it now
+/// accounts for.
+#[allow(clippy::too_many_arguments)]
+fn add_from(
+    env: &Env,
+    scope: &Scope,
+    manifest: &mut Manifest,
+    lock: &Lock,
+    request: &AddRequest,
+    source_name: &str,
+    wanted: &place::Wanted,
+    take_all: bool,
+    notes: &mut Vec<String>,
+    optional_offers: &mut Vec<(String, String)>,
+) -> Result<()> {
+    let ready = source::require_ready(env, scope, source_name, manifest)?;
+    let hold_at = hold_commit(request, source_name, &ready)?;
+    let sealed = crate::source_read::SealedSource::open(&ready.root)?;
+    let config = source_config(&sealed, crate::source::repo_leaf(&ready.provenance))?;
+
+    let mut agents = wanted.agents.clone();
+    let mut skills = wanted.skills.clone();
+    let mut hooks = wanted.hooks.clone();
+    let mut commands = wanted.commands.clone();
+    let mut mcp_servers = wanted.mcp_servers.clone();
+    if take_all {
+        agents = list_items(&sealed, &config, ItemKind::Agent);
+        skills = list_items(&sealed, &config, ItemKind::Skill);
+        hooks = list_items(&sealed, &config, ItemKind::Hook);
+        commands = list_items(&sealed, &config, ItemKind::Command);
+        mcp_servers = list_items(&sealed, &config, ItemKind::McpServer);
+    }
+    for (kind, names) in [
+        (ItemKind::Agent, &agents),
+        (ItemKind::Skill, &skills),
+        (ItemKind::Hook, &hooks),
+        (ItemKind::Command, &commands),
+        (ItemKind::McpServer, &mcp_servers),
+    ] {
+        for name in names {
+            if find_item(&sealed, &config, kind, name).is_none() {
+                return Err(CoreError::ItemNotInSource {
+                    name: name.clone(),
+                    source_name: source_name.to_owned(),
+                });
+            }
+        }
+    }
+
+    if !request.no_auto_skills {
+        let available = list_items(&sealed, &config, ItemKind::Skill);
+        let mut expanded: BTreeSet<String> = skills.iter().cloned().collect();
+        for agent in &agents {
+            let path = find_item(&sealed, &config, ItemKind::Agent, agent).ok_or_else(|| {
+                CoreError::ItemNotInSource {
+                    name: agent.clone(),
+                    source_name: source_name.to_owned(),
+                }
+            })?;
+            let text = sealed.read_if_exists(&path)?.unwrap_or_default();
+            if let Ok(parsed) = crate::render::agent::parse_source_agent(&text) {
+                for skill in
+                    crate::mapping::upstream_skills(agent, parsed.role, &config, &available)
+                {
+                    expanded.insert(skill);
+                }
+            }
+        }
+        skills = expanded.into_iter().collect();
+    }
+
+    optional_offers.extend(optional_choices(
+        &sealed,
+        &config,
+        manifest,
+        &skills,
+        source_name,
+        request,
+    )?);
+    let mut sets = Vec::new();
+    for name in &wanted.bundles {
+        match crate::source::bundles::find(&sealed, &config, name)? {
+            Some(bundle) => sets.push(bundle),
+            None => {
+                return Err(CoreError::NoSuchBundle {
+                    name: name.clone(),
+                    source_name: source_name.to_owned(),
+                });
+            }
+        }
+    }
+
+    // Bundles first: declaring a set folds in the equal-option members
+    // declared earlier, while an item this same request asks for by name
+    // is declared after — asking for both is asking for both.
+    for bundle in sets {
+        subsume::require_free(manifest, &bundle.name, source_name)?;
+        let decl = declare_bundle(manifest, &bundle, source_name, request, hold_at.as_deref());
+        subsume::subsume(manifest, &bundle, &decl, notes);
+    }
+    for (kind, names) in [
+        (ItemKind::Agent, agents),
+        (ItemKind::Skill, skills),
+        (ItemKind::Hook, hooks),
+        (ItemKind::Command, commands),
+        (ItemKind::McpServer, mcp_servers),
+    ] {
+        for name in names {
+            declare(
+                env,
+                scope,
+                manifest,
+                lock,
+                kind,
+                &name,
+                source_name,
+                request,
+                hold_at.as_deref(),
+            )?;
+        }
+    }
+    Ok(())
 }
 
 /// Declare one curated set, carried the way the request asked. Asking for
@@ -154,7 +243,7 @@ fn declare_bundle(
     source_name: &str,
     request: &AddRequest,
     hold_at: Option<&str>,
-) {
+) -> ItemDecl {
     let decl = manifest
         .bundles
         .entry(bundle.name.clone())
@@ -169,12 +258,14 @@ fn declare_bundle(
     if let Some(commit) = hold_at {
         decl.rev = Some(commit.to_owned());
     }
+    let declared = decl.clone();
     for member in &bundle.members {
         if let Some(held) = manifest.suppressed.get_mut(&member.kind) {
             held.retain(|suppressed| suppressed != &member.name);
         }
     }
     manifest.suppressed.retain(|_, held| !held.is_empty());
+    declared
 }
 
 /// The commit a `--hold` request freezes its declarations at. Only a
@@ -246,8 +337,9 @@ fn declare(
 
 /// Which item each chosen optional dependency belongs to. Choices are
 /// recorded against the item that offers them, so a refresh knows what was
-/// taken without having to guess from what is installed. A name nothing
-/// offers is an error, not a silently ignored flag.
+/// taken without having to guess from what is installed. A name no
+/// subscription this request touches offers is an error — raised by the
+/// caller once every subscription has answered.
 fn optional_choices(
     sealed: &crate::source_read::SealedSource,
     config: &crate::source::SourceConfig,
@@ -269,7 +361,6 @@ fn optional_choices(
     );
     let mut chosen = Vec::new();
     for wanted in &request.optional {
-        let mut offered_by = Vec::new();
         for parent in &offers {
             let Some(dir) = find_item(sealed, config, ItemKind::Skill, parent) else {
                 continue;
@@ -278,20 +369,9 @@ fn optional_choices(
                 .optional
                 .contains(wanted)
             {
-                offered_by.push(parent.clone());
+                chosen.push((parent.clone(), wanted.clone()));
             }
         }
-        if offered_by.is_empty() {
-            return Err(CoreError::NoSuchOptional {
-                name: wanted.clone(),
-                source_name: source_name.to_owned(),
-            });
-        }
-        chosen.extend(
-            offered_by
-                .into_iter()
-                .map(|parent| (parent, wanted.clone())),
-        );
     }
     Ok(chosen)
 }
@@ -301,4 +381,5 @@ fn optional_choices(
 /// repository already subscribed under any spelling reuses that
 /// subscription.
 mod pick;
-use pick::ensure_source;
+mod place;
+mod subsume;

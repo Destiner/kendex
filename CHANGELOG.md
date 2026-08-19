@@ -42,6 +42,19 @@ changes carry a **Breaking** call-out with their migration note inline.
   subscribed twice under two names in one place; and installing into a
   project from a personal subscription subscribes the project in the
   same previewed step.
+- Marketplaces are browsable from the core up: every package and bundle
+  a subscription offers — hooks, commands and MCP servers included, from
+  catalogs that declare them — with each row's installed state, a
+  bundle's "partly installed (2 of 6)" counted live, a package preview,
+  and a pre-install safety verdict computed on the marketplace's own
+  bytes and cached per commit. Names can be qualified as
+  `marketplace::name`; a bare name is found by searching everything you
+  subscribe to, an ambiguous one is refused with the exact spellings to
+  use, and a name nothing offers is "not found" — never a guess.
+  Installing a whole bundle absorbs matching individual installs and
+  leaves customized ones alone, saying why. `kendex index --json` and
+  `kendex check --catalog --json` give the community directory the same
+  answer subscribing gets.
 - Custom hooks now run wherever a harness can run them. A hook for all
   agents registers in the harness's own hook configuration on Claude
   Code, Codex, Gemini, Copilot, and Pi (through its carrier) — before,

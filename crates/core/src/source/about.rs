@@ -88,16 +88,13 @@ pub fn about(sealed: &SealedSource, config: &SourceConfig) -> AboutReport {
                 );
             }
             if config.mode == CatalogMode::Explicit {
-                for (dir, ext, kind) in [
-                    ("hooks", "sh", ItemKind::Hook),
-                    ("commands", "md", ItemKind::Command),
-                    ("mcp", "toml", ItemKind::McpServer),
-                ] {
+                for kind in [ItemKind::Hook, ItemKind::Command, ItemKind::McpServer] {
+                    let (dir, ext) = super::config::fixed_kind_dir(kind);
                     push_count(
                         &mut found,
                         dir,
                         kind,
-                        super::config::files_with_ext(sealed, dir, ext),
+                        super::config::ext_stems(sealed, dir, ext).len(),
                     );
                 }
             }
