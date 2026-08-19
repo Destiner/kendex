@@ -200,6 +200,7 @@ fn install_state(state: &kendex_core::source::browse::InstallState) -> &'static 
         InstallState::Available => "available",
         InstallState::HeldBackBySafety => "held back by safety",
         InstallState::NotOffered => "no longer offered",
+        InstallState::RemovedByYou => "removed by you",
     }
 }
 

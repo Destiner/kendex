@@ -18,6 +18,7 @@ import { useNavStore } from "@/stores/nav";
 export function BundleDetailPage() {
   const bundleRef = useNavStore((s) => s.bundleRef);
   const bundles = useMarketplacesStore((s) => s.bundles);
+  const readErrors = useMarketplacesStore((s) => s.readErrors);
   const loadBundle = useMarketplacesStore((s) => s.loadBundle);
   const install = useMarketplacesStore((s) => s.install);
   const busy = useMarketplacesStore((s) => s.busy);
@@ -32,6 +33,7 @@ export function BundleDetailPage() {
   if (!bundleRef) return null;
   const { scope, source, bundle } = bundleRef;
   const detail = bundles[`${marketKey(scope, source)}::${bundle}`];
+  const readError = readErrors[`${marketKey(scope, source)}::${bundle}`];
   const target = destination ?? scope;
   const redirected = target !== scope ? target : null;
 
@@ -100,7 +102,14 @@ export function BundleDetailPage() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className={cn(PAGE_BODY, "pt-0")}>
           <div className={CONTENT_WIDTH}>
-            {!detail ? (
+            {!detail && readError ? (
+              <p
+                className="py-16 text-center text-sm text-critical"
+                role="alert"
+              >
+                This set can't be read right now — {readError}
+              </p>
+            ) : !detail ? (
               <p className="py-16 text-center text-sm text-muted-foreground">
                 Reading the set…
               </p>
@@ -147,6 +156,35 @@ export function BundleDetailPage() {
                           ) : member.state === "not-offered" ? (
                             <span className="text-muted-foreground">
                               No longer offered
+                            </span>
+                          ) : member.state === "removed-by-you" ? (
+                            <span className="inline-flex items-center gap-2">
+                              <span className="text-muted-foreground">
+                                Removed by you
+                              </span>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={busy}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  void install({
+                                    scope,
+                                    source,
+                                    items: [
+                                      {
+                                        kind: member.kind,
+                                        name: member.name,
+                                      },
+                                    ],
+                                    destination: redirected,
+                                  }).then((ok) => {
+                                    if (ok) void reload();
+                                  });
+                                }}
+                              >
+                                Restore
+                              </Button>
                             </span>
                           ) : (
                             <StatusDot

@@ -9,12 +9,14 @@ import {
   type InstallItem,
   type Scope,
 } from "@/bindings";
-import { useAuditStore } from "./audit";
-import { useScanStore } from "./scan";
+import {
+  dropCatalogCaches,
+  marketKey,
+  refreshDownstream,
+  without,
+} from "./marketplaces-shared";
 
-/** One subscription's cache key: where it lives plus its alias. */
-export const marketKey = (scope: Scope, source: string): string =>
-  `${scope.scope === "global" ? "global" : scope.root}::${source}`;
+export { marketKey } from "./marketplaces-shared";
 
 interface MarketplacesState {
   rows: MarketplaceRow[];
@@ -24,6 +26,9 @@ interface MarketplacesState {
   about: Record<string, AboutView>;
   /** Each opened curated set, by [marketKey]::bundle. */
   bundles: Record<string, BundleDetail>;
+  /** Why a read produced nothing, by the same keys — the page the person is
+   * looking at says it instead of loading forever. */
+  readErrors: Record<string, string>;
   loaded: boolean;
   busy: boolean;
   error: string | null;
@@ -53,17 +58,12 @@ interface MarketplacesState {
   }) => Promise<boolean>;
 }
 
-/** What lands after any mutation: the tables everywhere else stay current. */
-async function refreshDownstream() {
-  await useScanStore.getState().refresh();
-  await useAuditStore.getState().refresh();
-}
-
 export const useMarketplacesStore = create<MarketplacesState>((set, get) => ({
   rows: [],
   packages: {},
   about: {},
   bundles: {},
+  readErrors: {},
   loaded: false,
   busy: false,
   error: null,
@@ -78,34 +78,46 @@ export const useMarketplacesStore = create<MarketplacesState>((set, get) => ({
   },
 
   loadPackages: async (scope, source) => {
+    const key = marketKey(scope, source);
     const response = await commands.marketplacePackages(scope, source);
     if (response.status === "ok") {
       set((state) => ({
-        packages: {
-          ...state.packages,
-          [marketKey(scope, source)]: response.data,
-        },
+        packages: { ...state.packages, [key]: response.data },
+        readErrors: without(state.readErrors, key),
+      }));
+    } else {
+      set((state) => ({
+        readErrors: { ...state.readErrors, [key]: response.error },
       }));
     }
   },
 
   loadAbout: async (scope, source) => {
+    const key = marketKey(scope, source);
     const response = await commands.marketplaceAbout(scope, source);
     if (response.status === "ok") {
       set((state) => ({
-        about: { ...state.about, [marketKey(scope, source)]: response.data },
+        about: { ...state.about, [key]: response.data },
+        readErrors: without(state.readErrors, key),
+      }));
+    } else {
+      set((state) => ({
+        readErrors: { ...state.readErrors, [key]: response.error },
       }));
     }
   },
 
   loadBundle: async (scope, source, name) => {
+    const key = `${marketKey(scope, source)}::${name}`;
     const response = await commands.marketplaceBundle(scope, source, name);
     if (response.status === "ok") {
       set((state) => ({
-        bundles: {
-          ...state.bundles,
-          [`${marketKey(scope, source)}::${name}`]: response.data,
-        },
+        bundles: { ...state.bundles, [key]: response.data },
+        readErrors: without(state.readErrors, key),
+      }));
+    } else {
+      set((state) => ({
+        readErrors: { ...state.readErrors, [key]: response.error },
       }));
     }
   },
@@ -126,6 +138,7 @@ export const useMarketplacesStore = create<MarketplacesState>((set, get) => ({
     set({ error: null });
     toast.success(`Subscribed to '${response.data.name}'`);
     for (const note of response.data.notes) toast.message(note);
+    dropCatalogCaches(set);
     await get().load();
     return true;
   },
@@ -153,6 +166,7 @@ export const useMarketplacesStore = create<MarketplacesState>((set, get) => ({
         ? `Unsubscribed from '${source}' — its packages are yours now`
         : `Unsubscribed from '${source}'`,
     );
+    dropCatalogCaches(set);
     await get().load();
     await refreshDownstream();
     return true;
@@ -164,6 +178,7 @@ export const useMarketplacesStore = create<MarketplacesState>((set, get) => ({
       toast.error(response.error);
       return;
     }
+    dropCatalogCaches(set);
     await get().load();
     await refreshDownstream();
   },
@@ -174,6 +189,9 @@ export const useMarketplacesStore = create<MarketplacesState>((set, get) => ({
       const response = await commands.sourcesRefresh();
       if (response.status === "ok") {
         for (const warning of response.data) toast.message(warning);
+        // A fetch can move any subscription to a new commit; everything
+        // derived from catalog bytes re-reads.
+        dropCatalogCaches(set);
         await get().load();
       } else {
         toast.error(response.error);
@@ -207,6 +225,8 @@ export const useMarketplacesStore = create<MarketplacesState>((set, get) => ({
     const key = marketKey(destination ?? scope, source);
     set((state) => ({
       packages: { ...state.packages, [key]: response.data },
+      // Member states in every open set moved with this install.
+      bundles: {},
       error: null,
     }));
     const what = bundle

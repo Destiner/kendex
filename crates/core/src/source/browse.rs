@@ -41,6 +41,10 @@ pub enum InstallState {
     /// removed upstream. A row saying so, never a dead page: the member list
     /// is catalog-authored text and one bad entry cannot break the read.
     NotOffered,
+    /// The user removed this member and the removal is recorded, so nothing
+    /// derives it back. The row says it was their choice and offers Restore —
+    /// installing it again clears the record (invariant 2 stays intact).
+    RemovedByYou,
 }
 
 /// One package a subscription offers, as the Packages table lists it.
@@ -249,6 +253,10 @@ pub fn bundle(
         // and returns ItemNotInSource, which must not sink the whole page.
         let state = if browsed.locked_here(member.kind, &member.name) {
             InstallState::Installed
+        } else if browsed.manifest.is_suppressed(member.kind, &member.name) {
+            // Removed by the user, and recorded so the bundle cannot derive
+            // it back — their choice, shown as such with a way to reverse it.
+            InstallState::RemovedByYou
         } else if super::find_item(&browsed.sealed, &browsed.config, member.kind, &member.name)
             .is_none()
         {

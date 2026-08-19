@@ -40,6 +40,15 @@ describe("nav store — marketplaces", () => {
     expect(state.searchFocus).toBe(1);
   });
 
+  it("falls through to the Library from a tab with no search box", () => {
+    useNavStore.getState().goToMarketplaces("subscribed");
+    useNavStore.getState().focusSearch();
+
+    // Subscribed has no box on screen — a bumped counter would focus
+    // nothing, so the shortcut goes where a search can actually happen.
+    expect(useNavStore.getState().page).toBe("library");
+  });
+
   it("remembers which Marketplaces tab was open through back", () => {
     useNavStore.getState().goToMarketplaces("packages");
     useNavStore.getState().goToMarketplace({

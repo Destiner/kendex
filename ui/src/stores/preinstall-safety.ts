@@ -36,6 +36,18 @@ interface QueueItem {
 const queue: QueueItem[] = [];
 const queued = new Set<string>();
 let draining = false;
+// Bumped by a reset: an in-flight answer from before the bump is stale (the
+// catalog may have moved) and is dropped instead of stored.
+let generation = 0;
+
+/** Empty the cache and the queue — called when any mutation can have moved
+ * a catalog, so no score describes the commit before the change. */
+export function resetPreinstallSafety() {
+  generation += 1;
+  queue.length = 0;
+  queued.clear();
+  usePreinstallSafety.setState({ scores: {} });
+}
 
 export const usePreinstallSafety = create<PreinstallSafetyState>(
   (set, get) => ({
@@ -48,26 +60,40 @@ export const usePreinstallSafety = create<PreinstallSafetyState>(
       if (draining) return;
       draining = true;
       void (async () => {
-        while (queue.length > 0) {
-          const item = queue.shift();
-          if (!item) break;
-          const response = await commands.marketplacePackagePreview(
-            item.scope,
-            item.source,
-            item.kind,
-            item.name,
-          );
-          if (response.status === "ok") {
-            set((state) => ({
-              scores: { ...state.scores, [item.key]: response.data.safety },
-            }));
-          } else {
-            // A failed read leaves the key retryable: the next mount of the
-            // row asks again instead of showing "Checking…" forever.
-            queued.delete(item.key);
+        try {
+          while (queue.length > 0) {
+            const item = queue.shift();
+            if (!item) break;
+            const before = generation;
+            try {
+              const response = await commands.marketplacePackagePreview(
+                item.scope,
+                item.source,
+                item.kind,
+                item.name,
+              );
+              // A reset while this was in flight makes the answer stale.
+              if (before !== generation) continue;
+              if (response.status === "ok") {
+                set((state) => ({
+                  scores: {
+                    ...state.scores,
+                    [item.key]: response.data.safety,
+                  },
+                }));
+              } else {
+                // Retryable: the next mount of the row asks again instead
+                // of showing "Checking…" forever.
+                queued.delete(item.key);
+              }
+            } catch {
+              // A transport error must not wedge the whole queue.
+              queued.delete(item.key);
+            }
           }
+        } finally {
+          draining = false;
         }
-        draining = false;
       })();
     },
   }),

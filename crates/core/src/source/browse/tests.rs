@@ -224,6 +224,39 @@ fn a_bundle_member_the_catalog_no_longer_carries_is_a_row_not_an_error() {
     assert_eq!(state_of("gh"), InstallState::Available);
 }
 
+/// A member the user removed shows as their own choice, not as available —
+/// the recorded removal keeps the bundle from deriving it back (invariant 2),
+/// and the row is where the person sees and reverses that.
+#[test]
+fn a_member_the_user_removed_shows_removed_by_you() {
+    let tmp = tempfile::tempdir().unwrap();
+    let catalog = tmp.path().join("catalog");
+    skill(&catalog, "skills", "gh", "body");
+    skill(&catalog, "skills", "extra", "body");
+    fs::write(
+        catalog.join("kendex.toml"),
+        "[bundles.starter]\nskills = [\"gh\", \"extra\"]\n",
+    )
+    .unwrap();
+    let manifest = format!(
+        "{}[bundles.starter]\nsource = \"cat\"\n\n[suppressed]\nskill = [\"extra\"]\n",
+        sources_decl(&catalog)
+    );
+    let (env, scope) = project(tmp.path(), &manifest);
+
+    let detail = bundle(&env, &scope, "cat", "starter").unwrap();
+    let state_of = |name: &str| {
+        detail
+            .members
+            .iter()
+            .find(|member| member.name == name)
+            .map(|member| member.state)
+            .expect("member listed")
+    };
+    assert_eq!(state_of("extra"), InstallState::RemovedByYou);
+    assert_ne!(state_of("gh"), InstallState::RemovedByYou);
+}
+
 #[test]
 fn a_declared_package_the_gate_refuses_shows_held_back() {
     let tmp = tempfile::tempdir().unwrap();

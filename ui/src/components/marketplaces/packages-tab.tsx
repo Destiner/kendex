@@ -37,6 +37,7 @@ const TAGS = Object.keys(TAG_LABELS) as Tag[];
 export function PackagesTab() {
   const rows = useMarketplacesStore((s) => s.rows);
   const packages = useMarketplacesStore((s) => s.packages);
+  const readErrors = useMarketplacesStore((s) => s.readErrors);
   const loadPackages = useMarketplacesStore((s) => s.loadPackages);
   const searchFocus = useNavStore((s) => s.searchFocus);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -84,6 +85,11 @@ export function PackagesTab() {
     return out;
   }, [rows, packages, search, kind, tag, marketplace, where]);
 
+  // Subscriptions whose catalog refused to load: named above the table so
+  // an empty offer is never mistaken for an empty marketplace.
+  const unreadable = rows
+    .filter((row) => row.enabled && readErrors[marketKey(row.scope, row.name)])
+    .map((row) => row.name);
   const marketplaceNames = [...new Set(rows.map((row) => row.name))];
   const whereOptions = [
     ...new Map(rows.map((row) => [scopeLabel(row.scope), row.scope])).values(),
@@ -171,6 +177,12 @@ export function PackagesTab() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className={cn(PAGE_BODY, "pt-0")}>
           <div className={WIDE_CONTENT_WIDTH}>
+            {unreadable.length > 0 ? (
+              <p className="mb-3 text-xs text-warning">
+                {unreadable.join(", ")} couldn&apos;t be read — those packages
+                aren&apos;t listed. Check the Subscribed tab.
+              </p>
+            ) : null}
             {entries.length === 0 ? (
               <p className="py-16 text-center text-sm text-muted-foreground">
                 {rows.length === 0

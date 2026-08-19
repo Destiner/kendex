@@ -1046,7 +1046,13 @@ export type InstallState =
  *  removed upstream. A row saying so, never a dead page: the member list
  *  is catalog-authored text and one bad entry cannot break the read.
  */
-"not-offered";
+"not-offered" | 
+/**
+ *  The user removed this member and the removal is recorded, so nothing
+ *  derives it back. The row says it was their choice and offers Restore —
+ *  installing it again clears the record (invariant 2 stays intact).
+ */
+"removed-by-you";
 
 /**  One declared item: `[agents.<name>]` / `[skills.<name>]`. */
 export type ItemDecl = ItemDecl_Serialize | ItemDecl_Deserialize;

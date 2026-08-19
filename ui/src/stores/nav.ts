@@ -18,13 +18,12 @@ export type * from "./nav-types";
 // stack unbounded — nobody needs to back up more than this in practice.
 const HISTORY_CAP = 20;
 
-// The pages that keep a search box on screen: "/" focuses the one that is
-// showing instead of leaving the page the user is reading.
-const SEARCH_PAGES: ReadonlySet<Page> = new Set([
-  "library",
-  "marketplaces",
-  "marketplaceDetail",
-]);
+/** Whether the current page has a search box on screen right now — the
+ * Library always does; the Marketplaces page only on its Packages tab. */
+function searchBoxOnScreen(state: { page: Page; marketplacesTab: string }) {
+  if (state.page === "library") return true;
+  return state.page === "marketplaces" && state.marketplacesTab === "packages";
+}
 
 interface NavState {
   page: Page;
@@ -108,7 +107,7 @@ export const useNavStore = create<NavState>((set) => ({
   // where there is one, and the Library answers everywhere else.
   focusSearch: () =>
     set((state) => ({
-      ...(SEARCH_PAGES.has(state.page)
+      ...(searchBoxOnScreen(state)
         ? {}
         : {
             page: "library" as const,

@@ -36,8 +36,10 @@ changes carry a **Breaking** call-out with their migration note inline.
   page (its curated sets, its packages, and what its catalog says about
   itself), install a whole set or a selection with a destination picker,
   and read a package's README, files, and safety findings before
-  anything lands. Unsubscribing asks the one question that matters —
-  remove its packages, or keep them as your own. The Library is now
+  anything lands. A set member you removed shows as "Removed by you" with
+  a Restore beside it, so your choice is visible and reversible in place.
+  Unsubscribing asks the one question that matters — remove its packages,
+  or keep them as your own. The Library is now
   **My Library**, gains a From column and filter saying which
   marketplace (or you) each installation came from, and browsing moved
   out of it to the new page. The community directory and authoring tabs

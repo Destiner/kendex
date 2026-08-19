@@ -27,12 +27,22 @@ export function AboutSection({
   meta: MarketplaceMeta | null;
 }) {
   const about = useMarketplacesStore((s) => s.about[marketKey(scope, source)]);
+  const readError = useMarketplacesStore(
+    (s) => s.readErrors[marketKey(scope, source)],
+  );
   const loadAbout = useMarketplacesStore((s) => s.loadAbout);
 
   useEffect(() => {
     void loadAbout(scope, source);
   }, [scope, source, loadAbout]);
 
+  if (!about && readError) {
+    return (
+      <p className="py-16 text-center text-sm text-critical" role="alert">
+        This catalog can't be read right now — {readError}
+      </p>
+    );
+  }
   if (!about) {
     return (
       <p className="py-16 text-center text-sm text-muted-foreground">

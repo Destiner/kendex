@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/table";
 import { kindIcon } from "@/lib/kind-icon";
 import { kindLabel, packageDisplayName, VERDICT_LABELS } from "@/lib/labels";
-import { useMarketplacesStore } from "@/stores/marketplaces";
+import { marketKey, useMarketplacesStore } from "@/stores/marketplaces";
 import { useNavStore } from "@/stores/nav";
 import { safetyKey, usePreinstallSafety } from "@/stores/preinstall-safety";
 
@@ -58,7 +58,7 @@ export function PackagesTable({
       <TableBody>
         {entries.map((entry) => (
           <PackageRow
-            key={`${entry.source}:${entry.row.kind}:${entry.row.name}`}
+            key={`${marketKey(entry.scope, entry.source)}:${entry.row.kind}:${entry.row.name}`}
             entry={entry}
             showMarketplace={showMarketplace}
           />
