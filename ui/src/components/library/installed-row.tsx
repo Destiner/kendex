@@ -1,4 +1,4 @@
-import type { HarnessId } from "@/bindings";
+import type { HarnessId, Origin } from "@/bindings";
 import { HarnessBadge } from "@/components/harness-badge";
 import { StatusDot } from "@/components/status-dot";
 import { TagBadges } from "@/components/tag-badge";
@@ -27,6 +27,7 @@ import {
 } from "@/lib/labels";
 import { relativeTime } from "@/lib/relative-time";
 import { cn } from "@/lib/utils";
+import { originLabel, originTitle } from "@/stores/provenance";
 import { useUpdatesStore } from "@/stores/updates";
 
 const STATUS_TONES: Record<GroupStatus, "good" | "warning" | "critical"> = {
@@ -37,10 +38,12 @@ const STATUS_TONES: Record<GroupStatus, "good" | "warning" | "critical"> = {
 
 export function InstalledRow({
   group,
+  origin,
   customized,
   onOpen,
 }: {
   group: ItemGroup;
+  origin: Origin | null;
   /** Whether anything in the manifest changes this package here. */
   customized: boolean;
   onOpen: () => void;
@@ -128,6 +131,9 @@ export function InstalledRow({
       </TableCell>
       <TableCell title={whereTitle} className="text-muted-foreground">
         {whereLabel}
+      </TableCell>
+      <TableCell title={originTitle(origin)} className="text-muted-foreground">
+        {originLabel(origin) || "—"}
       </TableCell>
       <TableCell className="text-right text-xs text-muted-foreground">
         {group.modifiedAt != null

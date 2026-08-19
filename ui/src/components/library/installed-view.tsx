@@ -28,6 +28,11 @@ import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor";
 import { useLibraryViewStore } from "@/stores/library-view";
 import { useNavStore } from "@/stores/nav";
+import {
+  originFor,
+  originLabel,
+  useProvenanceStore,
+} from "@/stores/provenance";
 import { useScanStore } from "@/stores/scan";
 
 /** "Installed": everything on this machine, filterable. A row opens the
@@ -44,12 +49,16 @@ export function InstalledView() {
     kind,
     harness,
     tag,
+    from,
     setKind,
     setHarness,
     setTag,
+    setFrom,
     setScrollTop,
     clearFilters: clearViewFilters,
   } = useLibraryViewStore();
+  const provenance = useProvenanceStore((s) => s.rows);
+  const loadProvenance = useProvenanceStore((s) => s.load);
   // Kept in nav rather than here so leaving for a package page and coming
   // back lands on the same narrowed table.
   const search = useNavStore((s) => s.search);
@@ -63,6 +72,13 @@ export function InstalledView() {
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+  // Re-joined whenever a scan lands, so an install or unsubscribe made
+  // elsewhere shows its new origin without a manual refresh. Before the
+  // first scan there are no rows to label, so there is nothing to join.
+  useEffect(() => {
+    if (!result) return;
+    void loadProvenance();
+  }, [loadProvenance, result]);
   const customizedKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const [where, draft] of Object.entries(saved)) {
@@ -107,14 +123,27 @@ export function InstalledView() {
       tag: tag === "any" ? undefined : (tag as Tag),
       search,
     });
-    return groupItems(filtered);
-  }, [result, scope, kind, harness, tag, search]);
+    const grouped = groupItems(filtered);
+    if (from === "any") return grouped;
+    return grouped.filter(
+      (group) =>
+        originLabel(
+          originFor(provenance, group.kind, group.name, groupScopes(group)),
+        ) === from,
+    );
+  }, [result, scope, kind, harness, tag, from, search, provenance]);
 
   // The count the filtered total is measured against: every row the table
   // could show, not the ones left after the current narrowing.
   const total = useMemo(
     () => (result ? groupItems(result.items).length : 0),
     [result],
+  );
+  // The filter's vocabulary is what the join actually says, so a value
+  // is never offered that no row carries.
+  const fromOptions = useMemo(
+    () => [...new Set(provenance.map((row) => originLabel(row.origin)))].sort(),
+    [provenance],
   );
   // Nothing has been counted yet — distinct from "counted, found nothing".
   const scanning = result === null;
@@ -124,6 +153,7 @@ export function InstalledView() {
     kind !== "any" ||
     harness !== "any" ||
     tag !== "any" ||
+    from !== "any" ||
     scope !== "all";
 
   const clearFilters = () => {
@@ -143,6 +173,9 @@ export function InstalledView() {
         onHarnessChange={setHarness}
         tag={tag}
         onTagChange={setTag}
+        from={from}
+        onFromChange={setFrom}
+        fromOptions={fromOptions}
         scope={scope}
         onScopeChange={setScope}
         projects={projects}
@@ -168,6 +201,7 @@ export function InstalledView() {
                   <TableHead>{TAGS_ROW_LABEL}</TableHead>
                   <TableHead>Harnesses</TableHead>
                   <TableHead>Where</TableHead>
+                  <TableHead>From</TableHead>
                   <TableHead className="text-right">Updated</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
@@ -179,6 +213,12 @@ export function InstalledView() {
                     <InstalledRow
                       key={group.key}
                       group={group}
+                      origin={originFor(
+                        provenance,
+                        group.kind,
+                        group.name,
+                        groupScopes(group),
+                      )}
                       customized={isCustomizedHere(group)}
                       onOpen={() => {
                         if (!primary) return;
@@ -194,7 +234,7 @@ export function InstalledView() {
                 {scanning ? <InstalledSkeleton /> : null}
                 {!scanning && groups.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-10">
+                    <TableCell colSpan={8} className="py-10">
                       {hasAnyItems ? (
                         <div className="flex flex-col items-center gap-3 text-center">
                           <div>

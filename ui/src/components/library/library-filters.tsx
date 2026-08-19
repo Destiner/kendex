@@ -49,6 +49,9 @@ export function LibraryFilters({
   onHarnessChange,
   tag,
   onTagChange,
+  from,
+  onFromChange,
+  fromOptions,
   scope,
   onScopeChange,
   projects,
@@ -66,6 +69,10 @@ export function LibraryFilters({
   onHarnessChange: (value: string) => void;
   tag: string;
   onTagChange: (value: string) => void;
+  from: string;
+  onFromChange: (value: string) => void;
+  /** The origins the provenance join actually carries, already labelled. */
+  fromOptions: string[];
   scope: ScopeSelection;
   onScopeChange: (scope: ScopeSelection) => void;
   projects: string[];
@@ -140,6 +147,13 @@ export function LibraryFilters({
             value={harness}
             onChange={onHarnessChange}
             options={HARNESSES.map((h) => [h, harnessName(h)])}
+          />
+          <FacetSelect
+            label="From"
+            empty="Any origin"
+            value={from}
+            onChange={onFromChange}
+            options={fromOptions.map((label) => [label, label])}
           />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">

@@ -12,11 +12,13 @@ interface LibraryViewState {
   kind: string;
   harness: string;
   tag: string;
+  from: string;
   /** The table's scroll offset when it last unmounted. */
   scrollTop: number;
   setKind: (kind: string) => void;
   setHarness: (harness: string) => void;
   setTag: (tag: string) => void;
+  setFrom: (from: string) => void;
   setScrollTop: (scrollTop: number) => void;
   clearFilters: () => void;
 }
@@ -25,10 +27,13 @@ export const useLibraryViewStore = create<LibraryViewState>((set) => ({
   kind: "any",
   harness: "any",
   tag: "any",
+  from: "any",
   scrollTop: 0,
   setKind: (kind) => set({ kind }),
   setHarness: (harness) => set({ harness }),
   setTag: (tag) => set({ tag }),
+  setFrom: (from) => set({ from }),
   setScrollTop: (scrollTop) => set({ scrollTop }),
-  clearFilters: () => set({ kind: "any", harness: "any", tag: "any" }),
+  clearFilters: () =>
+    set({ kind: "any", harness: "any", tag: "any", from: "any" }),
 }));

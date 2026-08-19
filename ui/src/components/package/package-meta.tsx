@@ -10,10 +10,16 @@ import { StatusLine } from "@/components/status-note";
 import { TagBadges } from "@/components/tag-badge";
 import { Badge } from "@/components/ui/badge";
 import { TAGS_ROW_LABEL } from "@/lib/copy";
-import type { ItemGroup } from "@/lib/derive";
+import { groupScopes, type ItemGroup } from "@/lib/derive";
 import { kindLabel, scopeName } from "@/lib/labels";
 import { relativeTime } from "@/lib/relative-time";
 import { versionLabel } from "@/lib/versions";
+import { useNavStore } from "@/stores/nav";
+import {
+  originFor,
+  originTitle,
+  useProvenanceStore,
+} from "@/stores/provenance";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -36,6 +42,14 @@ export function PackageMetaBlock({
   primary: ObservedItem;
   meta: PackageMeta_Serialize | null;
 }) {
+  const provenance = useProvenanceStore((s) => s.rows);
+  const goToMarketplace = useNavStore((s) => s.goToMarketplace);
+  const origin = originFor(
+    provenance,
+    group.kind,
+    group.name,
+    groupScopes(group),
+  );
   return (
     <div className="space-y-2.5">
       <SectionHeading>Details</SectionHeading>
@@ -57,6 +71,27 @@ export function PackageMetaBlock({
           </span>
         </Row>
         <Row label="Scope">{scopeName(primary.scope)}</Row>
+        {origin?.origin === "marketplace" ? (
+          <Row label="From">
+            <button
+              type="button"
+              className="underline underline-offset-2 hover:text-foreground"
+              title={originTitle(origin)}
+              onClick={() =>
+                goToMarketplace({
+                  scope: primary.scope,
+                  source: origin.source,
+                })
+              }
+            >
+              {origin.source}
+            </button>
+          </Row>
+        ) : origin?.origin === "own" ? (
+          <Row label="From">
+            <span title={originTitle(origin)}>Your own</span>
+          </Row>
+        ) : null}
         {meta?.current ? (
           <Row label="Version">{versionLabel(meta.current)}</Row>
         ) : null}

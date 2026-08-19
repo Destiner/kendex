@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   type AttentionRow,
   AttentionSection,
@@ -22,6 +23,7 @@ import { harnessName } from "@/lib/labels";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
 import { cn } from "@/lib/utils";
 import { useAuditStore } from "@/stores/audit";
+import { useMarketplacesStore } from "@/stores/marketplaces";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 import { useSettingsStore } from "@/stores/settings";
@@ -45,6 +47,12 @@ export function OverviewPage() {
   const editedPackages = updateRows.filter((row) => row.blockedByLocalEdit);
   const goTo = useNavStore((s) => s.goTo);
   const goToLibrary = useNavStore((s) => s.goToLibrary);
+  const goToMarketplaces = useNavStore((s) => s.goToMarketplaces);
+  const marketplaceCount = useMarketplacesStore((s) => s.rows.length);
+  const loadMarketplaces = useMarketplacesStore((s) => s.load);
+  useEffect(() => {
+    void loadMarketplaces();
+  }, [loadMarketplaces]);
 
   const {
     changes: actionableCount,
@@ -177,7 +185,7 @@ export function OverviewPage() {
 
           <Section title="At a glance">
             {result ? (
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-4 gap-3">
                 <StatTile
                   label="Harnesses"
                   value={result.harnesses.length}
@@ -193,6 +201,14 @@ export function OverviewPage() {
                   label="Projects"
                   value={projectCount}
                   onClick={() => goTo("projects")}
+                />
+                <StatTile
+                  label="Marketplaces"
+                  value={marketplaceCount}
+                  detail={
+                    marketplaceCount === 0 ? "browse and subscribe" : undefined
+                  }
+                  onClick={() => goToMarketplaces()}
                 />
               </div>
             ) : (
