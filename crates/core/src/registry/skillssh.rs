@@ -73,16 +73,11 @@ pub fn search(fetch: &dyn Fetch, query: &str) -> Result<Vec<SkillsShHit>> {
         .filter_map(|hit| {
             let repo = hit.source;
             let (owner, name) = repo.split_once('/')?;
-            if owner.is_empty()
-                || name.is_empty()
-                || name.contains('/')
-                || hit.name.is_empty()
-                || hit.name.len() > 120
-                || repo.len() > 200
-                || !repo.bytes().all(|byte| {
-                    byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/')
-                })
-            {
+            // Every part must survive as one URL path segment: the hit
+            // becomes `skills.sh/owner/repo/skill`, and a name a separator
+            // or control byte could smuggle through is not offered at all
+            // — a row whose Install cannot work is worse than no row.
+            if !component_ok(owner) || !component_ok(name) || !component_ok(&hit.name) {
                 return None;
             }
             Some(SkillsShHit {
@@ -92,6 +87,16 @@ pub fn search(fetch: &dyn Fetch, query: &str) -> Result<Vec<SkillsShHit>> {
             })
         })
         .collect())
+}
+
+fn component_ok(part: &str) -> bool {
+    !part.is_empty()
+        && part.len() <= 120
+        && part != ".."
+        && part != "."
+        && part
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }
 
 fn urlencode(text: &str) -> String {

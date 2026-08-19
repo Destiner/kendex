@@ -12,6 +12,7 @@ import {
 import {
   dropCatalogCaches,
   marketKey,
+  openLead,
   refreshDownstream,
   without,
 } from "./marketplaces-shared";
@@ -140,6 +141,9 @@ export const useMarketplacesStore = create<MarketplacesState>((set, get) => ({
     for (const note of response.data.notes) toast.message(note);
     dropCatalogCaches(set);
     await get().load();
+    if (response.data.lead) {
+      await openLead(scope, response.data.name, response.data.lead);
+    }
     return true;
   },
 

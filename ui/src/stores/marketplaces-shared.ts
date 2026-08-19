@@ -33,3 +33,15 @@ export function dropCatalogCaches(set: (partial: object) => void) {
   set({ packages: {}, bundles: {}, about: {}, readErrors: {} });
   resetPreinstallSafety();
 }
+
+/** A tree or skills.sh URL was pointing at one package; land on it so
+ * Install is the next click, with its safety verdict in view. */
+export async function openLead(scope: Scope, source: string, lead: string) {
+  const { useNavStore } = await import("./nav");
+  useNavStore.getState().goToAvailablePackage({
+    scope,
+    source,
+    kind: "skill",
+    name: lead,
+  });
+}

@@ -223,3 +223,54 @@ fn skillssh_empty_query_asks_nothing() {
     assert!(hits.is_empty());
     assert_eq!(*canned.calls.borrow(), 0);
 }
+
+#[test]
+fn skillssh_refuses_names_its_install_url_cannot_carry() {
+    let canned = Canned::new(vec![ok(
+        200,
+        None,
+        r#"{"skills":[
+            {"id":"o/r/a","name":"good-skill","installs":5,"source":"o/r"},
+            {"id":"o/r/b","name":"foo/bar","installs":5,"source":"o/r"},
+            {"id":"o/r/c","name":"has space","installs":5,"source":"o/r"},
+            {"id":"o/r/d","name":"..","installs":5,"source":"o/r"},
+            {"id":"o/r/e","name":"ok","installs":5,"source":"o/r/extra"}
+        ]}"#,
+    )]);
+    let hits = skillssh::search(&canned, "x").expect("search");
+    assert_eq!(hits.len(), 1, "only the URL-safe hit survives");
+    assert_eq!(hits[0].skill, "good-skill");
+}
+
+#[test]
+fn an_oversized_cache_file_reads_as_no_cache() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let env = env_in(dir.path());
+    let registry_dir = env.registry_cache_dir();
+    std::fs::create_dir_all(&registry_dir).expect("mkdir");
+    // Past the cap the file is not even read, whatever it claims to hold.
+    let oversized = "x".repeat(41_000_000);
+    std::fs::write(registry_dir.join("index.cache.json"), oversized).expect("write");
+    let down = Canned::new(vec![Err(CoreError::RegistryUnavailable {
+        why: "no route".into(),
+    })]);
+    assert!(cache::load(&env, &down, false).is_err());
+}
+
+#[test]
+fn etag_and_body_are_one_generation_on_disk() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let env = env_in(dir.path());
+    let first = Canned::new(vec![ok(
+        200,
+        Some("\"v1\""),
+        &body_with(r#"{"repo":"a/b","name":"b"}"#),
+    )]);
+    cache::load(&env, &first, false).expect("first load");
+    let raw = std::fs::read_to_string(env.registry_cache_dir().join("index.cache.json"))
+        .expect("cache file");
+    assert!(
+        raw.contains("v1") && raw.contains("a/b"),
+        "one file holds both"
+    );
+}

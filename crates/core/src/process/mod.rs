@@ -57,6 +57,10 @@ pub struct Hardened {
     /// this module adds are deliberately left out.
     label: String,
     timeout: Duration,
+    /// Cap on captured stdout/stderr, for callers whose peer is a network
+    /// service rather than a local tool — a hostile server must not be
+    /// able to stream the process out of memory. None = uncapped.
+    max_output: Option<usize>,
 }
 
 impl Hardened {
@@ -141,6 +145,11 @@ impl Hardened {
         self
     }
 
+    pub fn max_output(mut self, bytes: usize) -> Hardened {
+        self.max_output = Some(bytes);
+        self
+    }
+
     /// The one sanctioned redirect: a commit-time guard must judge the
     /// index git actually named in `GIT_INDEX_FILE` — during `git commit`
     /// that is a temporary index, and scrubbing it would silently judge
@@ -170,8 +179,9 @@ impl Hardened {
         };
         // Drained on threads: a child that fills a pipe buffer would block
         // forever while we sat polling for its exit.
-        let reading_out = std::thread::spawn(move || read(&mut stdout));
-        let reading_err = std::thread::spawn(move || read(&mut stderr));
+        let cap = self.max_output;
+        let reading_out = std::thread::spawn(move || read(&mut stdout, cap));
+        let reading_err = std::thread::spawn(move || read(&mut stderr, cap));
 
         let deadline = Instant::now() + self.timeout;
         let status = loop {
@@ -247,6 +257,7 @@ impl Hardened {
             command,
             label,
             timeout: DEFAULT_TIMEOUT,
+            max_output: None,
         }
     }
 
@@ -298,9 +309,23 @@ fn end_tree(child: &mut std::process::Child) {
     let _ = child.wait();
 }
 
-fn read(pipe: &mut impl Read) -> io::Result<Vec<u8>> {
+fn read(pipe: &mut impl Read, cap: Option<usize>) -> io::Result<Vec<u8>> {
     let mut buffer = Vec::new();
-    pipe.read_to_end(&mut buffer)?;
+    match cap {
+        None => {
+            pipe.read_to_end(&mut buffer)?;
+        }
+        Some(cap) => {
+            // One byte past the cap distinguishes "exactly at" from "over";
+            // over is refused rather than silently truncated to garbage.
+            pipe.take(cap as u64 + 1).read_to_end(&mut buffer)?;
+            if buffer.len() > cap {
+                return Err(io::Error::other(format!(
+                    "output exceeded the {cap}-byte cap"
+                )));
+            }
+        }
+    }
     Ok(buffer)
 }
 

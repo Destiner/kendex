@@ -160,3 +160,20 @@ fn a_child_reading_stdin_gets_nothing_instead_of_waiting() {
     assert!(output.status.success());
     assert!(output.stdout.is_empty());
 }
+
+#[cfg(unix)]
+#[test]
+fn output_past_the_cap_is_an_error_not_a_memory_hole() {
+    let output = Hardened::program("/bin/sh", &["-c", "head -c 100000 /dev/zero"])
+        .timeout(Duration::from_secs(10))
+        .max_output(10_000)
+        .run();
+    assert!(output.is_err(), "a capped read refuses, never truncates");
+
+    let under = Hardened::program("/bin/sh", &["-c", "printf hello"])
+        .timeout(Duration::from_secs(10))
+        .max_output(10_000)
+        .run()
+        .unwrap();
+    assert_eq!(under.stdout, b"hello");
+}

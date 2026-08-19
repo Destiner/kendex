@@ -11,6 +11,11 @@ use crate::error::{CoreError, Result};
 use crate::process::Hardened;
 use std::time::Duration;
 
+/// The most a registry response — headers included — may occupy. The
+/// site's own caps keep a real index far under this; only a hostile or
+/// broken endpoint approaches it, and it is cut off rather than held.
+pub const MAX_RESPONSE_BYTES: usize = 20_000_000;
+
 /// Where the directory lives. One environment variable moves every read
 /// (previews, tests); nothing else configures it.
 pub fn base_url() -> String {
@@ -58,8 +63,12 @@ impl Fetch for CurlFetch {
         args.push("--".into());
         args.push(url.into());
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        // --max-filesize only bounds a body whose length the server
+        // declares; the process-level cap holds whatever arrives, headers
+        // and chunked bodies included.
         let output = Hardened::curl(&arg_refs)
             .timeout(Duration::from_secs(25))
+            .max_output(MAX_RESPONSE_BYTES)
             .run()?;
         if !output.status.success() {
             return Err(CoreError::RegistryUnavailable {
