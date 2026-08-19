@@ -15,7 +15,11 @@ use super::{CliResult, out, say};
 
 pub fn run(catalog: &Path, strict: bool, json: bool) -> CliResult {
     let sealed = SealedSource::open(catalog)?;
-    let report = kendex_core::check_catalog::check(&sealed)?;
+    let display = catalog
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "catalog".to_owned());
+    let report = kendex_core::check_catalog::check(&sealed, &display)?;
     let failing = report.failing(strict);
     match json {
         true => machine(&report, failing == 0)?,
@@ -45,6 +49,13 @@ fn machine(report: &CatalogCheck, ok: bool) -> CliResult {
 }
 
 fn lines(report: &CatalogCheck) {
+    for finding in &report.catalog {
+        say(&format!(
+            "[{}] {}: {}: {}",
+            finding.severity, finding.pass, finding.file, finding.message
+        ));
+        say(&format!("    fix: {}", finding.fix));
+    }
     for item in &report.items {
         for finding in &item.findings {
             match &finding.rule {

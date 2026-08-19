@@ -1,0 +1,141 @@
+//! The authoring check reads the catalog the way subscribing reads it: one
+//! `source_config`/discovery result behind `check --catalog`, browsing and
+//! the index, so a repo can never pass its own check and then install
+//! differently.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use kendex_core::check_catalog::check;
+use kendex_core::model::ItemKind;
+use kendex_core::source::index::index;
+use kendex_core::source_read::SealedSource;
+
+#[allow(clippy::unwrap_used)]
+fn repo() -> (tempfile::TempDir, PathBuf) {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("repo");
+    fs::create_dir_all(&root).unwrap();
+    (tmp, root)
+}
+
+#[allow(clippy::unwrap_used)]
+fn skill_at(root: &Path, dir: &str, name: &str) {
+    let dir = root.join(dir).join(name);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: about {name}\n---\nBody.\n"),
+    )
+    .unwrap();
+}
+
+/// A skills.sh-style repo — skills under `.claude/skills`, nothing under
+/// kendex's own `skills/` dir — is checked exactly as discovery offers it.
+/// Before the check consumed discovery this repo checked clean and empty.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_discovered_repo_is_checked_the_way_it_installs() {
+    let (_tmp, root) = repo();
+    skill_at(&root, ".claude/skills", "review");
+    let sealed = SealedSource::open(&root).unwrap();
+    let report = check(&sealed, "repo").unwrap();
+    let names: Vec<&str> = report.items.iter().map(|item| item.name.as_str()).collect();
+    assert_eq!(names, ["review"]);
+    assert_eq!(report.items[0].kind, ItemKind::Skill);
+}
+
+/// A one-skill repo (root SKILL.md) offers exactly one skill, and the check
+/// sees it.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_one_skill_repo_is_one_checked_item() {
+    let (_tmp, root) = repo();
+    fs::write(
+        root.join("SKILL.md"),
+        "---\nname: repo\ndescription: the one skill\n---\nBody.\n",
+    )
+    .unwrap();
+    let sealed = SealedSource::open(&root).unwrap();
+    let report = check(&sealed, "repo").unwrap();
+    assert_eq!(report.items.len(), 1);
+    assert_eq!(report.items[0].name, "repo");
+}
+
+/// A control file that exists but does not parse makes the whole catalog a
+/// breakage finding — never an empty, passing report.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_broken_control_file_is_breakage_not_an_empty_pass() {
+    let (_tmp, root) = repo();
+    skill_at(&root, "skills", "review");
+    fs::write(root.join("kendex.toml"), "not [valid toml").unwrap();
+    let sealed = SealedSource::open(&root).unwrap();
+    let report = check(&sealed, "repo").unwrap();
+    assert!(report.items.is_empty());
+    assert!(report.tally().breakage >= 1);
+    assert!(report.failing(false) >= 1);
+    let finding = &report.catalog[0];
+    assert_eq!(finding.severity, "error");
+    assert!(finding.message.contains("not readable TOML"));
+}
+
+/// An undeclared `hooks/` folder is repository tooling: browsing refuses to
+/// offer it and the check refuses to score it — the same silence.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn an_undeclared_hooks_dir_is_not_checked() {
+    let (_tmp, root) = repo();
+    skill_at(&root, "skills", "review");
+    fs::create_dir_all(root.join("hooks")).unwrap();
+    fs::write(root.join("hooks/deploy.sh"), "#!/bin/sh\n").unwrap();
+    let sealed = SealedSource::open(&root).unwrap();
+    let report = check(&sealed, "repo").unwrap();
+    assert!(
+        report.items.iter().all(|item| item.kind != ItemKind::Hook),
+        "a hook was checked out of a repo that never declared kendex's layout"
+    );
+}
+
+/// The check and the index pronounce on the same item set with the same
+/// verdicts — the pin that keeps "what the site says" and "what the author
+/// checked" one answer.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn check_and_index_agree_on_the_offered_set() {
+    let (_tmp, root) = repo();
+    skill_at(&root, "skills", "review");
+    skill_at(&root, ".claude/skills", "deploy");
+    fs::create_dir_all(root.join("agents")).unwrap();
+    fs::write(
+        root.join("agents/scout.md"),
+        "---\nname: scout\ndescription: finds things\n---\nBody.\n",
+    )
+    .unwrap();
+    fs::write(root.join("kendex.toml"), "[marketplace]\nname = \"demo\"\n").unwrap();
+    let sealed = SealedSource::open(&root).unwrap();
+    let report = check(&sealed, "repo").unwrap();
+    let summary = index(&sealed, "repo").unwrap();
+    let mut checked: Vec<(String, String)> = report
+        .items
+        .iter()
+        .map(|item| (item.kind.name().to_owned(), item.name.clone()))
+        .collect();
+    let mut indexed: Vec<(String, String)> = summary
+        .packages
+        .iter()
+        .map(|package| (package.kind.to_owned(), package.name.clone()))
+        .collect();
+    checked.sort();
+    indexed.sort();
+    assert_eq!(checked, indexed);
+    for item in &report.items {
+        let package = summary
+            .packages
+            .iter()
+            .find(|package| package.name == item.name && package.kind == item.kind.name())
+            .unwrap();
+        assert_eq!(package.safety.verdict, item.verdict);
+        assert_eq!(package.safety.score, item.score);
+    }
+}

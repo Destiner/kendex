@@ -24,6 +24,7 @@ use crate::error::Result;
 use crate::model::{HarnessId, ItemKind};
 use crate::quality::{self, AuditInput, Content, TreeFile, Verdict};
 use crate::render::validate;
+use crate::source::{CatalogMode, SourceConfig};
 use crate::source_read::SealedSource;
 
 /// The versioned envelope `check --catalog --json` wraps this report in.
@@ -33,13 +34,17 @@ pub const CHECK_SCHEMA: u32 = 1;
 /// harness whose loader complained.
 pub const SAFETY_PASS: &str = "safety";
 
-/// The fixed kind directories the authoring check reads.
-const KIND_DIRS: [(ItemKind, &str); 5] = [
-    (ItemKind::Agent, "agents"),
-    (ItemKind::Skill, "skills"),
-    (ItemKind::Hook, "hooks"),
-    (ItemKind::Command, "commands"),
-    (ItemKind::McpServer, "mcp"),
+/// The `pass`/`kind` of a finding about the catalog itself rather than any
+/// one item — a broken control file, a skipped colliding directory.
+pub const CATALOG_PASS: &str = "catalog";
+
+/// Every kind a catalog can offer, in report order.
+const CHECKED_KINDS: [ItemKind; 5] = [
+    ItemKind::Agent,
+    ItemKind::Skill,
+    ItemKind::Hook,
+    ItemKind::Command,
+    ItemKind::McpServer,
 ];
 
 /// One problem either pass found, carrying everything a machine consumer
@@ -84,6 +89,9 @@ pub struct CheckedItem {
 /// What both passes over a whole catalog produced.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CatalogCheck {
+    /// Findings about the catalog itself — its control file, its registry,
+    /// its discovery — before any item is reached.
+    pub catalog: Vec<CheckFinding>,
     pub items: Vec<CheckedItem>,
 }
 
@@ -103,6 +111,12 @@ impl CatalogCheck {
             items: self.items.len(),
             ..CheckTally::default()
         };
+        for finding in &self.catalog {
+            match finding.is_breakage() {
+                true => tally.breakage += 1,
+                false => tally.advisory += 1,
+            }
+        }
         for item in &self.items {
             for finding in &item.findings {
                 match (finding.rule.is_none(), finding.is_breakage()) {
@@ -133,26 +147,67 @@ impl CatalogCheck {
     }
 
     pub fn findings(&self) -> impl Iterator<Item = &CheckFinding> {
-        self.items.iter().flat_map(|item| item.findings.iter())
+        self.catalog
+            .iter()
+            .chain(self.items.iter().flat_map(|item| item.findings.iter()))
     }
 }
 
-/// Both passes over every item the fixed layout dirs hold.
-pub fn check(sealed: &SealedSource) -> Result<CatalogCheck> {
-    let mut report = CatalogCheck::default();
-    for (kind, dir) in KIND_DIRS {
-        let root = sealed.root().join(dir);
-        if !sealed.is_dir(&root) {
-            continue;
-        }
-        for entry in sealed.list_dir(&root)? {
-            let Some(name) = item_name(&entry) else {
-                continue;
-            };
-            if kind != ItemKind::Skill && !sealed.is_file(&entry) {
-                continue;
+/// Both passes over everything the catalog offers. `display` names a
+/// one-skill repo whose SKILL.md does not name itself — pass the directory
+/// or repository leaf.
+pub fn check(sealed: &SealedSource, display: &str) -> Result<CatalogCheck> {
+    let config = crate::source::source_config(sealed, display)?;
+    check_with(sealed, &config, display)
+}
+
+/// Both passes over the items one already-read catalog offers. The item set
+/// is the same `source_config`/discovery result browsing and indexing
+/// consume, so the authoring check can never pass a repo that subscribing
+/// would read differently.
+pub fn check_with(
+    sealed: &SealedSource,
+    config: &SourceConfig,
+    display: &str,
+) -> Result<CatalogCheck> {
+    let catalog = config
+        .findings()
+        .map(|finding| CheckFinding {
+            file: finding.location.clone(),
+            kind: CATALOG_PASS,
+            name: display.to_owned(),
+            pass: CATALOG_PASS.to_owned(),
+            severity: match config.mode {
+                CatalogMode::Unusable => "error",
+                _ => "warning",
+            },
+            rule: None,
+            message: finding.problem.clone(),
+            fix: finding.fix.clone(),
+        })
+        .collect();
+    let mut report = CatalogCheck {
+        catalog,
+        items: Vec::new(),
+    };
+    for kind in CHECKED_KINDS {
+        for name in crate::source::list_items(sealed, config, kind) {
+            match crate::source::find_item(sealed, config, kind, &name) {
+                Some(path) => report.items.push(check_item(sealed, kind, &name, &path)?),
+                // A listed name every lookup refuses (an illegal spelling,
+                // say) is a catalog problem, not content to score.
+                None => report.catalog.push(CheckFinding {
+                    file: name.clone(),
+                    kind: kind.name(),
+                    name,
+                    pass: CATALOG_PASS.to_owned(),
+                    severity: "error",
+                    rule: None,
+                    message: format!("this {} is listed but cannot be read", kind.name()),
+                    fix: "give it a plain installable name at the path the catalog declares"
+                        .to_owned(),
+                }),
             }
-            report.items.push(check_item(sealed, kind, &name, &entry)?);
         }
     }
     Ok(report)
@@ -205,17 +260,6 @@ fn content(sealed: &SealedSource, kind: ItemKind, path: &Path) -> Result<Content
             .map(|(path, bytes)| TreeFile::read(path, &bytes))
             .collect(),
     })
-}
-
-/// The name the item installs under: a directory's own name, or a file's
-/// stem. Dotfiles and anything without a name are not items.
-fn item_name(path: &Path) -> Option<String> {
-    let raw = match path.is_dir() {
-        true => path.file_name(),
-        false => path.file_stem(),
-    }?;
-    let name = raw.to_str()?;
-    (!name.starts_with('.')).then(|| name.to_owned())
 }
 
 /// Would each harness's loader accept this?

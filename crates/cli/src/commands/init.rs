@@ -51,6 +51,28 @@ pub fn run(name: Option<String>, kind: Option<String>) -> CliResult {
         }
         other => return Err(format!("unknown --kind '{other}' (agent | skill | hook)").into()),
     }
+    declare_catalog(&cwd)?;
+    Ok(())
+}
+
+/// Executable kinds install only from a catalog that declared kendex's
+/// layout — a bare `hooks/` folder is repository tooling. Scaffolding
+/// therefore declares the folder, once, and never touches a declaration
+/// that already exists under either file generation.
+fn declare_catalog(cwd: &Path) -> CliResult {
+    let control = cwd.join(kendex_core::rename::MANIFEST_FILE);
+    let legacy = cwd.join(kendex_core::rename::LEGACY_MANIFEST_FILE);
+    if control.exists() || legacy.exists() {
+        return Ok(());
+    }
+    fs::write(
+        &control,
+        "# This file marks the folder as a kendex catalog. Items live in\n\
+         # agents/, skills/, hooks/, commands/ and mcp/. Optional tables:\n\
+         # [marketplace] name, description, author, license, tags\n\
+         # [bundles.<name>] description, members\n",
+    )?;
+    say(&format!("declared the catalog ({})", control.display()));
     Ok(())
 }
 

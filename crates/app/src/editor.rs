@@ -261,8 +261,7 @@ pub fn item_source(
 mod tests {
     use super::*;
     use kendex_core::manifest::{
-        DEFAULT_SOURCE_NAME, DEFAULT_SOURCE_REPO, FrontmatterOverrides, ItemDecl, MANIFEST_SCHEMA,
-        SourceDecl,
+        DEFAULT_SOURCE_NAME, DEFAULT_SOURCE_REPO, ItemDecl, MANIFEST_SCHEMA, SourceDecl,
     };
     use std::collections::BTreeMap;
 
