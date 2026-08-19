@@ -11,7 +11,7 @@ import { kindIcon } from "@/lib/kind-icon";
 import { kindLabel, packageDisplayName, VERDICT_LABELS } from "@/lib/labels";
 import { PAGE_BODY, WIDE_CONTENT_WIDTH } from "@/lib/layout";
 import { cn } from "@/lib/utils";
-import { useMarketplacesStore } from "@/stores/marketplaces";
+import { marketKey, useMarketplacesStore } from "@/stores/marketplaces";
 import { useNavStore } from "@/stores/nav";
 
 /** A package that isn't installed yet: what it is, its own README, its
@@ -48,7 +48,13 @@ export function AvailablePackagePage() {
   const { scope, source, kind, name } = availableRef;
   const Icon = kindIcon(kind);
   const target = destination ?? scope;
-  const row = rows.find((r) => r.name === source);
+  // Matched by scope and name both — two scopes can subscribe the same
+  // alias to different repositories.
+  const row = rows.find(
+    (r) =>
+      r.name === source &&
+      marketKey(r.scope, r.name) === marketKey(scope, source),
+  );
   const repo = row?.repo ?? row?.path ?? null;
 
   const doInstall = () =>

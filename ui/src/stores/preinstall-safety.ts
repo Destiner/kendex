@@ -61,6 +61,10 @@ export const usePreinstallSafety = create<PreinstallSafetyState>(
             set((state) => ({
               scores: { ...state.scores, [item.key]: response.data.safety },
             }));
+          } else {
+            // A failed read leaves the key retryable: the next mount of the
+            // row asks again instead of showing "Checking…" forever.
+            queued.delete(item.key);
           }
         }
         draining = false;
