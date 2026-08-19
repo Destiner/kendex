@@ -108,14 +108,24 @@ export function PackagesTab() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <Filter value={kind} onChange={setKind} label="Type">
+          <Filter
+            value={kind}
+            onChange={setKind}
+            label="Type"
+            display={(v) => kindLabel(v as ItemKind)}
+          >
             {KINDS.map((k) => (
               <SelectItem key={k} value={k}>
                 {kindLabel(k)}
               </SelectItem>
             ))}
           </Filter>
-          <Filter value={tag} onChange={setTag} label="For">
+          <Filter
+            value={tag}
+            onChange={setTag}
+            label="For"
+            display={(v) => TAG_LABELS[v as Tag]}
+          >
             {TAGS.map((t) => (
               <SelectItem key={t} value={t}>
                 {TAG_LABELS[t]}
@@ -126,6 +136,7 @@ export function PackagesTab() {
             value={marketplace}
             onChange={setMarketplace}
             label="Marketplace"
+            display={(v) => v}
           >
             {marketplaceNames.map((name) => (
               <SelectItem key={name} value={name}>
@@ -133,7 +144,19 @@ export function PackagesTab() {
               </SelectItem>
             ))}
           </Filter>
-          <Filter value={where} onChange={setWhere} label="Where">
+          <Filter
+            value={where}
+            onChange={setWhere}
+            label="Where"
+            display={(v) =>
+              scopeName(
+                whereOptions.find((s) => scopeLabel(s) === v) ?? {
+                  scope: "project",
+                  root: v,
+                },
+              )
+            }
+          >
             {whereOptions.map((scope) => (
               <SelectItem key={scopeLabel(scope)} value={scopeLabel(scope)}>
                 {scopeName(scope)}
@@ -169,18 +192,23 @@ function Filter({
   value,
   onChange,
   label,
+  display,
   children,
 }: {
   value: string;
   onChange: (value: string) => void;
   label: string;
+  /** How a chosen raw value reads to a person. */
+  display: (value: string) => string;
   children: React.ReactNode;
 }) {
   return (
     <Select value={value} onValueChange={(next) => onChange(next ?? "any")}>
       <SelectTrigger size="sm" className="w-auto gap-1.5">
         <span className="text-muted-foreground">{label}</span>
-        <SelectValue />
+        <SelectValue>
+          {(current: string) => (current === "any" ? "Any" : display(current))}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="any">Any</SelectItem>

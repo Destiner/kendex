@@ -107,8 +107,15 @@ export function SubscribeDialog({
                 value={where}
                 onValueChange={(next) => setWhere(next ?? "global")}
               >
-                <SelectTrigger>
-                  <SelectValue />
+                <SelectTrigger className="w-full">
+                  <SelectValue>
+                    {(current: string) => {
+                      const scope = scopes.find(
+                        (s) => scopeLabel(s) === current,
+                      );
+                      return scope ? scopeName(scope) : current;
+                    }}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {scopes.map((scope) => (

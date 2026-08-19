@@ -42,7 +42,12 @@ export function DestinationSelect({
     >
       <SelectTrigger size="sm" className="w-auto gap-1.5">
         <span className="text-muted-foreground">Install to</span>
-        <SelectValue />
+        <SelectValue>
+          {(current: string) => {
+            const scope = options.find((s) => scopeLabel(s) === current);
+            return scope ? scopeName(scope) : current;
+          }}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         {options.map((scope) => (

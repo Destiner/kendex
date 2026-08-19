@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import type {
   HarnessId,
   ObservedItem,
@@ -43,7 +43,14 @@ export function PackageMetaBlock({
   meta: PackageMeta_Serialize | null;
 }) {
   const provenance = useProvenanceStore((s) => s.rows);
+  const loadedProvenance = useProvenanceStore((s) => s.loaded);
+  const loadProvenance = useProvenanceStore((s) => s.load);
   const goToMarketplace = useNavStore((s) => s.goToMarketplace);
+  // A package page can be the first thing opened after launch; the join
+  // may not have been read yet, and this line is its only reader here.
+  useEffect(() => {
+    if (!loadedProvenance) void loadProvenance();
+  }, [loadedProvenance, loadProvenance]);
   const origin = originFor(
     provenance,
     group.kind,

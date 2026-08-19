@@ -121,11 +121,12 @@ function PackageRow({
       <TableCell>
         {safety ? (
           <StatusDot
+            className="inline-block"
             tone={VERDICT_TONES[safety.verdict]}
             title={`${VERDICT_LABELS[safety.verdict]} — safety ${safety.safety.score}/100`}
           />
         ) : (
-          <StatusDot tone="muted" title="Checking…" />
+          <StatusDot className="inline-block" tone="muted" title="Checking…" />
         )}
       </TableCell>
       <TableCell className="text-right">

@@ -46,8 +46,19 @@ export function BundleDetailPage() {
     });
   };
 
+  // The member list re-reads after any install, so a row flips to
+  // Installed the moment it is.
+  const reload = () => loadBundle(scope, source, bundle);
   const installAll = () =>
-    void install({ scope, source, items: [], bundle, destination: redirected });
+    void install({
+      scope,
+      source,
+      items: [],
+      bundle,
+      destination: redirected,
+    }).then((ok) => {
+      if (ok) void reload();
+    });
   const installSelected = () => {
     if (!detail) return;
     const items = detail.members
@@ -56,7 +67,10 @@ export function BundleDetailPage() {
     if (items.length === 0) return;
     void install({ scope, source, items, destination: redirected }).then(
       (ok) => {
-        if (ok) setSelected(new Set());
+        if (ok) {
+          setSelected(new Set());
+          void reload();
+        }
       },
     );
   };
