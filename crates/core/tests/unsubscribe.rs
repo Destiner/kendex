@@ -179,6 +179,62 @@ fn keeping_an_edited_package_refuses_naming_it() {
     assert!(manifest_of(&env, &scope).sources.contains_key("cat"));
 }
 
+/// A member another marketplace's bundle still carries is not in the closure:
+/// removing one source leaves a package the other keeps, because the closure is
+/// the difference between the two expansions, not a read of one source's names.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_member_another_bundle_carries_survives_removal() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let env = Env::fake(home, FakeOs::Linux);
+    let project = home.join("dev/app");
+    fs::create_dir_all(project.join(".claude")).unwrap();
+    // Two catalogs, each a bundle carrying the shared skill; cat also carries gh.
+    let cat = home.join("cat");
+    skill(&cat, "shared", "s");
+    skill(&cat, "gh", "g");
+    fs::write(
+        cat.join("kendex.toml"),
+        "[bundles.core]\nskills = [\"shared\", \"gh\"]\n",
+    )
+    .unwrap();
+    let other = home.join("other");
+    skill(&other, "shared", "s");
+    fs::write(
+        other.join("kendex.toml"),
+        "[bundles.also]\nskills = [\"shared\"]\n",
+    )
+    .unwrap();
+    fs::write(
+        project.join("kendex.toml"),
+        format!(
+            "schema = 5\n\n[sources.cat]\npath = \"{}\"\n[sources.other]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[bundles.core]\nsource = \"cat\"\n[bundles.also]\nsource = \"other\"\n",
+            cat.display(),
+            other.display()
+        ),
+    )
+    .unwrap();
+    let scope = Scope::Project { root: project };
+    apply_now(&env, &scope);
+    assert!(scope_skill(&scope, "shared").exists());
+    assert!(scope_skill(&scope, "gh").exists());
+
+    // cat's closure has gh but NOT shared — other's bundle still carries it.
+    let closure = detach::closure(&env, &scope, "cat", &manifest_of(&env, &scope)).unwrap();
+    let names: Vec<&str> = closure.items.iter().map(|i| i.name.as_str()).collect();
+    assert!(names.contains(&"gh"), "{names:?}");
+    assert!(
+        !names.contains(&"shared"),
+        "shared is kept by other: {names:?}"
+    );
+
+    let report = detach::remove(&env, &scope, "cat", false).unwrap();
+    apply::execute(&env, &report.plan, None).unwrap();
+    assert!(!scope_skill(&scope, "gh").exists(), "gh removed with cat");
+    assert!(scope_skill(&scope, "shared").exists(), "shared stays");
+}
+
 /// The plain "nothing installed" case still works through the ordinary source
 /// removal path — a subscription with no installations just drops.
 #[test]
