@@ -677,6 +677,29 @@ lives in one capability table read by core and UI.
   Library table: one lock+manifest join mapping every installation to its
   origin — a subscription, the user's own local content (with what a fork
   replaced), or observed-and-unmanaged.
+- **A subscription's closure is derived by re-expansion, and unsubscribing
+  removes or keeps exactly it.** `engine/detach.rs` computes what leaves
+  with a marketplace by expanding the installed set with the source present
+  and again with its declarations gone, then diffing — a derived dependency
+  never names the source, so only the difference tells the truth about what
+  its going takes with it. A member another marketplace's bundle still
+  carries is in both expansions, so it stays. The closure refuses while the
+  source cannot be read, rather than infer a wrong one. **Remove** drops the
+  closure's declarations and sweeps their installations (orphan removal
+  filtered to the exact kind+name pairs, so an unrelated same-named orphan is
+  never taken); an edited installation is never swept without `--discard-edits`.
+  **Keep** (`detach/keep.rs`) copies each installation's *source-form* bytes —
+  read through the sealed catalog at the exact commit it installed from, a
+  parent skill excluding any nested child skill — into the scope's local
+  source, flips the declaration to `local` with fork provenance, and removes
+  the subscription; the local writes are ordered before the manifest flip in
+  one plan, so a failed apply rolls the whole conversion back (invariant 11).
+  Keep refuses an edited package (fork or discard first — hooks compared to
+  what apply wrote, so an edited script is caught), and preflights the local
+  target: a symlink, or a case/composition-folding sibling, or different bytes
+  already there is a refusal, never a clobber (invariants 4 and 6). The local
+  source lists a `plugin/item` name beside a plain `plugin`, so a detached
+  plugin-registry package round-trips.
 - **The machine seam reads through the same core installing reads
   through.** `check_catalog.rs` (core) owns the two authoring passes —
   structural (would each harness's loader hold this item) and safety (the
