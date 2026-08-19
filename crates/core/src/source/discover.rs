@@ -75,7 +75,8 @@ pub struct Discovery {
 /// registry wins outright, else a parsed control file's declared layout
 /// (`[catalog]` overriding which dirs), else the search table; a broken
 /// control file makes the source unusable, never a different mode.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
 pub enum CatalogMode {
     PluginRegistry,
     Explicit,

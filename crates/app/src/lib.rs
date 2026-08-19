@@ -2,6 +2,7 @@ pub mod audit;
 mod commands;
 pub mod decisions;
 mod editor;
+mod marketplaces;
 mod native;
 mod packages;
 mod paths;
@@ -47,6 +48,14 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         sources::sources_refresh,
         sources::bundles_overview,
         sources::bundle_install,
+        marketplaces::marketplaces_overview,
+        marketplaces::marketplace_packages,
+        marketplaces::marketplace_bundle,
+        marketplaces::marketplace_package_preview,
+        marketplaces::marketplace_install,
+        marketplaces::marketplace_subscribe,
+        marketplaces::marketplace_about,
+        marketplaces::library_provenance,
         packages::package_versions,
         packages::updates_overview,
         packages::updates_refresh,

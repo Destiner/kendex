@@ -173,6 +173,37 @@ export const commands = {
 	 *  one name and applies the plan that follows from it.
 	 */
 	bundleInstall: (scope: Scope, source: string, name: string, hold: boolean) => typedError<BundleRow[], string>(__TAURI_INVOKE("bundle_install", { scope, source, name, hold })),
+	/**
+	 *  Every subscription across every scope — the Marketplaces page's one
+	 *  query.
+	 */
+	marketplacesOverview: () => typedError<MarketplaceRow[], string>(__TAURI_INVOKE("marketplaces_overview")),
+	/**
+	 *  Every package one subscription offers, across kinds, with installed
+	 *  state joined in.
+	 */
+	marketplacePackages: (scope: Scope, source: string) => typedError<AvailablePackage[], string>(__TAURI_INVOKE("marketplace_packages", { scope, source })),
+	/**  One curated set with per-member installed state. */
+	marketplaceBundle: (scope: Scope, source: string, name: string) => typedError<BundleDetail, string>(__TAURI_INVOKE("marketplace_bundle", { scope, source, name })),
+	marketplacePackagePreview: (scope: Scope, source: string, kind: ItemKind, name: string) => typedError<PackageView, string>(__TAURI_INVOKE("marketplace_package_preview", { scope, source, kind, name })),
+	/**
+	 *  Install packages or a curated set from one subscription. `destination`
+	 *  redirects the install from the scope being browsed into a project: the
+	 *  project gains the personal subscription first (§4.1), then the add runs
+	 *  there — every write lands in exactly one scope.
+	 */
+	marketplaceInstall: (scope: Scope, source: string, items: InstallItem[], bundle: string | null, destination: { scope: "global" } | { scope: "project"; root: string } | null, hold: boolean) => typedError<AvailablePackage[], string>(__TAURI_INVOKE("marketplace_install", { scope, source, items, bundle, destination, hold })),
+	/**
+	 *  Subscribe a scope to a marketplace: `owner/repo[@rev]`, a git URL, a
+	 *  GitHub tree URL, a skills.sh package URL, or a local folder.
+	 */
+	marketplaceSubscribe: (scope: Scope, reference: string, name: string | null) => typedError<SubscribeOutcome, string>(__TAURI_INVOKE("marketplace_subscribe", { scope, reference, name })),
+	marketplaceAbout: (scope: Scope, source: string) => typedError<AboutView, string>(__TAURI_INVOKE("marketplace_about", { scope, source })),
+	/**
+	 *  Where every installation came from, across every scope — the Library
+	 *  table's From column in one query.
+	 */
+	libraryProvenance: () => typedError<ProvenanceRow[], string>(__TAURI_INVOKE("library_provenance")),
 	packageVersions: (scope: Scope, kind: ItemKind, name: string) => typedError<VersionRow[], string>(__TAURI_INVOKE("package_versions", { scope, kind, name })),
 	/**
 	 *  Every scope's update standing in one query — the sidebar badge, the
@@ -219,6 +250,23 @@ export const commands = {
 };
 
 /* Types */
+/**  One About row: what was found under one root. */
+export type AboutFound = {
+	root: string,
+	kind: ItemKind,
+	count: number,
+};
+
+/**
+ *  The About tab's report: how the catalog's items were decided, what was
+ *  found where, and everything wrong with it.
+ */
+export type AboutView = {
+	mode: CatalogMode,
+	found: AboutFound[],
+	findings: CatalogFinding[],
+};
+
 export type AntiPattern = {
 	flag: string,
 	detail: string,
@@ -335,6 +383,46 @@ export type AuditView_Serialize = {
 	error?: ScopeError | null,
 };
 
+/**  One package a subscription offers, as the Packages table lists it. */
+export type AvailablePackage = {
+	kind: ItemKind,
+	name: string,
+	description: string | null,
+	tags: Tag[],
+	/**  The curated sets of this catalog that carry it. */
+	bundles: string[],
+	state: InstallState,
+	/**
+	 *  The source this name is already taken by, when that is a different
+	 *  one. Invariant 4's refusal stays in the engine — this only shows the
+	 *  collision before the click.
+	 */
+	collision: string | null,
+};
+
+/**
+ *  A curated set with per-member state. Partly-installed is the derived
+ *  pair below, computed from the members on every call and stored nowhere.
+ */
+export type BundleDetail = {
+	name: string,
+	description: string | null,
+	version: string | null,
+	category: string | null,
+	members: BundleMemberRow[],
+	/**  Members with an installation recorded in the lock, via any edge. */
+	installedMembers: number,
+	totalMembers: number,
+	collision: string | null,
+};
+
+/**  One member of a curated set, with where it stands here. */
+export type BundleMemberRow = {
+	kind: ItemKind,
+	name: string,
+	state: InstallState,
+};
+
 /**  One curated set a catalog offers, as the Catalogs page lists it. */
 export type BundleRow = {
 	scope: Scope,
@@ -354,6 +442,13 @@ export type CapabilityRow = {
 	caps: KindCaps,
 };
 
+/**  Something wrong with a catalog, said in the catalog author's terms. */
+export type CatalogFinding = {
+	location: string,
+	problem: string,
+	fix: string,
+};
+
 /**
  *  The catalog's own claims about the plugin an item ships in — read-side
  *  display only, never intent.
@@ -366,6 +461,14 @@ export type CatalogGroupMeta = {
 	homepage: string | null,
 	category: string | null,
 };
+
+/**
+ *  How a source's items were decided — the fixed precedence: a plugin
+ *  registry wins outright, else a parsed control file's declared layout
+ *  (`[catalog]` overriding which dirs), else the search table; a broken
+ *  control file makes the source unusable, never a different mode.
+ */
+export type CatalogMode = "plugin-registry" | "explicit" | "discovered" | "unusable";
 
 export type CustomHook = CustomHook_Serialize | CustomHook_Deserialize;
 
@@ -910,6 +1013,24 @@ export type InstallDefaults = {
 	method?: Method,
 };
 
+/**  One selected package, by the kind and name the catalog offers it under. */
+export type InstallItem = {
+	kind: ItemKind,
+	name: string,
+};
+
+/**  Whether one offered package exists in this scope. */
+export type InstallState = 
+/**  An installation from this subscription is recorded in the lock. */
+"installed" | 
+/**  Offered, nothing installed. */
+"available" | 
+/**
+ *  Asked for — declared, or carried by a declared bundle — but the
+ *  safety gate refuses to install it.
+ */
+"held-back-by-safety";
+
 /**  One declared item: `[agents.<name>]` / `[skills.<name>]`. */
 export type ItemDecl = ItemDecl_Serialize | ItemDecl_Deserialize;
 
@@ -1252,6 +1373,40 @@ export type Manifest_Serialize = {
 	forks?: Partial<{ [key in ItemKind]: { [key in string]: ForkProvenance_Serialize } }>,
 };
 
+export type MarketplaceMeta = {
+	name?: string | null,
+	description?: string | null,
+	author?: string | null,
+	license?: string | null,
+	homepage?: string | null,
+	tags?: string[],
+};
+
+/**
+ *  One subscription as the Marketplaces page lists it: what it points at,
+ *  how many packages it offers per kind, and what the catalog states about
+ *  itself where its bytes are readable.
+ */
+export type MarketplaceRow = {
+	scope: Scope,
+	name: string,
+	repo: string | null,
+	path: string | null,
+	rev: string | null,
+	/**  The commit the subscription reads right now, when the cache holds one. */
+	commit: string | null,
+	enabled: boolean,
+	/**
+	 *  Packages offered, by kind name — absent until the catalog has been
+	 *  fetched and can be read.
+	 */
+	counts: { [key in string]: number } | null,
+	/**  `[marketplace]` from the catalog's kendex.toml, where readable. */
+	meta: MarketplaceMeta | null,
+	/**  How the catalog's items were decided, where readable. */
+	mode: CatalogMode | null,
+};
+
 export type Method = "symlink" | "copy";
 
 /**
@@ -1300,6 +1455,21 @@ export type OpSupport = {
 	project: boolean,
 	global: boolean,
 };
+
+/**  Where one installation came from. */
+export type Origin = 
+/**
+ *  Installed from a subscription: its declared alias and its repository
+ *  (or path) as the lock recorded them.
+ */
+{ origin: "marketplace"; source: string; repo: string } | 
+/**
+ *  The user's own content in the local source — adopted, or forked off
+ *  a marketplace item, in which case this names what it replaced.
+ */
+{ origin: "own"; forkedFrom: string | null } | 
+/**  On disk and observed, managed by nothing. */
+{ origin: "unmanaged" };
 
 /**  Whether a recorded override still speaks for what is in front of us. */
 export type OverrideState = 
@@ -1364,6 +1534,54 @@ export type PackageMeta_Serialize = {
 	catalog: CatalogGroupMeta | null,
 };
 
+/**  What the available-package page shows before anything installs. */
+export type PackagePreview = {
+	kind: ItemKind,
+	name: string,
+	description: string | null,
+	tags: Tag[],
+	/**
+	 *  The file a harness would load, capped for preview: a skill's
+	 *  SKILL.md body, a command's or agent's body, a hook's script, an MCP
+	 *  server's config. Control characters are shown, never acted on.
+	 */
+	readme: string | null,
+	files: PackageFile[],
+	/**  The curated sets of this catalog that carry it. */
+	bundles: string[],
+	collision: string | null,
+};
+
+/**
+ *  One offered package's scores and the verdict today's thresholds give
+ *  them — the dot in the Packages table and the findings on the
+ *  available-package page.
+ */
+export type PackageSafety = {
+	kind: ItemKind,
+	name: string,
+	findings: Finding[],
+	safety: SafetyScore,
+	/**  Advisory, never blocking. */
+	quality: QualityScore | null,
+	skipped: SkippedRule[],
+	verdict: Verdict,
+	reasons: string[],
+	contentHash: string,
+	ruleset: number,
+	/**  Whether a verified cache entry answered instead of a fresh score. */
+	fromCache: boolean,
+};
+
+/**
+ *  The available-package page's one payload: the preview beside the safety
+ *  verdict the same content would face at install.
+ */
+export type PackageView = {
+	preview: PackagePreview,
+	safety: PackageSafety,
+};
+
 /**
  *  One declared plugin. The harness is part of the declaration because more
  *  than one tool reads an `enabledPlugins` map of its own: without it, a
@@ -1377,6 +1595,15 @@ export type PackageMeta_Serialize = {
 export type PluginDecl = {
 	enabled?: boolean,
 	harness?: HarnessId,
+};
+
+/**  One installation's origin, keyed the way the Library table joins it. */
+export type ProvenanceRow = {
+	scope: Scope,
+	kind: ItemKind,
+	name: string,
+	harness: HarnessId,
+	origin: Origin,
 };
 
 export type QualityScore = {
@@ -1604,6 +1831,20 @@ export type SourceRow = {
 	/**  Cache HEAD for remotes — freshness display. */
 	head: string | null,
 	declaredItems: string[],
+};
+
+/**  What subscribing declared, after the plan ran. */
+export type SubscribeOutcome = {
+	name: string,
+	/**  The declared repository or path. */
+	reference: string,
+	rev: string | null,
+	/**
+	 *  The package a tree or skills.sh URL was leading to — where the app
+	 *  opens next, never an identity.
+	 */
+	lead: string | null,
+	notes: string[],
 };
 
 /**  The job an item helps with. */

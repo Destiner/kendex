@@ -1,15 +1,20 @@
 import type {
   AppSettings,
   AuditView,
+  AvailablePackage,
   BundleRow,
   DetectedHarness,
   ItemKind,
   Manifest_Serialize,
+  MarketplaceRow,
   ObservedItem,
+  ProvenanceRow,
   SourceRow,
 } from "@/bindings";
 import { bundles, manifests, sources, views } from "./fixture-declared";
+import { marketplacePackages, marketplaces } from "./fixture-marketplaces";
 import { harnesses, items } from "./fixture-observed";
+import { provenance } from "./fixture-provenance";
 import { ACME, API } from "./fixture-scopes";
 
 export { ACME, API, AVAILABLE_SKILLS } from "./fixture-scopes";
@@ -24,6 +29,10 @@ export interface MockState {
   manifests: Record<string, Manifest_Serialize>;
   sources: SourceRow[];
   bundles: BundleRow[];
+  marketplaces: MarketplaceRow[];
+  /// What each readable subscription offers, keyed scope-label::source.
+  marketplacePackages: Record<string, AvailablePackage[]>;
+  provenance: ProvenanceRow[];
   /// Packages whose update notifications the mock user muted.
   ignored: { kind: ItemKind; name: string }[];
 }
@@ -44,6 +53,9 @@ export function initialState(): MockState {
     manifests: manifests(),
     sources: sources(),
     bundles: bundles(),
+    marketplaces: marketplaces(),
+    marketplacePackages: marketplacePackages(),
+    provenance: provenance(),
     ignored: [],
   };
 }

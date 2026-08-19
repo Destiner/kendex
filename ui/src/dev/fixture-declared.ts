@@ -142,6 +142,15 @@ export function sources(): SourceRow[] {
   return [
     { scope: GLOBAL, ...kendex, declaredItems: ["code-review", "ship-it"] },
     {
+      scope: GLOBAL,
+      name: "claude-plugins",
+      reference: "acme/claude-plugins",
+      isRemote: true,
+      enabled: true,
+      head: "4c1d9e2",
+      declaredItems: [],
+    },
+    {
       scope: proj(ACME),
       ...kendex,
       declaredItems: [
@@ -183,10 +192,55 @@ export function bundles(): BundleRow[] {
     category: "quality",
     members: ["agent reviewer", "skill code-review"],
   };
+  const platform = {
+    source: "kendex",
+    name: "platform",
+    description: "The full platform workflow, docs to deploy",
+    version: "0.9.0",
+    category: "workflow",
+    members: [
+      "skill github",
+      "skill docs",
+      "skill tests",
+      "skill release-notes",
+      "command ship-it",
+      "mcp-server postgres",
+    ],
+  };
   return [
     { scope: GLOBAL, ...starter, installed: false },
     { scope: GLOBAL, ...review, installed: true },
+    { scope: GLOBAL, ...platform, installed: false },
+    // A plugin registry's plugins are its curated sets.
+    {
+      scope: GLOBAL,
+      source: "claude-plugins",
+      name: "deploy-kit",
+      description: "Release and rollback, as one set",
+      version: "2.1.0",
+      category: null,
+      members: [
+        "agent deploy-kit/release-manager",
+        "command deploy-kit/rollback",
+      ],
+      installed: false,
+    },
+    {
+      scope: GLOBAL,
+      source: "claude-plugins",
+      name: "docs-kit",
+      description: "Documentation, outlined and styled",
+      version: "1.0.3",
+      category: null,
+      members: [
+        "agent docs-kit/writer",
+        "command docs-kit/outline",
+        "skill docs-kit/style-guide",
+      ],
+      installed: false,
+    },
     { scope: proj(ACME), ...starter, installed: true },
     { scope: proj(ACME), ...review, installed: false },
+    { scope: proj(ACME), ...platform, installed: false },
   ];
 }

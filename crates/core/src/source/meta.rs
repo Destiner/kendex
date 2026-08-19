@@ -3,7 +3,9 @@
 //! stored, because this text travels into terminals, the app, and the
 //! community directory.
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type,
+)]
 #[serde(default)]
 pub struct MarketplaceMeta {
     pub name: Option<String>,

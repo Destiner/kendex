@@ -30,7 +30,7 @@ pub const REGISTRY: &str = ".claude-plugin/marketplace.json";
 pub const PLUGIN_MANIFEST: &str = ".claude-plugin/plugin.json";
 
 /// Something wrong with a catalog, said in the catalog author's terms.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct CatalogFinding {
     pub location: String,
     pub problem: String,
