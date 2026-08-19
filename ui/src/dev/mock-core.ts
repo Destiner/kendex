@@ -68,7 +68,7 @@ export const coreHandlers: Record<string, Handler> = {
       (name) => `${root.replace(/\/+$/, "")}/${name}`,
     ),
   report_route: ({ scope, name }: { scope: Scope; name: string }) => {
-    const upstream = "vanillagreencom/vstack";
+    const upstream = "vanillagreencom/kendex";
     // Mirrors the engine's rule: skills never route upstream through
     // provenance alone, everything else from the catalog does.
     const owned = store.state.items.some(

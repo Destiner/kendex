@@ -98,3 +98,34 @@ fn a_refresh_reports_an_unreachable_catalog_and_resolves_the_rest() {
     // The reachable catalog resolved despite the other one failing first.
     assert_eq!(cache_head(&f.env, REPO, None).unwrap().len(), 7);
 }
+
+/// The default repository moved (vanillagreencom/vstack →
+/// vanillagreencom/kendex): what the old spelling fetched serves the new
+/// one with no network at all. Without the store adopting the old key's
+/// directories, the moved default would read as never fetched and an
+/// offline scope would go Pending.
+#[test]
+fn the_moved_default_serves_its_pre_move_cache_offline() {
+    let tmp = tempfile::tempdir().unwrap();
+    let upstream = tmp.path().join("base").join(manifest::LEGACY_SOURCE_REPO);
+    fs::create_dir_all(upstream.join("skills/gh")).unwrap();
+    fs::write(
+        upstream.join("skills/gh/SKILL.md"),
+        "---\nname: gh\n---\nBody.\n",
+    )
+    .unwrap();
+    super::git(&upstream, &["init", "--quiet", "-b", "main"]);
+    let commit = super::commit(&upstream, "one");
+    let base = format!("file://{}", tmp.path().join("base").display());
+    let env = crate::env::Env::fake(tmp.path(), crate::env::FakeOs::Linux)
+        .with_var("KENDEX_GIT_BASE", &base);
+
+    crate::remote::sync(&env, manifest::LEGACY_SOURCE_REPO, None).unwrap();
+    fs::remove_dir_all(tmp.path().join("base")).unwrap();
+
+    let resolution = crate::remote::cached(&env, manifest::DEFAULT_SOURCE_REPO, None)
+        .unwrap()
+        .expect("the old spelling's cache serves the moved default");
+    assert_eq!(resolution.commit, commit);
+    assert!(resolution.root.join("skills/gh/SKILL.md").is_file());
+}

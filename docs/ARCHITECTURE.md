@@ -333,6 +333,21 @@ lives in one capability table read by core and UI.
   it; `kendex guard repair` rewrites entrypoints under receipt, and the
   receiptless by-content ownership proof accepts both generations of
   entrypoint bytes. The old-name fallback reads retire at 3.0.
+- **The default catalog's repository moved with the rename**
+  (`vanillagreencom/vstack` → `vanillagreencom/kendex`; GitHub redirects
+  the old URL). Fresh scopes seed source `kendex` at the new repo. A scope
+  still naming the old repo plans as if it named the new one (`repo_move`)
+  and the plan records the move — "Point kendex at its new repository" —
+  rewriting every place the string lives in one write per file: the
+  source's `repo` and `[forks.*].repo` in the manifest, `sources.*.repo`
+  and every entry's `sourceRepo` in the lock (a partial rewrite would read
+  as a per-package source rebind, a conflict each). Source *names* keep:
+  a pre-rename `[sources.vstack]` stays `vstack` and is still the default
+  add's fallback until phase 1 finds the default by repo. The remote
+  store adopts the old spelling's cache under the new key by a one-time
+  directory rename (mirror, checkouts, fetch stamp), so an offline scope
+  keeps resolving; report routing accepts both repo spellings as
+  kendex-owned.
 - **Commits walk through the guards whatever tool makes them.** The guard
   family (`core/guard/`) — size-ratchet, todo-ban, byte-ceiling,
   suppression-ban, commit-msg — judges the index git names for the commit

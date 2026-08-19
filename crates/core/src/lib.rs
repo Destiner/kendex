@@ -27,6 +27,7 @@ pub mod quality;
 pub mod remote;
 pub mod rename;
 pub mod render;
+pub mod repo_move;
 pub mod report;
 pub mod scan;
 pub mod settings;

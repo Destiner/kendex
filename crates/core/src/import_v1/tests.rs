@@ -119,12 +119,18 @@ fn lock_entries_split_per_harness_and_extras_are_skipped() {
     assert!(outcome.lock.entries.contains_key("skill:decider:pi"));
     assert!(outcome.lock.entries.contains_key("skill:decider:claude"));
     assert!(outcome.lock.entries.contains_key("agent:rust:claude"));
-    // Declarations + the default source derive from the lock.
-    assert_eq!(outcome.manifest.skills["decider"].source, "vstack");
-    assert_eq!(outcome.manifest.agents["rust"].source, "vstack");
+    // Declarations + the default source derive from the lock. v1 wrote the
+    // pre-rename default repo; the import maps it and writes the current
+    // name and repo everywhere, entries included.
+    assert_eq!(outcome.manifest.skills["decider"].source, "kendex");
+    assert_eq!(outcome.manifest.agents["rust"].source, "kendex");
     assert_eq!(
-        outcome.manifest.sources["vstack"].repo.as_deref(),
-        Some("vanillagreencom/vstack")
+        outcome.manifest.sources["kendex"].repo.as_deref(),
+        Some("vanillagreencom/kendex")
+    );
+    assert_eq!(
+        outcome.lock.entries["skill:decider:claude"].source_repo,
+        "vanillagreencom/kendex"
     );
     assert!(outcome.notes.iter().any(|n| n.contains("sunset")));
     // Imported hashes never match recomputed ones → first refresh

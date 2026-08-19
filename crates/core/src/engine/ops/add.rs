@@ -11,7 +11,8 @@ use crate::env::Env;
 use crate::error::{CoreError, Result};
 use crate::lock::{Lock, lock_path};
 use crate::manifest::{
-    DEFAULT_SOURCE_NAME, ItemDecl, LOCAL_SOURCE_NAME, Manifest, Method, SourceDecl,
+    DEFAULT_SOURCE_NAME, ItemDecl, LEGACY_SOURCE_NAME, LOCAL_SOURCE_NAME, Manifest, Method,
+    SourceDecl,
 };
 use crate::model::{HarnessId, ItemKind, Scope};
 use crate::source::{self, find_item, list_items, source_config};
@@ -304,6 +305,12 @@ fn ensure_source(manifest: &mut Manifest, requested: Option<&str>) -> Result<Str
     let Some(requested) = requested else {
         if manifest.sources.contains_key(DEFAULT_SOURCE_NAME) {
             return Ok(DEFAULT_SOURCE_NAME.to_owned());
+        }
+        // A scope seeded before the product rename declares the default
+        // source under its old name; that declaration is still the default,
+        // not whichever source happens to sort first.
+        if manifest.sources.contains_key(LEGACY_SOURCE_NAME) {
+            return Ok(LEGACY_SOURCE_NAME.to_owned());
         }
         if let Some(name) = manifest.sources.keys().next() {
             return Ok(name.clone());

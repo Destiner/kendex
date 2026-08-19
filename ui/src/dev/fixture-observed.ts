@@ -38,7 +38,7 @@ function item(
     path,
     fileState: { state: "dir" },
     enabled: true,
-    origin: "vanillagreencom/vstack",
+    origin: "vanillagreencom/kendex",
     description: null,
     tags: [],
     modifiedAt: null,

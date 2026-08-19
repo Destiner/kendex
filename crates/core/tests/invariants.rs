@@ -163,7 +163,7 @@ fn invariant_2_never_readd_a_user_removal() {
     // The default source seeds exactly once: a fresh manifest carries it,
     // an existing manifest without it stays without it.
     let seeded = ops::manifest_for_mutation(&f.env, &Scope::Global).unwrap();
-    assert!(seeded.sources.contains_key("vstack"));
+    assert!(seeded.sources.contains_key("kendex"));
     let global_path = manifest::manifest_path(&f.env, &Scope::Global);
     let mut stripped = seeded.clone();
     stripped.sources.clear();

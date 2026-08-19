@@ -205,7 +205,9 @@ fn convert_overrides(table: &toml::Table, notes: &mut Vec<String>) -> Frontmatte
 
 fn source_name_for(source: &str, source_repo: Option<&str>) -> (String, SourceDecl) {
     let reference = source_repo.unwrap_or(source);
-    if reference == DEFAULT_SOURCE_REPO {
+    // v1 only ever wrote the pre-rename default repo; both spellings map to
+    // the default source, and what gets written is the current one.
+    if reference == DEFAULT_SOURCE_REPO || crate::repo_move::names_old_default(reference) {
         return (
             DEFAULT_SOURCE_NAME.to_owned(),
             SourceDecl {
@@ -277,6 +279,13 @@ fn convert_lock(
         let source = entry.get("source").and_then(|s| s.as_str()).unwrap_or("");
         let source_repo = entry.get("source_repo").and_then(|s| s.as_str());
         let (source_name, decl) = source_name_for(source, source_repo);
+        // The declaration's repo, where it has one, is what the entry
+        // records too — the mapped default must not leave the entry on the
+        // old repo string the declaration no longer names.
+        let provenance = decl
+            .repo
+            .clone()
+            .unwrap_or_else(|| source_repo.unwrap_or(source).to_owned());
         manifest.sources.entry(source_name.clone()).or_insert(decl);
         manifest
             .declared_mut(kind)
@@ -311,7 +320,7 @@ fn convert_lock(
                     kind,
                     harness: *harness,
                     source: source_name.clone(),
-                    source_repo: source_repo.unwrap_or(source).to_owned(),
+                    source_repo: provenance.clone(),
                     method,
                     installed_at: installed_at.clone(),
                     // v1 hashes are FNV — never comparable, so the first

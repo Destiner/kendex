@@ -236,7 +236,7 @@ export function acmeQueued(): ItemSafety[] {
       reasons: [],
       contentHash: "github-v3",
       reviewHash: "github-v3",
-      provenance: "vanillagreencom/vstack",
+      provenance: "vanillagreencom/kendex",
       override: { state: "absent" },
       decisions: decisionsFor("skill:github:claude", "github-v3", findings),
     },

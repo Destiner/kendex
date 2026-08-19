@@ -21,7 +21,12 @@ changes carry a **Breaking** call-out with their migration note inline.
   `VSTACK_BACKGROUND_REFRESH` stop working — set the `KENDEX_*` spelling,
   or a drift hook you turned off comes back silently. Only the guard's
   variables (`VSTACK_GUARDS_*`, `VSTACK_GUARD_PRE_COMMIT_LOCAL`) are
-  still read as a fallback during the alias cycle.
+  still read as a fallback during the alias cycle. The default catalog
+  moved with the product: fresh installs subscribe to
+  `vanillagreencom/kendex`, and a library that still points at
+  `vanillagreencom/vstack` is pointed at the new repository by one
+  previewed step on its next plan — nothing re-downloads, nothing needs
+  the network for it, and everything already installed keeps working.
 
 ### Added
 

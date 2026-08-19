@@ -80,16 +80,16 @@ describe("mock bridge", () => {
     await expect(
       mockInvoke("source_remove", {
         scope: { scope: "global" },
-        name: "vstack",
+        name: "kendex",
       }),
     ).rejects.toMatch("disable");
     const rows = (await mockInvoke("source_toggle", {
       scope: { scope: "global" },
-      name: "vstack",
+      name: "kendex",
       enabled: false,
     })) as SourceRow[];
     const row = rows.find(
-      (r) => r.scope.scope === "global" && r.name === "vstack",
+      (r) => r.scope.scope === "global" && r.name === "kendex",
     );
     expect(row?.enabled).toBe(false);
   });

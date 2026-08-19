@@ -24,8 +24,13 @@ pub use validate::{Finding, validate};
 /// protects.
 pub const MANIFEST_SCHEMA: u32 = 5;
 pub const OLDEST_READABLE_SCHEMA: u32 = 1;
-pub const DEFAULT_SOURCE_NAME: &str = "vstack";
-pub const DEFAULT_SOURCE_REPO: &str = "vanillagreencom/vstack";
+pub const DEFAULT_SOURCE_NAME: &str = "kendex";
+pub const DEFAULT_SOURCE_REPO: &str = "vanillagreencom/kendex";
+/// What the default source was called before the product rename. Read-side
+/// only: pre-rename scopes and v1 files still say these, and they must keep
+/// resolving; nothing writes them anymore.
+pub const LEGACY_SOURCE_NAME: &str = "vstack";
+pub const LEGACY_SOURCE_REPO: &str = "vanillagreencom/vstack";
 /// The reserved source name for content adopted into this scope.
 pub const LOCAL_SOURCE_NAME: &str = "local";
 

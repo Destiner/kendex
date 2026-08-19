@@ -65,7 +65,9 @@ fn report_dry_run_routes_by_ownership_and_rejects_scope_all() {
     let tmp = sandbox_with_catalog();
     let home = tmp.path();
     let proj = home.join("proj");
-    // A locked agent from the canonical upstream routes to it.
+    // A locked agent from the canonical upstream routes to it — the
+    // pre-move repo spelling in the entry included, since installed content
+    // predating the repository move still records it.
     fs::write(
         proj.join(".vstack-lock.json"),
         r#"{"version":1,"entries":{"agent:orch:claude":{"name":"orch","kind":"agent","harness":"claude","source":"vstack","sourceRepo":"vanillagreencom/vstack","method":"copy","installedAt":"2026-01-01T00:00:00Z","sourceHash":"x","enabled":true}}}"#,
@@ -90,7 +92,7 @@ fn report_dry_run_routes_by_ownership_and_rejects_scope_all() {
     assert!(upstream.status.success());
     let text = String::from_utf8_lossy(&upstream.stderr);
     assert!(text.contains("ownership: kendex"), "{text}");
-    assert!(text.contains("--repo vanillagreencom/vstack"), "{text}");
+    assert!(text.contains("--repo vanillagreencom/kendex"), "{text}");
     assert!(text.contains("--label skills"), "{text}");
 
     let local = kendex_in(
@@ -168,7 +170,7 @@ fn report_files_through_a_stubbed_gh() {
         String::from_utf8_lossy(&output.stdout).contains("Issue filed: https://github.com/x/1")
     );
     let args = fs::read_to_string(home.join("gh-args.txt")).unwrap();
-    assert!(args.contains("vanillagreencom/vstack"));
+    assert!(args.contains("vanillagreencom/kendex"));
     assert!(args.contains("harness"));
     assert!(args.contains("kendex-report:v1 asset=guard kind=hook"));
 }

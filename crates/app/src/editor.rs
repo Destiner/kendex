@@ -263,16 +263,19 @@ pub fn item_source(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kendex_core::manifest::{FrontmatterOverrides, ItemDecl, MANIFEST_SCHEMA, SourceDecl};
+    use kendex_core::manifest::{
+        DEFAULT_SOURCE_NAME, DEFAULT_SOURCE_REPO, FrontmatterOverrides, ItemDecl, MANIFEST_SCHEMA,
+        SourceDecl,
+    };
     use std::collections::BTreeMap;
 
     fn manifest() -> Manifest {
         Manifest {
             schema: MANIFEST_SCHEMA,
             sources: BTreeMap::from([(
-                "vstack".to_owned(),
+                DEFAULT_SOURCE_NAME.to_owned(),
                 SourceDecl {
-                    repo: Some("vanillagreencom/vstack".to_owned()),
+                    repo: Some(DEFAULT_SOURCE_REPO.to_owned()),
                     path: None,
                     rev: None,
                     enabled: true,
@@ -331,7 +334,7 @@ mod tests {
             },
             manifest::seed(&[HarnessId::Claude]),
         );
-        assert!(seeded.sources.contains_key("vstack"));
+        assert!(seeded.sources.contains_key("kendex"));
         assert_eq!(seeded.install.harnesses, [HarnessId::Claude]);
 
         let declared = on_first_creation(manifest(), manifest::seed(&[HarnessId::Pi]));

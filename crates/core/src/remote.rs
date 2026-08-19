@@ -48,6 +48,7 @@ impl Resolution {
 /// selector whose fetch fails degrades to a warning and the cached commit,
 /// so an offline session keeps working.
 pub fn sync(env: &Env, repo: &str, rev: Option<&str>) -> Result<Resolution> {
+    adopt_moved_default(env, repo)?;
     let url = clone_url(env, repo);
     let key = store::repo_key(&url);
     let mirror = store::mirror_dir(env, &key);
@@ -112,6 +113,7 @@ pub fn sync(env: &Env, repo: &str, rev: Option<&str>) -> Result<Resolution> {
 /// refresh in another window is never a precondition for reading what is
 /// already installed.
 pub fn cached(env: &Env, repo: &str, rev: Option<&str>) -> Result<Option<Resolution>> {
+    adopt_moved_default(env, repo)?;
     let key = store::repo_key(&clone_url(env, repo));
     let mirror = store::mirror_dir(env, &key);
     let selector = rev.unwrap_or("HEAD");
@@ -167,12 +169,29 @@ fn stamp_fetch(env: &Env, key: &str, mirror: &std::path::Path, fetched: &Result<
     };
 }
 
+/// The default repository moved after it was fetched: the cache its old
+/// spelling filled is the same repository, so the new spelling adopts it
+/// before any resolution reads the store. Without this an offline scope
+/// would read the moved default as never fetched.
+fn adopt_moved_default(env: &Env, repo: &str) -> Result<()> {
+    if repo != crate::manifest::DEFAULT_SOURCE_REPO {
+        return Ok(());
+    }
+    let old = store::repo_key(&clone_url(env, crate::manifest::LEGACY_SOURCE_REPO));
+    let new = store::repo_key(&clone_url(env, repo));
+    store::adopt_cache(env, &old, &new)
+}
+
 /// The v0.1 mutable clone, read where the new layout has nothing yet: an
 /// offline first run after an update still resolves. Nothing writes to it
 /// and nothing deletes it — the first successful refresh publishes a
 /// per-commit checkout and this stops being consulted.
 fn legacy_resolution(env: &Env, repo: &str) -> Option<Resolution> {
-    let legacy = store::legacy_clone(env, repo);
+    let mut legacy = store::legacy_clone(env, repo);
+    // The moved default's v0.1 clone sits under the old repo spelling.
+    if store::legacy_head(&legacy).is_none() && repo == crate::manifest::DEFAULT_SOURCE_REPO {
+        legacy = store::legacy_clone(env, crate::manifest::LEGACY_SOURCE_REPO);
+    }
     store::legacy_head(&legacy).map(|commit| Resolution {
         commit,
         root: legacy,

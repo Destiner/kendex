@@ -99,22 +99,22 @@ export function manifests(): Record<string, Manifest_Serialize> {
   return {
     global: {
       schema: 1,
-      sources: { vstack: { repo: "vanillagreencom/vstack", enabled: true } },
+      sources: { kendex: { repo: "vanillagreencom/kendex", enabled: true } },
       install: { harnesses: ["claude"], method: "symlink" },
-      skills: { "code-review": decl("vstack") },
-      commands: { "ship-it": decl("vstack") },
+      skills: { "code-review": decl("kendex") },
+      commands: { "ship-it": decl("kendex") },
     },
     [ACME]: {
       schema: 1,
       sources: {
-        vstack: { repo: "vanillagreencom/vstack", enabled: true },
+        kendex: { repo: "vanillagreencom/kendex", enabled: true },
         team: { path: "../team-catalog", enabled: true },
       },
       install: { harnesses: ["claude", "codex", "pi"], method: "symlink" },
-      agents: { orch: decl("vstack"), reviewer: decl("vstack") },
-      skills: { github: decl("vstack"), deploy: decl("vstack") },
-      hooks: { guard: decl("vstack") },
-      "mcp-servers": { postgres: decl("vstack") },
+      agents: { orch: decl("kendex"), reviewer: decl("kendex") },
+      skills: { github: decl("kendex"), deploy: decl("kendex") },
+      hooks: { guard: decl("kendex") },
+      "mcp-servers": { postgres: decl("kendex") },
       "agent-skills": { orch: ["github", "deploy"], reviewer: ["github"] },
       "agent-launch-instructions": { all: "Prefer small, reviewable changes." },
       "agent-frontmatter": {
@@ -123,27 +123,27 @@ export function manifests(): Record<string, Manifest_Serialize> {
     },
     [API]: {
       schema: 1,
-      sources: { vstack: { repo: "vanillagreencom/vstack", enabled: true } },
+      sources: { kendex: { repo: "vanillagreencom/kendex", enabled: true } },
       install: { harnesses: ["claude"], method: "symlink" },
-      agents: { orch: decl("vstack") },
-      skills: { github: decl("vstack") },
+      agents: { orch: decl("kendex") },
+      skills: { github: decl("kendex") },
     },
   };
 }
 
 export function sources(): SourceRow[] {
-  const vstack = {
-    name: "vstack",
-    reference: "vanillagreencom/vstack",
+  const kendex = {
+    name: "kendex",
+    reference: "vanillagreencom/kendex",
     isRemote: true,
     enabled: true,
     head: "9f31c2a",
   };
   return [
-    { scope: GLOBAL, ...vstack, declaredItems: ["code-review", "ship-it"] },
+    { scope: GLOBAL, ...kendex, declaredItems: ["code-review", "ship-it"] },
     {
       scope: proj(ACME),
-      ...vstack,
+      ...kendex,
       declaredItems: [
         "orch",
         "reviewer",
@@ -162,13 +162,13 @@ export function sources(): SourceRow[] {
       head: null,
       declaredItems: [],
     },
-    { scope: proj(API), ...vstack, declaredItems: ["orch", "github"] },
+    { scope: proj(API), ...kendex, declaredItems: ["orch", "github"] },
   ];
 }
 
 export function bundles(): BundleRow[] {
   const starter = {
-    source: "vstack",
+    source: "kendex",
     name: "starter",
     description: "Everything a new repo needs",
     version: null,
@@ -176,7 +176,7 @@ export function bundles(): BundleRow[] {
     members: ["agent orch", "skill github", "skill deploy", "command ship-it"],
   };
   const review = {
-    source: "vstack",
+    source: "kendex",
     name: "review",
     description: "Code review, end to end",
     version: "1.2.0",

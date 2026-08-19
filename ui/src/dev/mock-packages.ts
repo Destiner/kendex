@@ -29,8 +29,8 @@ function updateRows(): UpdateRow[] {
     scope: item.scope,
     kind: item.kind,
     name: item.name,
-    source: "vstack",
-    repo: item.origin ?? "vanillagreencom/vstack",
+    source: "kendex",
+    repo: item.origin ?? "vanillagreencom/kendex",
     current: { commit: OLD, label: "v1.0", date: "2026-08-01T10:00:00Z" },
     latest:
       index === 0
@@ -195,9 +195,9 @@ export const packageHandlers: Record<string, Handler> = {
     truncated: false,
   }),
   package_meta: ({ name }: { name: string }) => ({
-    source: "vstack",
-    repo: "vanillagreencom/vstack",
-    repoUrl: "https://github.com/vanillagreencom/vstack",
+    source: "kendex",
+    repo: "vanillagreencom/kendex",
+    repoUrl: "https://github.com/vanillagreencom/kendex",
     rev: null,
     current: { commit: OLD, label: "v1.0", date: "2026-08-01T10:00:00Z" },
     installedAt: "2026-08-01T10:05:00Z",
@@ -209,7 +209,7 @@ export const packageHandlers: Record<string, Handler> = {
       description: `About ${name}.`,
       author: "vanillagreen",
       license: "MIT",
-      homepage: "https://github.com/vanillagreencom/vstack",
+      homepage: "https://github.com/vanillagreencom/kendex",
       category: null,
     },
   }),

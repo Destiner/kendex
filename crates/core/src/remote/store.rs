@@ -82,6 +82,49 @@ pub fn legacy_clone(env: &Env, repo: &str) -> PathBuf {
     env.source_cache_dir().join(repo.replace('/', "_"))
 }
 
+/// Adopt one repository's cached artifacts under another key — the same
+/// repository reached by a new spelling after it moved hosts or names.
+/// Renaming the directories once is cheaper than teaching every
+/// key-derived path a second spelling, and it keeps an offline scope
+/// resolving: the content is already here, just under the old key. Each
+/// artifact — mirror, per-commit checkouts, fetch stamp — moves only when
+/// the new key has nothing, so a crash mid-move finishes on the next call
+/// and nothing already fetched under the new key is ever replaced.
+pub fn adopt_cache(env: &Env, from: &str, to: &str) -> Result<()> {
+    let commits = env.source_cache_dir().join(COMMITS);
+    let pairs = [
+        (mirror_dir(env, from), mirror_dir(env, to)),
+        (commits.join(from), commits.join(to)),
+        (
+            crate::drift::stamps::stamp_path(env, from),
+            crate::drift::stamps::stamp_path(env, to),
+        ),
+    ];
+    if pairs
+        .iter()
+        .all(|(old, _)| fs::symlink_metadata(old).is_err())
+    {
+        return Ok(());
+    }
+    let _guard = match lock_repo(env, to) {
+        Ok(guard) => guard,
+        // Someone else holds this key's cache — likely mid-fetch or
+        // mid-adoption. The next read retries; failing this one would turn
+        // a transient lock into a hard error.
+        Err(CoreError::CacheBusy { .. }) => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    for (old, new) in pairs {
+        if fs::symlink_metadata(&old).is_ok() && fs::symlink_metadata(&new).is_err() {
+            if let Some(parent) = new.parent() {
+                fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
+            }
+            fs::rename(&old, &new).map_err(|e| CoreError::io(&old, e))?;
+        }
+    }
+    Ok(())
+}
+
 /// Exclusive lock over one repository's cache entry. Only materialization
 /// takes it — reading a published checkout needs no lock, because a
 /// published checkout never changes.

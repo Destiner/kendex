@@ -86,6 +86,17 @@ pub fn plan_scope(
 ) -> Result<EngineReport> {
     // Identity first: derived paths and the scope lock key off canonical.
     let scope = &scope.canonical();
+    // The default catalog moved repositories: everything plans against the
+    // moved strings, so the move never reads as a per-package source rebind
+    // (a conflict per installed item). Only the lock write still compares
+    // against the on-disk record — that difference is what makes the plan
+    // carry the rewritten lock even when nothing else changed.
+    let moved_manifest = crate::repo_move::migrate_manifest(manifest);
+    let moved_lock = crate::repo_move::migrate_lock(lock);
+    let repo_moved = moved_manifest.is_some();
+    let disk_lock = lock;
+    let manifest = moved_manifest.as_ref().unwrap_or(manifest);
+    let lock = moved_lock.as_ref().unwrap_or(lock);
     let mut state = desired_state(env, scope, manifest, lock)?;
     // The gate runs before anything is planned for these items: a blocked
     // rendering must never reach the op list, and an override it grants has
@@ -104,28 +115,7 @@ pub fn plan_scope(
     let mut written = tree_plan::Written::default();
     let mut config_edits = config_edits::ConfigEditPlan::default();
 
-    if let Some(updated) = &state.manifest_update {
-        let path = manifest::manifest_path(env, scope);
-        let mut updated = updated.clone();
-        updated.schema = manifest::MANIFEST_SCHEMA;
-        // One write, whatever put it there: skills an agent gained
-        // upstream, a review of findings this run was asked to record, or
-        // both. Naming only one of them would misdescribe the other.
-        let granted = updated.safety_overrides != manifest.safety_overrides;
-        ops.push(PlannedOp {
-            description: match granted {
-                true => "Update kendex.toml with the safety findings you accepted".into(),
-                false => "Add new catalog skills to kendex.toml".into(),
-            },
-            op: Op::WriteManifest {
-                pre: crate::apply::Pre::observed(&path)?,
-                path,
-                manifest: Box::new(updated),
-            },
-        });
-    } else if manifest.schema < manifest::MANIFEST_SCHEMA {
-        plan_schema_upgrade(env, scope, manifest, &mut ops)?;
-    }
+    plan_manifest_write(env, scope, repo_moved, manifest, &state, &mut ops)?;
 
     // What earlier installs put on disk under another kind's name. A path
     // one of them wrote is ours to replace, whichever entry holds it now.
@@ -187,7 +177,7 @@ pub fn plan_scope(
     plan_config_edits(config_edits, &mut ops)?;
     let set_changes = set_changes(scope, lock, &new_lock);
     let kept = kept_members(scope, lock, &new_lock, &options.uninstalled_bundles);
-    plan_lock_write(env, scope, lock, new_lock, &mut ops)?;
+    plan_lock_write(env, scope, disk_lock, new_lock, &mut ops)?;
 
     prepend_rename_generation(env, scope, &mut ops)?;
 
@@ -206,6 +196,49 @@ pub fn plan_scope(
     };
     unmanaged_rows(env, scope, manifest, lock, &state.items, &mut report.drift);
     Ok(report)
+}
+
+/// The plan's one full manifest write, when anything needs it: the
+/// repository move, skills an agent gained upstream, a review of findings
+/// this run was asked to record — or, with none of those, the surgical
+/// schema upgrade. One write whatever put it there: a second manifest
+/// write could never run, its precondition binds to the bytes the first
+/// one replaces. The description names the biggest cause; the rest ride
+/// along in the same bytes.
+fn plan_manifest_write(
+    env: &Env,
+    scope: &Scope,
+    repo_moved: bool,
+    manifest: &Manifest,
+    state: &desired::DesiredState,
+    ops: &mut Vec<PlannedOp>,
+) -> Result<()> {
+    if !repo_moved && state.manifest_update.is_none() {
+        if manifest.schema < manifest::MANIFEST_SCHEMA {
+            plan_schema_upgrade(env, scope, manifest, ops)?;
+        }
+        return Ok(());
+    }
+    let path = manifest::manifest_path(env, scope);
+    let mut updated = state
+        .manifest_update
+        .clone()
+        .unwrap_or_else(|| manifest.clone());
+    updated.schema = manifest::MANIFEST_SCHEMA;
+    let granted = updated.safety_overrides != manifest.safety_overrides;
+    ops.push(PlannedOp {
+        description: match (repo_moved, granted) {
+            (true, _) => crate::repo_move::MOVE_DESCRIPTION.into(),
+            (false, true) => "Update kendex.toml with the safety findings you accepted".into(),
+            (false, false) => "Add new catalog skills to kendex.toml".into(),
+        },
+        op: Op::WriteManifest {
+            pre: crate::apply::Pre::observed(&path)?,
+            path,
+            manifest: Box::new(updated),
+        },
+    });
+    Ok(())
 }
 
 /// A scope still under the old product name renames first: everything

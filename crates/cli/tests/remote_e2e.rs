@@ -56,12 +56,12 @@ fn only_child(dir: &Path) -> std::path::PathBuf {
 }
 
 /// The default catalog, served as a real git repo under the rebased host
-/// path `git/vanillagreencom/vstack`.
+/// path `git/vanillagreencom/kendex`.
 #[allow(clippy::unwrap_used)]
 fn fixture() -> tempfile::TempDir {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path();
-    let upstream = home.join("git/vanillagreencom/vstack");
+    let upstream = home.join("git/vanillagreencom/kendex");
     fs::create_dir_all(upstream.join("skills/gh")).unwrap();
     fs::write(
         upstream.join("skills/gh/SKILL.md"),
@@ -94,8 +94,8 @@ fn consuming_repo_installs_customizes_and_refreshes_from_the_default_catalog() {
         String::from_utf8_lossy(&output.stderr)
     );
     let manifest = fs::read_to_string(proj.join("kendex.toml")).unwrap();
-    assert!(manifest.contains("[sources.vstack]"), "{manifest}");
-    assert!(manifest.contains("vanillagreencom/vstack"), "{manifest}");
+    assert!(manifest.contains("[sources.kendex]"), "{manifest}");
+    assert!(manifest.contains("vanillagreencom/kendex"), "{manifest}");
     let rendered = proj.join(".agents/skills/gh/SKILL.md");
     assert!(
         fs::read_to_string(&rendered)
@@ -122,7 +122,7 @@ fn consuming_repo_installs_customizes_and_refreshes_from_the_default_catalog() {
     assert!(kendex(home, &proj, &["verify"]).status.success());
 
     // Upstream moves; refresh re-syncs the cache and regenerates.
-    let upstream = home.join("git/vanillagreencom/vstack");
+    let upstream = home.join("git/vanillagreencom/kendex");
     fs::write(
         upstream.join("skills/gh/SKILL.md"),
         "---\nname: gh\ndescription: github flows\n---\nUpstream v2.\n",

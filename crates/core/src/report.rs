@@ -8,7 +8,7 @@ use crate::env::Env;
 use crate::lock::Lock;
 use crate::model::{ItemKind, Scope};
 
-pub const DEFAULT_UPSTREAM: &str = "vanillagreencom/vstack";
+pub const DEFAULT_UPSTREAM: &str = crate::manifest::DEFAULT_SOURCE_REPO;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Route {
@@ -65,7 +65,7 @@ fn is_kendex_owned(
 ) -> bool {
     // Catalog content of both product-name generations opts in.
     if matches!(frontmatter_source, Some("kendex" | "vstack"))
-        || frontmatter_repo == Some(DEFAULT_UPSTREAM)
+        || frontmatter_repo.is_some_and(is_default_repo)
     {
         return true;
     }
@@ -73,8 +73,15 @@ fn is_kendex_owned(
         entry.name == name
             && kind.is_none_or(|k| k == entry.kind)
             && entry.kind != ItemKind::Skill
-            && entry.source_repo == upstream
+            && (entry.source_repo == upstream
+                || (upstream == DEFAULT_UPSTREAM && is_default_repo(&entry.source_repo)))
     })
+}
+
+/// Both spellings of the default repository claim it: installed content
+/// that predates the repository move still records the old one.
+fn is_default_repo(repo: &str) -> bool {
+    repo == DEFAULT_UPSTREAM || crate::repo_move::names_old_default(repo)
 }
 
 /// `source:`/`repository:` from the installed skill's frontmatter — the one
@@ -117,5 +124,49 @@ mod tests {
         assert!(owned(Some("vstack")));
         assert!(!owned(Some("someone-else")));
         assert!(!owned(None));
+    }
+
+    /// An item installed before the repository move records the old repo in
+    /// its lock entry; it is still kendex's and routes to the new upstream.
+    #[test]
+    fn both_repo_spellings_claim_ownership() {
+        let mut lock = Lock::default();
+        lock.entries.insert(
+            "hook:guard:claude".to_owned(),
+            crate::lock::LockEntry {
+                name: "guard".to_owned(),
+                kind: ItemKind::Hook,
+                harness: crate::model::HarnessId::Claude,
+                source: "vstack".to_owned(),
+                source_repo: crate::manifest::LEGACY_SOURCE_REPO.to_owned(),
+                method: crate::manifest::Method::Copy,
+                installed_at: "2026-01-01T00:00:00Z".to_owned(),
+                source_hash: "x".to_owned(),
+                source_commit: None,
+                rendered_hash: None,
+                enabled: true,
+                upstream_skills: None,
+                emitted: None,
+                registration: None,
+                reasons: std::collections::BTreeSet::from([crate::lock::Reason::Requested]),
+            },
+        );
+        assert!(is_kendex_owned(
+            &lock,
+            "guard",
+            Some(ItemKind::Hook),
+            None,
+            None,
+            DEFAULT_UPSTREAM
+        ));
+        // A repo the user pointed reports at explicitly stays exact.
+        assert!(!is_kendex_owned(
+            &lock,
+            "guard",
+            Some(ItemKind::Hook),
+            None,
+            None,
+            "someone/else"
+        ));
     }
 }

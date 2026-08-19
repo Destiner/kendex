@@ -86,6 +86,11 @@ fn schema_less_file_is_legacy_and_never_a_mutation_target() {
 #[test]
 fn seed_declares_the_default_source_once() {
     let manifest = seed(&[HarnessId::Claude]);
+    // Spelled out: a fresh scope seeds the post-rename name and repo.
+    assert_eq!(
+        manifest.sources["kendex"].repo.as_deref(),
+        Some("vanillagreencom/kendex")
+    );
     assert!(manifest.sources[DEFAULT_SOURCE_NAME].enabled);
     assert_eq!(manifest.declared(ItemKind::Agent).len(), 0);
     assert_eq!(manifest.install.harnesses, [HarnessId::Claude]);
