@@ -110,6 +110,36 @@ fn a_second_call_reads_the_verified_cache_and_a_moved_hash_rescores() {
     assert!(score(&env, &scope).from_cache);
 }
 
+/// A record from an older scanner is not trusted: a bump of the record
+/// format, the rule set, or the discovery table each invalidates the cached
+/// findings, so a scoring change never serves a stale verdict forever. Each
+/// version field is checked on its own — dropping any one from the key would
+/// leave that whole class of change unnoticed.
+#[test]
+fn a_version_bump_in_any_key_field_re_scores() {
+    let (_tmp, env, scope) = fixture();
+    let first = score(&env, &scope);
+    assert!(!first.from_cache);
+    let path = cache_file(&env);
+    let written = fs::read_to_string(&path).unwrap();
+
+    for field in ["format", "ruleset", "discovery"] {
+        // Plant a stale version under an otherwise valid record.
+        let mut record: serde_json::Value = serde_json::from_str(&written).unwrap();
+        record[field] = 9999.into();
+        fs::write(&path, record.to_string()).unwrap();
+
+        let rescored = score(&env, &scope);
+        assert!(
+            !rescored.from_cache,
+            "a stale `{field}` version must miss the cache"
+        );
+        assert_eq!(rescored.safety, first.safety, "and re-score to the same");
+        // The healed record reads from cache again.
+        assert!(score(&env, &scope).from_cache, "and heals `{field}`");
+    }
+}
+
 #[test]
 fn thresholds_move_the_verdict_without_touching_the_cache() {
     let (_tmp, env, scope) = fixture();

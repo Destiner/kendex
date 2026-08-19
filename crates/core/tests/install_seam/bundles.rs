@@ -32,6 +32,62 @@ fn apply_now(f: &Fixture) {
     apply::execute(&f.env, &report.plan, None).unwrap();
 }
 
+/// Every way a member is the user's own — not just its harness list — keeps its
+/// declaration when the whole bundle installs. Each of these, subsumed by
+/// mistake, silently deletes what the person chose, so each is pinned: a member
+/// with its own install method and one toggled off both stay, while the plain
+/// equal member is folded in.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn subsumption_keeps_every_member_the_user_shaped() {
+    let f = world();
+    let catalog = f.home.join("catalog");
+    for name in ["copied", "off", "plain"] {
+        skill(&catalog, name);
+    }
+    write(
+        &catalog,
+        "kendex.toml",
+        "[bundles.all]\ndescription = \"everything\"\nskills = [\"copied\", \"off\", \"plain\"]\n",
+    );
+    manifest_with(
+        &f,
+        &[("cat", &catalog)],
+        "[skills.copied]\nsource = \"cat\"\nmethod = \"copy\"\n\n[skills.off]\nsource = \"cat\"\nenabled = false\n\n[skills.plain]\nsource = \"cat\"\n",
+    );
+
+    let report = add_and_apply(
+        &f,
+        &ops::AddRequest {
+            source: Some("cat".to_owned()),
+            bundles: vec!["all".into()],
+            no_auto_skills: true,
+            ..ops::AddRequest::default()
+        },
+    );
+
+    let manifest = manifest_of(&f);
+    assert!(
+        manifest.skills.contains_key("copied"),
+        "a member with its own install method stays declared"
+    );
+    assert!(
+        manifest.skills.contains_key("off"),
+        "a member toggled off stays declared"
+    );
+    assert!(
+        !manifest.skills.contains_key("plain"),
+        "the equal-option member is subsumed"
+    );
+    for reason in ["install method", "toggled it"] {
+        assert!(
+            report.notes.iter().any(|note| note.contains(reason)),
+            "each kept member names its reason ({reason}): {:?}",
+            report.notes
+        );
+    }
+}
+
 /// Install-all subsumes the member whose effective options equal what the
 /// bundle derives — its declaration goes, the installation stays on the
 /// bundle's edge — and keeps the member the user shaped, saying why.
