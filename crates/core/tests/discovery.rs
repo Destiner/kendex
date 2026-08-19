@@ -220,19 +220,35 @@ fn one_directory_reachable_twice_is_one_item() {
 
 #[test]
 #[allow(clippy::unwrap_used)]
-fn a_second_directory_folding_to_a_taken_name_is_skipped_and_named() {
+fn two_directories_folding_to_one_name_with_different_bytes_both_skip() {
     let (_tmp, root) = repo();
     skill(&root, "skills/gh", "gh");
     skill(&root, ".claude/skills/GH", "GH");
     let (sealed, config) = read(&root);
-    assert_eq!(list_items(&sealed, &config, ItemKind::Skill), ["gh"]);
+    // Both are skipped: which the walk reached first must not decide which
+    // clashing skill a hostile repo gets to install.
+    assert!(list_items(&sealed, &config, ItemKind::Skill).is_empty());
     let finding = config
         .findings()
-        .find(|f| f.problem.contains("fold to one name"))
+        .find(|f| f.problem.contains("both are skipped"))
         .expect("the collision is a finding");
+    assert!(finding.problem.contains("gh"), "{finding}");
+}
+
+/// The same skill served under two recognized roots — one repo offering it to
+/// two harness layouts — is one item, deduplicated in silence, not a false
+/// case-folding collision. The bytes are identical, so it is plainly one skill.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn one_skill_copied_under_two_roots_is_one_item() {
+    let (_tmp, root) = repo();
+    skill(&root, "skills/gh", "gh");
+    skill(&root, ".claude/skills/gh", "gh");
+    let (sealed, config) = read(&root);
+    assert_eq!(list_items(&sealed, &config, ItemKind::Skill), ["gh"]);
     assert!(
-        finding.problem.contains("gh") && finding.location.contains(".claude/skills"),
-        "{finding}"
+        config.findings().all(|f| !f.problem.contains("fold")),
+        "identical copies are not a collision"
     );
 }
 

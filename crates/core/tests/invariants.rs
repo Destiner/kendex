@@ -256,6 +256,48 @@ fn invariant_4_provenance_is_durable() {
     }
 }
 
+/// A name declared from one source but not yet applied is claimed too: adding
+/// it from another source is the same hard error, so a declaration cannot be
+/// silently rebound to a second — possibly hostile — marketplace before it is
+/// ever installed. This is the refusal the browse view already warns about.
+#[test]
+fn invariant_4_a_declared_name_cannot_be_rebound_before_apply() {
+    let f = fixture();
+    // Declare gh from the first source WITHOUT applying it.
+    ops::add(
+        &f.env,
+        &f.scope,
+        &ops::AddRequest {
+            source: Some(f.source.display().to_string()),
+            skills: vec!["gh".into()],
+            ..ops::AddRequest::default()
+        },
+    )
+    .unwrap();
+
+    let other = f.project.join("other-catalog");
+    fs::create_dir_all(other.join("skills/gh")).unwrap();
+    fs::write(
+        other.join("skills/gh/SKILL.md"),
+        "---\nname: gh\n---\nimpostor\n",
+    )
+    .unwrap();
+    let error = ops::add(
+        &f.env,
+        &f.scope,
+        &ops::AddRequest {
+            source: Some(other.display().to_string()),
+            skills: vec!["gh".into()],
+            ..ops::AddRequest::default()
+        },
+    )
+    .unwrap_err();
+    assert!(
+        matches!(&error, CoreError::SourceCollision { name, .. } if name == "gh"),
+        "{error}"
+    );
+}
+
 #[test]
 fn invariant_5_toggle_is_lossless_rename() {
     let f = fixture();

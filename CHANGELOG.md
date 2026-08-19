@@ -96,6 +96,18 @@ changes carry a **Breaking** call-out with their migration note inline.
 - A curated set whose author renamed or removed a member still opens: the
   missing member shows as no longer offered instead of breaking the whole
   set's page.
+- A package already declared from one marketplace cannot be silently
+  rebound to another before it is installed: naming it from a second
+  marketplace is refused with the first one named, the same as an
+  already-installed collision.
+- Two directories in a repository that fold to one name are both set
+  aside, so which one the repository happened to list first cannot decide
+  which a person installs; the same skill offered under two harness
+  layouts is recognized as one package, not a false clash.
+- Package and marketplace names that carry invisible or
+  direction-reversing characters are refused and shown as their escapes,
+  so one marketplace's package can no longer wear another's name on
+  screen while installing under a different one.
 - Cursor no longer drops an agent's custom hooks without a word. A rule
   file has nowhere to register a hook, so the hook lands as instructions
   and the render warns that nothing there enforces it.

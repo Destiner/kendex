@@ -94,6 +94,7 @@ pub fn discover(sealed: &SealedSource, display: &str) -> Result<Discovery> {
         discovery: Discovery::default(),
         taken_rels: BTreeSet::new(),
         taken_names: BTreeMap::new(),
+        poisoned_names: BTreeSet::new(),
         full: false,
     };
     for root in SKILL_ROOTS {
@@ -111,8 +112,15 @@ struct Walk<'a> {
     sealed: &'a SealedSource,
     discovery: Discovery,
     taken_rels: BTreeSet<PathBuf>,
-    /// Folded name → (name, location) — what a second spelling collides with.
-    taken_names: BTreeMap<String, (String, String)>,
+    /// Folded name → (name, location, rel path) — what a second spelling
+    /// collides with, and where its bytes are so an identical copy under a
+    /// second recognized root can be recognized as one item, not a collision.
+    /// The bytes are hashed only when a clash actually happens, never for every
+    /// skill: a clean repository never pays for the comparison.
+    taken_names: BTreeMap<String, (String, String, PathBuf)>,
+    /// Folded names a real collision disqualified: both spellings are skipped,
+    /// so traversal order can never decide which of two clashing skills wins.
+    poisoned_names: BTreeSet<String>,
     full: bool,
 }
 
@@ -188,11 +196,44 @@ impl Walk<'_> {
             ));
             return Ok(());
         }
-        if let Some((taken, at)) = self.taken_names.get(&names::fold(name)) {
+        let fold = names::fold(name);
+        if self.poisoned_names.contains(&fold) {
+            // A prior collision already disqualified this name; every further
+            // spelling of it is skipped too, never quietly installed.
             self.discovery.findings.push(CatalogFinding::new(
                 location.clone(),
                 format!(
-                    "`{}` and `{taken}` (at `{at}`) fold to one name on a case-folding filesystem — this one is skipped",
+                    "`{}` folds to a name that clashes elsewhere — skipped",
+                    names::shown(name)
+                ),
+                "rename it so it differs by more than case",
+            ));
+            return Ok(());
+        }
+        if let Some((taken, at, taken_rel)) = self.taken_names.get(&fold).cloned() {
+            // The same directory served under two recognized roots — a repo
+            // that offers one skill to two harness layouts — hashes the same
+            // and is one item, deduplicated in silence. Different bytes under a
+            // clashing name is a real collision: neither installs, so the order
+            // the tree happened to be walked in cannot pick the winner. A tree
+            // that will not hash (a symlink inside it) cannot be proven equal,
+            // so it counts as a clash.
+            let same = match (
+                self.sealed.hash_tree(&self.sealed.root().join(rel)),
+                self.sealed.hash_tree(&self.sealed.root().join(&taken_rel)),
+            ) {
+                (Ok(a), Ok(b)) => a == b,
+                _ => false,
+            };
+            if same {
+                return Ok(());
+            }
+            self.poisoned_names.insert(fold.clone());
+            self.discovery.skills.retain(|s| names::fold(&s.name) != fold);
+            self.discovery.findings.push(CatalogFinding::new(
+                location.clone(),
+                format!(
+                    "`{}` (here) and `{taken}` (at `{at}`) fold to one name on a case-folding filesystem — both are skipped",
                     names::shown(name)
                 ),
                 "rename one so they differ by more than case",
@@ -216,7 +257,7 @@ impl Walk<'_> {
             ));
         }
         self.taken_names
-            .insert(names::fold(name), (name.to_owned(), location));
+            .insert(fold, (name.to_owned(), location, rel.to_path_buf()));
         self.discovery.skills.push(DiscoveredSkill {
             name: name.to_owned(),
             rel: rel.to_path_buf(),
@@ -261,10 +302,17 @@ impl Walk<'_> {
             ));
             return Ok(());
         }
-        if let Some((taken, at)) = self.taken_names.get(&names::fold(&name)) {
+        let fold = names::fold(&name);
+        if let Some((taken, at, _)) = self.taken_names.get(&fold).cloned() {
+            // Both spellings are skipped, so which the walk reached first can
+            // never decide the winner.
+            self.poisoned_names.insert(fold.clone());
+            self.discovery.skills.retain(|s| names::fold(&s.name) != fold);
             self.discovery.findings.push(CatalogFinding::new(
                 location,
-                format!("the repository root skill folds to `{taken}` (at `{at}`) — it is skipped"),
+                format!(
+                    "the repository root skill folds to `{taken}` (at `{at}`) — both are skipped"
+                ),
                 "rename one of the two",
             ));
             return Ok(());

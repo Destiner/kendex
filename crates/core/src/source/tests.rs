@@ -178,6 +178,28 @@ engineer = ["dev"]
     assert_eq!(config.role_skills["engineer"], ["dev"]);
 }
 
+/// A declared-layout catalog lists only names that install: a deceptive or
+/// otherwise unusable directory name is not drawn as a row find_item would
+/// refuse, and never as an on-screen name that differs from the one on disk.
+#[test]
+fn an_explicit_catalog_does_not_list_names_it_cannot_install() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
+    for dir in ["ok", "pay\u{202e}gnp.exe", "-rf", "nul"] {
+        std::fs::create_dir_all(root.join("skills").join(dir)).unwrap();
+        std::fs::write(root.join("skills").join(dir).join("SKILL.md"), "body").unwrap();
+    }
+    let sealed = SealedSource::open(root).unwrap();
+    let config = source_config(&sealed, "cat").unwrap();
+    assert_eq!(list_items(&sealed, &config, ItemKind::Skill), ["ok"]);
+    // What is listed is exactly what find_item resolves.
+    for name in ["pay\u{202e}gnp.exe", "-rf", "nul"] {
+        assert_eq!(find_item(&sealed, &config, ItemKind::Skill, name), None);
+    }
+    assert!(find_item(&sealed, &config, ItemKind::Skill, "ok").is_some());
+}
+
 #[test]
 fn a_catalog_still_naming_its_config_vstack_toml_is_read() {
     let tmp = tempfile::tempdir().unwrap();

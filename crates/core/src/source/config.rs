@@ -374,6 +374,10 @@ pub(super) fn flat_skills(sealed: &SealedSource, dir: &str) -> Vec<String> {
         .into_iter()
         .filter(|path| sealed.is_file(&path.join("SKILL.md")))
         .filter_map(|path| path.file_name()?.to_str().map(str::to_owned))
+        // A listed name is one that installs: find_item refuses the rest, so
+        // listing them would only draw dead rows and, for a deceptive name,
+        // one whose on-screen spelling is not the name that lands on disk.
+        .filter(|name| crate::names::item_problem(name).is_none())
         .collect()
 }
 
@@ -391,6 +395,8 @@ fn file_stems(sealed: &SealedSource, dir: &str, ext: &str) -> Vec<String> {
         .into_iter()
         .filter(|path| path.extension().is_some_and(|e| e == ext) && sealed.is_file(path))
         .filter_map(|path| path.file_stem()?.to_str().map(str::to_owned))
+        // A listed name is one that installs: find_item refuses the rest.
+        .filter(|name| crate::names::item_problem(name).is_none())
         .collect()
 }
 

@@ -41,6 +41,14 @@ pub fn segment_problem(segment: &str) -> Option<String> {
             shown(segment)
         ));
     }
+    // An invisible or direction-flipping character would let one name read as
+    // another on screen while installing under a different one on disk.
+    if segment.chars().any(is_deceptive) {
+        return Some(format!(
+            "`{}` holds an invisible or direction-changing character",
+            shown(segment)
+        ));
+    }
     // Hook names are quoted into the shell command a harness runs; `$` and
     // backticks expand inside double quotes, and one rule for every kind is
     // simpler than one kind exempted.
@@ -74,17 +82,33 @@ pub fn segment_problem(segment: &str) -> Option<String> {
 }
 
 /// A catalog's own text, safe to print. Names travel from a downloaded
-/// repository into terminal output, where a control character would move
-/// the cursor or colour the line instead of being read as the name it is.
+/// repository into terminal output and the app, where a control character
+/// would move the cursor or colour the line, and an invisible or
+/// direction-flipping character would let one marketplace's package read as
+/// another's — so those are shown as their escapes, never acted on.
 pub fn shown(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
-        match c.is_control() {
+        match c.is_control() || is_deceptive(c) {
             true => out.extend(c.escape_debug()),
             false => out.push(c),
         }
     }
     out
+}
+
+/// Characters that render as nothing or reorder what surrounds them: the bidi
+/// overrides and isolates, the zero-width spaces and joiners, and the BOM. A
+/// name is meant to be the letters a person reads; these would make two
+/// different names look like one.
+fn is_deceptive(c: char) -> bool {
+    matches!(c,
+        '\u{200B}'..='\u{200F}'   // zero-width space/joiner, LTR/RTL marks
+        | '\u{202A}'..='\u{202E}' // bidi embeddings and overrides
+        | '\u{2060}'..='\u{2064}' // word joiner, invisible operators
+        | '\u{2066}'..='\u{2069}' // bidi isolates
+        | '\u{FEFF}'              // zero-width no-break space (BOM)
+    )
 }
 
 /// Why this item name cannot be installed. A name from a plugin-registry-shaped
@@ -165,6 +189,20 @@ mod tests {
         }
         assert!(item_problem(&"x".repeat(MAX_SEGMENT + 1)).is_some());
         assert!(item_problem(&"x".repeat(MAX_SEGMENT)).is_none());
+    }
+
+    /// A right-to-left override or a zero-width space would let one
+    /// marketplace's package read on screen as another's while installing
+    /// under a different name — refused as a name, and escaped when shown.
+    #[test]
+    fn deceptive_characters_are_refused_and_escaped() {
+        assert!(segment_problem("pay\u{202e}gnp.exe").is_some());
+        assert!(segment_problem("gh\u{200b}").is_some());
+        assert!(segment_problem("a\u{2066}b").is_some());
+        assert!(item_problem("clean\u{200e}").is_some());
+        // shown() renders them visible rather than letting them act.
+        assert!(!shown("pay\u{202e}gnp").contains('\u{202e}'));
+        assert!(!shown("a\u{200b}b").contains('\u{200b}'));
     }
 
     #[test]
