@@ -250,7 +250,7 @@ impl Catalogs<'_> {
             return None;
         };
         let sealed = SealedSource::open(&ready.root).ok()?;
-        let config = source_config(&sealed).ok()?;
+        let config = source_config(&sealed, crate::source::repo_leaf(&ready.provenance)).ok()?;
         Some((sealed, config))
     }
 }

@@ -233,7 +233,8 @@ pub fn editor_inventory(scope: Scope) -> Result<EditorInventory, String> {
         let Ok(sealed) = kendex_core::source_read::SealedSource::open(&ready.root) else {
             continue;
         };
-        let config = source::source_config(&sealed).map_err(|e| e.to_string())?;
+        let config = source::source_config(&sealed, source::repo_leaf(&ready.provenance))
+            .map_err(|e| e.to_string())?;
         available.extend(source::list_items(&sealed, &config, ItemKind::Skill));
     }
     available.sort();

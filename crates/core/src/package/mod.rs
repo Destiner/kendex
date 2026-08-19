@@ -102,7 +102,7 @@ pub(crate) fn package_ref_for(
         }
     };
     let sealed = SealedSource::open(&root)?;
-    let config = crate::source::source_config(&sealed)?;
+    let config = crate::source::source_config(&sealed, crate::source::repo_leaf(&repo))?;
     // The tip may no longer offer the item (moved, deleted); the effective
     // revision the declaration reads is the fallback that keeps the page
     // and the diff working for what is actually installed.
@@ -114,7 +114,9 @@ pub(crate) fn package_ref_for(
             return None;
         };
         let sealed = SealedSource::open(&ready.root).ok()?;
-        let config = crate::source::source_config(&sealed).ok()?;
+        let config =
+            crate::source::source_config(&sealed, crate::source::repo_leaf(&ready.provenance))
+                .ok()?;
         crate::source::find_item(&sealed, &config, kind, name)
             .and_then(|path| path.strip_prefix(&ready.root).ok().map(Path::to_path_buf))
             .map(|rel| root.join(rel))
@@ -269,7 +271,7 @@ pub fn set_rev(
             // A commit the repository holds is not yet a version of this
             // item — the item has to exist in that tree.
             let sealed = SealedSource::open(&resolution.root)?;
-            let config = crate::source::source_config(&sealed)?;
+            let config = crate::source::source_config(&sealed, crate::source::repo_leaf(&repo))?;
             if crate::source::find_item(&sealed, &config, kind, name).is_none() {
                 return Err(CoreError::ItemMissingAtRev {
                     name: name.to_owned(),

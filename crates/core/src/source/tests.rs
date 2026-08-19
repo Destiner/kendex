@@ -57,7 +57,7 @@ fn path_sources_resolve_relative_to_scope_root() {
     assert_eq!(source.root, project.join("catalog").canonicalize().unwrap());
 
     let sealed = SealedSource::open(&source.root).unwrap();
-    let config = source_config(&sealed).unwrap();
+    let config = source_config(&sealed, "catalog").unwrap();
     assert_eq!(
         find_item(&sealed, &config, ItemKind::Skill, "gh"),
         Some(source.root.join("skills/gh"))
@@ -161,7 +161,7 @@ engineer = ["dev"]
 "#,
     )
     .unwrap();
-    let config = source_config(&SealedSource::open(tmp.path()).unwrap()).unwrap();
+    let config = source_config(&SealedSource::open(tmp.path()).unwrap(), "cat").unwrap();
     assert_eq!(config.skill_dirs, ["skills", "extra-skills"]);
     assert_eq!(config.agent_skills["rust"], ["clippy"]);
     assert_eq!(config.role_skills["engineer"], ["dev"]);
@@ -175,12 +175,27 @@ fn a_catalog_still_naming_its_config_vstack_toml_is_read() {
         "[catalog]\nskills = [\"old-skills\"]\n",
     )
     .unwrap();
-    let config = source_config(&SealedSource::open(tmp.path()).unwrap()).unwrap();
+    let config = source_config(&SealedSource::open(tmp.path()).unwrap(), "cat").unwrap();
     assert_eq!(config.skill_dirs, ["old-skills"]);
 }
 
 #[test]
-fn a_catalog_carrying_both_config_names_is_served_from_kendex_toml() {
+fn a_catalog_carrying_both_config_names_agreeing_is_served_from_kendex_toml() {
+    let tmp = tempfile::tempdir().unwrap();
+    let body = "[catalog]\nskills = [\"new-skills\"]\n";
+    std::fs::write(tmp.path().join("kendex.toml"), body).unwrap();
+    // Formatting may differ; what must agree is what the files say.
+    std::fs::write(
+        tmp.path().join("vstack.toml"),
+        "[catalog]\nskills = [ \"new-skills\" ]\n",
+    )
+    .unwrap();
+    let config = source_config(&SealedSource::open(tmp.path()).unwrap(), "cat").unwrap();
+    assert_eq!(config.skill_dirs, ["new-skills"]);
+}
+
+#[test]
+fn both_config_generations_disagreeing_are_an_ambiguity_error_naming_both() {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(
         tmp.path().join("kendex.toml"),
@@ -192,7 +207,25 @@ fn a_catalog_carrying_both_config_names_is_served_from_kendex_toml() {
         "[catalog]\nskills = [\"old-skills\"]\n",
     )
     .unwrap();
-    let config = source_config(&SealedSource::open(tmp.path()).unwrap()).unwrap();
+    match source_config(&SealedSource::open(tmp.path()).unwrap(), "cat") {
+        Err(CoreError::CatalogAmbiguous { new, old }) => {
+            assert!(new.ends_with("kendex.toml"), "{new:?}");
+            assert!(old.ends_with("vstack.toml"), "{old:?}");
+        }
+        other => panic!("expected the ambiguity error, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_broken_old_generation_beside_a_readable_new_one_is_not_ambiguous() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("kendex.toml"),
+        "[catalog]\nskills = [\"new-skills\"]\n",
+    )
+    .unwrap();
+    std::fs::write(tmp.path().join("vstack.toml"), "not = = toml").unwrap();
+    let config = source_config(&SealedSource::open(tmp.path()).unwrap(), "cat").unwrap();
     assert_eq!(config.skill_dirs, ["new-skills"]);
 }
 

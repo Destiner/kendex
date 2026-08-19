@@ -181,6 +181,9 @@ enum Command {
     /// Declare, toggle, and refresh sources
     #[command(subcommand)]
     Source(commands::source_cmd::SourceCommand),
+    /// Subscribe to marketplaces and list subscriptions
+    #[command(subcommand)]
+    Marketplace(commands::marketplace_cmd::MarketplaceCommand),
     /// Scaffold a new catalog item in the current directory
     Init {
         name: Option<String>,
@@ -372,6 +375,7 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             let filter = ScopeFilter::resolve(None, false, ScopeFilter::Project)?;
             commands::source_cmd::run(&env, source_command, filter)?;
         }
+        Command::Marketplace(command) => commands::marketplace_cmd::run(&env, command)?,
         Command::Init { name, kind } => commands::init::run(name, kind)?,
         Command::Update { force } => commands::update::run(force)?,
     }

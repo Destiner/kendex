@@ -91,6 +91,7 @@ pub(super) fn resolve_source(
 /// catalog costs this declaration and nothing else.
 pub(super) fn read_catalog(
     root: &Path,
+    provenance: &str,
     name: &str,
     source: &str,
     state: &mut DesiredState,
@@ -104,7 +105,7 @@ pub(super) fn read_catalog(
             return Ok(None);
         }
     };
-    match source_config(&sealed) {
+    match source_config(&sealed, crate::source::repo_leaf(provenance)) {
         Ok(config) => Ok(Some((sealed, config))),
         Err(CoreError::SourceEscape { path, reason }) => {
             state.notes.push(format!(

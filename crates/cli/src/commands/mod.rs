@@ -12,6 +12,7 @@ pub mod guard_cmd;
 pub mod import;
 pub mod init;
 pub mod list;
+pub mod marketplace_cmd;
 pub mod pin;
 pub mod project;
 pub mod refresh;

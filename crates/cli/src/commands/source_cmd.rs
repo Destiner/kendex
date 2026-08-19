@@ -9,7 +9,7 @@ use crate::scope::ScopeFilter;
 pub enum SourceCommand {
     /// List declared sources for the scope
     List,
-    /// Declare a source: `owner/repo` or a local path
+    /// Declare a source: `owner/repo[@rev]`, a git URL, or a local path
     Add { name: String, reference: String },
     /// Remove a source (blocked while items still reference it)
     Remove { name: String },

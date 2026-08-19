@@ -10,10 +10,7 @@ use crate::engine::{EngineReport, PlanOptions, plan_scope};
 use crate::env::Env;
 use crate::error::{CoreError, Result};
 use crate::lock::{Lock, lock_path};
-use crate::manifest::{
-    DEFAULT_SOURCE_NAME, ItemDecl, LEGACY_SOURCE_NAME, LOCAL_SOURCE_NAME, Manifest, Method,
-    SourceDecl,
-};
+use crate::manifest::{ItemDecl, Manifest, Method};
 use crate::model::{HarnessId, ItemKind, Scope};
 use crate::source::{self, find_item, list_items, source_config};
 
@@ -50,7 +47,7 @@ pub fn add(env: &Env, scope: &Scope, request: &AddRequest) -> Result<EngineRepor
     let ready = source::require_ready(env, scope, &source_name, &manifest)?;
     let hold_at = hold_commit(request, &source_name, &ready)?;
     let sealed = crate::source_read::SealedSource::open(&ready.root)?;
-    let config = source_config(&sealed)?;
+    let config = source_config(&sealed, crate::source::repo_leaf(&ready.provenance))?;
     let lock = crate::lock::load(&lock_path(env, scope))?;
 
     let mut agents = request.agents.clone();
@@ -300,70 +297,8 @@ fn optional_choices(
 }
 
 /// Map a CLI source argument to a declared source name, declaring it when
-/// new. `owner/repo` shapes become repo sources; anything else a path.
-fn ensure_source(manifest: &mut Manifest, requested: Option<&str>) -> Result<String> {
-    let Some(requested) = requested else {
-        if manifest.sources.contains_key(DEFAULT_SOURCE_NAME) {
-            return Ok(DEFAULT_SOURCE_NAME.to_owned());
-        }
-        // A scope seeded before the product rename declares the default
-        // source under its old name; that declaration is still the default,
-        // not whichever source happens to sort first.
-        if manifest.sources.contains_key(LEGACY_SOURCE_NAME) {
-            return Ok(LEGACY_SOURCE_NAME.to_owned());
-        }
-        if let Some(name) = manifest.sources.keys().next() {
-            return Ok(name.clone());
-        }
-        return Err(CoreError::UnknownSource {
-            name: DEFAULT_SOURCE_NAME.to_owned(),
-        });
-    };
-    if requested == LOCAL_SOURCE_NAME || manifest.sources.contains_key(requested) {
-        return Ok(requested.to_owned());
-    }
-    let is_repo = requested.contains('/')
-        && !requested.starts_with('.')
-        && !requested.starts_with('/')
-        && !requested.starts_with('~')
-        && requested.matches('/').count() == 1;
-    for (name, decl) in &manifest.sources {
-        let matches = if is_repo {
-            decl.repo.as_deref() == Some(requested)
-        } else {
-            decl.path.as_deref() == Some(requested)
-        };
-        if matches {
-            return Ok(name.clone());
-        }
-    }
-    let base = requested
-        .rsplit('/')
-        .next()
-        .filter(|s| !s.is_empty())
-        .unwrap_or(requested)
-        .to_owned();
-    let mut name = base.clone();
-    let mut counter = 2;
-    while manifest.sources.contains_key(&name) {
-        name = format!("{base}-{counter}");
-        counter += 1;
-    }
-    let decl = if is_repo {
-        SourceDecl {
-            repo: Some(requested.to_owned()),
-            path: None,
-            rev: None,
-            enabled: true,
-        }
-    } else {
-        SourceDecl {
-            repo: None,
-            path: Some(requested.to_owned()),
-            rev: None,
-            enabled: true,
-        }
-    };
-    manifest.sources.insert(name.clone(), decl);
-    Ok(name)
-}
+/// new. References parse through [`crate::source_ref::parse_typed`], and a
+/// repository already subscribed under any spelling reuses that
+/// subscription.
+mod pick;
+use pick::ensure_source;

@@ -5,7 +5,7 @@ use crate::engine::{EngineReport, PlanOptions, plan_scope};
 use crate::env::Env;
 use crate::error::{CoreError, Result};
 use crate::lock::{load as load_lock, lock_path};
-use crate::manifest::{self, Manifest, SourceDecl};
+use crate::manifest::{self, Manifest};
 use crate::model::Scope;
 
 /// Everything the Sources page shows for one declared source in one scope.
@@ -75,6 +75,82 @@ pub fn list_sources(env: &Env, scope: &Scope) -> Result<Vec<SourceRow>> {
         .collect())
 }
 
+/// One subscription as `kendex marketplace list` shows it: what it points
+/// at, and how many packages it offers per kind once fetched.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscriptionRow {
+    pub scope: Scope,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rev: Option<String>,
+    /// The commit the subscription reads right now, when the cache holds
+    /// one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+    pub enabled: bool,
+    /// Packages offered, by kind name — absent until the catalog has been
+    /// fetched and can be read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub counts: Option<std::collections::BTreeMap<String, usize>>,
+}
+
+/// Every subscription a scope declares, with package counts where the
+/// catalog is readable — a catalog not fetched yet reports no counts
+/// rather than zero, because "nothing here" and "not counted yet" are
+/// different sentences.
+pub fn list_subscriptions(env: &Env, scope: &Scope) -> Result<Vec<SubscriptionRow>> {
+    let Some(manifest) = load_current(env, scope)? else {
+        return Ok(Vec::new());
+    };
+    let mut rows = Vec::new();
+    for (name, decl) in &manifest.sources {
+        let mut commit = None;
+        let counts = match crate::source::resolve(env, scope, name, &manifest) {
+            Ok(crate::source::SourceState::Ready(ready)) => {
+                commit = ready.commit.clone();
+                crate::source_read::SealedSource::open(&ready.root)
+                    .ok()
+                    .and_then(|sealed| {
+                        let display = decl
+                            .repo
+                            .as_deref()
+                            .or(decl.path.as_deref())
+                            .map(crate::source::repo_leaf)
+                            .unwrap_or(name);
+                        let config = crate::source::source_config(&sealed, display).ok()?;
+                        Some(
+                            crate::model::ItemKind::ALL
+                                .iter()
+                                .filter_map(|kind| {
+                                    let offered =
+                                        crate::source::list_items(&sealed, &config, *kind).len();
+                                    (offered > 0).then(|| (kind.name().to_owned(), offered))
+                                })
+                                .collect(),
+                        )
+                    })
+            }
+            _ => None,
+        };
+        rows.push(SubscriptionRow {
+            scope: scope.clone(),
+            name: name.clone(),
+            repo: decl.repo.clone(),
+            path: decl.path.clone(),
+            rev: decl.rev.clone(),
+            commit,
+            enabled: decl.enabled,
+            counts,
+        });
+    }
+    Ok(rows)
+}
+
 /// One curated set a catalog offers, as the Catalogs page lists it.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -107,7 +183,9 @@ pub fn list_bundles(env: &Env, scope: &Scope) -> Result<Vec<BundleRow>> {
         let Ok(sealed) = crate::source_read::SealedSource::open(&ready.root) else {
             continue;
         };
-        let Ok(config) = crate::source::source_config(&sealed) else {
+        let Ok(config) =
+            crate::source::source_config(&sealed, crate::source::repo_leaf(&ready.provenance))
+        else {
             continue;
         };
         let Ok(offered) = crate::source::bundles::offered(&sealed, &config) else {
@@ -150,41 +228,17 @@ pub(crate) fn persist_and_plan(
     Ok(report)
 }
 
-/// Declare a source. `owner/repo`-shaped references become remotes,
-/// anything else a path. `owner/repo@<rev>` pins or tracks a revision: a
-/// commit id is a pin, a tag or branch is followed.
+/// Declare a source under an explicit alias — the low-level verb behind
+/// `kendex source add`. The reference parses through
+/// [`crate::source_ref::parse_typed`]: `owner/repo[@rev]`, a full remote
+/// URL, a local path, a GitHub tree URL, or a skills.sh package URL.
 pub fn add_source(env: &Env, scope: &Scope, name: &str, reference: &str) -> Result<EngineReport> {
-    let mut manifest = crate::engine::ops::manifest_for_mutation(env, scope)?;
-    let (repo, rev) = match reference.split_once('@') {
-        Some((repo, rev)) if !repo.is_empty() && !rev.is_empty() => (repo, Some(rev)),
-        _ => (reference, None),
-    };
-    let is_repo = repo.contains('/')
-        && !repo.starts_with('.')
-        && !repo.starts_with('/')
-        && !repo.starts_with('~')
-        && repo.matches('/').count() == 1;
-    let decl = if is_repo {
-        SourceDecl {
-            repo: Some(repo.to_owned()),
-            path: None,
-            rev: rev.map(str::to_owned),
-            enabled: true,
-        }
-    } else {
-        SourceDecl {
-            repo: None,
-            path: Some(reference.to_owned()),
-            rev: None,
-            enabled: true,
-        }
-    };
-    manifest.sources.insert(name.to_owned(), decl);
-    persist_and_plan(env, scope, manifest)
+    Ok(subscribe(env, scope, reference, Some(name))?.report)
 }
 
-/// Removal is blocked while declarations still reference the source — the
-/// error names every referent and the fix; disable stays available.
+mod subscribe;
+pub use subscribe::{Subscribed, subscribe, subscribe_project_to};
+
 pub fn remove_source(env: &Env, scope: &Scope, name: &str) -> Result<EngineReport> {
     let mut manifest = crate::engine::ops::manifest_for_mutation(env, scope)?;
     if !manifest.sources.contains_key(name) {
@@ -253,7 +307,7 @@ mod tests {
         let (_tmp, env, scope) = fixture();
         for (name, reference) in [
             ("pinned", "owner/repo@v1.2.0"),
-            ("tracked", "owner/repo"),
+            ("tracked", "owner/other"),
             ("here", "../my@catalog"),
         ] {
             let report = add_source(&env, &scope, name, reference).unwrap();
@@ -265,6 +319,10 @@ mod tests {
         assert_eq!(pinned.repo.as_deref(), Some("owner/repo"));
         assert_eq!(pinned.rev.as_deref(), Some("v1.2.0"));
         assert_eq!(manifest.sources["tracked"].rev, None);
+        assert_eq!(
+            manifest.sources["tracked"].repo.as_deref(),
+            Some("owner/other")
+        );
         let here = &manifest.sources["here"];
         assert_eq!(here.path.as_deref(), Some("../my@catalog"));
         assert_eq!(here.rev, None);

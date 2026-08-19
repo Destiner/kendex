@@ -90,40 +90,8 @@ pub fn legacy_clone(env: &Env, repo: &str) -> PathBuf {
 /// artifact — mirror, per-commit checkouts, fetch stamp — moves only when
 /// the new key has nothing, so a crash mid-move finishes on the next call
 /// and nothing already fetched under the new key is ever replaced.
-pub fn adopt_cache(env: &Env, from: &str, to: &str) -> Result<()> {
-    let commits = env.source_cache_dir().join(COMMITS);
-    let pairs = [
-        (mirror_dir(env, from), mirror_dir(env, to)),
-        (commits.join(from), commits.join(to)),
-        (
-            crate::drift::stamps::stamp_path(env, from),
-            crate::drift::stamps::stamp_path(env, to),
-        ),
-    ];
-    if pairs
-        .iter()
-        .all(|(old, _)| fs::symlink_metadata(old).is_err())
-    {
-        return Ok(());
-    }
-    let _guard = match lock_repo(env, to) {
-        Ok(guard) => guard,
-        // Someone else holds this key's cache — likely mid-fetch or
-        // mid-adoption. The next read retries; failing this one would turn
-        // a transient lock into a hard error.
-        Err(CoreError::CacheBusy { .. }) => return Ok(()),
-        Err(error) => return Err(error),
-    };
-    for (old, new) in pairs {
-        if fs::symlink_metadata(&old).is_ok() && fs::symlink_metadata(&new).is_err() {
-            if let Some(parent) = new.parent() {
-                fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
-            }
-            fs::rename(&old, &new).map_err(|e| CoreError::io(&old, e))?;
-        }
-    }
-    Ok(())
-}
+mod adopt;
+pub use adopt::adopt_cache;
 
 /// Exclusive lock over one repository's cache entry. Only materialization
 /// takes it — reading a published checkout needs no lock, because a
@@ -252,6 +220,33 @@ pub fn resolve_ref(mirror: &Path, selector: &str) -> Option<String> {
             &format!("{selector}^{{commit}}"),
         ],
     ))
+}
+
+/// Every branch and tag the mirror holds, as full ref names — what a tree
+/// URL's `<ref>/<path>` split resolves against. `None` when the mirror
+/// cannot answer at all, which callers must treat as "cannot normalize",
+/// never as an empty repository.
+pub fn ref_names(mirror: &Path) -> Option<Vec<String>> {
+    let output = Hardened::git_bare(
+        mirror,
+        &[
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/heads",
+            "refs/tags",
+        ],
+    )
+    .run()
+    .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::to_owned)
+            .collect(),
+    )
 }
 
 pub fn has_commit(mirror: &Path, commit: &str) -> bool {

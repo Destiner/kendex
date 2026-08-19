@@ -30,6 +30,18 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- Any repository that holds skills is a marketplace. Subscribing reads
+  the layouts the ecosystem already uses — `skills/`, each tool's
+  project skills folder, category nesting, even a repo that is one
+  skill — with no special file required; what was found where is
+  reported per marketplace, and a broken catalog file makes the
+  marketplace unusable with the reason named instead of quietly offering
+  a different set of packages. Subscribe now takes full git URLs, GitHub
+  tree links (the whole repository, with the branch resolved against its
+  real branches), and skills.sh links; the same repository can't be
+  subscribed twice under two names in one place; and installing into a
+  project from a personal subscription subscribes the project in the
+  same previewed step.
 - Custom hooks now run wherever a harness can run them. A hook for all
   agents registers in the harness's own hook configuration on Claude
   Code, Codex, Gemini, Copilot, and Pi (through its carrier) — before,

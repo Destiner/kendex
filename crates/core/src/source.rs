@@ -4,13 +4,28 @@ use crate::env::Env;
 use crate::error::{CoreError, Result};
 use crate::manifest::{LOCAL_SOURCE_NAME, Manifest, SourceDecl};
 use crate::model::Scope;
+mod about;
 pub mod bundles;
 mod catalog;
+pub mod discover;
 mod plugin_registry;
 
+pub use about::{AboutReport, RootCount, about};
 pub use bundles::CatalogBundle;
 pub use catalog::{CatalogGroup, CatalogItem, CatalogMetadata, metadata as catalog_metadata};
+pub use discover::{CatalogMode, DISCOVERY_VERSION, DiscoveredSkill, Discovery};
 pub use plugin_registry::{CatalogFinding, PluginEntry, Registry};
+
+/// The last path segment of a provenance — `owner/repo`, a filesystem path,
+/// or `local` — which is what names a one-skill repo whose SKILL.md does
+/// not name itself.
+pub fn repo_leaf(provenance: &str) -> &str {
+    provenance
+        .trim_end_matches(['/', '\\'])
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(provenance)
+}
 
 /// A source the engine can read right now.
 #[derive(Debug, Clone, PartialEq, Eq)]

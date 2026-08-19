@@ -342,8 +342,8 @@ lives in one capability table read by core and UI.
   source's `repo` and `[forks.*].repo` in the manifest, `sources.*.repo`
   and every entry's `sourceRepo` in the lock (a partial rewrite would read
   as a per-package source rebind, a conflict each). Source *names* keep:
-  a pre-rename `[sources.vstack]` stays `vstack` and is still the default
-  add's fallback until phase 1 finds the default by repo. The remote
+  a pre-rename `[sources.vstack]` stays `vstack` and is still found as
+  the default, because the default is found by repo. The remote
   store adopts the old spelling's cache under the new key by a one-time
   directory rename (mirror, checkouts, fetch stamp), so an offline scope
   keeps resolving; report routing accepts both repo spellings as
@@ -464,9 +464,12 @@ lives in one capability table read by core and UI.
   artifact earns its op on its own evidence, so a scope whose manifest
   already moved still gets the rest renamed. Both spellings of one file
   (or of the local-source dir) in one scope root is a hard error naming
-  both, raised at plan time; no arbitration. Foreign surfaces never get
-  the error: a catalog's own `kendex.toml` outranks its `vstack.toml`,
-  and old-name settings files and templates keep being read. The global
+  both, raised at plan time; no arbitration. Foreign surfaces get a
+  narrower rule: a catalog's own `kendex.toml` outranks its `vstack.toml`
+  while the two agree or only the new one parses; two files that would
+  each govern differently are an ambiguity error naming both — the
+  catalog must say one thing; and old-name settings files and templates
+  keep being read. The global
   `vstack2` config/cache/data dirs move under `kendex` once, on first
   launch of either shell, under a scope-style lock, never overwriting
   what the new dirs already hold and never following symlinks; whatever
@@ -538,6 +541,32 @@ lives in one capability table read by core and UI.
   per commit it has ever resolved, so a tracked branch grows the cache by
   a catalog per upstream change, and nothing prunes it yet — the cache is
   rebuildable, so deleting it is the only cleanup there is.
+- **A subscription reference is parsed, never guessed, and one repository
+  subscribes once per scope.** Two validators sit side by side in
+  `core/source_ref.rs`, one per trust level: the typed one (the Subscribe
+  dialog, `marketplace subscribe`, `source add`, `add`'s positional
+  source) keeps the full range a person may need — `owner/repo[@rev]`,
+  any-host remote URLs kept as typed (an `ssh://` spelling can be what
+  their auth requires), local paths, GitHub tree URLs, skills.sh package
+  URLs — while the untrusted one (directory rows, collections, deep
+  links) is GitHub-only and normalizes to `owner/repo`. Both refuse a
+  leading `-`, `..` in repository components, and percent-escapes that
+  would smuggle a separator, decoding exactly once. A tree URL always
+  subscribes the whole repository and surfaces the package path as a
+  lead to open, never an identity; its `<ref>` resolves against the
+  mirror's real refs (branch names contain `/`), and two split points
+  both naming refs, or a branch and tag sharing a name, refuse naming
+  every candidate — offline, normalization is a refusal before any
+  write. One repository per scope, compared by canonical identity
+  (`.git`, case, and redirect spellings are one repo), with the refusal
+  naming the existing subscription. The default marketplace is found by
+  repo, never by name and never by sort order: the subscription whose
+  repo is the default repo; two of them prefer the seeded name and
+  otherwise refuse naming both; none is a typed error with no fallback —
+  what the cross-source search catches rather than a guessed install.
+  Installing into a project from a personal subscription copies the
+  declaration into the project in that plan — exactly one scope mutated,
+  the personal manifest read-only, the cache shared by construction.
 - **A plugin-registry-shaped catalog is recognized, never guessed.** A source
   is read one plugin deep (`plugins/<name>/{agents,commands,skills}`)
   exactly when it carries `.claude-plugin/marketplace.json`; a `plugins/`
@@ -556,6 +585,38 @@ lives in one capability table read by core and UI.
   a named group) is read-side only — it feeds browsing and, later,
   installing a plugin as a unit; the manifest records what the user chose,
   never what a catalog says about itself.
+- **Any repo holding skills is a marketplace — discovered from a closed
+  table, never guessed wider.** `source/discover.rs` owns a versioned
+  search table (`DISCOVERY_VERSION`, part of the safety-cache key):
+  `skills/` and `skills/.curated`, each harness's project skills dir
+  (pinned to the adapters by test), `<dir>/**/SKILL.md` up to three levels
+  down for category nesting — stopping below a found skill, skipping
+  `.git`, `node_modules` and friends — and a repo-root `SKILL.md` as a
+  one-skill repo named by its validated frontmatter `name`, else by the
+  repository leaf the caller passes, since a store directory is a commit
+  id. The table yields skills only: hooks, MCP servers, commands and
+  agents install from a declared kendex layout, `kendex.toml`, or a
+  plugin registry — executable content is never discovered into
+  existence, so a `hooks/` folder in an undeclared skills repo is
+  repository tooling, not an offer. Precedence is fixed and fail-closed:
+  a `.claude-plugin/marketplace.json` registry wins outright and root
+  dirs are not read; else a parsed control file declares the fixed
+  layout (`[catalog]` overriding which dirs) and the search table stays
+  out — discovery exists for repos that never declared anything; else
+  the search runs. A control file that is present but unreadable, or a
+  wrong-typed `[catalog]` value, makes the source unusable with a
+  finding — presence selects the mode, and breakage never falls through
+  to a different one, because serving defaults would offer a different
+  catalog than the author published. Every probe goes through
+  `SealedSource` (symlinks skipped, budgets held, hard caps on found
+  skills); items dedupe by normalized repository-relative path, never
+  `canonicalize`; a second directory folding to an already-taken name is
+  skipped with a finding naming both, a frontmatter `name` disagreeing
+  with its directory is a finding (the directory is the identity), and
+  submodule or LFS pointers under a recognized root are findings, not
+  hydrated. `source/about.rs` renders the one typed report — what was
+  found where, plus every finding — that the About tab and `kendex
+  index` consume.
 - **Intent in the manifest, closure in the plan, edges in the lock.** The
   manifest records choices and never their consequences: the items asked
   for, the bundles installed, which optional dependencies were taken, what

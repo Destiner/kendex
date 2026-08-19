@@ -250,26 +250,32 @@ fn a_pre_move_mute_still_silences_after_the_migration() {
 }
 
 /// A default add (no source argument) on a scope seeded before the product
-/// rename: the source declared under the old default name is still the
-/// default, not whichever source happens to sort first.
+/// rename: the source is found by its repository — the legacy spelling
+/// canonicalizes to the default repo — never by its name and never by
+/// whichever source happens to sort first.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn a_default_add_falls_back_to_the_legacy_named_source() {
+fn a_default_add_finds_the_default_subscription_by_repo() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().to_path_buf();
-    let env = Env::fake(&home, FakeOs::Linux);
-    let project = home.join("dev/app");
-    fs::create_dir_all(project.join(".claude")).unwrap();
-
-    let old_default = home.join("old-default");
-    fs::create_dir_all(old_default.join("skills/gh")).unwrap();
+    let upstream = home.join("base").join("vanillagreencom/kendex");
+    fs::create_dir_all(upstream.join("skills/gh")).unwrap();
     fs::write(
-        old_default.join("skills/gh/SKILL.md"),
+        upstream.join("skills/gh/SKILL.md"),
         "---\nname: gh\n---\nBody.\n",
     )
     .unwrap();
-    // Sorts before "vstack": without the legacy-name fallback the default
-    // add would land here and miss the skill.
+    git(&upstream, &["init", "--quiet", "-b", "main"]);
+    git(&upstream, &["add", "-A"]);
+    git(&upstream, &["commit", "--quiet", "-m", "one"]);
+    let base = format!("file://{}", home.join("base").display());
+    let env = Env::fake(&home, FakeOs::Linux).with_var("KENDEX_GIT_BASE", &base);
+    remote::sync(&env, LEGACY_SOURCE_REPO, None).unwrap();
+
+    let project = home.join("dev/app");
+    fs::create_dir_all(project.join(".claude")).unwrap();
+    // Sorts before "vstack": under a sort-first fallback the default add
+    // would land here and miss the skill.
     let another = home.join("another");
     fs::create_dir_all(another.join("skills/other")).unwrap();
     fs::write(
@@ -280,9 +286,8 @@ fn a_default_add_falls_back_to_the_legacy_named_source() {
     fs::write(
         project.join("kendex.toml"),
         format!(
-            "schema = 5\n\n[sources.another]\npath = \"{}\"\n\n[sources.vstack]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n",
-            another.display(),
-            old_default.display()
+            "schema = 5\n\n[sources.another]\npath = \"{}\"\n\n[sources.vstack]\nrepo = \"{LEGACY_SOURCE_REPO}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n",
+            another.display()
         ),
     )
     .unwrap();

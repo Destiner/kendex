@@ -61,6 +61,11 @@ pub enum CoreError {
     #[error("{path}: refused catalog read — {reason}")]
     SourceEscape { path: PathBuf, reason: String },
 
+    #[error(
+        "the catalog carries both {new} and {old} with different content — it must say one thing; ask its author to remove one, or pin a commit where they agree"
+    )]
+    CatalogAmbiguous { new: PathBuf, old: PathBuf },
+
     #[error("'{name}' already installed from {existing} — refusing to rebind to {requested}")]
     SourceCollision {
         name: String,
@@ -106,6 +111,32 @@ pub enum CoreError {
 
     #[error("unknown source '{name}' — declare [sources.{name}] first")]
     UnknownSource { name: String },
+
+    #[error("'{reference}': {reason}")]
+    SourceRefInvalid { reference: String, reason: String },
+
+    #[error(
+        "{reference} is already subscribed as '{name}' ({repo}) — one subscription per repository per scope"
+    )]
+    DuplicateSourceRepo {
+        reference: String,
+        name: String,
+        repo: String,
+    },
+
+    /// The typed no-default state the cross-source search catches: a bare
+    /// add with no default subscription resolves by searching every
+    /// subscription, never by guessing one.
+    #[error(
+        "no default marketplace in this scope: nothing subscribes to {repo} — name a source, or subscribe to one"
+    )]
+    NoDefaultSource { repo: String },
+
+    #[error(
+        "two subscriptions name the default repository ({repo}): {} — remove one, or name the one you mean",
+        names.join(", ")
+    )]
+    DefaultSourceAmbiguous { repo: String, names: Vec<String> },
 
     #[error("'{name}' not found in source '{source_name}'")]
     ItemNotInSource { name: String, source_name: String },

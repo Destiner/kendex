@@ -224,7 +224,8 @@ fn compute(env: &Env, scope: &Scope, manifest: &Manifest, lock: &Lock) -> Result
             else {
                 continue;
             };
-            let Some((sealed, config)) = read_catalog(&root, name, &decl.source, &mut state)?
+            let Some((sealed, config)) =
+                read_catalog(&root, &provenance, name, &decl.source, &mut state)?
             else {
                 continue;
             };

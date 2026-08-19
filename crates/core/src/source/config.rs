@@ -1,20 +1,27 @@
 //! A catalog's own configuration — `kendex.toml` (or the pre-rename
 //! `vstack.toml`) plus a Claude plugin registry where one exists — and the
 //! item lookups that read it.
+//!
+//! Presence selects the mode and breakage never falls through to a
+//! different one: a control file that exists but cannot be read makes the
+//! source unusable with a finding, because serving defaults instead would
+//! silently offer a different catalog than the author published.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use crate::error::Result;
+use crate::error::{CoreError, Result};
 use crate::model::ItemKind;
 use crate::source_read::SealedSource;
 
 use super::bundles::{self, CatalogBundle};
 use super::catalog;
+use super::discover::{self, CatalogMode, Discovery};
 use super::plugin_registry::{self, CatalogFinding, Registry};
 
 /// Source-side layout + mapping tables, read leniently — source catalogs are
-/// v1-format repos (no schema key) and stay valid forever.
+/// v1-format repos (no schema key) and stay valid forever. What is not
+/// lenient is the control file itself: see the module note.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SourceConfig {
     pub agent_dirs: Vec<String>,
@@ -30,48 +37,158 @@ pub struct SourceConfig {
     /// at the root are not read in that case — the registry says what the
     /// catalog offers, and reading both would offer the same file twice.
     pub plugin_registry: Option<Registry>,
+    /// The precedence's verdict for this source.
+    pub mode: CatalogMode,
+    /// What the search table found, in [`CatalogMode::Discovered`] only.
+    pub discovery: Discovery,
+    /// What is wrong with the control file itself.
+    pub config_findings: Vec<CatalogFinding>,
 }
 
 impl SourceConfig {
-    /// Everything wrong with the catalog's own registry, if it has one.
-    pub fn findings(&self) -> &[CatalogFinding] {
-        match &self.plugin_registry {
-            Some(registry) => &registry.findings,
-            None => &[],
-        }
+    /// Everything wrong with the catalog, wherever it was read from.
+    pub fn findings(&self) -> impl Iterator<Item = &CatalogFinding> {
+        self.config_findings
+            .iter()
+            .chain(
+                self.plugin_registry
+                    .iter()
+                    .flat_map(|registry| registry.findings.iter()),
+            )
+            .chain(self.discovery.findings.iter())
+    }
+
+    fn unusable(&mut self, file: &'static str, problem: String, fix: &str) {
+        self.config_findings
+            .push(CatalogFinding::new(file, problem, fix));
+        self.mode = CatalogMode::Unusable;
+        self.agent_dirs.clear();
+        self.skill_dirs.clear();
+        self.bundles.clear();
     }
 }
 
-pub fn source_config(sealed: &SealedSource) -> Result<SourceConfig> {
+/// The control file governing this catalog, chosen across both generations.
+enum Control {
+    None,
+    Broken { file: &'static str, problem: String },
+    Parsed { table: toml::Table },
+}
+
+/// Read the catalog's layout and mapping tables — and, when neither a
+/// registry nor a control file declares the layout, run the search table.
+/// `display` names a one-skill repo whose SKILL.md does not name itself:
+/// pass the repository leaf, since the store directory is a commit id.
+pub fn source_config(sealed: &SealedSource, display: &str) -> Result<SourceConfig> {
     let mut config = SourceConfig {
         agent_dirs: vec!["agents".to_owned()],
         skill_dirs: vec!["skills".to_owned()],
         plugin_registry: plugin_registry::read(sealed)?,
         ..SourceConfig::default()
     };
-    // Catalogs are foreign repos we cannot rename: read the new file name
-    // first and fall back to the old; a catalog carrying both is served
-    // from the new one rather than refused — refusing would brick every
-    // subscriber over a state only the catalog's author can fix.
-    let text = match sealed.read_if_exists(&sealed.root().join(crate::rename::MANIFEST_FILE))? {
-        Some(text) => Some(text),
-        None => sealed.read_if_exists(&sealed.root().join(crate::rename::LEGACY_MANIFEST_FILE))?,
-    };
-    let Some(text) = text else {
-        return Ok(config);
-    };
-    let Ok(table) = text.parse::<toml::Table>() else {
-        return Ok(config);
-    };
-    if let Some(catalog) = table.get("catalog").and_then(|c| c.as_table()) {
-        if let Some(dirs) = string_list(catalog.get("agents")) {
-            config.agent_dirs = dirs;
-        }
-        if let Some(dirs) = string_list(catalog.get("skills")) {
-            config.skill_dirs = dirs;
+    match control_file(sealed)? {
+        Control::None => {}
+        Control::Broken { file, problem } => match config.plugin_registry.is_some() {
+            // The registry outranks the control file, so its breakage is a
+            // finding rather than the whole source's verdict.
+            true => config.config_findings.push(CatalogFinding::new(
+                file,
+                format!("this catalog's own config is not readable TOML — {problem}"),
+                "fix the TOML, or delete the file",
+            )),
+            false => config.unusable(
+                file,
+                format!("this catalog's own config is not readable TOML — {problem}"),
+                "fix the TOML, or delete the file to have the layout discovered",
+            ),
+        },
+        Control::Parsed { table } => {
+            // A parsed control file declares kendex's layout: the fixed kind
+            // dirs govern, `[catalog]` overriding which ones, and the search
+            // table stays out — discovery exists for repos that never
+            // declared anything.
+            config.mode = CatalogMode::Explicit;
+            read_tables(&mut config, &table);
         }
     }
-    config.bundles = bundles::declared(&table);
+    if config.plugin_registry.is_some() && config.mode != CatalogMode::Unusable {
+        config.mode = CatalogMode::PluginRegistry;
+    }
+    if config.mode == CatalogMode::Discovered {
+        config.discovery = discover::discover(sealed, display)?;
+    }
+    Ok(config)
+}
+
+/// Which of the two file generations governs. Catalogs are foreign repos we
+/// cannot rename: `kendex.toml` is preferred while the two agree, or while
+/// only it parses — but two files that would each govern differently are an
+/// ambiguity error naming both, never an arbitration.
+fn control_file(sealed: &SealedSource) -> Result<Control> {
+    let root = sealed.root();
+    let new = sealed.read_if_exists(&root.join(crate::rename::MANIFEST_FILE))?;
+    let old = sealed.read_if_exists(&root.join(crate::rename::LEGACY_MANIFEST_FILE))?;
+    let (file, text) = match (new, old) {
+        (None, None) => return Ok(Control::None),
+        (Some(text), None) => (crate::rename::MANIFEST_FILE, text),
+        (None, Some(text)) => (crate::rename::LEGACY_MANIFEST_FILE, text),
+        (Some(new), Some(old)) => {
+            let agree = new == old
+                || match (new.parse::<toml::Table>(), old.parse::<toml::Table>()) {
+                    (Ok(new), Ok(old)) => new == old,
+                    (Ok(_), Err(_)) => true,
+                    _ => false,
+                };
+            if !agree {
+                return Err(CoreError::CatalogAmbiguous {
+                    new: root.join(crate::rename::MANIFEST_FILE),
+                    old: root.join(crate::rename::LEGACY_MANIFEST_FILE),
+                });
+            }
+            (crate::rename::MANIFEST_FILE, new)
+        }
+    };
+    match text.parse::<toml::Table>() {
+        Ok(table) => Ok(Control::Parsed { table }),
+        Err(problem) => Ok(Control::Broken {
+            file,
+            problem: problem.to_string(),
+        }),
+    }
+}
+
+fn read_tables(config: &mut SourceConfig, table: &toml::Table) {
+    match table.get("catalog") {
+        None => {}
+        Some(toml::Value::Table(catalog)) => {
+            for key in ["agents", "skills"] {
+                let Some(value) = catalog.get(key) else {
+                    continue;
+                };
+                let Some(list) = string_list(Some(value)) else {
+                    config.unusable(
+                        crate::rename::MANIFEST_FILE,
+                        format!("`[catalog] {key}` is not a list of directory names"),
+                        "write it as an array of strings, or remove the key",
+                    );
+                    return;
+                };
+                match key {
+                    "agents" => config.agent_dirs = list,
+                    _ => config.skill_dirs = list,
+                }
+            }
+        }
+        Some(_) => {
+            config.unusable(
+                crate::rename::MANIFEST_FILE,
+                "`catalog` is not a table".to_owned(),
+                "write `[catalog]` with `skills`/`agents` arrays, or remove it",
+            );
+            return;
+        }
+    }
+    config.bundles = bundles::declared(table);
     if let Some(mapping) = table.get("agent-skills").and_then(|t| t.as_table()) {
         for (agent, skills) in mapping {
             if let Some(list) = string_list(Some(skills)) {
@@ -100,16 +217,13 @@ pub fn source_config(sealed: &SealedSource) -> Result<SourceConfig> {
             config.frontmatter.insert(harness.clone(), per_agent);
         }
     }
-    Ok(config)
 }
 
+/// A list of strings and nothing else — a member of any other type makes
+/// the whole value unreadable rather than a shorter list.
 fn string_list(value: Option<&toml::Value>) -> Option<Vec<String>> {
-    value?.as_array().map(|list| {
-        list.iter()
-            .filter_map(|v| v.as_str())
-            .map(str::to_owned)
-            .collect()
-    })
+    let list = value?.as_array()?;
+    list.iter().map(|v| v.as_str().map(str::to_owned)).collect()
 }
 
 pub fn find_item(
@@ -123,16 +237,30 @@ pub fn find_item(
     if crate::names::item_problem(name).is_some() {
         return None;
     }
+    if config.mode == CatalogMode::Unusable {
+        return None;
+    }
     if let Some(registry) = &config.plugin_registry {
         return catalog::find(sealed, registry, kind, name);
     }
     let root = sealed.root();
     match kind {
-        ItemKind::Skill => config
-            .skill_dirs
-            .iter()
-            .map(|d| root.join(d).join(name))
-            .find(|p| sealed.is_file(&p.join("SKILL.md"))),
+        ItemKind::Skill => match config.mode {
+            CatalogMode::Explicit => config
+                .skill_dirs
+                .iter()
+                .map(|d| root.join(d).join(name))
+                .find(|p| sealed.is_file(&p.join("SKILL.md"))),
+            _ => config
+                .discovery
+                .skills
+                .iter()
+                .find(|skill| skill.name == name)
+                .map(|skill| match skill.rel.as_os_str().is_empty() {
+                    true => root.to_path_buf(),
+                    false => root.join(&skill.rel),
+                }),
+        },
         ItemKind::Agent => config
             .agent_dirs
             .iter()
@@ -151,38 +279,25 @@ fn catalog_file(sealed: &SealedSource, dir: &str, file: &str) -> Option<PathBuf>
 }
 
 pub fn list_items(sealed: &SealedSource, config: &SourceConfig, kind: ItemKind) -> Vec<String> {
+    if config.mode == CatalogMode::Unusable {
+        return Vec::new();
+    }
     if let Some(registry) = &config.plugin_registry {
         return catalog::items(sealed, registry, kind);
     }
     let mut names = Vec::new();
     match kind {
-        ItemKind::Skill => {
-            for dir in &config.skill_dirs {
-                let Ok(entries) = sealed.list_dir(&sealed.root().join(dir)) else {
-                    continue;
-                };
-                for path in entries {
-                    if sealed.is_file(&path.join("SKILL.md"))
-                        && let Some(name) = path.file_name().and_then(|n| n.to_str())
-                    {
-                        names.push(name.to_owned());
-                    }
+        ItemKind::Skill => match config.mode {
+            CatalogMode::Explicit => {
+                for dir in &config.skill_dirs {
+                    names.extend(flat_skills(sealed, dir));
                 }
             }
-        }
+            _ => names.extend(config.discovery.skills.iter().map(|s| s.name.clone())),
+        },
         ItemKind::Agent => {
             for dir in &config.agent_dirs {
-                let Ok(entries) = sealed.list_dir(&sealed.root().join(dir)) else {
-                    continue;
-                };
-                for path in entries {
-                    if path.extension().is_some_and(|e| e == "md")
-                        && sealed.is_file(&path)
-                        && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-                    {
-                        names.push(stem.to_owned());
-                    }
-                }
+                names.extend(agent_stems(sealed, dir));
             }
         }
         _ => {}
@@ -190,4 +305,38 @@ pub fn list_items(sealed: &SealedSource, config: &SourceConfig, kind: ItemKind) 
     names.sort();
     names.dedup();
     names
+}
+
+/// The skills one explicit catalog dir holds, the flat v1 shape.
+pub(super) fn flat_skills(sealed: &SealedSource, dir: &str) -> Vec<String> {
+    let Ok(entries) = sealed.list_dir(&sealed.root().join(dir)) else {
+        return Vec::new();
+    };
+    entries
+        .into_iter()
+        .filter(|path| sealed.is_file(&path.join("SKILL.md")))
+        .filter_map(|path| path.file_name()?.to_str().map(str::to_owned))
+        .collect()
+}
+
+pub(super) fn agent_stems(sealed: &SealedSource, dir: &str) -> Vec<String> {
+    let Ok(entries) = sealed.list_dir(&sealed.root().join(dir)) else {
+        return Vec::new();
+    };
+    entries
+        .into_iter()
+        .filter(|path| path.extension().is_some_and(|e| e == "md") && sealed.is_file(path))
+        .filter_map(|path| path.file_stem()?.to_str().map(str::to_owned))
+        .collect()
+}
+
+/// How many files with this extension a fixed kind dir holds.
+pub(super) fn files_with_ext(sealed: &SealedSource, dir: &str, ext: &str) -> usize {
+    let Ok(entries) = sealed.list_dir(&sealed.root().join(dir)) else {
+        return 0;
+    };
+    entries
+        .into_iter()
+        .filter(|path| path.extension().is_some_and(|e| e == ext) && sealed.is_file(path))
+        .count()
 }
