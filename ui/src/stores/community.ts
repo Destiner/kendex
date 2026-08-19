@@ -1,7 +1,10 @@
 // The Community tab's state: the kendex.ai directory (served from the
-// app's on-disk cache, honest about staleness) and skills.sh search.
+// app's on-disk cache, honest about staleness) and skills.sh search plus
+// its proxied leaderboard.
 import { create } from "zustand";
 import { commands, type DirectoryView, type SkillsShHit } from "@/bindings";
+
+export type SkillsShMode = "search" | "all-time" | "trending" | "hot";
 
 interface CommunityState {
   directory: DirectoryView | null;
@@ -12,11 +15,16 @@ interface CommunityState {
 
   skillsshAvailable: boolean;
   skillsshHits: SkillsShHit[] | null;
+  skillsshMode: SkillsShMode;
+  /** The leaderboard needs the kendex.ai proxy; when it is not there the
+   * chips hide and search carries the whole sub-tab. */
+  skillsshChips: boolean;
   skillsshSearching: boolean;
   skillsshError: string | null;
 
   load: (refresh: boolean) => Promise<void>;
   searchSkillssh: (query: string) => Promise<void>;
+  loadLeaderboard: (view: Exclude<SkillsShMode, "search">) => Promise<void>;
 }
 
 /** Stale results never land on a newer query. */
@@ -28,6 +36,8 @@ export const useCommunityStore = create<CommunityState>((set) => ({
   error: null,
   skillsshAvailable: true,
   skillsshHits: null,
+  skillsshMode: "search",
+  skillsshChips: true,
   skillsshSearching: false,
   skillsshError: null,
 
@@ -58,10 +68,11 @@ export const useCommunityStore = create<CommunityState>((set) => ({
         skillsshHits: null,
         skillsshError: null,
         skillsshSearching: false,
+        skillsshMode: "search",
       });
       return;
     }
-    set({ skillsshSearching: true });
+    set({ skillsshSearching: true, skillsshMode: "search" });
     const response = await commands.communitySkillsshSearch(query);
     if (generation !== searchGeneration) return;
     if (response.status === "ok") {
@@ -72,6 +83,25 @@ export const useCommunityStore = create<CommunityState>((set) => ({
       });
     } else {
       set({ skillsshError: response.error, skillsshSearching: false });
+    }
+  },
+
+  loadLeaderboard: async (view) => {
+    const generation = ++searchGeneration;
+    set({ skillsshSearching: true });
+    const response = await commands.communitySkillsshLeaderboard(view);
+    if (generation !== searchGeneration) return;
+    if (response.status === "ok") {
+      set({
+        skillsshHits: response.data,
+        skillsshMode: view,
+        skillsshError: null,
+        skillsshSearching: false,
+      });
+    } else {
+      // No proxy (or it is down): the chips disappear rather than sit
+      // broken; whatever the list showed stays.
+      set({ skillsshChips: false, skillsshSearching: false });
     }
   },
 }));

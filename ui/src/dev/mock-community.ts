@@ -60,9 +60,26 @@ const reactHits: SkillsShHit[] = [
   },
 ];
 
+const leaderboards: Record<string, SkillsShHit[]> = {
+  trending: [
+    { skill: "find-skills", repo: "vercel-labs/skills", installs: 24_531 },
+    ...reactHits,
+  ],
+  hot: [
+    {
+      skill: "deploy-to-vercel",
+      repo: "vercel-labs/agent-skills",
+      installs: 9_120,
+    },
+  ],
+  "all-time": reactHits,
+};
+
 export const communityHandlers: Record<string, Handler> = {
   community_directory: () => directory,
   community_skillssh_available: () => true,
   community_skillssh_search: ({ query }: { query: string }) =>
     query.toLowerCase().includes("react") ? reactHits : [],
+  community_skillssh_leaderboard: ({ view }: { view: string }) =>
+    leaderboards[view] ?? Promise.reject(`no such view '${view}'`),
 };

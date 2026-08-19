@@ -32,6 +32,17 @@ pub fn community_skillssh_search(query: String) -> Result<Vec<SkillsShHit>, Stri
     }
 }
 
+/// Trending / Hot / Top through the kendex.ai proxy. An error here means
+/// "no proxy" — the chips hide, search stays.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn community_skillssh_leaderboard(view: String) -> Result<Vec<SkillsShHit>, String> {
+    let Some(view) = skillssh::LeaderboardView::parse(&view) else {
+        return Err(format!("'{view}' is not a leaderboard view"));
+    };
+    skillssh::leaderboard(&CurlFetch, view).map_err(|e| e.to_string())
+}
+
 /// Whether the skills.sh surface is on at all — the tab hides the
 /// sub-tab when it is not, rather than showing a dead search box.
 #[tauri::command(async)]

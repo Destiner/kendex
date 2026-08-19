@@ -1,43 +1,77 @@
 import { Search } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useCommunityStore } from "@/stores/community";
+import { type SkillsShMode, useCommunityStore } from "@/stores/community";
+
+const CHIP_VIEWS: { view: Exclude<SkillsShMode, "search">; label: string }[] = [
+  { view: "trending", label: "Trending" },
+  { view: "hot", label: "Hot" },
+  { view: "all-time", label: "Top" },
+];
 
 /** Search skills.sh's whole index directly — public API, no account, only
- * skills.sh sees the query. Install hands the skill's URL to the
- * Subscribe dialog: the repository is subscribed and the skill opens for
- * install, bound to what kendex's own discovery finds there. */
+ * skills.sh sees the query. Trending / Hot / Top come through the
+ * kendex.ai proxy and hide when it is not there. Install hands the
+ * skill's URL to the Subscribe dialog: the repository is subscribed and
+ * the skill opens for install, bound to what kendex's own discovery
+ * finds there. */
 export function SkillsShSearch({
   onInstall,
 }: {
   onInstall: (url: string) => void;
 }) {
   const hits = useCommunityStore((s) => s.skillsshHits);
+  const mode = useCommunityStore((s) => s.skillsshMode);
+  const chips = useCommunityStore((s) => s.skillsshChips);
   const searching = useCommunityStore((s) => s.skillsshSearching);
   const error = useCommunityStore((s) => s.skillsshError);
   const search = useCommunityStore((s) => s.searchSkillssh);
+  const loadLeaderboard = useCommunityStore((s) => s.loadLeaderboard);
   const [query, setQuery] = useState("");
+
+  // Opening the sub-tab shows what is moving rather than an empty box;
+  // if the proxy is missing this collapses to search-only.
+  useEffect(() => {
+    if (chips && hits === null && !searching) void loadLeaderboard("trending");
+  }, [chips, hits, searching, loadLeaderboard]);
 
   return (
     <div className="space-y-4">
-      <form
-        className="flex max-w-md items-center gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void search(query);
-        }}
-      >
-        <Input
-          placeholder="Search skills.sh"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <Button type="submit" variant="outline" disabled={searching}>
-          <Search className="size-4" />
-          {searching ? "Searching…" : "Search"}
-        </Button>
-      </form>
+      <div className="flex max-w-2xl items-center gap-2">
+        <form
+          className="flex flex-1 items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void search(query);
+          }}
+        >
+          <Input
+            placeholder="Search skills.sh"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <Button type="submit" variant="outline" disabled={searching}>
+            <Search className="size-4" />
+            {searching ? "Searching…" : "Search"}
+          </Button>
+        </form>
+        {chips ? (
+          <div className="flex items-center gap-1">
+            {CHIP_VIEWS.map(({ view, label }) => (
+              <Button
+                key={view}
+                size="sm"
+                variant={mode === view ? "secondary" : "ghost"}
+                disabled={searching}
+                onClick={() => void loadLeaderboard(view)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        ) : null}
+      </div>
 
       {error ? (
         <p className="text-sm text-critical" role="alert">
@@ -50,7 +84,9 @@ export function SkillsShSearch({
         </p>
       ) : hits.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Nothing on skills.sh matches this search.
+          {mode === "search"
+            ? "Nothing on skills.sh matches this search."
+            : "The leaderboard came back empty."}
         </p>
       ) : (
         <div className="divide-y rounded-lg border">

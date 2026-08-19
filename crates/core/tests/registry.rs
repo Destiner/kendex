@@ -274,3 +274,23 @@ fn etag_and_body_are_one_generation_on_disk() {
         "one file holds both"
     );
 }
+
+#[test]
+fn leaderboard_parses_the_proxy_shape_and_absence_hides_it() {
+    let canned = Canned::new(vec![ok(
+        200,
+        None,
+        r#"{"data":[{"id":"o/r/x","slug":"x","name":"find-skills","source":"vercel-labs/skills","installs":24531}],"pagination":{"page":0}}"#,
+    )]);
+    let view = skillssh::LeaderboardView::parse("trending").expect("view");
+    let hits = skillssh::leaderboard(&canned, view).expect("leaderboard");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].skill, "find-skills");
+
+    let absent = Canned::new(vec![ok(404, None, "")]);
+    assert!(matches!(
+        skillssh::leaderboard(&absent, view),
+        Err(CoreError::RegistryUnavailable { .. })
+    ));
+    assert!(skillssh::LeaderboardView::parse("evil").is_none());
+}

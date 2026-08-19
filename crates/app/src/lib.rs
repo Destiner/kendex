@@ -60,6 +60,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         unsubscribe::marketplace_unsubscribe,
         community::community_directory,
         community::community_skillssh_search,
+        community::community_skillssh_leaderboard,
         community::community_skillssh_available,
         marketplaces::marketplace_about,
         marketplaces::library_provenance,

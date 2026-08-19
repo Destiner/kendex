@@ -220,6 +220,11 @@ export const commands = {
 	 */
 	communitySkillsshSearch: (query: string) => typedError<SkillsShHit[], string>(__TAURI_INVOKE("community_skillssh_search", { query })),
 	/**
+	 *  Trending / Hot / Top through the kendex.ai proxy. An error here means
+	 *  "no proxy" — the chips hide, search stays.
+	 */
+	communitySkillsshLeaderboard: (view: string) => typedError<SkillsShHit[], string>(__TAURI_INVOKE("community_skillssh_leaderboard", { view })),
+	/**
 	 *  Whether the skills.sh surface is on at all — the tab hides the
 	 *  sub-tab when it is not, rather than showing a dead search box.
 	 */
