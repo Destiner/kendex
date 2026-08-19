@@ -235,6 +235,45 @@ fn a_member_another_bundle_carries_survives_removal() {
     assert!(scope_skill(&scope, "shared").exists(), "shared stays");
 }
 
+/// A `plugin/item` name round-trips through the local source: detaching a
+/// nested-name package writes it to the nested local path, the declaration
+/// keeps its `plugin/item` spelling, and the local reader lists and resolves it
+/// so the install re-renders from the user's own copy.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_nested_name_round_trips_through_detach() {
+    let (_tmp, env, scope, catalog) = world("[skills.\"plugin/item\"]\nsource = \"cat\"\n", "");
+    // An explicit-layout catalog with a nested skill at skills/plugin/item.
+    let dir = catalog.join("skills/plugin/item");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(catalog.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
+    fs::write(dir.join("SKILL.md"), "---\nname: item\n---\nnested\n").unwrap();
+    apply_now(&env, &scope);
+
+    let plan = detach::source(&env, &scope, "cat").unwrap();
+    apply::execute(&env, &plan, None).unwrap();
+
+    let manifest = manifest_of(&env, &scope);
+    assert_eq!(manifest.skills["plugin/item"].source, "local");
+    let local = kendex_core::source::local_source_root(&env, &scope);
+    assert!(
+        local.join("skills/plugin/item/SKILL.md").exists(),
+        "written to the nested local path"
+    );
+    // The local reader lists and resolves the nested name, so a re-plan reads
+    // it back cleanly — no drift conflict, the round-trip closed.
+    let after = kendex_core::engine::audit(&env, &scope).unwrap();
+    assert!(
+        !after
+            .drift
+            .iter()
+            .any(|row| row.state == kendex_core::engine::DriftState::Conflict),
+        "the detached nested name reads back without conflict: {:?}",
+        after.drift
+    );
+    apply::execute(&env, &after.plan, None).unwrap();
+}
+
 /// The plain "nothing installed" case still works through the ordinary source
 /// removal path — a subscription with no installations just drops.
 #[test]
