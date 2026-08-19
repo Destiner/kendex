@@ -122,30 +122,65 @@ fn without_source(manifest: &Manifest, source_name: &str) -> Manifest {
 /// Unsubscribe and uninstall: remove every declaration the source's closure
 /// covers, then let the plan sweep the installations and any dependency whose
 /// only parents left with it. Members another marketplace's bundle still
-/// carries stay, by the same edge rules an ordinary removal follows.
-pub fn remove(env: &Env, scope: &Scope, source_name: &str) -> Result<EngineReport> {
-    let manifest = super::ops::manifest_for_mutation(env, scope)?;
+/// carries stay, by the same edge rules an ordinary removal follows. An edited
+/// installation is never swept without a decision — remove refuses while any
+/// package is edited unless `discard_edits` says to take the edits too.
+pub fn remove(
+    env: &Env,
+    scope: &Scope,
+    source_name: &str,
+    discard_edits: bool,
+) -> Result<EngineReport> {
+    let scope = scope.canonical();
+    let manifest = super::ops::manifest_for_mutation(env, &scope)?;
     // Validate reachability the same way the closure does, so remove and its
     // preview never disagree about whether the source can be read.
-    let closure = closure(env, scope, source_name, &manifest)?;
+    let closure = closure(env, &scope, source_name, &manifest)?;
+    let lock = crate::lock::load(&crate::lock::lock_path(env, &scope))?;
+    if !discard_edits {
+        let edited = edited_items(env, &scope, &closure, &lock);
+        if !edited.is_empty() {
+            return Err(CoreError::DetachEdited { names: edited });
+        }
+    }
     let without = without_source(&manifest, source_name);
     // Dropping the declarations orphans their installations; remove takes those
     // off disk. The filter is the closure's own names, so orphan removal is
     // scoped to what left with this source — a derived dependency is named so
     // it is not kept as "unaccountable" now that its origin is gone — and no
     // unrelated pre-existing orphan is swept along.
-    let lock = crate::lock::load(&crate::lock::lock_path(env, scope))?;
     let options = super::PlanOptions {
         remove_orphans: true,
         removal_filter: Some(closure.items.iter().map(|i| i.name.clone()).collect()),
         sweep_unneeded: true,
+        overwrite_edited: discard_edits,
         ..super::PlanOptions::default()
     };
-    let mut report = super::plan_scope(env, scope, &without, &lock, &options)?;
+    let mut report = super::plan_scope(env, &scope, &without, &lock, &options)?;
     if !super::persists_manifest(&report.plan.ops) {
-        crate::rename::insert_manifest_save(env, scope, &mut report.plan, without)?;
+        crate::rename::insert_manifest_save(env, &scope, &mut report.plan, without)?;
     }
     Ok(report)
+}
+
+/// The closure items whose installation the user has edited by hand.
+fn edited_items(
+    env: &Env,
+    scope: &Scope,
+    closure: &Closure,
+    lock: &crate::lock::Lock,
+) -> Vec<String> {
+    closure
+        .items
+        .iter()
+        .filter(|item| {
+            lock.entries
+                .values()
+                .filter(|e| e.kind == item.kind && e.name == item.name)
+                .any(|e| super::removal::edit_holds(env, scope, e))
+        })
+        .map(|item| item.name.clone())
+        .collect()
 }
 
 /// The path in the local source one detached item's source-form bytes are
@@ -187,17 +222,7 @@ pub fn source(env: &Env, scope: &Scope, source_name: &str) -> Result<Plan> {
 
     // An edited installation cannot be recovered from source form; name every
     // one and refuse rather than lose the edit.
-    let edited: Vec<String> = closure
-        .items
-        .iter()
-        .filter(|item| {
-            lock.entries
-                .values()
-                .filter(|e| e.kind == item.kind && e.name == item.name)
-                .any(|e| super::removal::edit_holds(env, &scope, e))
-        })
-        .map(|item| item.name.clone())
-        .collect();
+    let edited = edited_items(env, &scope, &closure, &lock);
     if !edited.is_empty() {
         return Err(CoreError::DetachEdited { names: edited });
     }

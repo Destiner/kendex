@@ -167,6 +167,58 @@ fn marketplace_browse_lists_a_subscriptions_packages() {
     );
 }
 
+/// Unsubscribe refuses without a decision when packages are installed, keeps
+/// them as local forks with --keep-packages, and the source is gone either way.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn marketplace_unsubscribe_removes_or_keeps() {
+    let tmp = fixture_home();
+    let home = tmp.path();
+    let project = home.join("dev/app");
+    let catalog_arg = home.join("catalog").display().to_string();
+
+    assert!(
+        kendex(
+            home,
+            &project,
+            &["marketplace", "subscribe", &catalog_arg, "--name", "cat"],
+        )
+        .status
+        .success()
+    );
+    // Install a skill so the subscription is not empty (qualified, so the
+    // bare-name search never reaches the unfetched default source).
+    assert!(
+        kendex(home, &project, &["add", "--skill", "cat::gh", "-y"])
+            .status
+            .success()
+    );
+
+    // No decision flag: refuses and says how.
+    let refused = kendex(home, &project, &["marketplace", "unsubscribe", "cat"]);
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("--keep-packages"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+
+    // Keep: the source goes, the skill stays declared from local.
+    let kept = kendex(
+        home,
+        &project,
+        &["marketplace", "unsubscribe", "cat", "--keep-packages"],
+    );
+    assert!(
+        kept.status.success(),
+        "{}",
+        String::from_utf8_lossy(&kept.stderr)
+    );
+    let manifest = fs::read_to_string(project.join("kendex.toml")).unwrap();
+    assert!(!manifest.contains("[sources.cat]"), "{manifest}");
+    assert!(manifest.contains("source = \"local\""), "{manifest}");
+}
+
 /// Subscribing prints the preview line naming scope, alias, and target,
 /// and a full URL declares a remote (the pre-fix heuristic read it as a
 /// folder path).

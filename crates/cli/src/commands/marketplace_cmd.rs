@@ -31,6 +31,24 @@ pub enum MarketplaceCommand {
         #[arg(long)]
         scope: Option<String>,
     },
+    /// Unsubscribe from a marketplace, removing or keeping its packages
+    Unsubscribe {
+        name: String,
+        /// Uninstall everything installed from it
+        #[arg(long, conflicts_with = "keep_packages")]
+        remove_packages: bool,
+        /// Keep its packages as your own local forks
+        #[arg(long)]
+        keep_packages: bool,
+        /// With --remove-packages: discard hand edits too, instead of refusing
+        #[arg(long)]
+        discard_edits: bool,
+        #[arg(short = 'g', long)]
+        global: bool,
+        /// project | global (default project)
+        #[arg(long)]
+        scope: Option<String>,
+    },
     /// Packages and curated sets a subscription offers
     Browse {
         /// The subscription to browse (default: every subscription in scope)
@@ -130,6 +148,51 @@ fn run_browse(
     Ok(())
 }
 
+fn run_unsubscribe(
+    env: &Env,
+    name: &str,
+    remove_packages: bool,
+    keep_packages: bool,
+    discard_edits: bool,
+    global: bool,
+    scope: Option<String>,
+) -> CliResult {
+    use kendex_core::engine::detach;
+    let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::Project)?;
+    let scope = resolve_scopes(env, filter)?.remove(0);
+
+    let manifest = kendex_core::engine::ops::manifest_for_mutation(env, &scope)?;
+    let closure = detach::closure(env, &scope, name, &manifest)?;
+
+    // Nothing installed: a plain confirm, whichever flag (or none) was passed.
+    if closure.items.is_empty() {
+        let report = kendex_core::source_ops::remove_source(env, &scope, name)?;
+        kendex_core::apply::execute(env, &report.plan, None)?;
+        say(&format!("{}: unsubscribed from '{name}'", scope.label()));
+        return Ok(());
+    }
+
+    let plan = match (remove_packages, keep_packages) {
+        (false, false) => {
+            return Err(format!(
+                "'{name}' has {} package(s) installed — pass --remove-packages to uninstall them or --keep-packages to keep them as your own",
+                closure.items.len()
+            )
+            .into());
+        }
+        (_, true) => detach::source(env, &scope, name)?,
+        (true, _) => detach::remove(env, &scope, name, discard_edits)?.plan,
+    };
+    kendex_core::apply::execute(env, &plan, None)?;
+    let kept = if keep_packages { "kept" } else { "removed" };
+    say(&format!(
+        "{}: unsubscribed from '{name}', {} {kept}",
+        scope.label(),
+        closure.items.len()
+    ));
+    Ok(())
+}
+
 fn install_state(state: &kendex_core::source::browse::InstallState) -> &'static str {
     use kendex_core::source::browse::InstallState;
     match state {
@@ -210,6 +273,22 @@ pub fn run(env: &Env, command: MarketplaceCommand) -> CliResult {
                 say(&format!("package: {lead}"));
             }
         }
+        MarketplaceCommand::Unsubscribe {
+            name,
+            remove_packages,
+            keep_packages,
+            discard_edits,
+            global,
+            scope,
+        } => run_unsubscribe(
+            env,
+            &name,
+            remove_packages,
+            keep_packages,
+            discard_edits,
+            global,
+            scope,
+        )?,
         MarketplaceCommand::Browse {
             marketplace,
             json,

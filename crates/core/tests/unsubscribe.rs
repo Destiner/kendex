@@ -97,7 +97,7 @@ fn removing_a_source_takes_its_closure_including_derived_deps() {
     );
 
     // Remove uninstalls the whole closure and drops the source.
-    let report = detach::remove(&env, &scope, "cat").unwrap();
+    let report = detach::remove(&env, &scope, "cat", false).unwrap();
     apply::execute(&env, &report.plan, None).unwrap();
     assert!(!scope_skill(&scope, "gh").exists());
     assert!(!scope_skill(&scope, "common").exists());
@@ -121,7 +121,7 @@ fn removing_an_unreachable_source_refuses() {
     apply_now(&env, &scope);
     // Make the catalog unreadable by removing it.
     fs::remove_dir_all(&catalog).unwrap();
-    assert!(detach::remove(&env, &scope, "cat").is_err());
+    assert!(detach::remove(&env, &scope, "cat", false).is_err());
     // The subscription is untouched by the refusal.
     assert!(manifest_of(&env, &scope).sources.contains_key("cat"));
 }
