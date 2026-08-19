@@ -220,13 +220,28 @@ lives in one capability table read by core and UI.
   draws its width and gutters from `lib/layout.ts` — two widths only, a
   reading measure and full-width for data-dense tables — so header,
   filters and body cannot drift out of alignment.
-- One search box, on the Library page above the table it filters. "/"
-  works anywhere and takes you there, so the box is never a cursor
-  sitting over a list that isn't on screen.
+- One search box per page that lists things — the Library's table and the
+  Marketplaces' Packages tab each keep their own above what they filter —
+  and "/" focuses the one on screen; from a page with no box it still
+  takes you to the Library. The box is never a cursor sitting over a list
+  that isn't on screen, and a search never filters a page you can't see.
 - Location filtering belongs to the Library's table, and nowhere else. An
   app-wide picker in the chrome silently narrowed pages that state each
   row's location anyway — a count that disagreed with the page under it,
-  with no visible cause. Every other page shows every scope.
+  with no visible cause. Every other page shows every scope. The Packages
+  tab's `Where ▾` is not that filter: it picks the destination a package
+  installs to (each row installs into the scope its subscription lives
+  in), so narrowing by it changes what a click will do, not what is
+  hidden — which is why the Library's rule stands untouched beside it.
+- My Library holds what is installed; Marketplaces holds what could be.
+  The Library lost its "Add from a catalog" tab to the Marketplaces page
+  (Subscribed / Packages / Community / Mine), because browsing what a
+  subscription offers and managing what is already here are different
+  errands with different tables. Its nested pages — a marketplace's
+  detail, a curated set, an available package — are the only ones that
+  carry a breadcrumb; a base page never does. The Library's From column
+  and the package page's From line read one provenance join, so "where
+  did this come from" has a single answer everywhere it is asked.
 - Harnesses and Projects are two sidebar destinations, not two tabs on one
   page: they answer different questions and neither is a mode of the
   other. Where a harness keeps its files is edited on that harness's own

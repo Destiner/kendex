@@ -30,6 +30,18 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- The Marketplaces page: subscribe to any repository of skills and
+  agents, browse every subscription's packages in one searchable table
+  with a pre-install safety dot on each row, open a marketplace's own
+  page (its curated sets, its packages, and what its catalog says about
+  itself), install a whole set or a selection with a destination picker,
+  and read a package's README, files, and safety findings before
+  anything lands. Unsubscribing asks the one question that matters —
+  remove its packages, or keep them as your own. The Library is now
+  **My Library**, gains a From column and filter saying which
+  marketplace (or you) each installation came from, and browsing moved
+  out of it to the new page. The community directory and authoring tabs
+  say plainly that they arrive with kendex.ai.
 - Any repository that holds skills is a marketplace. Subscribing reads
   the layouts the ecosystem already uses — `skills/`, each tool's
   project skills folder, category nesting, even a repo that is one
