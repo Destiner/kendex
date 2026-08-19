@@ -24,6 +24,7 @@ mod desired_kinds;
 mod desired_mcp;
 mod desired_skill;
 mod desired_source;
+pub mod detach;
 mod expansion;
 pub mod fork;
 mod gate;

@@ -200,6 +200,41 @@ fn an_explicit_catalog_does_not_list_names_it_cannot_install() {
     assert!(find_item(&sealed, &config, ItemKind::Skill, "ok").is_some());
 }
 
+/// A namespaced `plugin/item` name — a plugin-registry package detached into
+/// the local source — coexists with a plain `plugin` name: both are listed and
+/// both resolve, neither hiding the other. Same for the file-per-item kinds.
+#[test]
+fn nested_and_plain_names_coexist_in_a_declared_layout() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
+    for rel in ["skills/plugin", "skills/plugin/item"] {
+        std::fs::create_dir_all(root.join(rel)).unwrap();
+        std::fs::write(root.join(rel).join("SKILL.md"), "body").unwrap();
+    }
+    std::fs::create_dir_all(root.join("agents/team")).unwrap();
+    std::fs::write(root.join("agents/lead.md"), "---\nname: lead\n---\n").unwrap();
+    std::fs::write(root.join("agents/team/dev.md"), "---\nname: dev\n---\n").unwrap();
+
+    let sealed = SealedSource::open(root).unwrap();
+    let config = source_config(&sealed, "cat").unwrap();
+
+    let skills = list_items(&sealed, &config, ItemKind::Skill);
+    assert_eq!(skills, ["plugin", "plugin/item"]);
+    assert_eq!(
+        find_item(&sealed, &config, ItemKind::Skill, "plugin/item"),
+        Some(root.join("skills/plugin/item"))
+    );
+    assert!(find_item(&sealed, &config, ItemKind::Skill, "plugin").is_some());
+
+    let agents = list_items(&sealed, &config, ItemKind::Agent);
+    assert_eq!(agents, ["lead", "team/dev"]);
+    assert_eq!(
+        find_item(&sealed, &config, ItemKind::Agent, "team/dev"),
+        Some(root.join("agents/team/dev.md"))
+    );
+}
+
 #[test]
 fn a_catalog_still_naming_its_config_vstack_toml_is_read() {
     let tmp = tempfile::tempdir().unwrap();
