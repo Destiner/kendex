@@ -731,6 +731,22 @@ lives in one capability table read by core and UI.
   with members, About rows, findings. Field order in both JSON shapes is
   the schema — serde structs, no maps. `kendex marketplace check` is the
   alias of `check --catalog --strict`, same exit codes.
+- **The community directory is read like any remote: strictly, capped,
+  and honest about staleness.** `registry/` (core) consumes what
+  `source/index.rs` producers feed kendex.ai: `index.rs` re-parses the
+  site's schema-1 payload under the site's own caps (a spoofed or
+  compromised registry cannot grow a row), refusing structural problems
+  whole and dropping only unusable rows; `cache.rs` holds one body and
+  one meta line on disk (`Env::registry_cache_dir`) behind an ETag and a
+  one-hour TTL, and a failed refresh serves the last fetch labeled stale
+  with its real fetch time — the Community tab is never blank. All reads
+  go through the `Fetch` trait (curl via `Hardened`, plain http only when
+  an explicit `KENDEX_API` override asks); tests inject canned
+  transports. `skillssh.rs` is the versioned adapter over their public
+  search: pinned wire schema refused on mismatch, capped, kill-switched
+  (`KENDEX_SKILLSSH=off`), and a hit is a lead, never an identity —
+  installing routes through the same subscribe path as any marketplace.
+  Sign-in, collections and deep links arrive with W3/W4.
 - **Intent in the manifest, closure in the plan, edges in the lock.** The
   manifest records choices and never their consequences: the items asked
   for, the bundles installed, which optional dependencies were taken, what
