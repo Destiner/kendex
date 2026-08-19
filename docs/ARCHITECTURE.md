@@ -66,7 +66,10 @@ lives in one capability table read by core and UI.
 3. Content hashes cover source bytes plus the manifest sections that shape
    an artifact — editing a shared key invalidates dependents.
 4. Locks record durable provenance; same-source reinstall is a no-op,
-   cross-source name collision is a hard error naming the original. The
+   cross-source name collision is a hard error naming the original. A name
+   is claimed by an install (a lock entry) or by a declaration not yet
+   applied (a manifest entry) — both collide, so a declared name cannot be
+   silently rebound to another marketplace before it is ever installed. The
    one sanctioned rebind is a recorded fork: remote to `local`, written
    into the manifest's `[forks.<kind>.<name>]` by the fork operation the
    user confirmed. A fork keeps the item's installed name, so dependents
@@ -135,7 +138,12 @@ lives in one capability table read by core and UI.
 14. An item is scored on its own bytes and nothing else. Where one
     surface lists many items — a plugin cache, a settings file — the
     scanner records where each item's files actually live, so a
-    neighbour's contents can never land in this item's findings.
+    neighbour's contents can never land in this item's findings. A
+    repo-root skill is the one place a skill's tree is the whole
+    repository; its `.git`, `node_modules` and build dirs are not its
+    bytes, and one shared constructor (`SealedSource::collect_skill_tree`)
+    excludes them so score, preview, install and catalog-check all read the
+    same files — a `.git/config`'s credentials never ride in with a skill.
     What decides the outcome is exactly kind, path and name
     (`quality::observe::same_reading`); no rule reads the harness, which
     is what lets one file installed for several tools be read once. The
@@ -629,11 +637,21 @@ lives in one capability table read by core and UI.
   catalog than the author published. Every probe goes through
   `SealedSource` (symlinks skipped, budgets held, hard caps on found
   skills); items dedupe by normalized repository-relative path, never
-  `canonicalize`; a second directory folding to an already-taken name is
-  skipped with a finding naming both, a frontmatter `name` disagreeing
-  with its directory is a finding (the directory is the identity), and
-  submodule or LFS pointers under a recognized root are findings, not
-  hydrated. `source/about.rs` renders the one typed report — what was
+  `canonicalize`; two directories that fold to one name are **both**
+  skipped with a finding naming both — unless their bytes are identical, in
+  which case one skill served under two harness layouts is deduplicated by
+  content, not treated as a clash — so which directory the walk reached
+  first can never decide which of two clashing skills installs. A
+  frontmatter `name` disagreeing with its directory is a finding (the
+  directory is the identity), and submodule or LFS pointers under a
+  recognized root are findings, not hydrated. A name that carries an
+  invisible or direction-reversing character is refused (`names::segment_problem`)
+  and shown with it escaped (`names::shown`), so one marketplace's package
+  cannot wear another's name on screen while installing under a different
+  one; a declared-layout catalog lists only names that install, so the
+  Packages table never draws a row `find_item` would refuse. The walk stops
+  at its skill cap rather than reading the rest of a hostile tree, bounding
+  the work, not just the output. `source/about.rs` renders the one typed report — what was
   found where, plus every finding — that the About tab and `kendex
   index` consume.
 - **Browsing is a read-side join, and installed state is derived, never
