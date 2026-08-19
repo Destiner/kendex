@@ -291,6 +291,25 @@ fn check_manifest(
             check_component(sealed, entry, at, key, &declared, findings);
         }
     }
+    // A plugin's hooks and MCP servers are declared here but not yet installed
+    // from a plugin registry — only its skills, agents and commands are. Say so
+    // rather than drop them in silence, so installing the plugin is never
+    // mistaken for installing all of it.
+    let carried: Vec<&str> = [("hooks", "hooks"), ("mcpServers", "MCP servers")]
+        .into_iter()
+        .filter(|(key, _)| manifest.get(key).is_some_and(|value| !value.is_null()))
+        .map(|(_, label)| label)
+        .collect();
+    if !carried.is_empty() {
+        findings.push(CatalogFinding::new(
+            format!("{at}/{PLUGIN_MANIFEST}"),
+            format!(
+                "this plugin also ships {} that kendex does not install from a plugin registry yet — its skills, agents and commands install, the rest do not",
+                carried.join(" and ")
+            ),
+            "install those from a marketplace that declares kendex's layout, or wait for plugin hook and server support",
+        ));
+    }
     Ok(())
 }
 

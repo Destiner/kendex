@@ -31,12 +31,39 @@ pub enum MarketplaceCommand {
         #[arg(long)]
         scope: Option<String>,
     },
+    /// Packages and curated sets a subscription offers
+    Browse {
+        /// The subscription to browse (default: every subscription in scope)
+        marketplace: Option<String>,
+        /// Machine-readable rows (schema 1)
+        #[arg(long)]
+        json: bool,
+        #[arg(short = 'g', long)]
+        global: bool,
+        /// project | global | all (default all)
+        #[arg(long)]
+        scope: Option<String>,
+        /// The community directory (not available yet — coming with the
+        /// kendex.ai platform)
+        #[arg(long)]
+        community: bool,
+    },
     /// Validate a marketplace directory — the alias of
     /// `check --catalog --strict`
     Check {
         /// The marketplace directory (default: the current directory)
         dir: Option<std::path::PathBuf>,
     },
+}
+
+fn install_state(state: &kendex_core::source::browse::InstallState) -> &'static str {
+    use kendex_core::source::browse::InstallState;
+    match state {
+        InstallState::Installed => "installed",
+        InstallState::Available => "available",
+        InstallState::HeldBackBySafety => "held back by safety",
+        InstallState::NotOffered => "no longer offered",
+    }
 }
 
 pub fn run(env: &Env, command: MarketplaceCommand) -> CliResult {
@@ -107,6 +134,73 @@ pub fn run(env: &Env, command: MarketplaceCommand) -> CliResult {
             ));
             if let Some(lead) = subscribed.lead {
                 say(&format!("package: {lead}"));
+            }
+        }
+        MarketplaceCommand::Browse {
+            marketplace,
+            json,
+            global,
+            scope,
+            community,
+        } => {
+            if community {
+                return Err(
+                    "the community directory is not available yet — it arrives with the kendex.ai platform; browse a subscription by name for now"
+                        .into(),
+                );
+            }
+            let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::All)?;
+            let mut rows = Vec::new();
+            for scope in resolve_scopes(env, filter)? {
+                let names: Vec<String> = match &marketplace {
+                    Some(name) => vec![name.clone()],
+                    None => source_ops::list_subscriptions(env, &scope)?
+                        .into_iter()
+                        .map(|row| row.name)
+                        .collect(),
+                };
+                for name in names {
+                    // A subscription that will not open costs its own rows, not
+                    // the whole listing — the same tolerance the app's overview
+                    // shows.
+                    let Ok(packages) = kendex_core::source::browse::packages(env, &scope, &name)
+                    else {
+                        continue;
+                    };
+                    for package in packages {
+                        rows.push((scope.clone(), name.clone(), package));
+                    }
+                }
+            }
+            if json {
+                let items: Vec<_> = rows
+                    .iter()
+                    .map(|(scope, marketplace, package)| {
+                        serde_json::json!({
+                            "scope": scope.label(),
+                            "marketplace": marketplace,
+                            "package": package,
+                        })
+                    })
+                    .collect();
+                out(&serde_json::to_string_pretty(&serde_json::json!({
+                    "schema": 1,
+                    "packages": items,
+                }))?);
+                return Ok(());
+            }
+            for (scope, marketplace, package) in rows {
+                let description = package
+                    .description
+                    .map(|d| format!("  — {d}"))
+                    .unwrap_or_default();
+                out(&format!(
+                    "{}  {marketplace}::{}  ({}) [{}]{description}",
+                    scope.label(),
+                    package.name,
+                    package.kind.name(),
+                    install_state(&package.state),
+                ));
             }
         }
         MarketplaceCommand::Check { dir } => {

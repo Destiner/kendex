@@ -107,5 +107,5 @@ fn a_pi_extension_flag_is_refused_toward_its_carrier_bundle() {
     let output = kendex(home, &project, &["add", "--pi-extension", "pi-hooks", "-y"]);
     assert!(!output.status.success());
     let said = String::from_utf8_lossy(&output.stderr).into_owned();
-    assert!(said.contains("carrier bundle"), "{said}");
+    assert!(said.contains("not installable on its own"), "{said}");
 }

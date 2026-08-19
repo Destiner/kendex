@@ -139,6 +139,36 @@ fn each_plugin_is_a_group_carrying_its_members_and_its_metadata() {
     assert!(meta.findings.is_empty(), "{:?}", meta.findings);
 }
 
+/// A plugin that ships hooks or MCP servers says so: kendex installs its
+/// skills, agents and commands from a registry, not those, and the finding
+/// keeps installing the plugin from being mistaken for installing all of it.
+#[test]
+fn a_plugin_carrying_hooks_or_servers_says_they_are_not_installed() {
+    let (tmp, _) = fixture();
+    let root = tmp.path().join("catalog");
+    write(
+        &root,
+        "plugins/data-science/.claude-plugin/plugin.json",
+        r#"{"name": "data-science", "version": "0.4.0", "skills": "./skills", "hooks": "./hooks/hooks.json", "mcpServers": "./.mcp.json"}"#,
+    );
+    let sealed = SealedSource::open(&root).expect("open");
+    let meta = metadata(&sealed).expect("read").expect("registry");
+    assert!(
+        meta.findings.iter().any(|f| f
+            .problem
+            .contains("hooks and MCP servers that kendex does not install")),
+        "{:?}",
+        meta.findings
+    );
+    // The skills/agents/commands are still offered.
+    let group = meta
+        .groups
+        .iter()
+        .find(|g| g.name == "data-science")
+        .expect("group");
+    assert!(group.members.iter().any(|m| m.name == "data-science/eda"));
+}
+
 #[test]
 fn a_catalog_whose_two_files_disagree_is_reported() {
     let (tmp, _) = fixture();

@@ -191,10 +191,10 @@ pub enum CoreError {
     )]
     SearchSourcesUnreadable { name: String, sources: Vec<String> },
 
-    /// Pi extensions are carrier-only: they ride in with the bundle that
-    /// carries them and are never installable on their own.
+    /// Pi extensions are carrier-only: they are never installed on their own,
+    /// and the carrier that would bring one in is not built yet.
     #[error(
-        "pi extension '{name}' installs with its carrier bundle, never on its own — add the bundle that carries it"
+        "pi extension '{name}' is not installable on its own, and kendex cannot install one yet — pi-extension support is coming"
     )]
     PiExtensionDirect { name: String },
 

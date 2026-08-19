@@ -112,6 +112,12 @@ changes carry a **Breaking** call-out with their migration note inline.
   subscription and the packages in one step: if the install is refused,
   the project is not left subscribed to a marketplace it installed
   nothing from.
+- `kendex marketplace browse` lists a subscription's packages from the
+  command line, the non-interactive half of the app's Packages page.
+- Installing a plugin from a plugin-registry marketplace now says when
+  the plugin also ships hooks or MCP servers, which kendex does not
+  install from a registry yet — so installing a plugin is never mistaken
+  for installing all of it.
 - Cursor no longer drops an agent's custom hooks without a word. A rule
   file has nowhere to register a hook, so the hook lands as instructions
   and the render warns that nothing there enforces it.

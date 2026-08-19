@@ -191,7 +191,10 @@ fn a_direct_pi_extension_add_refuses_naming_the_carrier() {
         matches!(error, CoreError::PiExtensionDirect { ref name } if name == "@vanillagreen/pi-hooks"),
         "expected the carrier refusal, got {error}"
     );
-    assert!(error.to_string().contains("carrier bundle"), "{error}");
+    assert!(
+        error.to_string().contains("not installable on its own"),
+        "{error}"
+    );
     assert_eq!(
         fs::read_to_string(f.project.join("kendex.toml")).unwrap(),
         before,

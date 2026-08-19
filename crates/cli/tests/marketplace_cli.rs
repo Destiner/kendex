@@ -109,6 +109,57 @@ fn marketplace_list_json_is_versioned_and_stable() {
     assert_eq!(listed, expected, "{listed:#}");
 }
 
+/// The non-interactive half of browse: a subscription's packages listed for
+/// scripts, the same seam the app's Packages page reads. Every core read
+/// operation has a CLI verb.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn marketplace_browse_lists_a_subscriptions_packages() {
+    let tmp = fixture_home();
+    let home = tmp.path();
+    let project = home.join("dev/app");
+    let catalog_arg = home.join("catalog").display().to_string();
+
+    let subscribed = kendex(
+        home,
+        &project,
+        &["marketplace", "subscribe", &catalog_arg, "--name", "cat"],
+    );
+    assert!(subscribed.status.success());
+
+    let output = kendex(
+        home,
+        &project,
+        &["marketplace", "browse", "cat", "--json", "--scope", "project"],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let listed: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("browse --json emits JSON");
+    assert_eq!(listed["schema"], 1);
+    let names: Vec<&str> = listed["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["package"]["name"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"gh"), "{listed:#}");
+    assert!(names.contains(&"helper"), "{listed:#}");
+
+    // The community directory is not built yet and says so instead of
+    // pretending it is empty.
+    let community = kendex(home, &project, &["marketplace", "browse", "--community"]);
+    assert!(!community.status.success());
+    assert!(
+        String::from_utf8_lossy(&community.stderr).contains("not available yet"),
+        "{}",
+        String::from_utf8_lossy(&community.stderr)
+    );
+}
+
 /// Subscribing prints the preview line naming scope, alias, and target,
 /// and a full URL declares a remote (the pre-fix heuristic read it as a
 /// folder path).
