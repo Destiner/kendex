@@ -95,7 +95,7 @@ fn harness_overrides(
 
 /// The agent as this tool will know it, or `None` where that is the agent
 /// the catalog already wrote. Each tool answers to the name the rendered
-/// file gives, and a marketplace catalog names its agent inside its plugin
+/// file gives, and a plugin-registry catalog names its agent inside its plugin
 /// — a fact the catalog's own file knows nothing about. The rendering takes
 /// the installed name; the catalog keeps the one it wrote.
 fn installed_under(

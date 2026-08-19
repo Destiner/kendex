@@ -51,7 +51,7 @@ pub(super) fn plan(repo: &Repo) -> Result<(Vec<PlannedOp>, Vec<String>)> {
                 leases: leases.clone(),
                 ..receipt
             };
-            let receipt_path = repo.receipt_path();
+            let receipt_path = repo.receipt_path()?;
             ops.push(PlannedOp {
                 description: "release this worktree's lease".into(),
                 op: Op::WriteFile {
@@ -75,7 +75,7 @@ pub(super) fn plan(repo: &Repo) -> Result<(Vec<PlannedOp>, Vec<String>)> {
     }
 
     refusals::check_uninstall(repo, &receipt)?;
-    let hooks_dir = repo.hooks_dir();
+    let hooks_dir = repo.hooks_dir()?;
     let mut ops = vec![PlannedOp {
         description: "remove the owned hooks directory".into(),
         op: Op::Trash {
@@ -110,37 +110,48 @@ fn unset_hooks_path(repo: &Repo, expected: Option<String>) -> PlannedOp {
     }
 }
 
-/// Whether `core.hooksPath` still names the owned directory.
+/// Whether `core.hooksPath` still names either generation's owned
+/// directory. A gone directory changes nothing: the value is ours by
+/// name, and leaving it makes git run no hooks at all.
 fn hooks_path_is_ours(repo: &Repo) -> Result<Option<String>> {
     let current = crate::apply::read_git_config(&repo.config_file(), "core.hooksPath")?;
-    let ours = repo.hooks_dir().display().to_string();
-    Ok(current.filter(|value| *value == ours))
+    Ok(current.filter(|value| {
+        repo.generation_dirs()
+            .iter()
+            .any(|dir| *value == dir.display().to_string())
+    }))
 }
 
 /// Whether a receiptless repository still carries something of ours to
 /// take back: the config value, or a directory of our own entrypoints.
 pub(super) fn orphaned(repo: &Repo) -> Result<bool> {
+    let hooks_dir = repo.hooks_dir()?;
     Ok(hooks_path_is_ours(repo)?.is_some()
-        || (repo.hooks_dir().exists() && foreign_entries(&repo.hooks_dir())?.is_empty()))
+        || (hooks_dir.exists() && foreign_entries(&hooks_dir)?.is_empty()))
+}
+
+/// Whether one hook slot is provably ours: a regular file whose bytes
+/// are exactly one of our entrypoints under that hook's name. Either
+/// generation's bytes count: the vstack-named binary wrote real installs
+/// whose receipts can be gone, and their scripts are no less ours for
+/// calling the old name.
+pub(super) fn written_by_us(name: &str, path: &Path) -> Result<bool> {
+    if !HOOKS.contains(&name) || path.is_symlink() || !path.is_file() {
+        return Ok(false);
+    }
+    let bytes = std::fs::read(path).map_err(|e| CoreError::io(path, e))?;
+    Ok(bytes == entrypoint(name).into_bytes() || bytes == old_entrypoint(name).into_bytes())
 }
 
 /// The entries of a receiptless hooks directory that are not provably
-/// ours — anything but a regular file whose bytes are exactly one of our
-/// entrypoints under that hook's name. Either generation's bytes count:
-/// the vstack-named binary wrote real installs whose receipts can be
-/// gone, and their scripts are no less ours for calling the old name.
+/// ours.
 pub(super) fn foreign_entries(hooks_dir: &Path) -> Result<Vec<String>> {
     let entries = std::fs::read_dir(hooks_dir).map_err(|e| CoreError::io(hooks_dir, e))?;
     let mut foreign = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|e| CoreError::io(hooks_dir, e))?;
         let name = entry.file_name().to_string_lossy().into_owned();
-        let path = entry.path();
-        let ours = HOOKS.contains(&name.as_str()) && !path.is_symlink() && path.is_file() && {
-            let bytes = std::fs::read(&path).map_err(|e| CoreError::io(&path, e))?;
-            bytes == entrypoint(&name).into_bytes() || bytes == old_entrypoint(&name).into_bytes()
-        };
-        if !ours {
+        if !written_by_us(&name, &entry.path())? {
             foreign.push(name);
         }
     }
@@ -154,7 +165,7 @@ pub(super) fn foreign_entries(hooks_dir: &Path) -> Result<Vec<String>> {
 /// the directory only while every entry in it is one of our entrypoints
 /// byte for byte. Anything else stays, named, for the user to move.
 fn plan_orphan_cleanup(repo: &Repo) -> Result<(Vec<PlannedOp>, Vec<String>)> {
-    let hooks_dir = repo.hooks_dir();
+    let hooks_dir = repo.hooks_dir()?;
     let hooks_path = hooks_path_is_ours(repo)?;
     let mut ops = Vec::new();
     let mut lines = Vec::new();

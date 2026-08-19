@@ -166,7 +166,7 @@ pub fn generate(agent: &EffectiveAgent) -> Result<RenderedAgent, String> {
 
 /// The filename a generated agent gets in the harness's native dir, under
 /// the spelling that harness lists the agent by — an agent from a
-/// marketplace catalog carries its plugin into the name.
+/// plugin-registry catalog carries its plugin into the name.
 pub fn file_name(harness: HarnessId, agent_name: &str) -> String {
     let agent_name = &crate::harness::rendered_name(harness, agent_name);
     match harness {

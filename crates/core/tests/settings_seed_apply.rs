@@ -336,28 +336,3 @@ fn a_settings_file_seeded_under_the_old_name_keeps_receiving_seeds() {
     assert!(old.contains("DEPTH = \"2\""), "{old}");
     assert!(!f.project.join("kendex.settings.toml").exists());
 }
-
-#[test]
-#[allow(clippy::unwrap_used)]
-fn a_skill_shipping_the_old_template_name_still_seeds() {
-    let f = fixture(true);
-    let skill = f
-        .project
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("catalog/skills/review");
-    fs::remove_file(skill.join("kendex.settings.toml.example")).unwrap();
-    fs::write(
-        skill.join("vstack.settings.toml.example"),
-        "[env]\nNEW_KEY = \"from-old-template\"\n",
-    )
-    .unwrap();
-    apply_now(&f);
-    let seeded = fs::read_to_string(f.project.join("kendex.settings.toml")).unwrap();
-    assert!(
-        seeded.contains("NEW_KEY = \"from-old-template\""),
-        "{seeded}"
-    );
-}

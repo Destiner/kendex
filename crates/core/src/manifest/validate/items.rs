@@ -7,7 +7,7 @@ use toml::Value;
 use super::Finding;
 
 /// Tables whose entries name something a source offers. Plugins are not
-/// among them: they come from a marketplace and carry only an enabled flag.
+/// among them: they come from a plugin registry and carry only an enabled flag.
 /// Bundles are — a bundle names a set the source offers, and it declares the
 /// same things about installing it that any item declares.
 const ITEM_TABLES: &[&str] = &[
@@ -20,7 +20,7 @@ const ITEM_TABLES: &[&str] = &[
     "bundles",
 ];
 
-/// The kinds a marketplace-shaped catalog offers, and so the only ones whose
+/// The kinds a plugin-registry-shaped catalog offers, and so the only ones whose
 /// names may carry the plugin they came from. A hook or a server has no
 /// namespaced spelling anywhere — a `/` in one of those names would just be
 /// a directory on disk that nothing knows to remove.
@@ -68,7 +68,7 @@ pub(super) fn validate_items(table: &Table, findings: &mut Vec<Finding>) {
             // Pi extensions are npm packages, where `@scope/name` is a
             // legitimate shape. Every other name becomes a file or a
             // directory, and the only `/` one may hold is the plugin a
-            // marketplace-shaped catalog keeps the item in.
+            // plugin-registry-shaped catalog keeps the item in.
             let scoped_ok = kind_table == "pi-extensions"
                 && name.starts_with('@')
                 && name.matches('/').count() == 1
@@ -84,7 +84,7 @@ pub(super) fn validate_items(table: &Table, findings: &mut Vec<Finding>) {
                     location: location.clone(),
                     problem,
                     fix: match namespaced {
-                        true => "rename the item — a plain name, or `<plugin>/<item>` for an item from a marketplace catalog".into(),
+                        true => "rename the item — a plain name, or `<plugin>/<item>` for an item from a catalog of Claude plugins".into(),
                         false => format!(
                             "rename it — a {} is named without a `/`",
                             kind_table.strip_suffix('s').unwrap_or(kind_table)

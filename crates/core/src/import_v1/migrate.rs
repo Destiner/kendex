@@ -199,8 +199,15 @@ fn execute_migration(
 ) -> Result<()> {
     let mut ops = Vec::new();
     if to.write_manifest {
+        // The destination resolves to either generation's filename, so the
+        // plan names the one it will actually write.
+        let manifest_name = to
+            .manifest_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| crate::rename::MANIFEST_FILE.to_owned());
         ops.push(PlannedOp {
-            description: "write the migrated vstack.toml".into(),
+            description: format!("write the migrated {manifest_name}"),
             op: Op::WriteManifest {
                 pre: to.manifest_pre,
                 path: to.manifest_path,

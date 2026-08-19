@@ -124,6 +124,29 @@ fn a_newer_lock_refuses_to_load() {
     ));
 }
 
+/// Both spellings of the lock in one root refuse to load — whichever one
+/// is asked for — and the error names both files.
+#[test]
+fn both_lock_spellings_in_one_root_refuse_to_load_naming_both() {
+    let tmp = tempfile::tempdir().unwrap();
+    let new = tmp.path().join(".kendex-lock.json");
+    let old = tmp.path().join(".vstack-lock.json");
+    std::fs::write(&new, r#"{"version":4,"entries":{}}"#).unwrap();
+    std::fs::write(&old, r#"{"version":4,"entries":{}}"#).unwrap();
+    for path in [&new, &old] {
+        let error = load_file(path).unwrap_err();
+        assert!(
+            matches!(error, CoreError::BothGenerations { .. }),
+            "{error}"
+        );
+        let text = error.to_string();
+        assert!(
+            text.contains(".kendex-lock.json") && text.contains(".vstack-lock.json"),
+            "{text}"
+        );
+    }
+}
+
 /// An empty `entries` map is indistinguishable between v1 and v2 — it
 /// reads as v2, since that is the only reading a fresh scope can mean.
 #[test]

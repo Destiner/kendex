@@ -78,6 +78,26 @@ fn declared_name(manifest: &crate::manifest::Manifest) -> Option<&'static str> {
         .find(|name| manifest.hooks.contains_key(*name))
 }
 
+/// Whether this declaration is the drift hook's legacy spelling standing
+/// beside the new one in the same manifest. The pair is one hook: planning
+/// installs the new declaration and reports this one as superseded — never
+/// two copies of the same session-start report.
+pub fn superseded(manifest: &crate::manifest::Manifest, name: &str) -> bool {
+    name == LEGACY_HOOK_NAME && manifest.hooks.contains_key(HOOK_NAME)
+}
+
+/// The script as installed under `name`: the frontmatter carries the
+/// declared name, so a legacy-declared scope's artifact agrees with its own
+/// file name and manifest entry.
+pub fn script_for(name: &str) -> String {
+    let own = format!("# name: {HOOK_NAME}");
+    assert!(
+        HOOK_SCRIPT.contains(&own),
+        "the embedded script must name itself for the declared name to replace"
+    );
+    HOOK_SCRIPT.replacen(&own, &format!("# name: {name}"), 1)
+}
+
 /// The relative catalog location the script installs to.
 fn script_path(env: &Env, scope: &Scope, name: &str) -> std::path::PathBuf {
     crate::source::local_source_root(env, scope)
@@ -101,7 +121,7 @@ pub fn script_current(
         return None;
     }
     let text = crate::fs::read_if_exists(&script_path(env, &scope.canonical(), name)).ok()??;
-    Some(text == HOOK_SCRIPT)
+    Some(text == script_for(name))
 }
 
 /// The plan that installs (or repairs) the drift hook declaration in one
@@ -120,14 +140,15 @@ pub fn install_plan(env: &Env, scope: &Scope) -> Result<Plan> {
     let name = declared_name(&manifest).unwrap_or(HOOK_NAME);
 
     let script = script_path(env, &scope, name);
+    let wanted = script_for(name);
     let current = crate::fs::read_if_exists(&script)?;
-    if current.as_deref() != Some(HOOK_SCRIPT) {
+    if current.as_deref() != Some(wanted.as_str()) {
         ops.push(PlannedOp {
             description: "write the drift hook script into the local source".into(),
             op: Op::WriteFile {
                 pre: Pre::observed(&script)?,
                 path: script,
-                bytes: HOOK_SCRIPT.as_bytes().to_vec(),
+                bytes: wanted.into_bytes(),
             },
         });
     }

@@ -13,8 +13,11 @@
 //!
 //! Repos armed by the vstack-named binary keep their `vstack-hooks`
 //! directory: the receipt and `core.hooksPath` both name it, and moving
-//! it is a different mutation than owning it. Every verb resolves to
-//! whichever generation's directory is live and works there in place.
+//! it is a different mutation than owning it. Every verb resolves the
+//! live directory the same way — the one `core.hooksPath` names when it
+//! names either generation's path, else the one holding a receipt, else
+//! the old name only while it is the sole directory present — and works
+//! there in place.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -29,8 +32,10 @@ use crate::process::Hardened;
 
 mod entrypoints;
 mod refusals;
+mod repair;
 mod uninstall;
 pub use entrypoints::{HOOKS, entrypoint, old_entrypoint};
+pub use repair::repair;
 
 pub const HOOKS_DIR: &str = "kendex-hooks";
 /// The directory name the vstack-named binary wrote. Installs made under
@@ -102,21 +107,44 @@ impl Repo {
         }
     }
 
-    /// The owned directory this repository resolves to. An old-generation
-    /// install keeps its name — receipt and `core.hooksPath` both point
-    /// there, and repair rewrites contents, never moves directories — so
-    /// the old name wins only while it is the sole directory present.
-    pub fn hooks_dir(&self) -> PathBuf {
-        let new = self.common_dir.join(HOOKS_DIR);
-        let old = self.common_dir.join(OLD_HOOKS_DIR);
-        match !new.exists() && old.exists() {
-            true => old,
-            false => new,
-        }
+    /// Both directory names that can be ours, new generation first.
+    fn generation_dirs(&self) -> [PathBuf; 2] {
+        [
+            self.common_dir.join(HOOKS_DIR),
+            self.common_dir.join(OLD_HOOKS_DIR),
+        ]
     }
 
-    pub(super) fn receipt_path(&self) -> PathBuf {
-        self.hooks_dir().join(RECEIPT_FILE)
+    /// The owned directory this repository resolves to. `core.hooksPath`
+    /// is what git actually executes, so when it names either
+    /// generation's path that vote wins — a stray directory under the
+    /// other name must never shadow the armed one. Absent that vote, a
+    /// receipt marks the directory an install wrote; absent both, the
+    /// old name counts only while it is the sole directory present.
+    pub fn hooks_dir(&self) -> Result<PathBuf> {
+        let [new, old] = self.generation_dirs();
+        let config = crate::apply::read_git_config(&self.config_file(), "core.hooksPath")?;
+        if let Some(value) = config
+            && let Some(dir) = [&new, &old]
+                .into_iter()
+                .find(|dir| dir.display().to_string() == value)
+        {
+            return Ok(dir.clone());
+        }
+        if let Some(dir) = [&new, &old]
+            .into_iter()
+            .find(|dir| dir.join(RECEIPT_FILE).is_file())
+        {
+            return Ok(dir.clone());
+        }
+        Ok(match !new.exists() && old.exists() {
+            true => old,
+            false => new,
+        })
+    }
+
+    pub(super) fn receipt_path(&self) -> Result<PathBuf> {
+        Ok(self.hooks_dir()?.join(RECEIPT_FILE))
     }
 
     pub(super) fn config_file(&self) -> PathBuf {
@@ -167,7 +195,7 @@ pub struct Receipt {
 }
 
 pub fn load_receipt(repo: &Repo) -> Result<Option<Receipt>> {
-    let Some(text) = crate::fs::read_if_exists(&repo.receipt_path())? else {
+    let Some(text) = crate::fs::read_if_exists(&repo.receipt_path()?)? else {
         return Ok(None);
     };
     serde_json::from_str(&text)
@@ -199,7 +227,7 @@ fn plan_install(repo: &Repo) -> Result<(Vec<PlannedOp>, String)> {
     let receipt = load_receipt(repo)?;
     refusals::check_install(repo, receipt.as_ref())?;
 
-    let hooks_dir = repo.hooks_dir();
+    let hooks_dir = repo.hooks_dir()?;
     let hooks_path = hooks_dir.display().to_string();
     let mut leases = receipt.map(|r| r.leases).unwrap_or_default();
     leases.insert(repo.worktree.display().to_string());
@@ -226,7 +254,7 @@ fn plan_install(repo: &Repo) -> Result<(Vec<PlannedOp>, String)> {
             },
         });
     }
-    let receipt_path = repo.receipt_path();
+    let receipt_path = repo.receipt_path()?;
     ops.push(PlannedOp {
         description: "record the ownership receipt".into(),
         op: Op::WriteFile {
@@ -275,63 +303,6 @@ pub fn uninstall(env: &Env, dir: &Path) -> Result<HooksReport> {
 }
 
 const NOTHING_INSTALLED: &str = "no kendex hooks are installed in this repository";
-
-/// Rewrite the receipt-listed entrypoints to the bytes this binary
-/// writes. Everything the receipt records stays put — directory name,
-/// `core.hooksPath`, leases — because entrypoints written by the
-/// vstack-named binary call a name that goes away with the alias cycle,
-/// while the receipt's paths stay true. Without a receipt there is
-/// nothing to rewrite under: install owns the receiptless repairs.
-pub fn repair(env: &Env, dir: &Path) -> Result<HooksReport> {
-    let repo = Repo::at(dir)?;
-    let (_, lines) =
-        crate::apply::execute_common(env, &repo.scope(), &repo.common_dir, || plan_repair(&repo))?;
-    Ok(HooksReport { lines })
-}
-
-fn plan_repair(repo: &Repo) -> Result<(Vec<PlannedOp>, Vec<String>)> {
-    let Some(receipt) = load_receipt(repo)? else {
-        return Err(err(format!(
-            "{NOTHING_INSTALLED} — nothing to repair; `kendex guard install` arms it"
-        )));
-    };
-    let hooks_dir = repo.hooks_dir();
-    let mut ops = Vec::new();
-    for name in &receipt.files {
-        if name == RECEIPT_FILE {
-            continue;
-        }
-        // A receipt listing a file no entrypoint exists for is not ours to
-        // rewrite — refusing beats inventing a script for an unknown name.
-        if !HOOKS.contains(&name.as_str()) {
-            return Err(err(format!(
-                "the receipt lists {name}, which is not a hook this binary writes — refusing to rewrite it"
-            )));
-        }
-        let path = hooks_dir.join(name);
-        if path.is_symlink() {
-            return Err(err(format!(
-                "{} is a symlink — kendex refuses to write through a link it did not create; remove it and rerun",
-                path.display()
-            )));
-        }
-        ops.push(PlannedOp {
-            description: format!("rewrite the {name} entrypoint"),
-            op: Op::WriteExecutable {
-                pre: Pre::observed(&path)?,
-                path,
-                bytes: entrypoint(name).into_bytes(),
-            },
-        });
-    }
-    Ok((
-        ops,
-        vec![format!(
-            "entrypoints rewritten in {} — core.hooksPath and the receipt are untouched",
-            hooks_dir.display()
-        )],
-    ))
-}
 
 /// The `core.hooksPath` a worktree actually resolves, git's own answer.
 pub fn effective_hooks_path(worktree: &Path) -> Result<Option<String>> {

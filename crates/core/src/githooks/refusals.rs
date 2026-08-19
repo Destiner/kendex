@@ -12,7 +12,7 @@ use super::{HOOKS, RECEIPT_FILE, Receipt, Repo, V1_SENTINEL, err};
 
 /// Install-time refusals, all checked before any mutation is planned.
 pub(super) fn check_install(repo: &Repo, receipt: Option<&Receipt>) -> Result<()> {
-    let hooks_dir = repo.hooks_dir();
+    let hooks_dir = repo.hooks_dir()?;
     if hooks_dir.is_symlink() {
         return Err(err(format!(
             "{} is a symlink — kendex refuses to adopt a directory it did not create; remove the link and rerun",
@@ -64,14 +64,15 @@ pub(super) fn check_install(repo: &Repo, receipt: Option<&Receipt>) -> Result<()
     // installing worktree could hijack or miss another's hooks. The
     // effective value, with its origin, must be ours-or-absent in every
     // worktree git's own registry lists — an unreadable worktree is a
-    // refusal.
-    let ours: BTreeSet<String> = [
-        hooks_dir.display().to_string(),
-        receipt.map(|r| r.hooks_path.clone()).unwrap_or_default(),
-    ]
-    .into_iter()
-    .filter(|value| !value.is_empty())
-    .collect();
+    // refusal. Both generation paths are ours even when the directory is
+    // gone: refusing to re-arm a repo whose old-named directory was
+    // deleted would be hijacking nothing but our own leftover value.
+    let ours: BTreeSet<String> = repo
+        .generation_dirs()
+        .iter()
+        .map(|dir| dir.display().to_string())
+        .chain(receipt.map(|r| r.hooks_path.clone()))
+        .collect();
     for worktree in repo.worktrees()? {
         let unreadable = |detail: String| {
             err(format!(
@@ -112,7 +113,7 @@ pub(super) fn check_install(repo: &Repo, receipt: Option<&Receipt>) -> Result<()
 /// directory. Unsetting `core.hooksPath` around a surviving user hook
 /// would silently disable it, so partial removal refuses instead.
 pub(super) fn check_uninstall(repo: &Repo, receipt: &Receipt) -> Result<()> {
-    let hooks_dir = repo.hooks_dir();
+    let hooks_dir = repo.hooks_dir()?;
     if !hooks_dir.exists() {
         return Ok(());
     }

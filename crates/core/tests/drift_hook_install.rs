@@ -146,12 +146,66 @@ fn a_legacy_drift_hook_declaration_still_resolves_to_first_party_content() {
         "repair must never stack a second declaration: {:?}",
         loaded.hooks.keys().collect::<Vec<_>>()
     );
-    assert_eq!(
-        fs::read_to_string(&script).unwrap(),
-        drift::hook::HOOK_SCRIPT
-    );
+    // The artifact agrees with itself: a script at vstack-drift.sh,
+    // declared as vstack-drift, says so in its own frontmatter.
+    let written = fs::read_to_string(&script).unwrap();
+    assert!(written.contains("# name: vstack-drift"), "{written}");
+    assert!(!written.contains("# name: kendex-drift"), "{written}");
+    assert_eq!(written, drift::hook::script_for("vstack-drift"));
     assert_eq!(
         drift::hook::script_current(&w.env, &w.scope, &loaded),
         Some(true)
+    );
+}
+
+/// A manifest carrying the drift hook under both its names holds one hook,
+/// not two: the new declaration installs, and the legacy one is reported as
+/// superseded instead of registering a second copy of the same report.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn both_drift_hook_declarations_install_one_hook_and_say_so() {
+    let w = world();
+    declare(
+        &w,
+        "",
+        "[hooks.kendex-drift]\nsource = \"local\"\nharnesses = [\"claude\"]\n\n[hooks.vstack-drift]\nsource = \"local\"\nharnesses = [\"claude\"]\n",
+    );
+    let hooks_dir = kendex_core::source::local_source_root(&w.env, &w.scope).join("hooks");
+    fs::create_dir_all(&hooks_dir).unwrap();
+    fs::write(hooks_dir.join("kendex-drift.sh"), drift::hook::HOOK_SCRIPT).unwrap();
+    fs::write(
+        hooks_dir.join("vstack-drift.sh"),
+        drift::hook::script_for("vstack-drift"),
+    )
+    .unwrap();
+
+    let report = audit(&w.env, &w.scope).unwrap();
+    let warning = report
+        .warnings
+        .iter()
+        .find(|warning| warning.name == "vstack-drift")
+        .unwrap_or_else(|| {
+            panic!(
+                "the superseded declaration is reported: {:?}",
+                report.warnings
+            )
+        });
+    assert!(
+        warning.message.contains("kendex-drift") && warning.message.contains("vstack-drift"),
+        "the warning names both declarations: {}",
+        warning.message
+    );
+
+    apply::execute(&w.env, &report.plan, None).unwrap();
+    let lock = kendex_core::lock::load(&kendex_core::lock::lock_path(&w.env, &w.scope)).unwrap();
+    assert!(
+        lock.entries.keys().any(|key| key.contains("kendex-drift")),
+        "{:?}",
+        lock.entries.keys().collect::<Vec<_>>()
+    );
+    assert!(
+        !lock.entries.keys().any(|key| key.contains("vstack-drift")),
+        "one hook, never two: {:?}",
+        lock.entries.keys().collect::<Vec<_>>()
     );
 }

@@ -154,7 +154,7 @@ pub fn native_dir(env: &Env, scope: &Scope, harness: HarnessId, kind: ItemKind) 
 }
 
 /// The shared tree several tools read one skill from. Its name holds the
-/// plugin a marketplace catalog put the skill in, joined the way the
+/// plugin a plugin-registry catalog put the skill in, joined the way the
 /// directory itself spells it.
 pub fn skill_canonical(env: &Env, scope: &Scope, name: &str) -> PathBuf {
     let name = crate::harness::canonical_name(name);

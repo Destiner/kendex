@@ -86,21 +86,53 @@ pub fn remove_marker_block(current: &str, name: &str) -> String {
 }
 
 fn remove_between(current: &str, begin: &str, end: &str) -> String {
-    let Some(start) = current.find(begin) else {
-        return current.to_owned();
-    };
-    let Some(stop) = current[start..].find(end) else {
-        // Unterminated markers are user damage; leave them untouched.
+    let Some((start, stop)) = marker_block_span(current, begin, end) else {
         return current.to_owned();
     };
     let before = current[..start].trim_end_matches('\n');
-    let after = current[start + stop + end.len()..].trim_start_matches('\n');
+    let after = current[stop..].trim_start_matches('\n');
     match (before.is_empty(), after.is_empty()) {
         (true, true) => String::new(),
         (true, false) => after.to_owned(),
         (false, true) => format!("{before}\n"),
         (false, false) => format!("{before}\n\n{after}"),
     }
+}
+
+/// The byte span of the marker block, begin line through end line. A marker
+/// counts only when its whole line, trimmed, is the marker and the line sits
+/// outside any fenced code region — a document quoting its own markers in an
+/// example must never lose the example or anything around it. `None` when no
+/// real block exists; a begin with no end is user damage, also untouched.
+fn marker_block_span(current: &str, begin: &str, end: &str) -> Option<(usize, usize)> {
+    let mut fence: Option<char> = None;
+    let mut start: Option<usize> = None;
+    let mut offset = 0;
+    for line in current.split_inclusive('\n') {
+        let next = offset + line.len();
+        let body = line.trim();
+        match fence {
+            Some(open) => {
+                let run = body.chars().take_while(|c| *c == open).count();
+                if run >= 3 && body[run..].trim().is_empty() {
+                    fence = None;
+                }
+            }
+            None if body.starts_with("```") => fence = Some('`'),
+            None if body.starts_with("~~~") => fence = Some('~'),
+            None => {
+                if start.is_none() && body == begin {
+                    start = Some(offset);
+                } else if let Some(start) = start
+                    && body == end
+                {
+                    return Some((start, next));
+                }
+            }
+        }
+        offset = next;
+    }
+    None
 }
 
 #[cfg(test)]

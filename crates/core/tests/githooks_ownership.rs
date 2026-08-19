@@ -141,7 +141,7 @@ fn the_launch_pass_recovers_a_crashed_hook_mutation() {
     let repo = githooks::Repo::at(&w.repo).unwrap();
     let key = kendex_core::apply::common_key(&repo.common_dir);
     let journal_dir = kendex_core::apply::journal::journal_dir_for(&w.env.journal_dir(), &key);
-    let victim = repo.hooks_dir().join("pre-commit");
+    let victim = repo.hooks_dir().unwrap().join("pre-commit");
     let before = std::fs::read_to_string(&victim).unwrap();
     kendex_core::apply::journal::write(&journal_dir, std::slice::from_ref(&victim)).unwrap();
     std::fs::write(&victim, "torn write").unwrap();
@@ -293,6 +293,35 @@ fn a_symlinked_hook_slot_is_a_refusal_not_a_write_through() {
     let error = githooks::install(&w.env, &w.repo).unwrap_err();
     assert!(error.to_string().contains("symlink"), "{error}");
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "mine\n");
+}
+
+/// A hooks directory that has become a symlink is not a directory kendex
+/// created: repair must refuse it as install does, never write through
+/// it to wherever it points.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_symlinked_hooks_directory_is_a_refusal_for_repair() {
+    let w = world();
+    githooks::install(&w.env, &w.repo).unwrap();
+    let hooks_dir = w.repo.join(".git/kendex-hooks");
+    let elsewhere = w.home.join("elsewhere");
+    std::fs::rename(&hooks_dir, &elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &hooks_dir).unwrap();
+    // Old-generation bytes behind the link: still ours by content, so a
+    // rewrite through the link would visibly change them.
+    for hook in githooks::HOOKS {
+        std::fs::write(elsewhere.join(hook), githooks::old_entrypoint(hook)).unwrap();
+    }
+
+    let error = githooks::repair(&w.env, &w.repo).unwrap_err();
+    assert!(error.to_string().contains("symlink"), "{error}");
+    for hook in githooks::HOOKS {
+        assert_eq!(
+            std::fs::read_to_string(elsewhere.join(hook)).unwrap(),
+            githooks::old_entrypoint(hook),
+            "nothing was written through the link"
+        );
+    }
 }
 
 /// Uninstall from a worktree that never held a lease says so and rewrites

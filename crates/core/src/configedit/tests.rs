@@ -110,6 +110,45 @@ fn an_old_generation_marker_block_upserts_and_removes_cleanly() {
     assert_eq!(remove_marker_block(&old, "pi-hooks"), base);
 }
 
+/// A document quoting the markers inside a code fence keeps every byte of
+/// the quote and its surroundings: only the real block — a marker alone on
+/// its line, outside any fence — is replaced or removed.
+#[test]
+fn a_marker_quoted_in_a_code_fence_is_prose_not_a_block() {
+    for (open, close) in [("```markdown", "```"), ("~~~", "~~~")] {
+        let user = format!(
+            "# Notes\n\nAn example of what kendex writes:\n\n{open}\n<!-- kendex:append-system pi-hooks begin -->\nexample body\n<!-- kendex:append-system pi-hooks end -->\n<!-- vstack:append-system pi-hooks begin -->\nold example\n<!-- vstack:append-system pi-hooks end -->\n{close}\n\nA paragraph the user wrote after the example.\n"
+        );
+        let with_block = format!(
+            "{user}\n<!-- kendex:append-system pi-hooks begin -->\nreal body\n<!-- kendex:append-system pi-hooks end -->\n"
+        );
+        assert_eq!(
+            remove_marker_block(&with_block, "pi-hooks"),
+            user,
+            "removal takes the real block and nothing else"
+        );
+        let refreshed = upsert_marker_block(&with_block, "pi-hooks", "new body");
+        assert!(refreshed.starts_with(&user), "{refreshed}");
+        assert!(refreshed.contains("new body"));
+        assert!(!refreshed.contains("real body"));
+        assert_eq!(
+            remove_marker_block(&user, "pi-hooks"),
+            user,
+            "a file holding only the quoted example is untouched"
+        );
+    }
+}
+
+/// A marker sharing its line with other text is that text's, not a block
+/// boundary; a real begin with no end is user damage and stays untouched.
+#[test]
+fn only_a_marker_alone_on_its_line_bounds_a_block() {
+    let inline = "See `<!-- kendex:append-system pi-hooks begin -->` and later\n<!-- kendex:append-system pi-hooks end -->\n";
+    assert_eq!(remove_marker_block(inline, "pi-hooks"), inline);
+    let unterminated = "# Notes\n\n<!-- kendex:append-system pi-hooks begin -->\ndangling\n";
+    assert_eq!(remove_marker_block(unterminated, "pi-hooks"), unterminated);
+}
+
 /// Another tool wrote keys after ours and a handler after ours: a re-apply
 /// touches neither position, and removing a key never reorders the rest.
 #[test]

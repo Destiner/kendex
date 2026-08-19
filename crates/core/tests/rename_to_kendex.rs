@@ -1,17 +1,16 @@
 //! Old-name (vstack) scopes read as an import: they load, their next plan
-//! renames them to the new names first, and both generations in one root
-//! is a hard error. Global dirs move off `vstack2` on first launch.
+//! renames them to the new names first, and both spellings of one file in
+//! one root is a hard error.
 #![cfg(unix)]
 
 use std::fs;
 use std::path::PathBuf;
 
 use kendex_core::apply;
-use kendex_core::engine::{DriftState, audit};
+use kendex_core::engine::{PlanOptions, audit, plan_apply};
 use kendex_core::env::{Env, FakeOs};
 use kendex_core::error::CoreError;
 use kendex_core::model::Scope;
-use kendex_core::rename::migrate_global_dirs;
 
 struct Fixture {
     _tmp: tempfile::TempDir,
@@ -141,6 +140,92 @@ fn an_old_name_scope_loads_and_its_plan_renames_first() {
     );
 }
 
+/// An opencode hook installed under the old product name stays one file and
+/// one config reference: apply converges on what is there instead of writing
+/// a kendex-named twin beside it, and uninstall takes both away.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn an_old_name_opencode_hook_converges_instead_of_duplicating() {
+    let f = fixture();
+    let catalog = f.home.join("catalog");
+    fs::create_dir_all(catalog.join("hooks")).unwrap();
+    fs::write(
+        catalog.join("hooks/guard.sh"),
+        "#!/usr/bin/env bash\n# ---\n# name: guard\n# event: PreToolUse\n# matcher: Bash\n# description: check shell commands\n# ---\nexit 0\n",
+    )
+    .unwrap();
+    let install = format!(
+        "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"opencode\"]\nmethod = \"copy\"\n",
+        catalog.display()
+    );
+    fs::write(
+        f.project.join("kendex.toml"),
+        format!("{install}\n[hooks.guard]\nsource = \"cat\"\n"),
+    )
+    .unwrap();
+    let scope = Scope::Project {
+        root: f.project.clone(),
+    };
+    let report = audit(&f.env, &scope).unwrap();
+    apply::execute(&f.env, &report.plan, None).unwrap();
+
+    // The state an old-name install left behind: the same managed bytes and
+    // config reference, both under the vstack spelling, with the lock entry
+    // the generation rename carried over.
+    let instructions = f.project.join(".opencode/instructions");
+    fs::rename(
+        instructions.join("kendex-hook-guard.md"),
+        instructions.join("vstack-hook-guard.md"),
+    )
+    .unwrap();
+    let config_path = f.project.join("opencode.json");
+    let config = fs::read_to_string(&config_path)
+        .unwrap()
+        .replace("kendex-hook-guard.md", "vstack-hook-guard.md");
+    fs::write(&config_path, config).unwrap();
+
+    let report = audit(&f.env, &scope).unwrap();
+    apply::execute(&f.env, &report.plan, None).unwrap();
+
+    let files: Vec<String> = fs::read_dir(&instructions)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        files,
+        ["vstack-hook-guard.md"],
+        "one instruction file: the one already installed"
+    );
+    let config: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(f.project.join("opencode.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        config["instructions"],
+        serde_json::json!([".opencode/instructions/vstack-hook-guard.md"]),
+        "one reference: the one already installed"
+    );
+
+    let clean = audit(&f.env, &scope).unwrap();
+    assert!(clean.drift.is_empty(), "{:?}", clean.drift);
+
+    fs::write(f.project.join("kendex.toml"), &install).unwrap();
+    let removal = plan_apply(
+        &f.env,
+        &scope,
+        &PlanOptions {
+            remove_orphans: true,
+            ..PlanOptions::default()
+        },
+    )
+    .unwrap();
+    apply::execute(&f.env, &removal.plan, None).unwrap();
+    assert!(!instructions.join("vstack-hook-guard.md").exists());
+    let config: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(f.project.join("opencode.json")).unwrap())
+            .unwrap();
+    assert!(config.get("instructions").is_none(), "{config}");
+}
+
 #[test]
 #[allow(clippy::unwrap_used)]
 fn the_rename_op_touches_only_the_named_files() {
@@ -181,8 +266,91 @@ fn both_generations_in_one_root_is_a_hard_error_naming_both() {
         text.contains("kendex.toml") && text.contains("vstack.toml"),
         "{text}"
     );
+    // Said as what happened — the old file was renamed and both are here —
+    // not in the code's own jargon.
+    assert!(
+        text.contains("was renamed to") && !text.contains("generations"),
+        "{text}"
+    );
 }
 
+/// A crash between rename ops — or a hand `git mv` of the manifest —
+/// leaves the manifest already at its new name with the rest stranded.
+/// The next plan still renames the leftovers, and the install record the
+/// same plan writes lands in the renamed lock, not a recreated old one.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_scope_whose_manifest_already_moved_still_renames_the_rest() {
+    let f = fixture();
+    let catalog = f.home.join("catalog");
+    fs::create_dir_all(catalog.join("skills/gh")).unwrap();
+    fs::write(
+        catalog.join("skills/gh/SKILL.md"),
+        "---\nname: gh\n---\nBody.\n",
+    )
+    .unwrap();
+    let manifest = format!(
+        "schema = 5\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.gh]\nsource = \"cat\"\n",
+        catalog.display()
+    );
+    fs::write(f.project.join("kendex.toml"), &manifest).unwrap();
+    fs::write(
+        f.project.join(".vstack-lock.json"),
+        "{\"version\":4,\"entries\":{}}",
+    )
+    .unwrap();
+    fs::write(f.project.join(".gitignore"), "target/\n.vstack-local/\n").unwrap();
+    fs::create_dir_all(f.project.join(".vstack-local/skills/handmade")).unwrap();
+
+    let scope = Scope::Project {
+        root: f.project.clone(),
+    };
+    let report = audit(&f.env, &scope).unwrap();
+    let prefix: Vec<&str> = report
+        .plan
+        .ops
+        .iter()
+        .map(|op| op.description.as_str())
+        .take_while(|d| d.starts_with("Rename to kendex"))
+        .collect();
+    assert_eq!(prefix.len(), 3, "{prefix:?}");
+    assert!(prefix.iter().any(|d| d.contains(".vstack-lock.json")));
+    assert!(prefix.iter().any(|d| d.contains(".gitignore")));
+    assert!(prefix.iter().any(|d| d.contains(".vstack-local")));
+
+    apply::execute(&f.env, &report.plan, None).unwrap();
+    assert!(!f.project.join(".vstack-lock.json").exists());
+    assert!(
+        fs::read_to_string(f.project.join(".kendex-lock.json"))
+            .unwrap()
+            .contains("skill:gh:claude")
+    );
+    assert_eq!(
+        fs::read_to_string(f.project.join(".gitignore")).unwrap(),
+        "target/\n.kendex-local/\n"
+    );
+    assert!(!f.project.join(".vstack-local").exists());
+    assert!(f.project.join(".kendex-local/skills/handmade").is_dir());
+
+    let after = audit(&f.env, &scope).unwrap();
+    assert!(
+        after
+            .plan
+            .ops
+            .iter()
+            .all(|op| !op.description.starts_with("Rename to kendex")),
+        "{:?}",
+        after
+            .plan
+            .ops
+            .iter()
+            .map(|o| &o.description)
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Both spellings of the local-source dir refuse at plan time, both paths
+/// named — an apply-time "stale plan" would re-fail identically forever.
 #[test]
 #[allow(clippy::unwrap_used)]
 fn a_global_scope_under_the_old_name_gets_the_rename_op() {
@@ -204,103 +372,5 @@ fn a_global_scope_under_the_old_name_gets_the_rename_op() {
     assert_eq!(
         fs::read_to_string(config.join("kendex.toml")).unwrap(),
         MANIFEST
-    );
-}
-
-/// A global skill installed by symlink, with its harness link pointing at
-/// the rendered tree under the new app dir. Returns `(link, canonical)`.
-#[test]
-#[allow(clippy::unwrap_used)]
-fn global_dirs_move_off_vstack2_once() {
-    let f = fixture();
-    fs::create_dir_all(f.home.join(".config/vstack2")).unwrap();
-    fs::write(
-        f.home.join(".config/vstack2/settings.toml"),
-        "projects = []\n",
-    )
-    .unwrap();
-    fs::create_dir_all(f.home.join(".cache/vstack2/sources/mirrors")).unwrap();
-    fs::write(f.home.join(".cache/vstack2/sources/mirrors/HEAD"), "ref").unwrap();
-    for child in [
-        "trash",
-        "journal",
-        "locks",
-        "drift",
-        "local-source",
-        "rendered",
-    ] {
-        let dir = f.home.join(".local/share/vstack2").join(child);
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("keep"), child).unwrap();
-    }
-
-    assert!(migrate_global_dirs(&f.env).unwrap());
-    assert_eq!(
-        fs::read_to_string(f.home.join(".config/kendex/settings.toml")).unwrap(),
-        "projects = []\n"
-    );
-    assert!(f.home.join(".cache/kendex/sources/mirrors/HEAD").is_file());
-    for child in [
-        "trash",
-        "journal",
-        "locks",
-        "drift",
-        "local-source",
-        "rendered",
-    ] {
-        assert!(
-            f.home
-                .join(".local/share/kendex")
-                .join(child)
-                .join("keep")
-                .is_file(),
-            "{child} did not move"
-        );
-    }
-    assert!(!f.home.join(".config/vstack2").exists());
-    assert!(!f.home.join(".cache/vstack2").exists());
-    assert!(!f.home.join(".local/share/vstack2").exists());
-
-    // Nothing left to move: the second pass is a no-op.
-    assert!(!migrate_global_dirs(&f.env).unwrap());
-}
-
-#[test]
-#[allow(clippy::unwrap_used)]
-fn the_move_never_overwrites_what_the_new_dirs_hold() {
-    let f = fixture();
-    fs::create_dir_all(f.home.join(".config/vstack2")).unwrap();
-    fs::write(f.home.join(".config/vstack2/settings.toml"), "old").unwrap();
-    fs::create_dir_all(f.home.join(".config/kendex")).unwrap();
-    fs::write(f.home.join(".config/kendex/settings.toml"), "new").unwrap();
-    fs::create_dir_all(f.home.join(".local/share/vstack2/journal/scope-a")).unwrap();
-    fs::write(
-        f.home.join(".local/share/vstack2/journal/scope-a/entry"),
-        "old journal",
-    )
-    .unwrap();
-    fs::create_dir_all(f.home.join(".local/share/kendex/journal/scope-a")).unwrap();
-    fs::write(
-        f.home.join(".local/share/kendex/journal/scope-a/entry"),
-        "new journal",
-    )
-    .unwrap();
-
-    migrate_global_dirs(&f.env).unwrap();
-    assert_eq!(
-        fs::read_to_string(f.home.join(".config/kendex/settings.toml")).unwrap(),
-        "new"
-    );
-    assert_eq!(
-        fs::read_to_string(f.home.join(".config/vstack2/settings.toml")).unwrap(),
-        "old"
-    );
-    assert_eq!(
-        fs::read_to_string(f.home.join(".local/share/kendex/journal/scope-a/entry")).unwrap(),
-        "new journal"
-    );
-    assert_eq!(
-        fs::read_to_string(f.home.join(".local/share/vstack2/journal/scope-a/entry")).unwrap(),
-        "old journal"
     );
 }

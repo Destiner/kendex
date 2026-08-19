@@ -77,40 +77,33 @@ fn manifest_pair(env: &Env, scope: &Scope) -> (PathBuf, PathBuf) {
 }
 
 /// The journaled ops that move a scope onto the new names — empty for a
-/// scope already there. The manifest and lock renames carry the state;
-/// the `.gitignore` line and the local-source directory ride along
-/// because kendex wrote both under the old name and nothing else will
-/// ever correct them.
+/// scope already there. Each artifact gets its op on its own evidence: a
+/// crash between ops, or a hand `git mv` of the manifest, leaves the rest
+/// under old names, and nothing but this list will ever correct them. The
+/// `.gitignore` line and the local-source directory ride along because
+/// kendex wrote both under the old name.
 pub fn rename_ops(env: &Env, scope: &Scope) -> Result<Vec<PlannedOp>> {
     let mut ops = Vec::new();
     let (new_manifest, old_manifest) = manifest_pair(env, scope);
-    if !old_manifest.is_file() || new_manifest.is_file() {
-        return Ok(ops);
-    }
-    ops.push(PlannedOp {
-        description: format!("{RENAME_PREFIX}: {LEGACY_MANIFEST_FILE} becomes {MANIFEST_FILE}"),
-        op: Op::Rename {
-            from: old_manifest,
-            to: new_manifest,
-            to_pre: Pre::Absent,
-        },
-    });
+    file_rename_op(
+        &mut ops,
+        old_manifest,
+        new_manifest,
+        LEGACY_MANIFEST_FILE,
+        MANIFEST_FILE,
+    )?;
     let Scope::Project { root } = scope else {
         // The global lock is `lock.json` in both generations — the dir
         // move already carried it, and there is nothing else to rename.
         return Ok(ops);
     };
-    let old_lock = root.join(LEGACY_LOCK_FILE);
-    if old_lock.is_file() {
-        ops.push(PlannedOp {
-            description: format!("{RENAME_PREFIX}: {LEGACY_LOCK_FILE} becomes {LOCK_FILE}"),
-            op: Op::Rename {
-                from: old_lock,
-                to: root.join(LOCK_FILE),
-                to_pre: Pre::Absent,
-            },
-        });
-    }
+    file_rename_op(
+        &mut ops,
+        root.join(LEGACY_LOCK_FILE),
+        root.join(LOCK_FILE),
+        LEGACY_LOCK_FILE,
+        LOCK_FILE,
+    )?;
     let gitignore = root.join(".gitignore");
     if let Some(text) = crate::fs::read_if_exists(&gitignore)?
         && let Some(rewritten) = rewrite_gitignore(&text)
@@ -128,6 +121,13 @@ pub fn rename_ops(env: &Env, scope: &Scope) -> Result<Vec<PlannedOp>> {
     }
     let old_local = root.join(LEGACY_LOCAL_SOURCE_DIR);
     if old_local.is_dir() {
+        let new_local = root.join(LOCAL_SOURCE_DIR);
+        if new_local.exists() {
+            return Err(CoreError::BothGenerations {
+                new: new_local,
+                old: old_local,
+            });
+        }
         ops.push(PlannedOp {
             description: format!(
                 "{RENAME_PREFIX}: {LEGACY_LOCAL_SOURCE_DIR} becomes {LOCAL_SOURCE_DIR}"
@@ -140,6 +140,33 @@ pub fn rename_ops(env: &Env, scope: &Scope) -> Result<Vec<PlannedOp>> {
         });
     }
     Ok(ops)
+}
+
+/// One file's rename op, only when the old-name form is what exists. Both
+/// existing is refused here, at plan time: the apply-time precondition
+/// would only ever say "stale plan", and re-planning can never clear it.
+fn file_rename_op(
+    ops: &mut Vec<PlannedOp>,
+    old: PathBuf,
+    new: PathBuf,
+    old_name: &str,
+    new_name: &str,
+) -> Result<()> {
+    if !old.is_file() {
+        return Ok(());
+    }
+    if new.exists() {
+        return Err(CoreError::BothGenerations { new, old });
+    }
+    ops.push(PlannedOp {
+        description: format!("{RENAME_PREFIX}: {old_name} becomes {new_name}"),
+        op: Op::Rename {
+            from: old,
+            to: new,
+            to_pre: Pre::Absent,
+        },
+    });
+    Ok(())
 }
 
 /// The ignore line kendex itself wrote for the old local-source dir,
@@ -180,10 +207,6 @@ pub fn retarget(env: &Env, scope: &Scope, ops: &mut [PlannedOp]) {
     let mut pairs = vec![(old_manifest, new_manifest)];
     if let Scope::Project { root } = scope {
         pairs.push((root.join(LEGACY_LOCK_FILE), root.join(LOCK_FILE)));
-        pairs.push((
-            root.join(LEGACY_LOCAL_SOURCE_DIR),
-            root.join(LOCAL_SOURCE_DIR),
-        ));
     }
     for planned in ops {
         remap_op(&mut planned.op, &pairs);
@@ -258,42 +281,69 @@ pub(crate) fn insert_manifest_save(
     Ok(())
 }
 
+/// What the one-shot dir move accomplished: whether anything moved, and
+/// one line per old dir that still holds items the move could not take —
+/// the caller shows those lines instead of the leftovers sitting silently
+/// until every later launch re-walks them.
+#[derive(Debug, Default)]
+pub struct DirMove {
+    pub moved: bool,
+    pub leftovers: Vec<String>,
+}
+
 /// One-shot move of the global dirs off the old product name, on first
 /// launch: when a `vstack2` dir exists, its contents move under `kendex`
 /// — never overwriting anything already there. Runs under the same
 /// scope-lock discipline as an apply: a concurrent kendex process (app
 /// or CLI) gets a clear busy error, never an interleaved move.
-pub fn migrate_global_dirs(env: &Env) -> Result<bool> {
-    if env.app_dir_pairs().iter().all(|(old, _)| !old.exists()) {
-        return Ok(false);
+pub fn migrate_global_dirs(env: &Env) -> Result<DirMove> {
+    let mut outcome = DirMove::default();
+    if env
+        .app_dir_pairs()
+        .iter()
+        .all(|(old, _)| fs::symlink_metadata(old).is_err())
+    {
+        return Ok(outcome);
     }
     let _guard = crate::apply::lock_key(env, "rename-from-vstack2")?;
-    let mut moved = false;
     for (old, new) in env.app_dir_pairs() {
-        moved |= merge_move(&old, &new)?;
+        outcome.moved |= merge_move(&old, &new)?;
+        let stayed = leftover_count(&old);
+        if stayed > 0 {
+            outcome.leftovers.push(format!(
+                "{stayed} item(s) stayed in {} — {} already has entries with those names; move or delete them by hand",
+                old.display(),
+                new.display()
+            ));
+        }
     }
-    Ok(moved)
+    Ok(outcome)
 }
 
-/// Move `old` to `new`; where both exist as directories, move children
+/// Move `old` to `new`; where both are real directories, move children
 /// one by one and take the emptied dir away. A name present on both
-/// sides stays put on both — the new side is never overwritten, and the
-/// leftover is visible instead of silently merged.
+/// sides stays put on both — the new side is never overwritten. Symlinks
+/// move like files and are never followed: recursing through one would
+/// drag in a tree that was never under the old dir.
 fn merge_move(old: &Path, new: &Path) -> Result<bool> {
-    if !old.exists() {
+    if fs::symlink_metadata(old).is_err() {
         return Ok(false);
     }
-    if !new.exists() {
+    if fs::symlink_metadata(new).is_err() {
         fs::rename(old, new).map_err(|e| CoreError::io(old, e))?;
         return Ok(true);
     }
-    if !(old.is_dir() && new.is_dir()) {
+    if !(is_real_dir(old) && is_real_dir(new)) {
         return Ok(false);
     }
+    // Renaming entries out of a directory while its iterator is live is
+    // platform-defined, so the listing is taken up front.
+    let entries: Vec<_> = fs::read_dir(old)
+        .map_err(|e| CoreError::io(old, e))?
+        .collect::<std::io::Result<Vec<_>>>()
+        .map_err(|e| CoreError::io(old, e))?;
     let mut moved = false;
-    let entries = fs::read_dir(old).map_err(|e| CoreError::io(old, e))?;
     for entry in entries {
-        let entry = entry.map_err(|e| CoreError::io(old, e))?;
         moved |= merge_move(&entry.path(), &new.join(entry.file_name()))?;
     }
     let mut leftovers = fs::read_dir(old).map_err(|e| CoreError::io(old, e))?;
@@ -301,4 +351,28 @@ fn merge_move(old: &Path, new: &Path) -> Result<bool> {
         fs::remove_dir(old).map_err(|e| CoreError::io(old, e))?;
     }
     Ok(moved)
+}
+
+fn is_real_dir(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_dir())
+}
+
+/// How many items still sit under `path`, symlinks counted as themselves.
+/// A count for a report line, so a dir that cannot be enumerated counts
+/// as one item rather than failing the move that already happened.
+fn leftover_count(path: &Path) -> usize {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return 0;
+    };
+    if !meta.file_type().is_dir() {
+        return 1;
+    }
+    let Ok(entries) = fs::read_dir(path) else {
+        return 1;
+    };
+    entries
+        .flatten()
+        .map(|entry| leftover_count(&entry.path()))
+        .sum::<usize>()
+        .max(1)
 }

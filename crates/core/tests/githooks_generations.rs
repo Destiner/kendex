@@ -189,6 +189,130 @@ fn a_receiptless_old_generation_directory_is_ours_by_content() {
     assert_eq!(config_value(&w.repo, "core.hooksPath"), None);
 }
 
+/// `core.hooksPath` names the directory git actually executes: a stray
+/// empty `kendex-hooks` beside an armed `vstack-hooks` must not shadow
+/// it. Repair rewrites the armed directory and says which one; uninstall
+/// takes the armed install back, stray untouched.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_stray_new_directory_never_shadows_the_armed_old_install() {
+    let w = world();
+    let hooks_dir = old_generation_install(&w.repo, true);
+    let stray = w.repo.join(".git/kendex-hooks");
+    std::fs::create_dir_all(&stray).unwrap();
+
+    let report = githooks::repair(&w.env, &w.repo).unwrap();
+    assert!(
+        report.lines.iter().any(|l| l.contains("vstack-hooks")),
+        "repair names the directory it rewrote: {report:?}"
+    );
+    for hook in githooks::HOOKS {
+        assert_eq!(
+            std::fs::read_to_string(hooks_dir.join(hook)).unwrap(),
+            githooks::entrypoint(hook),
+            "the armed directory was rewritten, not the stray"
+        );
+    }
+    assert_eq!(
+        std::fs::read_dir(&stray).unwrap().count(),
+        0,
+        "nothing was written into the stray"
+    );
+
+    let report = githooks::uninstall(&w.env, &w.repo).unwrap();
+    assert!(
+        !hooks_dir.exists(),
+        "the armed install is removed: {report:?}"
+    );
+    assert_eq!(config_value(&w.repo, "core.hooksPath"), None);
+    assert!(stray.exists(), "the stray is not kendex's to remove here");
+}
+
+/// A repo whose old-named directory was deleted by hand still carries
+/// our `core.hooksPath` value. Install re-arms under the name the config
+/// still points at instead of refusing to "hijack" our own leftover.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn install_rearms_when_the_config_named_directory_is_gone() {
+    let w = world();
+    let hooks_dir = old_generation_install(&w.repo, true);
+    std::fs::remove_dir_all(&hooks_dir).unwrap();
+
+    githooks::install(&w.env, &w.repo).unwrap();
+    assert!(hooks_dir.join("receipt.json").is_file(), "re-armed");
+    for hook in githooks::HOOKS {
+        assert_eq!(
+            std::fs::read_to_string(hooks_dir.join(hook)).unwrap(),
+            githooks::entrypoint(hook)
+        );
+    }
+    assert_eq!(
+        config_value(&w.repo, "core.hooksPath").as_deref(),
+        Some(hooks_dir.display().to_string().as_str()),
+        "the config keeps naming the directory it always named"
+    );
+}
+
+/// The same half-removed state at uninstall: the value is ours by name
+/// even with its directory gone, so uninstall clears it — leaving it
+/// would make git run no hooks at all.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn uninstall_unsets_the_old_name_when_its_directory_is_gone() {
+    let w = world();
+    let hooks_dir = old_generation_install(&w.repo, false);
+    std::fs::remove_dir_all(&hooks_dir).unwrap();
+
+    let report = githooks::uninstall(&w.env, &w.repo).unwrap();
+    assert!(
+        report.lines.iter().any(|l| l.contains("unset")),
+        "{report:?}"
+    );
+    assert_eq!(config_value(&w.repo, "core.hooksPath"), None);
+}
+
+/// The receipt is a claim and the bytes are the proof: an entrypoint
+/// someone edited is their hook now, and one such file refuses the whole
+/// repair — nothing is rewritten, nothing overwritten.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn repair_refuses_a_hand_edited_entrypoint_and_rewrites_nothing() {
+    let w = world();
+    let hooks_dir = old_generation_install(&w.repo, true);
+    let edited = "#!/bin/sh\nexec my-linter \"$1\"\n";
+    std::fs::write(hooks_dir.join("commit-msg"), edited).unwrap();
+
+    let error = githooks::repair(&w.env, &w.repo).unwrap_err();
+    assert!(
+        error.to_string().contains("commit-msg"),
+        "the refusal names the file: {error}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(hooks_dir.join("pre-commit")).unwrap(),
+        githooks::old_entrypoint("pre-commit"),
+        "a refusal is the whole response — no partial rewrite"
+    );
+    assert_eq!(
+        std::fs::read_to_string(hooks_dir.join("commit-msg")).unwrap(),
+        edited
+    );
+}
+
+/// After a move the receipt's absolute paths are stale. Repair trusts
+/// the receipt, so it refuses instead of rewriting under a claim that
+/// does not match the live directory — install re-records ownership.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn repair_refuses_when_the_receipt_and_the_live_directory_disagree() {
+    let w = world();
+    githooks::install(&w.env, &w.repo).unwrap();
+    let moved = w.repo.parent().unwrap().join("moved");
+    std::fs::rename(&w.repo, &moved).unwrap();
+
+    let error = githooks::repair(&w.env, &moved).unwrap_err();
+    assert!(error.to_string().contains("guard install"), "{error}");
+}
+
 /// A foreign file among old-generation bytes breaks the by-content proof
 /// exactly as it does among new ones: install refuses, and uninstall
 /// leaves the directory in place, naming the file.

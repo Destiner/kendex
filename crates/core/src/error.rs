@@ -46,7 +46,7 @@ pub enum CoreError {
     LegacyLock { path: PathBuf },
 
     #[error(
-        "both {new} and {old} exist — one scope cannot carry both generations; keep the contents you mean, delete the other file, and run again"
+        "both {new} and {old} exist — {old} was renamed to {new}, and both are here; keep the contents you mean, delete the other, and run again"
     )]
     BothGenerations { new: PathBuf, old: PathBuf },
 

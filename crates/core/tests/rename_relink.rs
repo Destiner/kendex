@@ -16,7 +16,6 @@ struct Fixture {
     _tmp: tempfile::TempDir,
     env: Env,
     home: PathBuf,
-    project: PathBuf,
 }
 
 #[allow(clippy::unwrap_used)]
@@ -29,7 +28,6 @@ fn fixture() -> Fixture {
     Fixture {
         env,
         home,
-        project,
         _tmp: tmp,
     }
 }

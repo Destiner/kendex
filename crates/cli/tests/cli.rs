@@ -158,6 +158,32 @@ fn verify_names_an_installation_that_cannot_act() {
     );
 }
 
+/// The real binary — not just the library — runs the global-dir move
+/// before its verb: state under the old `vstack2` config dir lands under
+/// `kendex` on any command at all.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn any_verb_moves_the_global_dirs_off_vstack2() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    fs::create_dir_all(home.join(".config/vstack2")).unwrap();
+    let settings = format!("schema = 1\nprojects = [\"{}/dev/app\"]\n", home.display());
+    fs::write(home.join(".config/vstack2/settings.toml"), &settings).unwrap();
+
+    let output = kendex(home, home, &["project", "list"]);
+    assert!(output.status.success(), "{output:?}");
+    // The registered project prints, proving the verb read the moved file.
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("dev/app"),
+        "{output:?}"
+    );
+    assert_eq!(
+        fs::read_to_string(home.join(".config/kendex/settings.toml")).unwrap(),
+        settings
+    );
+    assert!(!home.join(".config/vstack2").exists());
+}
+
 /// The rename ships a `vstack` alias binary for one release cycle:
 /// consuming repos' git-hook entrypoints hard-code `vstack guard run` and
 /// fail closed while the alias is missing.

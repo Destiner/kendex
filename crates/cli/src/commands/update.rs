@@ -10,7 +10,8 @@ use super::{CliResult, out, say};
 /// local fixture instead of the network.
 fn feed_url() -> String {
     std::env::var("KENDEX_UPDATE_FEED").unwrap_or_else(|_| {
-        "https://github.com/vanillagreencom/vstack2/releases/latest/download/feed.json".to_owned()
+        "https://github.com/vanillagreencom/kendex-app/releases/latest/download/feed.json"
+            .to_owned()
     })
 }
 

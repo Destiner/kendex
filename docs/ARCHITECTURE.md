@@ -326,7 +326,8 @@ lives in one capability table read by core and UI.
   tags and the opencode hook-file prefix write the new spelling and read
   both, because every consuming repo still carries the old bytes. Env vars
   are renamed outright to `KENDEX_*`, except the guard's
-  (`VSTACK_GUARD*`), which are read as a fallback while the `vstack`
+  (`VSTACK_GUARDS_<CHECK>_<KEY>`, `VSTACK_GUARD_PRE_COMMIT_LOCAL`),
+  which are read as a fallback while the `vstack`
   alias binary ships — one release cycle, because consuming repos' git
   hook entrypoints hard-code `vstack guard run` and fail closed without
   it; `kendex guard repair` rewrites entrypoints under receipt, and the
@@ -364,17 +365,24 @@ lives in one capability table read by core and UI.
   the exact config value set, and one lease per worktree that enabled the
   install — uninstall releases its own lease and disarms only when the
   last one goes, reaping leases git's registry no longer lists. Repair
-  (`guard repair`) rewrites only receipt-listed files — the upgrade path
-  for entrypoints that call the retired `vstack` name — and never moves
-  directories: an install the vstack-named binary made keeps its
+  (`guard repair`) rewrites only receipt-listed files whose current
+  bytes are provably ours — either generation's entrypoint — the upgrade
+  path for entrypoints that call the retired `vstack` name — and never
+  moves directories: an install the vstack-named binary made keeps its
   `vstack-hooks` directory, because the receipt and `core.hooksPath` both
-  name it, and every verb resolves to whichever generation's directory is
-  live and works there in place. Uninstall deletes only receipt-listed
-  files and unsets `core.hooksPath` only while its current value still
-  equals the receipt's (compare-and-swap both sides). kendex never edits
-  a hook file it did not create: a pre-existing or symlinked directory, a
-  worktree resolving a foreign effective `hooksPath`, v1's shim, and
-  foreign files found at uninstall are all refusals — a refused repo can
+  name it. Every verb resolves the live directory in one order — the one
+  `core.hooksPath` names when it names either generation's path, else
+  the one holding a receipt, else the old name only while it is the sole
+  directory present — and works there in place, so a stray directory
+  under the other name never shadows the armed one. Uninstall deletes
+  only receipt-listed files and unsets `core.hooksPath` only while its
+  current value still equals the receipt's (compare-and-swap both sides);
+  a value naming either generation's path is ours by name even when its
+  directory is gone. kendex never edits a hook file it did not create: a
+  pre-existing or symlinked directory, a hand-edited entrypoint or a
+  receipt naming a different directory at repair, a worktree resolving a
+  foreign effective `hooksPath`, v1's shim, and foreign files found at
+  uninstall are all refusals — a refused repo can
   still call `kendex guard run` from its own hook orchestration.
   Hook state is repository-common state: mutations take a common-dir lock
   after the scope lock (one fixed order), build their plan — refusals
@@ -437,13 +445,19 @@ lives in one capability table read by core and UI.
   journaled "Rename to kendex" prefix — the file renames, the
   `.gitignore` line kendex wrote for the local source, nothing else —
   with the rest of the plan retargeted to the renamed paths (a rename
-  preserves bytes, so observed-hash preconditions carry over). Both
-  generations in one scope root is a hard error naming both files; no
-  arbitration. Foreign surfaces never get the error: a catalog's own
-  `kendex.toml` outranks its `vstack.toml`, and old-name settings files
-  and templates keep being read. The global `vstack2` config/cache/data
-  dirs move under `kendex` once, on first launch of either shell, under
-  a scope-style lock, never overwriting what the new dirs already hold.
+  preserves bytes, so observed-hash preconditions carry over). Each
+  artifact earns its op on its own evidence, so a scope whose manifest
+  already moved still gets the rest renamed. Both spellings of one file
+  (or of the local-source dir) in one scope root is a hard error naming
+  both, raised at plan time; no arbitration. Foreign surfaces never get
+  the error: a catalog's own `kendex.toml` outranks its `vstack.toml`,
+  and old-name settings files and templates keep being read. The global
+  `vstack2` config/cache/data dirs move under `kendex` once, on first
+  launch of either shell, under a scope-style lock, never overwriting
+  what the new dirs already hold and never following symlinks; whatever
+  a collision keeps in place is reported, and a failed move stops the
+  launch of either shell — proceeding would write fresh state beside
+  the stranded old files and fork the library.
 - **Permission intent is typed and never widens.** A source's tool
   allowlist survives parse, merge, and every renderer as
   `Unspecified | AllowOnly | DenyExtra`; explicit denies survive

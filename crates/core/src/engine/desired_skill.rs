@@ -98,24 +98,7 @@ pub(super) fn desired_skill(ctx: &ItemCtx, state: &mut DesiredState) -> Result<(
     // harness here installs seeds nothing, so nothing reaches the settings
     // file without passing the safety gate the installation passes.
     if enabled && matches!(ctx.scope, Scope::Project { .. }) {
-        // Catalog content is foreign: a skill still shipping the old
-        // template name keeps seeding, the new name winning when both ship.
-        let template = ctx.item_path.join(crate::settings_seed::SETTINGS_TEMPLATE);
-        let text = match ctx.sealed.read_if_exists(&template)? {
-            Some(text) => Some(text),
-            None => ctx.sealed.read_if_exists(
-                &ctx.item_path
-                    .join(crate::settings_seed::LEGACY_SETTINGS_TEMPLATE),
-            )?,
-        };
-        if let Some(text) = text {
-            for entry in crate::settings_seed::extract_env_entries(&text) {
-                state.settings_env.push(crate::settings_seed::SeededEnv {
-                    entry,
-                    owner: ctx.name.to_owned(),
-                });
-            }
-        }
+        seed_settings_env(ctx, state)?;
     }
     // Gemini and Copilot read the skill directories other tools own, so one
     // tree can be a definition they see too — said out loud, never counted
@@ -197,6 +180,48 @@ pub(super) fn desired_skill(ctx: &ItemCtx, state: &mut DesiredState) -> Result<(
     Ok(())
 }
 
+/// The `[env]` defaults this skill ships for the project's settings file.
+/// Catalog content is foreign: a skill still shipping the old template name
+/// keeps seeding, the new name winning when both ship. Both at once is said
+/// out loud — the ignored file may be the one a reviewer read, and only the
+/// catalog author can settle which is meant.
+fn seed_settings_env(ctx: &ItemCtx, state: &mut DesiredState) -> Result<()> {
+    let current = ctx
+        .sealed
+        .read_if_exists(&ctx.item_path.join(crate::settings_seed::SETTINGS_TEMPLATE))?;
+    let legacy = ctx.sealed.read_if_exists(
+        &ctx.item_path
+            .join(crate::settings_seed::LEGACY_SETTINGS_TEMPLATE),
+    )?;
+    if current.is_some() && legacy.is_some() {
+        state.warnings.push(super::ItemWarning {
+            kind: ItemKind::Skill,
+            name: ctx.name.to_owned(),
+            harness: None,
+            message: format!(
+                "ships both `{}` and `{}` — settings defaults seed from `{}` only, and the other file is ignored",
+                crate::settings_seed::SETTINGS_TEMPLATE,
+                crate::settings_seed::LEGACY_SETTINGS_TEMPLATE,
+                crate::settings_seed::SETTINGS_TEMPLATE,
+            ),
+            remediation: Some(format!(
+                "keep one template in the skill — fold anything still wanted from `{}` into `{}` and delete it",
+                crate::settings_seed::LEGACY_SETTINGS_TEMPLATE,
+                crate::settings_seed::SETTINGS_TEMPLATE,
+            )),
+        });
+    }
+    if let Some(text) = current.or(legacy) {
+        for entry in crate::settings_seed::extract_env_entries(&text) {
+            state.settings_env.push(crate::settings_seed::SeededEnv {
+                entry,
+                owner: ctx.name.to_owned(),
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Render one group's variant under its combined constraints: the tightest
 /// byte cap any member enforces, applied after instruction injection.
 fn render_variant(
@@ -206,7 +231,7 @@ fn render_variant(
     enabled: bool,
 ) -> Result<Variant> {
     let mut files = render_skill(ctx.sealed, ctx.item_path, ctx.manifest, ctx.name)?;
-    // A skill from a marketplace catalog installs under its plugin, and the
+    // A skill from a plugin-registry catalog installs under its plugin, and the
     // catalog's own SKILL.md knows nothing of that: the copy carries the
     // name the tool will list it under, the catalog keeps the name it wrote.
     if group.installed != ctx.name {

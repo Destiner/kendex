@@ -2,7 +2,7 @@
 //!
 //! Every declared name becomes a file or directory somewhere, so a name that
 //! cannot be one is refused where it is written down rather than where it
-//! fails. Marketplace-shaped catalogs add a second rule: a name may carry
+//! fails. Plugin-registry-shaped catalogs add a second rule: a name may carry
 //! one `<plugin>/<leaf>` segment pair, and nothing more.
 
 /// Room for the separator a namespaced name expands to, the `.disabled`
@@ -87,7 +87,7 @@ pub fn shown(text: &str) -> String {
     out
 }
 
-/// Why this item name cannot be installed. A name from a marketplace-shaped
+/// Why this item name cannot be installed. A name from a plugin-registry-shaped
 /// catalog carries its plugin — `<plugin>/<leaf>` — and that is the only
 /// `/` any name may hold.
 pub fn item_problem(name: &str) -> Option<String> {
@@ -177,7 +177,7 @@ mod tests {
         assert_ne!(fold("cafe"), fold("caf\u{e9}"));
     }
 
-    /// One path segment holds no separator: only the kinds a marketplace
+    /// One path segment holds no separator: only the kinds a plugin-registry
     /// catalog offers are namespaced, and those are split before they get
     /// here.
     #[test]

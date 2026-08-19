@@ -97,6 +97,21 @@ fn apply_webview_env(value: &str) {
 #[cfg(target_os = "linux")]
 use std::io::Write;
 
+/// Everything that must settle before the window opens: the old-name dirs
+/// move first so recovery — and everything after it — reads the new ones.
+/// A failed move is fatal to the launch, same as in the CLI: opening
+/// anyway would write fresh state beside the stranded old files, and the
+/// next launch would find both generations of the global scope and refuse
+/// it forever.
+pub fn prepare_launch(
+    env: &kendex_core::env::Env,
+) -> Result<Vec<String>, kendex_core::error::CoreError> {
+    let moved = kendex_core::rename::migrate_global_dirs(env)?;
+    let mut messages = moved.leftovers;
+    messages.extend(recovery::recover_on_launch(env));
+    Ok(messages)
+}
+
 pub fn run() -> tauri::Result<()> {
     #[cfg(target_os = "linux")]
     if let Some(value) = webview_env(
@@ -110,18 +125,21 @@ pub fn run() -> tauri::Result<()> {
     use std::io::Write;
     let mut stderr = std::io::stderr();
     match kendex_core::env::Env::detect() {
-        Ok(env) => {
-            // The old-name dirs move before anything reads the new ones —
-            // recovery included, so it finds the journals where they now
-            // live. A failure is reported, not fatal: the app still opens,
-            // and the next launch tries again.
-            if let Err(error) = kendex_core::rename::migrate_global_dirs(&env) {
-                let _ = writeln!(stderr, "moving vstack2 data to kendex failed: {error}");
+        Ok(env) => match prepare_launch(&env) {
+            Ok(messages) => {
+                for message in messages {
+                    let _ = writeln!(stderr, "launch: {message}");
+                }
             }
-            for message in recovery::recover_on_launch(&env) {
-                let _ = writeln!(stderr, "recovery: {message}");
-            }
-        }
+            // Opening with the move half-done would fork the library in
+            // two, so the launch stops loudly instead of showing an app
+            // whose state is about to become unrecoverable.
+            Err(error) => panic!(
+                "kendex cannot start: moving your data from vstack2 to kendex failed ({error}). \
+                 Starting anyway would split your library between the old and new locations. \
+                 Fix the reported problem and launch again."
+            ),
+        },
         Err(error) => {
             let _ = writeln!(stderr, "recovery skipped: {error}");
         }

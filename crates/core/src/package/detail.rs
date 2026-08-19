@@ -342,7 +342,7 @@ fn safe_repo_url(repo: &str) -> Option<String> {
     (!rest.contains('@')).then(|| repo.to_owned())
 }
 
-/// The plugin's own claims, when the item came from a marketplace catalog
+/// The plugin's own claims, when the item came from a plugin-registry catalog
 /// (its name carries the plugin: `<plugin>/<item>`).
 fn catalog_meta(
     env: &Env,

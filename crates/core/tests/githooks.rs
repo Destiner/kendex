@@ -262,7 +262,7 @@ fn a_crashed_install_is_recovered_through_the_common_journal() {
     let w = world();
     githooks::install(&w.env, &w.repo).unwrap();
     let repo = githooks::Repo::at(&w.repo).unwrap();
-    let hooks = repo.hooks_dir();
+    let hooks = repo.hooks_dir().unwrap();
 
     // Simulate a crash mid-mutation: the common journal holds the
     // pre-image, the mutation half-landed, the journal was never cleared.

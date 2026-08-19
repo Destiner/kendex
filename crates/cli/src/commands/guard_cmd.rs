@@ -46,7 +46,7 @@ pub enum GuardCommand {
     CommitMsg { file: Option<PathBuf> },
     /// Install the owned hooks directory and point core.hooksPath at it
     Install,
-    /// Rewrite the receipt-listed entrypoints to this binary's bytes
+    /// Make this repository's commit checks call kendex instead of vstack
     Repair,
     /// Release this worktree's lease; disarm when the last one goes
     Uninstall,

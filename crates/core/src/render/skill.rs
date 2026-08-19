@@ -59,7 +59,7 @@ pub fn render_skill(
 
 /// Rename the tree's SKILL.md to the name the skill installs under. Every
 /// tool keys a skill on its directory and answers to the name the file
-/// gives, so the two have to agree — and a marketplace catalog's file knows
+/// gives, so the two have to agree — and a plugin-registry catalog's file knows
 /// only its leaf name, never the plugin the item is installed under. The
 /// catalog keeps the name it wrote; the copy carries the installed one.
 pub fn set_skill_name(files: &mut [(PathBuf, Vec<u8>)], installed: &str) {

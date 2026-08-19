@@ -129,19 +129,34 @@ pub(crate) fn hook_target(
             })
         }
         HarnessId::Opencode => {
-            let file = format!("kendex-hook-{name}.md");
-            let (base, reference) = match scope {
-                Scope::Global => (
-                    adapter(harness).default_global_root(env),
-                    format!("instructions/{file}"),
-                ),
-                Scope::Project { root } => (
-                    root.join(".opencode"),
-                    format!(".opencode/instructions/{file}"),
-                ),
+            let base = match scope {
+                Scope::Global => adapter(harness).default_global_root(env),
+                Scope::Project { root } => root.join(".opencode"),
+            };
+            let dir = base.join("instructions");
+            // An instruction file installed under the old product name keeps
+            // its spelling: pointing writes and the config reference at a
+            // fresh kendex-named file would leave two files and two
+            // references, and opencode would load the constraint twice.
+            // Same posture as `manifest_path`: prefer the new name, follow
+            // the old one while only it exists.
+            let new = format!("kendex-hook-{name}.md");
+            let old = format!("vstack-hook-{name}.md");
+            let present = |file: &str| {
+                let path = dir.join(file);
+                path.is_file() || disabled_name(&path).is_file()
+            };
+            let file = if !present(&new) && present(&old) {
+                old
+            } else {
+                new
+            };
+            let reference = match scope {
+                Scope::Global => format!("instructions/{file}"),
+                Scope::Project { .. } => format!(".opencode/instructions/{file}"),
             };
             Some(HookTarget::Instruction {
-                path: base.join("instructions").join(&file),
+                path: dir.join(&file),
                 config: crate::harness::opencode::config_file(env, scope),
                 reference,
             })
