@@ -179,6 +179,35 @@ fn keeping_an_edited_package_refuses_naming_it() {
     assert!(manifest_of(&env, &scope).sources.contains_key("cat"));
 }
 
+/// An edited hook script is caught too: detach compares the installed script to
+/// what apply wrote, so keeping from source form cannot silently revert a hook
+/// the user changed by hand.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn keeping_an_edited_hook_refuses() {
+    let (_tmp, env, scope, catalog) = world("[hooks.guard]\nsource = \"cat\"\n", "");
+    fs::create_dir_all(catalog.join("hooks")).unwrap();
+    fs::write(catalog.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
+    fs::write(
+        catalog.join("hooks/guard.sh"),
+        "#!/usr/bin/env bash\n# ---\n# name: guard\n# event: PreToolUse\n# matcher: Bash\n# description: check\n# ---\nexit 0\n",
+    )
+    .unwrap();
+    apply_now(&env, &scope);
+
+    // Find and edit the installed hook script.
+    let Scope::Project { root } = &scope else {
+        unreachable!()
+    };
+    let installed = root.join(".claude/hooks/guard.sh");
+    assert!(installed.exists(), "hook installed");
+    fs::write(&installed, "#!/usr/bin/env bash\necho tampered\n").unwrap();
+
+    let err = detach::source(&env, &scope, "cat").unwrap_err();
+    assert!(format!("{err}").contains("guard"), "{err}");
+    assert!(manifest_of(&env, &scope).sources.contains_key("cat"));
+}
+
 /// A member another marketplace's bundle still carries is not in the closure:
 /// removing one source leaves a package the other keeps, because the closure is
 /// the difference between the two expansions, not a read of one source's names.

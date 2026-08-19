@@ -219,10 +219,39 @@ fn edited_items(
             lock.entries
                 .values()
                 .filter(|e| e.kind == item.kind && e.name == item.name)
-                .any(|e| super::removal::edit_holds(env, scope, e))
+                .any(|e| install_edited(env, scope, e))
         })
         .map(|item| (item.kind, item.name.clone()))
         .collect()
+}
+
+/// Whether the user has edited this installation's bytes, for the kinds detach
+/// can lose bytes for. The engine's own check covers skills, agents and
+/// commands; a hook installs an editable script the engine's check skips, so
+/// detach compares it to what apply last wrote and catches an edited hook too.
+/// (An MCP server is a config entry with no standalone file — its edits are not
+/// detected here, the one gap that remains.)
+fn install_edited(env: &Env, scope: &Scope, entry: &crate::lock::LockEntry) -> bool {
+    if super::removal::edit_holds(env, scope, entry) {
+        return true;
+    }
+    if entry.kind != ItemKind::Hook {
+        return false;
+    }
+    let owned = super::owned::installed(env, scope, entry);
+    let present: Vec<_> = owned
+        .files
+        .iter()
+        .filter(|path| !path.is_symlink() && path.exists())
+        .collect();
+    match &entry.rendered_hash {
+        None => !present.is_empty(),
+        Some(rendered) => present.iter().any(|path| {
+            crate::hash::hash_tree(path)
+                .map(|disk| &disk != rendered)
+                .unwrap_or(true)
+        }),
+    }
 }
 
 /// The names an "edited packages" refusal lists — kind and name, so an edited
