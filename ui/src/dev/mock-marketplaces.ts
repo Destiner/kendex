@@ -8,10 +8,12 @@ import { bundleDetail, offeredHere } from "./mock-catalog";
 import { installHandlers } from "./mock-install";
 import { type Handler, store } from "./mock-state";
 import { subscribeHandlers } from "./mock-subscribe";
+import { unsubscribeHandlers } from "./mock-unsubscribe";
 
 export const marketplaceHandlers: Record<string, Handler> = {
   ...installHandlers,
   ...subscribeHandlers,
+  ...unsubscribeHandlers,
 
   marketplaces_overview: () => store.state.marketplaces,
 

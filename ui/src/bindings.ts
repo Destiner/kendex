@@ -198,6 +198,17 @@ export const commands = {
 	 *  GitHub tree URL, a skills.sh package URL, or a local folder.
 	 */
 	marketplaceSubscribe: (scope: Scope, reference: string, name: string | null) => typedError<SubscribeOutcome, string>(__TAURI_INVOKE("marketplace_subscribe", { scope, reference, name })),
+	/**
+	 *  The dialog's preview: the closure partitioned into removable, edited, and
+	 *  the bundles that go. Refuses (as an error) while the source cannot be read.
+	 */
+	marketplaceUnsubscribePreview: (scope: Scope, source: string) => typedError<UnsubscribePreview, string>(__TAURI_INVOKE("marketplace_unsubscribe_preview", { scope, source })),
+	/**
+	 *  Unsubscribe, removing or keeping the packages. `keep` converts each
+	 *  installation to a local fork; otherwise they are uninstalled, and
+	 *  `discard_edits` takes hand edits along instead of refusing.
+	 */
+	marketplaceUnsubscribe: (scope: Scope, source: string, keep: boolean, discardEdits: boolean) => typedError<null, string>(__TAURI_INVOKE("marketplace_unsubscribe", { scope, source, keep, discardEdits })),
 	marketplaceAbout: (scope: Scope, source: string) => typedError<AboutView, string>(__TAURI_INVOKE("marketplace_about", { scope, source })),
 	/**
 	 *  Where every installation came from, across every scope — the Library
@@ -1558,6 +1569,12 @@ export type PackagePreview = {
 	collision: string | null,
 };
 
+/**  One package named in an unsubscribe preview. */
+export type PackageRef = {
+	kind: ItemKind,
+	name: string,
+};
+
 /**
  *  One offered package's scores and the verdict today's thresholds give
  *  them — the dot in the Packages table and the findings on the
@@ -1895,6 +1912,17 @@ export type Tag =
 export type Thresholds = {
 	"warn-below": number,
 	"block-below": number,
+};
+
+/**
+ *  What unsubscribing from a marketplace would do: the packages that can be
+ *  removed or kept as-is, the ones the user edited (which must be forked or
+ *  discarded first), and the curated sets that leave with the source.
+ */
+export type UnsubscribePreview = {
+	removable: PackageRef[],
+	edited: PackageRef[],
+	bundles: string[],
 };
 
 /**  One declared package's update standing. */

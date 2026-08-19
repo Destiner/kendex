@@ -8,6 +8,7 @@ mod packages;
 mod paths;
 pub mod recovery;
 mod sources;
+mod unsubscribe;
 mod window;
 
 use tauri_specta::{Builder, collect_commands};
@@ -54,6 +55,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         marketplaces::marketplace_package_preview,
         marketplaces::marketplace_install,
         marketplaces::marketplace_subscribe,
+        unsubscribe::marketplace_unsubscribe_preview,
+        unsubscribe::marketplace_unsubscribe,
         marketplaces::marketplace_about,
         marketplaces::library_provenance,
         packages::package_versions,
