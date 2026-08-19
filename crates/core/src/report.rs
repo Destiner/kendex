@@ -73,15 +73,17 @@ fn is_kendex_owned(
         entry.name == name
             && kind.is_none_or(|k| k == entry.kind)
             && entry.kind != ItemKind::Skill
-            && (entry.source_repo == upstream
-                || (upstream == DEFAULT_UPSTREAM && is_default_repo(&entry.source_repo)))
+            // Canonical comparison, so an entry recorded before the
+            // repository move claims the new upstream — and a report routed
+            // by the old spelling still claims a migrated entry.
+            && crate::repo_move::same_repo(&entry.source_repo, upstream)
     })
 }
 
 /// Both spellings of the default repository claim it: installed content
 /// that predates the repository move still records the old one.
 fn is_default_repo(repo: &str) -> bool {
-    repo == DEFAULT_UPSTREAM || crate::repo_move::names_old_default(repo)
+    crate::repo_move::same_repo(repo, DEFAULT_UPSTREAM)
 }
 
 /// `source:`/`repository:` from the installed skill's frontmatter — the one
@@ -167,6 +169,41 @@ mod tests {
             None,
             None,
             "someone/else"
+        ));
+    }
+
+    /// The other direction: an entry the migration already rewrote must
+    /// still be claimed by a report routed via the old spelling.
+    #[test]
+    fn an_old_spelling_upstream_claims_a_migrated_entry() {
+        let mut lock = Lock::default();
+        lock.entries.insert(
+            "hook:guard:claude".to_owned(),
+            crate::lock::LockEntry {
+                name: "guard".to_owned(),
+                kind: ItemKind::Hook,
+                harness: crate::model::HarnessId::Claude,
+                source: "kendex".to_owned(),
+                source_repo: DEFAULT_UPSTREAM.to_owned(),
+                method: crate::manifest::Method::Copy,
+                installed_at: "2026-01-01T00:00:00Z".to_owned(),
+                source_hash: "x".to_owned(),
+                source_commit: None,
+                rendered_hash: None,
+                enabled: true,
+                upstream_skills: None,
+                emitted: None,
+                registration: None,
+                reasons: std::collections::BTreeSet::from([crate::lock::Reason::Requested]),
+            },
+        );
+        assert!(is_kendex_owned(
+            &lock,
+            "guard",
+            Some(ItemKind::Hook),
+            None,
+            None,
+            "https://github.com/vanillagreencom/vstack"
         ));
     }
 }

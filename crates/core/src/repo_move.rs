@@ -12,17 +12,59 @@ use crate::manifest::{DEFAULT_SOURCE_REPO, LEGACY_SOURCE_REPO, Manifest};
 /// The migration write's name in the plan preview.
 pub const MOVE_DESCRIPTION: &str = "Point kendex at its new repository";
 
-/// Whether a repo string names the moved repository, in any spelling a
-/// manifest can carry: the `owner/repo` shorthand kendex seeds, or a full
-/// clone URL written by hand (`clone_url` passes those through untouched).
-/// The endings that say nothing about which repository it is — a trailing
+/// The `owner/repo` a GitHub reference names, in every shape a manifest
+/// can carry: the shorthand kendex seeds, an `https`/`http` URL with or
+/// without `www.`, an scp-style `git@`, or an `ssh://git@` URL — folded to
+/// lowercase, because hosts and GitHub paths are case-insensitive. The
+/// endings that say nothing about which repository it is — a trailing
 /// slash, a `.git` suffix — are ignored, as the store's key already does.
+/// `None` for another host or another shape: a missed spelling here reads
+/// as a per-package source rebind, so matching must be by what the string
+/// names, never by a list of literal spellings.
+fn github_owner_repo(reference: &str) -> Option<String> {
+    let lower = reference.trim().to_ascii_lowercase();
+    let trimmed = lower.trim_end_matches('/');
+    let trimmed = trimmed.strip_suffix(".git").unwrap_or(trimmed);
+    let path = if let Some(rest) = ["https://", "http://", "ssh://git@"]
+        .iter()
+        .find_map(|scheme| trimmed.strip_prefix(scheme))
+    {
+        rest.strip_prefix("www.")
+            .unwrap_or(rest)
+            .strip_prefix("github.com/")?
+    } else if let Some(rest) = trimmed.strip_prefix("git@github.com:") {
+        rest
+    } else if trimmed.contains(':') || trimmed.contains('@') {
+        return None;
+    } else {
+        trimmed
+    };
+    let mut parts = path.split('/');
+    let (owner, repo) = (parts.next()?, parts.next()?);
+    (parts.next().is_none() && !owner.is_empty() && !repo.is_empty())
+        .then(|| format!("{owner}/{repo}"))
+}
+
+/// Whether a repo string names the moved repository, in any spelling.
 pub fn names_old_default(repo: &str) -> bool {
-    let repo = repo.trim_end_matches('/');
-    let repo = repo.strip_suffix(".git").unwrap_or(repo);
-    repo == LEGACY_SOURCE_REPO
-        || repo == "https://github.com/vanillagreencom/vstack"
-        || repo == "git@github.com:vanillagreencom/vstack"
+    github_owner_repo(repo).as_deref() == Some(LEGACY_SOURCE_REPO)
+}
+
+/// A repo string with the moved default spelled the one way the rest of
+/// kendex knows it. Anything else passes through unchanged, so exact
+/// comparison of two canonical strings still separates unrelated repos.
+pub fn canonical(repo: &str) -> &str {
+    match names_old_default(repo) {
+        true => DEFAULT_SOURCE_REPO,
+        false => repo,
+    }
+}
+
+/// Whether two repo strings name the same repository once the moved
+/// default's spellings collapse: a record written before the move still
+/// matches an entry the migration rewrote, and the other way round.
+pub fn same_repo(a: &str, b: &str) -> bool {
+    canonical(a) == canonical(b)
 }
 
 fn rewrite(repo: &mut String, changed: &mut bool) {
@@ -83,12 +125,46 @@ mod tests {
             "https://github.com/vanillagreencom/vstack.git"
         ));
         assert!(names_old_default(
+            "http://github.com/vanillagreencom/vstack"
+        ));
+        assert!(names_old_default(
+            "https://www.github.com/vanillagreencom/vstack/"
+        ));
+        assert!(names_old_default(
             "git@github.com:vanillagreencom/vstack.git"
+        ));
+        assert!(names_old_default(
+            "ssh://git@github.com/vanillagreencom/vstack.git"
+        ));
+        assert!(names_old_default("VanillaGreenCom/VStack"));
+        assert!(names_old_default(
+            "https://GitHub.com/vanillagreencom/vstack"
         ));
         assert!(!names_old_default("vanillagreencom/kendex"));
         assert!(!names_old_default("someone/vstack"));
+        assert!(!names_old_default(
+            "https://gitlab.com/vanillagreencom/vstack"
+        ));
+        assert!(!names_old_default("git@example.com:vanillagreencom/vstack"));
         // A substring is a different repository, never a match.
         assert!(!names_old_default("vanillagreencom/vstack-extras"));
+        assert!(!names_old_default("vanillagreencom/vstack2"));
+    }
+
+    #[test]
+    fn canonical_collapses_only_the_moved_default() {
+        assert_eq!(canonical("vanillagreencom/vstack"), DEFAULT_SOURCE_REPO);
+        assert_eq!(
+            canonical("git@github.com:VanillaGreenCom/vstack.git"),
+            DEFAULT_SOURCE_REPO
+        );
+        assert_eq!(canonical("someone/vstack"), "someone/vstack");
+        assert!(same_repo(
+            "https://github.com/vanillagreencom/vstack",
+            DEFAULT_SOURCE_REPO
+        ));
+        assert!(same_repo(DEFAULT_SOURCE_REPO, "vanillagreencom/vstack"));
+        assert!(!same_repo("someone/vstack", DEFAULT_SOURCE_REPO));
     }
 
     #[test]

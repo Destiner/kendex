@@ -12,11 +12,7 @@ pub(super) fn ensure_manifest_persisted(
     manifest: &Manifest,
     report: &mut EngineReport,
 ) -> Result<()> {
-    let already = report
-        .plan
-        .ops
-        .iter()
-        .any(|op| matches!(op.op, crate::apply::Op::WriteManifest { .. }));
+    let already = crate::engine::persists_manifest(&report.plan.ops);
     if already {
         return Ok(());
     }

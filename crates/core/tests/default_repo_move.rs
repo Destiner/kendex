@@ -57,7 +57,15 @@ fn pre_move_fixture() -> Fixture {
     git(&upstream, &["commit", "--quiet", "-m", "one"]);
     let base = format!("file://{}", home.join("base").display());
     let env = Env::fake(&home, FakeOs::Linux).with_var("KENDEX_GIT_BASE", &base);
-    let commit = remote::sync(&env, LEGACY_SOURCE_REPO, None).unwrap().commit;
+    // Seed the cache exactly as a pre-move version left it: mirror and
+    // checkout under the old spelling's own key. Today's resolvers derive
+    // one key for both spellings, so they could never write this state.
+    let url = remote::clone_url(&env, LEGACY_SOURCE_REPO);
+    let old_key = remote::store::repo_key(&url);
+    let mirror = remote::store::mirror_dir(&env, &old_key);
+    remote::store::ensure_mirror(&mirror, &url).unwrap();
+    let commit = remote::store::resolve_ref(&mirror, "HEAD").unwrap();
+    remote::store::publish(&env, &old_key, &mirror, &commit).unwrap();
     fs::remove_dir_all(home.join("base")).unwrap();
 
     let project = home.join("dev/app");
@@ -164,6 +172,81 @@ fn a_pre_move_scope_gets_one_migration_write_per_file_and_no_conflicts() {
             .map(|op| &op.description)
             .collect::<Vec<_>>()
     );
+}
+
+/// Planning migrates in memory and resolves the new spelling, which adopts
+/// the old spelling's cache — but nothing has been applied, so the
+/// manifest on disk still says the old repository. Every surface reading
+/// that manifest must find the adopted cache, offline: both spellings
+/// derive one cache key.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn the_old_spelling_resolves_from_the_adopted_cache() {
+    let f = pre_move_fixture();
+    audit(&f.env, &f.scope).unwrap();
+
+    let resolution = remote::cached(&f.env, LEGACY_SOURCE_REPO, None).unwrap();
+    assert_eq!(resolution.map(|r| r.commit), Some(f.commit.clone()));
+
+    let kendex_core::manifest::ManifestFile::Current(manifest) =
+        kendex_core::manifest::load(&kendex_core::manifest::manifest_path(&f.env, &f.scope))
+            .unwrap()
+    else {
+        panic!("the on-disk manifest should still parse");
+    };
+    let state = kendex_core::source::resolve(&f.env, &f.scope, "vstack", &manifest).unwrap();
+    let kendex_core::source::SourceState::Ready(ready) = state else {
+        panic!("the old spelling must read the adopted cache, got {state:?}");
+    };
+    assert_eq!(ready.commit.as_deref(), Some(f.commit.as_str()));
+}
+
+/// The migration write is the intended edit and nothing else: a manifest
+/// full of comments and hand formatting keeps every byte except the repo
+/// strings that moved.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn the_migration_write_keeps_every_byte_except_the_repo_strings() {
+    let f = pre_move_fixture();
+    let commented = format!(
+        "# my notes live here\nschema = 5\n\n[sources.vstack]\nrepo   =   \"{LEGACY_SOURCE_REPO}\"   # pinned by hand\n\n[install]\nharnesses = [\"claude\"] # claude only\nmethod = \"symlink\"\n\n\n[skills.gh]\nsource = \"vstack\"\n# trailing thoughts\n\n[forks.skill.zed]\nsource = \"vstack\"\nrepo = \"{LEGACY_SOURCE_REPO}\"\nforked-at = \"2026-01-01T00:00:00Z\"\n"
+    );
+    fs::write(f.project.join("kendex.toml"), &commented).unwrap();
+
+    let report = audit(&f.env, &f.scope).unwrap();
+    apply::execute(&f.env, &report.plan, None).unwrap();
+
+    let after = fs::read_to_string(f.project.join("kendex.toml")).unwrap();
+    assert_eq!(
+        after,
+        commented.replace(LEGACY_SOURCE_REPO, "vanillagreencom/kendex")
+    );
+}
+
+/// A mute recorded before the move names the old repository; the migration
+/// rewrites the manifest but never touches settings, so the mute must keep
+/// matching by what it names.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_pre_move_mute_still_silences_after_the_migration() {
+    let f = pre_move_fixture();
+    kendex_core::package::updates::set_ignored(
+        &f.env,
+        &f.scope,
+        ItemKind::Skill,
+        "gh",
+        LEGACY_SOURCE_REPO,
+        true,
+    )
+    .unwrap();
+
+    let report = audit(&f.env, &f.scope).unwrap();
+    apply::execute(&f.env, &report.plan, None).unwrap();
+
+    let updates = kendex_core::package::updates::updates(&f.env, &f.scope).unwrap();
+    let gh = updates.rows.iter().find(|row| row.name == "gh").unwrap();
+    assert_eq!(gh.repo, "vanillagreencom/kendex");
+    assert!(gh.ignored, "the pre-move mute must survive the migration");
 }
 
 /// A default add (no source argument) on a scope seeded before the product

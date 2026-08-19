@@ -120,7 +120,14 @@ fn the_moved_default_serves_its_pre_move_cache_offline() {
     let env = crate::env::Env::fake(tmp.path(), crate::env::FakeOs::Linux)
         .with_var("KENDEX_GIT_BASE", &base);
 
-    crate::remote::sync(&env, manifest::LEGACY_SOURCE_REPO, None).unwrap();
+    // Seed the cache as a pre-move version left it: under the old
+    // spelling's own key. Today's resolvers derive one key for both
+    // spellings, so they could never write this state themselves.
+    let url = crate::remote::clone_url(&env, manifest::LEGACY_SOURCE_REPO);
+    let old_key = crate::remote::store::repo_key(&url);
+    let mirror = crate::remote::store::mirror_dir(&env, &old_key);
+    crate::remote::store::ensure_mirror(&mirror, &url).unwrap();
+    crate::remote::store::publish(&env, &old_key, &mirror, &commit).unwrap();
     fs::remove_dir_all(tmp.path().join("base")).unwrap();
 
     let resolution = crate::remote::cached(&env, manifest::DEFAULT_SOURCE_REPO, None)
@@ -128,4 +135,12 @@ fn the_moved_default_serves_its_pre_move_cache_offline() {
         .expect("the old spelling's cache serves the moved default");
     assert_eq!(resolution.commit, commit);
     assert!(resolution.root.join("skills/gh/SKILL.md").is_file());
+
+    // The unmigrated spelling reads the very same cache entry: both
+    // spellings are one key, so adoption can never strand one of them.
+    let old = crate::remote::cached(&env, manifest::LEGACY_SOURCE_REPO, None)
+        .unwrap()
+        .expect("the old spelling resolves after adoption");
+    assert_eq!(old.commit, commit);
+    assert_eq!(old.root, resolution.root);
 }

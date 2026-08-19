@@ -124,8 +124,7 @@ pub fn record_with(
             false => refs_by_repo
                 .entry(row.repo.clone())
                 .or_insert_with(|| {
-                    let key =
-                        crate::remote::store::repo_key(&crate::remote::clone_url(env, &row.repo));
+                    let key = crate::remote::cache_key(env, &row.repo);
                     super::stamps::refs_state(&crate::remote::store::mirror_dir(env, &key))
                 })
                 .clone(),

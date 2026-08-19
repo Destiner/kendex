@@ -151,7 +151,7 @@ fn commit_tree(env: &Env, scope: &Scope, kind: ItemKind, name: &str, commit: &st
             source_name: decl.source.clone(),
         });
     };
-    let key = crate::remote::store::repo_key(&crate::remote::clone_url(env, &repo));
+    let key = crate::remote::cache_key(env, &repo);
     let root = match crate::remote::store::published(env, &key, commit) {
         Some(root) => root,
         None => {

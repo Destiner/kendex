@@ -155,10 +155,13 @@ fn last_resolved(
 ) -> Option<(PathBuf, String)> {
     let lock = crate::lock::load(&crate::lock::lock_path(env, scope)).ok()?;
     let recorded = lock.sources.get(name)?;
-    if recorded.repo != repo || recorded.rev != decl.rev {
+    // The lock read here is the on-disk one: during the repository move it
+    // still spells the old repository while the manifest being planned
+    // spells the new — the same repository, so the record still counts.
+    if !crate::repo_move::same_repo(&recorded.repo, repo) || recorded.rev != decl.rev {
         return None;
     }
-    let key = crate::remote::store::repo_key(&crate::remote::clone_url(env, &recorded.repo));
+    let key = crate::remote::cache_key(env, &recorded.repo);
     let root = crate::remote::store::published(env, &key, &recorded.commit)?;
     Some((root, recorded.commit.clone()))
 }

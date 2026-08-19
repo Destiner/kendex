@@ -66,7 +66,8 @@ pub fn installed_paths(
 
 use desired::desired_state;
 use scope_writes::{
-    plan_config_edits, plan_lock_write, plan_schema_upgrade, plan_settings_seed, source_revisions,
+    plan_config_edits, plan_lock_write, plan_repo_move_write, plan_schema_upgrade,
+    plan_settings_seed, source_revisions,
 };
 pub use set_change::{KeptInstall, SetChange, SetDirection};
 use set_change::{kept_members, set_changes};
@@ -198,13 +199,14 @@ pub fn plan_scope(
     Ok(report)
 }
 
-/// The plan's one full manifest write, when anything needs it: the
-/// repository move, skills an agent gained upstream, a review of findings
-/// this run was asked to record — or, with none of those, the surgical
-/// schema upgrade. One write whatever put it there: a second manifest
-/// write could never run, its precondition binds to the bytes the first
-/// one replaces. The description names the biggest cause; the rest ride
-/// along in the same bytes.
+/// The plan's one manifest write, when anything needs it: skills an agent
+/// gained upstream or a review of findings this run was asked to record
+/// take the full serialized write — or, with neither, the repository move
+/// or the schema upgrade lands as a surgical text edit that keeps the
+/// user's comments and formatting. One write whatever put it there: a
+/// second manifest write could never run, its precondition binds to the
+/// bytes the first one replaces. The description names the biggest cause;
+/// the rest ride along in the same bytes.
 fn plan_manifest_write(
     env: &Env,
     scope: &Scope,
@@ -213,17 +215,17 @@ fn plan_manifest_write(
     state: &desired::DesiredState,
     ops: &mut Vec<PlannedOp>,
 ) -> Result<()> {
-    if !repo_moved && state.manifest_update.is_none() {
+    let Some(update) = &state.manifest_update else {
+        if repo_moved {
+            return plan_repo_move_write(env, scope, manifest, ops);
+        }
         if manifest.schema < manifest::MANIFEST_SCHEMA {
             plan_schema_upgrade(env, scope, manifest, ops)?;
         }
         return Ok(());
-    }
+    };
     let path = manifest::manifest_path(env, scope);
-    let mut updated = state
-        .manifest_update
-        .clone()
-        .unwrap_or_else(|| manifest.clone());
+    let mut updated = update.clone();
     updated.schema = manifest::MANIFEST_SCHEMA;
     let granted = updated.safety_overrides != manifest.safety_overrides;
     ops.push(PlannedOp {
@@ -239,6 +241,18 @@ fn plan_manifest_write(
         },
     });
     Ok(())
+}
+
+/// Whether a plan already persists the manifest — the full serialized
+/// write, or the repository move's surgical text edit. A caller about to
+/// insert its own save must count both: a second write to the same file
+/// binds to bytes the first one replaces and could never run.
+pub fn persists_manifest(ops: &[PlannedOp]) -> bool {
+    ops.iter().any(|op| {
+        matches!(op.op, Op::WriteManifest { .. })
+            || (op.description == crate::repo_move::MOVE_DESCRIPTION
+                && matches!(op.op, Op::WriteFile { .. }))
+    })
 }
 
 /// A scope still under the old product name renames first: everything

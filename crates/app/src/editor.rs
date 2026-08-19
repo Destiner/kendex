@@ -169,11 +169,7 @@ pub fn update_manifest(scope: Scope, manifest: Manifest) -> Result<AuditView, St
     let lock = load_lock(&lock_path(&env, &scope)).map_err(|e| e.to_string())?;
     let mut report = engine::plan_scope(&env, &scope, &manifest, &lock, &PlanOptions::default())
         .map_err(|e| e.to_string())?;
-    let persisted = report
-        .plan
-        .ops
-        .iter()
-        .any(|op| matches!(op.op, Op::WriteManifest { .. }));
+    let persisted = engine::persists_manifest(&report.plan.ops);
     if !persisted {
         report.plan.ops.insert(
             0,

@@ -74,7 +74,7 @@ pub(crate) fn package_ref_for(
             source_name: source_name.clone(),
         });
     };
-    let key = crate::remote::store::repo_key(&crate::remote::clone_url(env, &repo));
+    let key = crate::remote::cache_key(env, &repo);
     let mirror = crate::remote::store::mirror_dir(env, &key);
     let selector = manifest
         .sources

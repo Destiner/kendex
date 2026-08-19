@@ -7,6 +7,15 @@ use crate::manifest::{Manifest, SourceDecl};
 pub mod history;
 pub mod store;
 
+/// The cache key a declared repo string resolves under. Both spellings of
+/// the moved default derive the new repository's key, so however a
+/// manifest or lock still spells it there is one mirror, one set of
+/// checkouts, and one lock — never a fetch under one key racing an
+/// adoption holding the other.
+pub fn cache_key(env: &Env, repo: &str) -> String {
+    store::repo_key(&clone_url(env, crate::repo_move::canonical(repo)))
+}
+
 /// `owner/repo` → clone URL. Full URLs pass through untouched;
 /// `KENDEX_GIT_BASE` rebases shorthands onto another host (test fixtures).
 pub fn clone_url(env: &Env, repo: &str) -> String {
@@ -48,9 +57,10 @@ impl Resolution {
 /// selector whose fetch fails degrades to a warning and the cached commit,
 /// so an offline session keeps working.
 pub fn sync(env: &Env, repo: &str, rev: Option<&str>) -> Result<Resolution> {
+    let repo = crate::repo_move::canonical(repo);
     adopt_moved_default(env, repo)?;
     let url = clone_url(env, repo);
-    let key = store::repo_key(&url);
+    let key = cache_key(env, repo);
     let mirror = store::mirror_dir(env, &key);
 
     if let Some(pin) = rev.filter(|rev| store::is_pin(rev)) {
@@ -113,8 +123,9 @@ pub fn sync(env: &Env, repo: &str, rev: Option<&str>) -> Result<Resolution> {
 /// refresh in another window is never a precondition for reading what is
 /// already installed.
 pub fn cached(env: &Env, repo: &str, rev: Option<&str>) -> Result<Option<Resolution>> {
+    let repo = crate::repo_move::canonical(repo);
     adopt_moved_default(env, repo)?;
-    let key = store::repo_key(&clone_url(env, repo));
+    let key = cache_key(env, repo);
     let mirror = store::mirror_dir(env, &key);
     let selector = rev.unwrap_or("HEAD");
     let commit = match store::is_pin(selector) {
@@ -172,14 +183,16 @@ fn stamp_fetch(env: &Env, key: &str, mirror: &std::path::Path, fetched: &Result<
 /// The default repository moved after it was fetched: the cache its old
 /// spelling filled is the same repository, so the new spelling adopts it
 /// before any resolution reads the store. Without this an offline scope
-/// would read the moved default as never fetched.
+/// would read the moved default as never fetched. Callers canonicalize
+/// first, so a scope still spelling the old repository adopts too — and
+/// because every spelling resolves under the one key, the adoption's lock
+/// is the same lock a concurrent fetch would take.
 fn adopt_moved_default(env: &Env, repo: &str) -> Result<()> {
     if repo != crate::manifest::DEFAULT_SOURCE_REPO {
         return Ok(());
     }
     let old = store::repo_key(&clone_url(env, crate::manifest::LEGACY_SOURCE_REPO));
-    let new = store::repo_key(&clone_url(env, repo));
-    store::adopt_cache(env, &old, &new)
+    store::adopt_cache(env, &old, &cache_key(env, repo))
 }
 
 /// The v0.1 mutable clone, read where the new layout has nothing yet: an
@@ -216,8 +229,9 @@ pub fn fetch_all(env: &Env, manifest: &Manifest) -> Vec<String> {
         let Some(repo) = &decl.repo else {
             continue;
         };
+        let repo = crate::repo_move::canonical(repo);
         let url = clone_url(env, repo);
-        let key = store::repo_key(&url);
+        let key = cache_key(env, repo);
         let mirror = store::mirror_dir(env, &key);
         let guard = match store::lock_repo(env, &key) {
             Ok(guard) => guard,
@@ -311,11 +325,12 @@ fn sync_one(env: &Env, name: &str, decl: &SourceDecl) -> Result<Option<String>> 
 /// The commit a source reads as right now, abbreviated for display. Cheap
 /// on purpose: no checkout is verified and nothing is materialized.
 pub fn cache_head(env: &Env, repo: &str, rev: Option<&str>) -> Option<String> {
-    let key = store::repo_key(&clone_url(env, repo));
+    let repo = crate::repo_move::canonical(repo);
+    let key = cache_key(env, repo);
     let commit = match rev.filter(|rev| store::is_pin(rev)) {
         Some(pin) => pin.to_owned(),
         None => store::resolve_ref(&store::mirror_dir(env, &key), rev.unwrap_or("HEAD"))
-            .or_else(|| store::legacy_head(&store::legacy_clone(env, repo)))?,
+            .or_else(|| legacy_resolution(env, repo).map(|resolution| resolution.commit))?,
     };
     Some(commit.chars().take(7).collect())
 }

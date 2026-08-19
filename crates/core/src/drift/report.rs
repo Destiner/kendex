@@ -300,7 +300,7 @@ fn stamp_for(env: &Env, repo: &str) -> Option<super::stamps::FetchStamp> {
     if repo.is_empty() {
         return None;
     }
-    let key = crate::remote::store::repo_key(&crate::remote::clone_url(env, repo));
+    let key = crate::remote::cache_key(env, repo);
     Some(super::stamps::load(env, &key))
 }
 

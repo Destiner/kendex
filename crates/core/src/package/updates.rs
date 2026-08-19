@@ -214,9 +214,15 @@ pub fn set_ignored(
         name: name.to_owned(),
         repo: repo.to_owned(),
     };
-    current
-        .ignored_updates
-        .retain(|existing| existing != &entry);
+    // A record written before the repository move identifies the same
+    // package: replacing or clearing it must find it under either spelling,
+    // or an un-mute would leave the old record muting forever.
+    current.ignored_updates.retain(|existing| {
+        existing.scope != entry.scope
+            || existing.kind != entry.kind
+            || existing.name != entry.name
+            || !crate::repo_move::same_repo(&existing.repo, &entry.repo)
+    });
     if ignored {
         current.ignored_updates.push(entry);
         current.ignored_updates.sort_by(|a, b| {
