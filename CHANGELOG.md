@@ -30,6 +30,11 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- `kendex login` and `kendex logout`: sign in to kendex.ai from the
+  terminal with a short code and a browser tab — the CLI never sees a
+  password, the credential lives in your system keychain (with no silent
+  plaintext fallback), and signing out kills that machine's access on
+  the very next request.
 - The Community tab is live: browse the kendex.ai directory (cached on
   your machine, shown with an "as of" line when you're offline — never
   blank), subscribe from a row, and search skills.sh's whole index

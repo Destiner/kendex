@@ -13,6 +13,7 @@ pub mod import;
 pub mod index_cmd;
 pub mod init;
 pub mod list;
+pub mod login;
 pub mod marketplace_cmd;
 pub mod pin;
 pub mod project;

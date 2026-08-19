@@ -16,6 +16,8 @@ similar.workspace = true
 yaml-rust2.workspace = true
 fd-lock.workspace = true
 unicode-normalization.workspace = true
+tempfile.workspace = true
+keyring.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

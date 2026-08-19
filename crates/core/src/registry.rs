@@ -3,7 +3,9 @@
 //! with an ETag, and honest about staleness when the network is away.
 
 pub mod cache;
+pub mod credentials;
 pub mod index;
+pub mod login;
 pub mod skillssh;
 pub mod view;
 
@@ -32,6 +34,10 @@ pub struct FetchResponse {
 /// transport, production hands in curl.
 pub trait Fetch {
     fn get(&self, url: &str, if_none_match: Option<&str>) -> Result<FetchResponse>;
+
+    /// POST a JSON body. Secrets ride in the body and the body rides in
+    /// a 0600 config file, so neither ever shows in a process list.
+    fn post_json(&self, url: &str, body: &str) -> Result<FetchResponse>;
 }
 
 /// curl under the hardened runner: TLS and proxy configuration come from
@@ -77,6 +83,81 @@ impl Fetch for CurlFetch {
         }
         parse_http_response(&output.stdout)
     }
+
+    fn post_json(&self, url: &str, body: &str) -> Result<FetchResponse> {
+        let proto = if url.starts_with("http://") {
+            "=http"
+        } else {
+            "=https"
+        };
+        // Everything sensitive goes through a curl config file readable
+        // only by us: a device code or token in argv would sit in the
+        // process list for anyone on the machine to read.
+        let config = format!(
+            "url = {}\nrequest = \"POST\"\nheader = \"Content-Type: application/json\"\ndata = {}\n",
+            curl_quote(url),
+            curl_quote(body)
+        );
+        let file = tempfile_0600(&config)?;
+        let path = file.path().to_string_lossy().into_owned();
+        let args = [
+            "-sS",
+            "-i",
+            "--max-time",
+            "20",
+            "--proto",
+            proto,
+            "--config",
+            &path,
+        ];
+        let output = Hardened::curl(&args)
+            .timeout(Duration::from_secs(25))
+            .max_output(MAX_RESPONSE_BYTES)
+            .run()?;
+        if !output.status.success() {
+            return Err(CoreError::RegistryUnavailable {
+                why: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            });
+        }
+        parse_http_response(&output.stdout)
+    }
+}
+
+/// curl config-file quoting: backslash and double-quote escaped, the
+/// value wrapped in quotes so JSON bodies pass through byte-for-byte.
+fn curl_quote(value: &str) -> String {
+    let mut quoted = String::with_capacity(value.len() + 2);
+    quoted.push('"');
+    for ch in value.chars() {
+        match ch {
+            '"' => quoted.push_str("\\\""),
+            '\\' => quoted.push_str("\\\\"),
+            '\n' => quoted.push_str("\\n"),
+            _ => quoted.push(ch),
+        }
+    }
+    quoted.push('"');
+    quoted
+}
+
+fn tempfile_0600(contents: &str) -> Result<tempfile::NamedTempFile> {
+    use std::io::Write as _;
+    let mut file = tempfile::Builder::new()
+        .prefix("kendex-req-")
+        .tempfile()
+        .map_err(|error| CoreError::io("curl config", error))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let permissions = std::fs::Permissions::from_mode(0o600);
+        std::fs::set_permissions(file.path(), permissions)
+            .map_err(|error| CoreError::io(file.path(), error))?;
+    }
+    file.write_all(contents.as_bytes())
+        .map_err(|error| CoreError::io("curl config", error))?;
+    file.flush()
+        .map_err(|error| CoreError::io("curl config", error))?;
+    Ok(file)
 }
 
 /// Split `curl -i` output into the final status, ETag and body. Redirects

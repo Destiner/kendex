@@ -26,6 +26,10 @@ impl Canned {
 }
 
 impl Fetch for Canned {
+    fn post_json(&self, url: &str, _body: &str) -> kendex_core::error::Result<FetchResponse> {
+        self.get(url, None)
+    }
+
     fn get(
         &self,
         _url: &str,
@@ -293,4 +297,33 @@ fn leaderboard_parses_the_proxy_shape_and_absence_hides_it() {
         Err(CoreError::RegistryUnavailable { .. })
     ));
     assert!(skillssh::LeaderboardView::parse("evil").is_none());
+}
+
+#[test]
+fn login_start_and_poll_speak_the_device_protocol() {
+    let canned = Canned::new(vec![ok(
+        200,
+        None,
+        r#"{"device_code":"kxd_x","user_code":"AAAA-BBBB","verification_url":"https://kendex.ai/device","interval":5,"expires_in":900}"#,
+    )]);
+    let started = kendex_core::registry::login::start(&canned).expect("start");
+    assert_eq!(started.user_code, "AAAA-BBBB");
+    assert_eq!(started.interval_seconds, 5);
+
+    use kendex_core::registry::login::{Poll, poll_once};
+    let pending = Canned::new(vec![ok(400, None, r#"{"error":"authorization_pending"}"#)]);
+    assert!(matches!(poll_once(&pending, "kxd_x"), Ok(Poll::Pending)));
+    let slow = Canned::new(vec![ok(400, None, r#"{"error":"slow_down"}"#)]);
+    assert!(matches!(poll_once(&slow, "kxd_x"), Ok(Poll::SlowDown)));
+    let denied = Canned::new(vec![ok(400, None, r#"{"error":"denied"}"#)]);
+    assert!(poll_once(&denied, "kxd_x").is_err());
+    let signed = Canned::new(vec![ok(
+        200,
+        None,
+        r#"{"access_token":"kxa_a","refresh_token":"kxr_r","capabilities":["submission:write"]}"#,
+    )]);
+    match poll_once(&signed, "kxd_x").expect("signed") {
+        Poll::Signed(pair) => assert_eq!(pair.access_token, "kxa_a"),
+        other => panic!("expected tokens, got {other:?}"),
+    }
 }

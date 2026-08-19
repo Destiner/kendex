@@ -1,4 +1,6 @@
 mod commands;
+mod dispatch_args;
+use dispatch_args::{check, remove};
 mod flags;
 mod scope;
 
@@ -184,6 +186,10 @@ enum Command {
     /// Subscribe to marketplaces and list subscriptions
     #[command(subcommand)]
     Marketplace(commands::marketplace_cmd::MarketplaceCommand),
+    /// Sign in to kendex.ai (a code, a browser tab, done)
+    Login,
+    /// Sign out and revoke this machine's kendex.ai credential
+    Logout,
     /// Emit the summary of a marketplace directory the community directory
     /// consumes (default: the current directory)
     Index {
@@ -221,43 +227,6 @@ enum Command {
 /// different questions — what is installed here, versus what this content
 /// would do anywhere — and only the second one belongs in a repository's CI.
 #[allow(clippy::too_many_arguments)]
-fn check(
-    env: &Env,
-    global: bool,
-    scope: Option<String>,
-    json: bool,
-    quiet: bool,
-    catalog: Option<std::path::PathBuf>,
-    strict: bool,
-) -> Result<ExitCode, Box<dyn std::error::Error>> {
-    match catalog {
-        Some(catalog) => {
-            commands::check_catalog::run(&catalog, strict, json).map(|()| ExitCode::SUCCESS)
-        }
-        None => {
-            let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::All)?;
-            commands::check::run(env, filter, json, quiet)
-        }
-    }
-}
-
-fn remove(
-    env: &Env,
-    names: Vec<String>,
-    global: bool,
-    scope: Option<String>,
-    sweep: bool,
-    no_sweep: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::Project)?;
-    let sweep = match (sweep, no_sweep) {
-        (true, _) => Some(true),
-        (_, true) => Some(false),
-        _ => None,
-    };
-    commands::remove::run(env, names, filter, sweep)
-}
-
 pub fn main() -> ExitCode {
     let cli = Cli::parse();
     // The machine check's whole contract is its exit code: 1 means "drift,
@@ -310,6 +279,8 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
     };
     match command {
         Command::Add { source, flags } => commands::add::run(&env, flags.into_args(source))?,
+        Command::Login => commands::login::login()?,
+        Command::Logout => commands::login::logout()?,
         Command::Diff(args) => commands::diff_cmd::run(&env, args)?,
         Command::Show(args) => commands::show::run(&env, args)?,
         Command::Fork(args) => commands::fork_cmd::run(&env, args)?,
