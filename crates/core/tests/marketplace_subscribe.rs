@@ -249,6 +249,55 @@ fn subscribing_a_project_from_a_personal_subscription_mutates_only_the_project()
     );
 }
 
+/// Installing into a project from a personal subscription is one plan: a
+/// refused install leaves the project's manifest byte-identical, never
+/// subscribed to a marketplace it installed nothing from. The same call with a
+/// real package writes the subscription and the package together.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn installing_into_a_project_is_atomic_with_its_subscription() {
+    let (_tmp, env, _scope, project) = fixture();
+    upstream(env.home.as_path(), "team/tools");
+    let report = source_ops::subscribe(&env, &Scope::Global, "team/tools", Some("mkt"))
+        .unwrap()
+        .report;
+    apply::execute(&env, &report.plan, None).unwrap();
+    remote::sync(&env, "team/tools", None).unwrap();
+    let project_path = project.join("kendex.toml");
+
+    // A refused install (a package the catalog does not offer) writes nothing.
+    let refused = source_ops::install_project_from_personal(
+        &env,
+        &project,
+        "mkt",
+        &ops::AddRequest {
+            skills: vec!["nope".into()],
+            ..ops::AddRequest::default()
+        },
+    );
+    assert!(refused.is_err(), "a missing package must be refused");
+    assert!(
+        !project_path.exists() || !fs::read_to_string(&project_path).unwrap().contains("mkt"),
+        "the project must not be left subscribed to a marketplace it installed nothing from"
+    );
+
+    // A real package: the subscription and the declaration land together.
+    let report = source_ops::install_project_from_personal(
+        &env,
+        &project,
+        "mkt",
+        &ops::AddRequest {
+            skills: vec!["gh".into()],
+            ..ops::AddRequest::default()
+        },
+    )
+    .unwrap();
+    apply::execute(&env, &report.plan, None).unwrap();
+    let manifest = fs::read_to_string(&project_path).unwrap();
+    assert!(manifest.contains("[sources.mkt]"), "{manifest}");
+    assert!(manifest.contains("[skills.gh]"), "{manifest}");
+}
+
 fn add_gh(
     env: &Env,
     scope: &Scope,

@@ -10,7 +10,7 @@ use crate::model::{HarnessId, ItemKind, Scope};
 mod add;
 mod decisions;
 mod persist;
-pub use add::{AddRequest, add};
+pub use add::{AddRequest, add, add_seeded};
 pub use decisions::{
     DecisionRecord, RecordState, RecordedDecision, dismiss, list_decisions, revoke_dismissal,
     revoke_override,

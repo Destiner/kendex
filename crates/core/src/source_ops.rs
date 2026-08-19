@@ -237,7 +237,7 @@ pub fn add_source(env: &Env, scope: &Scope, name: &str, reference: &str) -> Resu
 }
 
 mod subscribe;
-pub use subscribe::{Subscribed, subscribe, subscribe_project_to};
+pub use subscribe::{Subscribed, install_project_from_personal, subscribe, subscribe_project_to};
 
 pub fn remove_source(env: &Env, scope: &Scope, name: &str) -> Result<EngineReport> {
     let mut manifest = crate::engine::ops::manifest_for_mutation(env, scope)?;

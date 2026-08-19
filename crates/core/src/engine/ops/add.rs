@@ -14,7 +14,7 @@ use crate::manifest::{ItemDecl, Manifest, Method};
 use crate::model::{HarnessId, ItemKind, Scope};
 use crate::source::{self, find_item, list_items, source_config};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct AddRequest {
     /// v1 positional source: `owner/repo`, a path, or a declared source
     /// name. `None` sends bare names through the cross-subscription
@@ -51,10 +51,27 @@ pub struct AddRequest {
 /// Declare items (and their auto-expanded skills), then plan the scope.
 /// The returned report's plan includes persisting the updated manifest.
 pub fn add(env: &Env, scope: &Scope, request: &AddRequest) -> Result<EngineReport> {
+    add_seeded(env, scope, request, None)
+}
+
+/// `add`, optionally declaring a subscription into the scope first. Installing
+/// into a project from a personal subscription seeds that subscription here so
+/// the single plan writes the subscription and the packages together: if the
+/// add is refused, nothing is persisted, and the project is never left carrying
+/// a subscription it never installed anything from.
+pub fn add_seeded(
+    env: &Env,
+    scope: &Scope,
+    request: &AddRequest,
+    seed: Option<(String, crate::manifest::SourceDecl)>,
+) -> Result<EngineReport> {
     if let Some(name) = request.pi_extensions.first() {
         return Err(CoreError::PiExtensionDirect { name: name.clone() });
     }
     let mut manifest = manifest_for_mutation(env, scope)?;
+    if let Some((name, decl)) = seed {
+        manifest.sources.insert(name, decl);
+    }
     let lock = crate::lock::load(&lock_path(env, scope))?;
     let (mut groups, context) = place::place(env, scope, &mut manifest, request)?;
     let all_source = match (request.all, &context) {

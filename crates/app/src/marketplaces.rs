@@ -191,16 +191,14 @@ pub fn marketplace_install(
     }
     let env = env()?;
     let target = destination.unwrap_or_else(|| scope.clone());
-    if target != scope {
-        let Scope::Project { root } = &target else {
+    let redirected = target != scope;
+    if redirected {
+        if !matches!(&target, Scope::Project { .. }) {
             return Err("an install can only be redirected into a project".to_owned());
-        };
+        }
         if scope != Scope::Global {
             return Err("only a personal subscription can install into a project".to_owned());
         }
-        let report =
-            source_ops::subscribe_project_to(&env, root, &source).map_err(|e| e.to_string())?;
-        apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
     }
     let mut request = AddRequest {
         source: Some(source.clone()),
@@ -224,7 +222,15 @@ pub fn marketplace_install(
     // A whole set carries its own members; expanding agents' skills on top
     // would install beyond what the set declares.
     request.no_auto_skills = !request.bundles.is_empty();
-    let report = engine_ops::add(&env, &target, &request).map_err(|e| e.to_string())?;
+    // Redirected into a project, the subscription and the packages are one
+    // plan: a refused install leaves the project subscribed to nothing.
+    let report = match &target {
+        Scope::Project { root } if redirected => {
+            source_ops::install_project_from_personal(&env, root, &source, &request)
+        }
+        _ => engine_ops::add(&env, &target, &request),
+    }
+    .map_err(|e| e.to_string())?;
     apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
     marketplace_packages(target, source)
 }

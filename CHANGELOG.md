@@ -108,6 +108,10 @@ changes carry a **Breaking** call-out with their migration note inline.
   direction-reversing characters are refused and shown as their escapes,
   so one marketplace's package can no longer wear another's name on
   screen while installing under a different one.
+- Installing into a project from a personal subscription now lands the
+  subscription and the packages in one step: if the install is refused,
+  the project is not left subscribed to a marketplace it installed
+  nothing from.
 - Cursor no longer drops an agent's custom hooks without a word. A rule
   file has nowhere to register a hook, so the hook lands as instructions
   and the render warns that nothing there enforces it.

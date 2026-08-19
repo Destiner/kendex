@@ -144,6 +144,62 @@ pub fn subscribe_project_to(
     Ok(report)
 }
 
+/// Install into a project from a personal subscription as one plan: the
+/// project gains the subscription and the packages in a single write, so a
+/// refused install (a name collision, a held-back item, an unreachable
+/// source) leaves the project's manifest byte-identical — never subscribed to
+/// a marketplace it installed nothing from. The subscription is validated
+/// against the project's own before the plan is built.
+pub fn install_project_from_personal(
+    env: &Env,
+    project_root: &std::path::Path,
+    source_name: &str,
+    request: &crate::engine::ops::AddRequest,
+) -> Result<EngineReport> {
+    let personal = match manifest::load(&manifest::manifest_path(env, &Scope::Global))? {
+        manifest::ManifestFile::Current(manifest) => *manifest,
+        _ => {
+            return Err(CoreError::UnknownSource {
+                name: source_name.to_owned(),
+            });
+        }
+    };
+    let Some(decl) = personal.sources.get(source_name).cloned() else {
+        return Err(CoreError::UnknownSource {
+            name: source_name.to_owned(),
+        });
+    };
+    let scope = Scope::Project {
+        root: project_root.to_path_buf(),
+    };
+    let project = crate::engine::ops::manifest_for_mutation(env, &scope)?;
+    // Redeclaring the same subscription the project already holds is fine; a
+    // different repo under a taken alias, or the same repo under a new one, is
+    // refused before anything is planned.
+    if !project.sources.contains_key(source_name) {
+        let reference = decl
+            .repo
+            .clone()
+            .or_else(|| decl.path.clone())
+            .unwrap_or_default();
+        check_subscription(&project, Some(source_name), &decl, &reference)?;
+    }
+    // The install reads from this subscription and no other: the context is
+    // the subscription itself, so a bare name never wanders to another source.
+    let request = crate::engine::ops::AddRequest {
+        source: Some(source_name.to_owned()),
+        ..request.clone()
+    };
+    let mut report = crate::engine::ops::add_seeded(
+        env,
+        &scope,
+        &request,
+        Some((source_name.to_owned(), decl.clone())),
+    )?;
+    announce_subscription(env, &mut report, &scope, source_name, &decl);
+    Ok(report)
+}
+
 /// One repository per scope, whatever the spelling: a repo already
 /// subscribed under another alias is refused naming the existing
 /// subscription, and an alias already pointing somewhere else is refused
