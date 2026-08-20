@@ -1,108 +1,21 @@
-//! The safety findings in installed content, the decisions recorded about
-//! them, and the verbs that make and take back those decisions.
+//! The decisions recorded about safety findings, and the verbs that make
+//! and take one back.
 //!
-//! Every finding is printed with the token that names exactly it on exactly
-//! this content; `dismiss` takes that token and nothing looser, the way
-//! `--allow-unsafe` takes `name@hash` — a bare name in a shell history must
-//! never dismiss whatever replaced what was read.
+//! `dismiss` takes the token `kendex findings` printed and nothing looser,
+//! the way `--allow-unsafe` takes `name@hash` — a bare name in a shell
+//! history must never dismiss whatever replaced what was read.
 
 use clap::Args;
 use kendex_core::apply;
-use kendex_core::engine::decisions::{DecisionState, DecisionToken, short_token};
+use kendex_core::engine::decisions::DecisionToken;
 use kendex_core::engine::ops::{
     DecisionRecord, RecordState, dismiss, list_decisions, revoke_dismissal, revoke_override,
 };
-use kendex_core::engine::{ItemSafety, allow_unsafe_flag, observed_safety};
 use kendex_core::env::Env;
 use kendex_core::quality::reviews::DismissReason;
 
 use super::{CliResult, resolve_scopes, say};
 use crate::scope::ScopeFilter;
-
-#[derive(Args)]
-pub struct FindingsArgs {
-    #[arg(short = 'g', long)]
-    global: bool,
-    /// project | global | all (default all)
-    #[arg(long)]
-    scope: Option<String>,
-}
-
-/// What the safety rules found in what is installed right now, each finding
-/// with the token a dismissal takes and what has already been decided about
-/// it.
-pub fn findings(env: &Env, args: FindingsArgs) -> CliResult {
-    let filter = ScopeFilter::resolve(args.scope.as_deref(), args.global, ScopeFilter::All)?;
-    for scope in resolve_scopes(env, filter)? {
-        let rows = observed_safety(env, &scope)?;
-        let mut rows: Vec<&ItemSafety> = rows.iter().filter(|r| !r.findings.is_empty()).collect();
-        if rows.is_empty() {
-            say(&format!("{}: nothing found", scope.label()));
-            continue;
-        }
-        rows.sort_by_key(|row| (!row.blocked(), row.safety.score));
-        say(&format!("{}:", scope.label()));
-        for row in rows {
-            print_row(row);
-        }
-    }
-    Ok(())
-}
-
-fn print_row(row: &ItemSafety) {
-    let held = match row.blocked() {
-        true => " — held back",
-        false => "",
-    };
-    say(&format!(
-        "  {} {} for {} scores {}/100{held}",
-        row.kind.name(),
-        row.name,
-        row.harness.display_name(),
-        row.safety.score
-    ));
-    for (finding, decision) in row.findings.iter().zip(&row.decisions) {
-        say(&format!(
-            "    [{}] {}: {}",
-            finding.severity.name(),
-            finding.location,
-            finding.message
-        ));
-        say(&format!("      fix: {}", finding.remediation));
-        match &decision.state {
-            DecisionState::Open { earlier } => {
-                if let Some(token) = &decision.token {
-                    let printed = match DecisionToken::parse(token) {
-                        Ok(parsed) => short_token(&parsed),
-                        Err(_) => token.clone(),
-                    };
-                    say(&format!("      token: {printed}"));
-                }
-                if let Some(earlier) = earlier {
-                    say(&format!("      dismissed before, but {earlier}"));
-                }
-            }
-            DecisionState::Dismissed {
-                reason,
-                dismissed_at,
-            } => say(&format!(
-                "      dismissed {dismissed_at} — {}",
-                reason.name()
-            )),
-            DecisionState::Accepted { granted_at } => {
-                say(&format!("      accepted {granted_at}"));
-            }
-        }
-    }
-    if let Some(review_hash) = &row.review_hash
-        && row.blocked()
-    {
-        say(&format!(
-            "    to install it anyway, review the findings above and apply with --allow-unsafe {}",
-            allow_unsafe_flag(&row.name, review_hash)
-        ));
-    }
-}
 
 #[derive(Args)]
 pub struct DismissArgs {

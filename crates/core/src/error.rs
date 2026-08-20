@@ -289,6 +289,9 @@ pub enum CoreError {
     #[error("'{key}' does not name an installation — expected kind:name:harness")]
     DecisionKey { key: String },
 
+    #[error("--allow-unsafe {flag} does not name anything this run would install{fix}")]
+    GrantMatchesNothing { flag: String, fix: String },
+
     #[error(
         "'{token}' no longer names what is installed: {why} — nothing was changed; read the current findings and decide again"
     )]

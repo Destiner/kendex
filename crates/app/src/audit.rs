@@ -172,27 +172,23 @@ pub fn apply_scope(
         allow_unsafe,
         ..PlanOptions::default()
     };
+    // This apply is one scope, so that scope's rows are the whole run.
     let report = engine::plan_apply(env, scope, &options).map_err(|e| e.to_string())?;
-    // An acceptance that no longer matches anything must stop the whole
-    // apply, out loud. The engine ignores an unmatched token by design (a
-    // stale flag must not grant), but a button that says "accept and
-    // install" silently installing everything *except* the accepted item
-    // would be worse than failing.
+    let rows: Vec<&engine::ItemSafety> = report.safety.iter().collect();
+    engine::refuse_unmatched_grants(&options, &rows).map_err(|e| e.to_string())?;
+    // The partial grant is the other half: one harness renders an item
+    // differently from another, so a flag can name the content one of them
+    // would get and none of the rest. A button that says "accept and
+    // install" must not install some of them and hold back the others.
     for token in &options.allow_unsafe {
         let name = token.rsplit_once('@').map_or(token.as_str(), |(n, _)| n);
-        let named: Vec<_> = report
+        if report
             .safety
             .iter()
-            .filter(|row| row.name == name)
-            .collect();
-        if named.is_empty() {
+            .any(|row| row.name == name && row.blocked())
+        {
             return Err(format!(
-                "nothing this apply would write is named '{name}' — nothing was changed"
-            ));
-        }
-        if named.iter().any(|row| row.blocked()) {
-            return Err(format!(
-                "'{name}' changed since its findings were read — nothing was changed; review the new findings and accept again"
+                "'{name}' reads differently for another tool than the content you accepted — nothing was changed; review the findings again and accept each"
             ));
         }
     }
