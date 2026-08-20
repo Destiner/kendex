@@ -234,6 +234,15 @@ export const commands = {
 	 *  table's From column in one query.
 	 */
 	libraryProvenance: () => typedError<ProvenanceRow[], string>(__TAURI_INVOKE("library_provenance")),
+	mineList: () => typedError<MineListRow[], string>(__TAURI_INVOKE("mine_list")),
+	mineUseExisting: (path: string) => typedError<MineRow, string>(__TAURI_INVOKE("mine_use_existing", { path })),
+	mineCreate: (request: CreateRequest) => typedError<MineRow, string>(__TAURI_INVOKE("mine_create", { request })),
+	mineForget: (path: string) => typedError<null, string>(__TAURI_INVOKE("mine_forget", { path })),
+	mineImportInventory: () => typedError<ImportCandidate[], string>(__TAURI_INVOKE("mine_import_inventory")),
+	mineImportApply: (target: string, selections: ImportSelection[]) => typedError<ImportOutcome, string>(__TAURI_INVOKE("mine_import_apply", { target, selections })),
+	mineOfferManifest: (path: string, name: string, description: string, authorName: string) => typedError<OfferPreview, string>(__TAURI_INVOKE("mine_offer_manifest", { path, name, description, authorName })),
+	mineOfferWorkflow: (path: string) => typedError<OfferPreview, string>(__TAURI_INVOKE("mine_offer_workflow", { path })),
+	mineAcceptOffer: (path: string, rel: string, bytes: string) => typedError<MineRow, string>(__TAURI_INVOKE("mine_accept_offer", { path, rel, bytes })),
 	packageVersions: (scope: Scope, kind: ItemKind, name: string) => typedError<VersionRow[], string>(__TAURI_INVOKE("package_versions", { scope, kind, name })),
 	/**
 	 *  Every scope's update standing in one query — the sidebar badge, the
@@ -466,6 +475,25 @@ export type BundleRow = {
 	installed: boolean,
 };
 
+export type CandidateGroup = 
+/**  The person's own content in a local source. */
+{ group: "own" } | 
+/**
+ *  Copied from a subscribed marketplace; its licence is shown and the
+ *  person confirms they may republish.
+ */
+{ group: "marketplace"; source: string; repo: string; license: string | null } | 
+/**  On disk, managed by nothing — captured the way adopt captures. */
+{ group: "unmanaged" };
+
+export type CandidateOrigin = {
+	group: CandidateGroup,
+	/**  Every place these exact bytes were seen. */
+	locations: string[],
+	/**  Content identity — what apply revalidates before copying. */
+	hash: string,
+};
+
 export type CapabilityRow = {
 	harness: HarnessId,
 	kind: ItemKind,
@@ -499,6 +527,16 @@ export type CatalogGroupMeta = {
  *  control file makes the source unusable, never a different mode.
  */
 export type CatalogMode = "plugin-registry" | "explicit" | "discovered" | "unusable";
+
+export type CreateRequest = {
+	/**  Folder and repository name; must be a plain installable spelling. */
+	name: string,
+	description: string,
+	author: string,
+	license: License,
+	/**  The folder to create — its parent must exist, itself must not. */
+	dir: string,
+};
 
 export type CustomHook = CustomHook_Serialize | CustomHook_Deserialize;
 
@@ -1023,6 +1061,25 @@ export type FrontmatterOverrides_Serialize = {
 	"nickname-candidates"?: string[] | null,
 };
 
+/**  What git says about the folder, locally. Nothing here asks the network. */
+export type GitReadiness = {
+	repository: boolean,
+	/**  `Some(false)` when uncommitted changes exist; `None` outside a repo. */
+	clean: boolean | null,
+	/**  The `origin` remote URL, verbatim. */
+	remote: string | null,
+	/**
+	 *  `owner/repo` parsed out of a GitHub remote — the candidate the
+	 *  submit preflight will verify, never a verdict by itself.
+	 */
+	candidate: string | null,
+	/**
+	 *  Commits ahead of the tracked upstream, when one is configured. What
+	 *  this machine knows — the remote may have moved since the last fetch.
+	 */
+	ahead: number | null,
+};
+
 export type HarnessId = "claude" | "codex" | "opencode" | "cursor" | "pi" | "gemini" | "copilot";
 
 export type HookAgents = 
@@ -1072,6 +1129,55 @@ export type IgnoredUpdate = {
 	kind: ItemKind,
 	name: string,
 	repo: string,
+};
+
+/**  One importable package, with every byte origin that offers it. */
+export type ImportCandidate = {
+	kind: ItemKind,
+	name: string,
+	/**
+	 *  Why a harness would refuse this name, when one would — the wizard
+	 *  requires a different destination name then.
+	 */
+	nameProblem: string | null,
+	/**
+	 *  Distinct byte origins, presentation-ordered own → marketplace →
+	 *  unmanaged. Identical bytes collapse to one entry listing every
+	 *  location; differing bytes stay separate for the person to choose.
+	 */
+	origins: CandidateOrigin[],
+};
+
+/**  What one apply wrote, for the wizard's summary line. */
+export type ImportOutcome = {
+	written: string[],
+	/**  Selections whose exact bytes were already at the destination. */
+	alreadyPresent: string[],
+};
+
+/**  What the wizard chose for one candidate. */
+export type ImportSelection = {
+	kind: ItemKind,
+	/**  The inventory name the bytes are found under. */
+	name: string,
+	/**
+	 *  The name to write into the catalog — the inventory name unless a
+	 *  harness would refuse it.
+	 */
+	destination: string,
+	/**  Which bytes: the chosen origin's hash. */
+	hash: string,
+	/**
+	 *  Marketplace-origin only: the person confirms the shown licence
+	 *  permits republishing.
+	 */
+	licenseConfirmed?: boolean,
+	/**
+	 *  Marketplace-origin with no detectable licence: the person's stated
+	 *  basis for copying ("author granted permission", say). Never
+	 *  synthesized.
+	 */
+	licenseBasis?: string | null,
 };
 
 export type InstallDefaults = {
@@ -1314,6 +1420,10 @@ export type KindCaps = {
 	enforcement: Enforcement,
 };
 
+export type License = "mit" | "apache2" | 
+/**  Valid locally forever; blocks submission until chosen. */
+"none-yet";
+
 export type Line = {
 	kind: LineKind,
 	text: string,
@@ -1486,6 +1596,36 @@ export type MarketplaceRow = {
 export type Method = "symlink" | "copy";
 
 /**
+ *  One row that could not be computed keeps its place in the list with the
+ *  reason, so a broken folder never hides the healthy ones.
+ */
+export type MineListRow = { state: "ready"; row: MineRow } | { state: "unreadable"; path: string; why: string };
+
+/**  One Mine row, computed fresh from the folder on every ask. */
+export type MineRow = {
+	path: string,
+	/**  The catalog's own name, or the folder leaf where it says nothing. */
+	name: string,
+	description: string | null,
+	license: string | null,
+	/**  Discovered packages per kind name. */
+	counts: { [key in string]: number },
+	bundles: number,
+	/**
+	 *  Whether a control file (`kendex.toml`) declares the layout — the
+	 *  offers surface reads this to know what to offer.
+	 */
+	declared: boolean,
+	breakage: number,
+	heldBack: number,
+	warned: number,
+	advisory: number,
+	/**  Every check finding, file-first, so the app can open each one. */
+	findings: StatusFinding[],
+	git: GitReadiness,
+};
+
+/**
  *  One item as the scanner found it — read-only truth, no interpretation of
  *  whether it is declared or managed.
  */
@@ -1525,6 +1665,12 @@ export type ObservedItem = {
 	 *  [`crate::vendor`]. `None` is the common case: the user's own.
 	 */
 	vendor: string | null,
+};
+
+/**  One offered write, previewed: the exact relative path and bytes. */
+export type OfferPreview = {
+	rel: string,
+	bytes: string,
 };
 
 export type OpSupport = {
@@ -1921,6 +2067,17 @@ export type SourceRow = {
 	/**  Cache HEAD for remotes — freshness display. */
 	head: string | null,
 	declaredItems: string[],
+};
+
+/**  One check finding shaped for a screen with an Open button. */
+export type StatusFinding = {
+	file: string,
+	kind: string,
+	name: string,
+	pass: string,
+	severity: string,
+	message: string,
+	fix: string,
 };
 
 /**  What subscribing declared, after the plan ran. */

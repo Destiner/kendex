@@ -4,6 +4,7 @@ mod community;
 pub mod decisions;
 mod editor;
 mod marketplaces;
+mod mine;
 mod native;
 mod packages;
 mod paths;
@@ -64,6 +65,15 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         community::community_skillssh_available,
         marketplaces::marketplace_about,
         marketplaces::library_provenance,
+        mine::mine_list,
+        mine::mine_use_existing,
+        mine::mine_create,
+        mine::mine_forget,
+        mine::mine_import_inventory,
+        mine::mine_import_apply,
+        mine::mine_offer_manifest,
+        mine::mine_offer_workflow,
+        mine::mine_accept_offer,
         packages::package_versions,
         packages::updates_overview,
         packages::updates_refresh,

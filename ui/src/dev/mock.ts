@@ -7,6 +7,7 @@ import { communityHandlers } from "./mock-community";
 import { coreHandlers } from "./mock-core";
 import { decisionHandlers } from "./mock-decisions";
 import { marketplaceHandlers } from "./mock-marketplaces";
+import { mineHandlers } from "./mock-mine";
 import { packageHandlers } from "./mock-packages";
 import { sourceHandlers } from "./mock-sources";
 import { type Handler, resetState } from "./mock-state";
@@ -19,6 +20,7 @@ export const handlers: Record<string, Handler> = {
   ...packageHandlers,
   ...marketplaceHandlers,
   ...communityHandlers,
+  ...mineHandlers,
 };
 
 export { resetState as resetMock };

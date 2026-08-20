@@ -1,0 +1,143 @@
+import type { CandidateGroup, ImportCandidate } from "@/bindings";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+/** What the wizard tracks for one chosen candidate. */
+export interface RowChoice {
+  checked: boolean;
+  hash: string;
+  destination: string;
+  licenseConfirmed: boolean;
+  licenseBasis: string;
+}
+
+export function groupLabel(group: CandidateGroup): string {
+  switch (group.group) {
+    case "own":
+      return "Your own";
+    case "unmanaged":
+      return "Found on disk";
+    case "marketplace":
+      return group.license
+        ? `From '${group.source}' · ${group.license}`
+        : `From '${group.source}' · no licence found`;
+  }
+}
+
+/** One candidate: the checkbox, the origin picker when bytes differ, the
+ * rename input when a harness would refuse the name, and the licence
+ * evidence for marketplace-origin content. */
+export function MineImportRow({
+  candidate,
+  choice,
+  onChange,
+}: {
+  candidate: ImportCandidate;
+  choice: RowChoice;
+  onChange: (next: RowChoice) => void;
+}) {
+  const readable = candidate.origins.filter((origin) => origin.hash !== "");
+  const chosen =
+    readable.find((origin) => origin.hash === choice.hash) ?? readable[0];
+  const marketplace =
+    chosen && chosen.group.group === "marketplace" ? chosen.group : null;
+
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3">
+      <div className="flex items-center gap-2">
+        <Checkbox
+          aria-label={`Import ${candidate.name}`}
+          checked={choice.checked}
+          disabled={readable.length === 0}
+          onCheckedChange={(checked) =>
+            onChange({ ...choice, checked: checked === true })
+          }
+        />
+        <span className="font-medium">{candidate.name}</span>
+        <span className="text-xs text-muted-foreground">
+          {candidate.kind}
+          {chosen ? ` · ${groupLabel(chosen.group)}` : " · not readable now"}
+        </span>
+      </div>
+      {choice.checked && readable.length > 1 ? (
+        <div className="pl-6">
+          <Select
+            value={choice.hash}
+            onValueChange={(hash) =>
+              onChange({ ...choice, hash: hash ?? choice.hash })
+            }
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue>
+                {(current: string) => {
+                  const origin = readable.find((o) => o.hash === current);
+                  return origin
+                    ? `${groupLabel(origin.group)} — ${origin.locations[0]}`
+                    : "Which copy?";
+                }}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {readable.map((origin) => (
+                <SelectItem key={origin.hash} value={origin.hash}>
+                  {groupLabel(origin.group)} — {origin.locations.join(" = ")}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
+      {choice.checked && candidate.nameProblem ? (
+        <div className="space-y-1 pl-6">
+          <p className="text-xs text-warning">{candidate.nameProblem}</p>
+          <Input
+            aria-label={`New name for ${candidate.name}`}
+            placeholder="a name every harness accepts"
+            value={choice.destination}
+            onChange={(e) =>
+              onChange({ ...choice, destination: e.target.value })
+            }
+          />
+        </div>
+      ) : null}
+      {choice.checked && marketplace ? (
+        marketplace.license ? (
+          <div className="flex items-center gap-2 pl-6 text-sm">
+            <Checkbox
+              aria-label={`The ${marketplace.license} licence lets me republish ${candidate.name}`}
+              checked={choice.licenseConfirmed}
+              onCheckedChange={(checked) =>
+                onChange({ ...choice, licenseConfirmed: checked === true })
+              }
+            />
+            <span>
+              The {marketplace.license} licence lets me republish this
+            </span>
+          </div>
+        ) : (
+          <div className="space-y-1 pl-6">
+            <p className="text-xs text-warning">
+              No licence was found in '{marketplace.source}'. Copying needs a
+              basis you can stand behind.
+            </p>
+            <Input
+              aria-label={`Licence basis for ${candidate.name}`}
+              placeholder="e.g. the author gave me permission on …"
+              value={choice.licenseBasis}
+              onChange={(e) =>
+                onChange({ ...choice, licenseBasis: e.target.value })
+              }
+            />
+          </div>
+        )
+      ) : null}
+    </div>
+  );
+}

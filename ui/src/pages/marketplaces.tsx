@@ -33,8 +33,6 @@ export function MarketplacesPage() {
             <Button size="sm" onClick={() => setSubscribeOpen(true)}>
               <Plus className="size-4" /> Subscribe…
             </Button>
-            {/* Authoring arrives with the Mine tab's flows; until then the
-                tab itself says what is coming, and this button points there. */}
             <Button
               size="sm"
               variant="outline"

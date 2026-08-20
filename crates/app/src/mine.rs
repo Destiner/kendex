@@ -1,0 +1,138 @@
+//! The Mine tab's commands: the authored rows, the create dialog, the
+//! use-existing registration, the import wizard, and the two optional
+//! offers — thin shells over `kendex_core::author`.
+
+use std::path::PathBuf;
+
+use kendex_core::author::{
+    self, CreateRequest, ImportCandidate, ImportOutcome, ImportSelection, MineRow,
+};
+use kendex_core::env::Env;
+use kendex_core::model::Scope;
+use serde::{Deserialize, Serialize};
+use specta::Type;
+
+fn env() -> Result<Env, String> {
+    Env::detect().map_err(|e| e.to_string())
+}
+
+fn all_scopes(env: &Env) -> Result<Vec<Scope>, String> {
+    let settings = kendex_core::settings::load(env).map_err(|e| e.to_string())?;
+    let mut scopes = vec![Scope::Global];
+    scopes.extend(
+        settings
+            .projects
+            .into_iter()
+            .map(|root| Scope::Project { root }),
+    );
+    Ok(scopes)
+}
+
+/// One row that could not be computed keeps its place in the list with the
+/// reason, so a broken folder never hides the healthy ones.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase", tag = "state")]
+pub enum MineListRow {
+    Ready { row: MineRow },
+    Unreadable { path: String, why: String },
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub fn mine_list() -> Result<Vec<MineListRow>, String> {
+    let env = env()?;
+    let mut rows = Vec::new();
+    for path in author::list(&env).map_err(|e| e.to_string())? {
+        rows.push(match author::status(&path) {
+            Ok(row) => MineListRow::Ready { row },
+            Err(error) => MineListRow::Unreadable {
+                path: path.display().to_string(),
+                why: error.to_string(),
+            },
+        });
+    }
+    Ok(rows)
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub fn mine_use_existing(path: PathBuf) -> Result<MineRow, String> {
+    let env = env()?;
+    author::use_existing(&env, &path).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub fn mine_create(request: CreateRequest) -> Result<MineRow, String> {
+    let env = env()?;
+    author::create(&env, &request).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub fn mine_forget(path: PathBuf) -> Result<(), String> {
+    let env = env()?;
+    author::unregister(&env, &path)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub fn mine_import_inventory() -> Result<Vec<ImportCandidate>, String> {
+    let env = env()?;
+    let scopes = all_scopes(&env)?;
+    author::inventory(&env, &scopes).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub fn mine_import_apply(
+    target: PathBuf,
+    selections: Vec<ImportSelection>,
+) -> Result<ImportOutcome, String> {
+    let env = env()?;
+    let scopes = all_scopes(&env)?;
+    author::apply(&env, &scopes, &target, &selections).map_err(|e| e.to_string())
+}
+
+/// One offered write, previewed: the exact relative path and bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct OfferPreview {
+    pub rel: String,
+    pub bytes: String,
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub fn mine_offer_manifest(
+    path: PathBuf,
+    name: String,
+    description: String,
+    author_name: String,
+) -> Result<OfferPreview, String> {
+    let bytes = author::scaffold::offer_manifest(&path, &name, &description, &author_name)
+        .map_err(|e| e.to_string())?;
+    Ok(OfferPreview {
+        rel: "kendex.toml".to_owned(),
+        bytes,
+    })
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub fn mine_offer_workflow(path: PathBuf) -> Result<OfferPreview, String> {
+    let bytes = author::scaffold::offer_workflow(&path).map_err(|e| e.to_string())?;
+    Ok(OfferPreview {
+        rel: ".github/workflows/kendex-check.yml".to_owned(),
+        bytes,
+    })
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub fn mine_accept_offer(path: PathBuf, rel: String, bytes: String) -> Result<MineRow, String> {
+    author::scaffold::accept_offer(&path, &rel, &bytes).map_err(|e| e.to_string())?;
+    author::status(&path).map_err(|e| e.to_string())
+}

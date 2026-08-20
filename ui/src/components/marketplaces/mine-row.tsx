@@ -1,0 +1,178 @@
+import { ChevronDown, ChevronRight, MoreHorizontal } from "lucide-react";
+import { useState } from "react";
+import { commands, type MineRow as MineRowData } from "@/bindings";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useMineStore } from "@/stores/mine";
+
+function countsLine(row: MineRowData): string {
+  const parts = Object.entries(row.counts).map(
+    ([kind, count]) => `${count} ${kind}${count === 1 ? "" : "s"}`,
+  );
+  if (row.bundles > 0) {
+    parts.push(`${row.bundles} bundle${row.bundles === 1 ? "" : "s"}`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : "nothing found yet";
+}
+
+function gitLine(row: MineRowData): string {
+  if (!row.git.repository) return "Not a git repository yet";
+  const parts: string[] = [];
+  parts.push(
+    row.git.candidate ? `GitHub: ${row.git.candidate}` : "No GitHub remote yet",
+  );
+  if (row.git.clean === false) parts.push("uncommitted changes");
+  if (row.git.ahead != null && row.git.ahead > 0) {
+    parts.push(
+      `${row.git.ahead} commit${row.git.ahead === 1 ? "" : "s"} not pushed`,
+    );
+  }
+  return parts.join(" · ");
+}
+
+/** One authored marketplace: what kendex found in the folder, what the
+ * check says, what git says — and the actions that grow it. */
+export function MineRowCard({
+  row,
+  onImport,
+}: {
+  row: MineRowData;
+  onImport: (path: string) => void;
+}) {
+  const forget = useMineStore((s) => s.forget);
+  const acceptWorkflow = useMineStore((s) => s.acceptWorkflow);
+  const acceptManifest = useMineStore((s) => s.acceptManifest);
+  const [showFindings, setShowFindings] = useState(false);
+  const problems = row.breakage + row.heldBack;
+
+  return (
+    <div className="rounded-lg border border-border p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="truncate font-medium">{row.name}</span>
+            {problems > 0 ? (
+              <Badge variant="destructive">
+                {problems} problem{problems === 1 ? "" : "s"}
+              </Badge>
+            ) : row.warned > 0 ? (
+              <Badge variant="secondary">{row.warned} warned</Badge>
+            ) : (
+              <Badge variant="secondary">check passes</Badge>
+            )}
+          </div>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {row.path}
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {countsLine(row)} · {gitLine(row)}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onImport(row.path)}
+          >
+            Import packages…
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`More for ${row.name}`}
+                >
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end">
+              {row.declared ? null : (
+                <DropdownMenuItem
+                  onClick={() =>
+                    void acceptManifest(
+                      row.path,
+                      row.name,
+                      row.description ?? "",
+                      "",
+                    )
+                  }
+                >
+                  Add kendex.toml
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={() => void acceptWorkflow(row.path)}>
+                Add the check workflow
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => void commands.revealPath(row.path)}
+              >
+                Show in file manager
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => void forget(row.path)}>
+                Remove from Mine (keeps the folder)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+      {row.findings.length > 0 ? (
+        <div className="mt-3">
+          <button
+            type="button"
+            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+            onClick={() => setShowFindings((at) => !at)}
+          >
+            {showFindings ? (
+              <ChevronDown className="size-4" />
+            ) : (
+              <ChevronRight className="size-4" />
+            )}
+            {row.findings.length} finding{row.findings.length === 1 ? "" : "s"}
+          </button>
+          {showFindings ? (
+            <ul className="mt-2 space-y-2">
+              {row.findings.map((finding) => (
+                <li
+                  key={`${finding.pass}-${finding.file}-${finding.message}`}
+                  className="rounded-md bg-muted/40 p-2 text-sm"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate font-mono text-xs">
+                      {finding.file}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        void commands.openInEditor(
+                          `${row.path}/${finding.file}`,
+                        )
+                      }
+                    >
+                      Open
+                    </Button>
+                  </div>
+                  <p>{finding.message}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Fix: {finding.fix}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
