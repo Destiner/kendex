@@ -142,3 +142,46 @@ fn an_unreadable_artifact_reports_uncompared_not_ok() {
     assert!(row.detail.contains("cannot be compared"));
     fs::set_permissions(&installed, fs::Permissions::from_mode(0o644)).unwrap();
 }
+
+/// A tree carries bytes, not modes — but a script that opens with a
+/// shebang was written to be run, and a skill helper landing 644 fails
+/// its own hook the first time something calls it (found migrating a
+/// real repository).
+#[test]
+#[cfg(unix)]
+#[allow(clippy::unwrap_used)]
+fn a_written_tree_keeps_shebang_files_executable() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let tmp = tempfile::tempdir().unwrap();
+    let env = kendex_core::env::Env::fake(tmp.path(), kendex_core::env::FakeOs::Linux);
+    let root = tmp.path().join("skill");
+    let op = kendex_core::apply::PlannedOp {
+        description: "write".into(),
+        op: kendex_core::apply::Op::WriteTree {
+            root: root.clone(),
+            files: vec![
+                (
+                    std::path::PathBuf::from("scripts/run"),
+                    b"#!/bin/sh\necho ok\n".to_vec(),
+                ),
+                (std::path::PathBuf::from("SKILL.md"), b"---\n---\n".to_vec()),
+            ],
+            pre: kendex_core::apply::Pre::Absent,
+        },
+    };
+    let plan = kendex_core::apply::Plan {
+        scope: kendex_core::model::Scope::Global,
+        ops: vec![op],
+    };
+    kendex_core::apply::execute(&env, &plan, None).unwrap();
+    let script = std::fs::metadata(root.join("scripts/run")).unwrap();
+    assert!(
+        script.permissions().mode() & 0o100 != 0,
+        "the shebang file must land executable"
+    );
+    let doc = std::fs::metadata(root.join("SKILL.md")).unwrap();
+    assert!(
+        doc.permissions().mode() & 0o100 == 0,
+        "a plain document must not"
+    );
+}

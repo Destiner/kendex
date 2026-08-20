@@ -161,18 +161,7 @@ impl Op {
                 }
                 fs::write(path, bytes).map_err(|e| CoreError::io(path, e))
             }
-            Op::WriteTree { root, files, pre } => {
-                pre.check(root)?;
-                journal::remove_any(root)?;
-                for (rel, bytes) in files {
-                    let dest = root.join(rel);
-                    if let Some(parent) = dest.parent() {
-                        fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
-                    }
-                    fs::write(&dest, bytes).map_err(|e| CoreError::io(&dest, e))?;
-                }
-                Ok(())
-            }
+            Op::WriteTree { root, files, pre } => write_tree(root, files, pre),
             Op::Symlink { link, target, pre } => {
                 pre.check(link)?;
                 if let Some(parent) = link.parent() {
@@ -255,6 +244,25 @@ impl Op {
             } => git_config_swap(file, key, expected.as_deref(), value.as_deref()),
         }
     }
+}
+
+fn write_tree(root: &Path, files: &[(PathBuf, Vec<u8>)], pre: &Pre) -> Result<()> {
+    pre.check(root)?;
+    journal::remove_any(root)?;
+    for (rel, bytes) in files {
+        let dest = root.join(rel);
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
+        }
+        fs::write(&dest, bytes).map_err(|e| CoreError::io(&dest, e))?;
+        // A tree carries bytes, not modes; a script that opens with a
+        // shebang was written to be run, and a skill's helper that lands
+        // 644 fails its own hook the first time something calls it.
+        if bytes.starts_with(b"#!") {
+            executable_bit(&dest)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(unix)]

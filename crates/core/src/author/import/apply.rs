@@ -243,6 +243,7 @@ fn stage(
                     std::fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
                 }
                 std::fs::write(&from, bytes).map_err(|e| CoreError::io(&from, e))?;
+                executable_if_script(&from, bytes)?;
             }
             Bytes::Tree(files) => {
                 for (rel, bytes) in files {
@@ -251,6 +252,7 @@ fn stage(
                         std::fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
                     }
                     std::fs::write(&file, bytes).map_err(|e| CoreError::io(&file, e))?;
+                    executable_if_script(&file, bytes)?;
                 }
             }
         }
@@ -368,6 +370,21 @@ fn occupied(dest: &Path, name: &str) -> CoreError {
             dest.display()
         ),
     }
+}
+
+/// A file whose bytes open with a shebang was written to be run — the
+/// copy keeps that runnable.
+fn executable_if_script(path: &Path, bytes: &[u8]) -> Result<()> {
+    if !bytes.starts_with(b"#!") {
+        return Ok(());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| CoreError::io(path, e))?;
+    }
+    Ok(())
 }
 
 fn rel_name(target: &Path, dest: &Path) -> String {

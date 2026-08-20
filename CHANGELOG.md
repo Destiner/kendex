@@ -17,6 +17,11 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Fixed
 
+- Installed scripts run again: a skill's helper script used to land
+  without its executable bit, so the skill's own hooks failed the first
+  time they called it. Any installed file that opens with `#!` is now
+  executable, everywhere trees are written. (Found migrating a real v1
+  repository.)
 - Unsubscribing with "keep the packages" now leaves the scope perfectly
   clean: a kept agent used to show as out of date right afterwards,
   because the marketplace's own skill and settings tables shaped how it
