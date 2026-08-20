@@ -33,7 +33,7 @@ case "$os-$arch" in
   Darwin-arm64|Darwin-aarch64) target="aarch64-apple-darwin"; kind="macos" ;;
   Darwin-x86_64)
     echo "install.sh: no prebuilt binary for Intel macOS yet." >&2
-    echo "  Use Homebrew instead: brew install kendex" >&2
+    echo "  Build from source, or use an Apple-silicon Mac." >&2
     exit 1 ;;
   *)
     echo "install.sh: unsupported platform: $os $arch" >&2

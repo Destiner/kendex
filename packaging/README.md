@@ -38,12 +38,18 @@ Then push the recipes to their channels:
   `git push` to `ssh://aur@aur.archlinux.org/<name>.git`. Pushing needs the
   AUR account's SSH key.
 
-`kendex-git` needs no checksum change; its `pkgver()` is computed at build
-time from the cloned commit.
+The Linux CLI `sha256` is the same value in all three of `kendex.rb`,
+`arch/kendex/PKGBUILD`, and `arch/kendex-bin/PKGBUILD` — bump all three
+together. `kendex-git` needs no checksum change; its `pkgver()` is computed at
+build time from the cloned commit.
 
 ## Caveats
 
-- The macOS `.app` is not yet notarized, so the cask install shows Gatekeeper's
-  unidentified-developer prompt on first launch until signing is added to the
-  release.
+- The macOS `.app` is not yet notarized, so Gatekeeper calls it "damaged" on
+  first launch until signing is added to the release. The cask's caveat tells
+  users to clear the quarantine flag once: `xattr -cr /Applications/kendex.app`.
 - The Linux AppImage needs FUSE (`fuse2`) to run.
+- The release workflow publishes as a **draft**, and `install.sh` resolves
+  `--version latest` through GitHub's latest-release API, which skips drafts.
+  So `curl … | sh` only works after the release is published
+  (`gh release edit vX --draft=false`).
