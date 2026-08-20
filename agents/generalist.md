@@ -5,6 +5,7 @@ model: opus
 role: engineer
 effort: xhigh
 color: green
+tags: [docs, refactoring]
 ---
 
 # Generalist Maintenance Engineer

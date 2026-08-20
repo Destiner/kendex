@@ -5,6 +5,7 @@ model: opus
 role: reviewer
 effort: xhigh
 color: blue
+tags: [review, testing]
 ---
 
 # Test Review

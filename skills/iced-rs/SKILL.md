@@ -9,6 +9,7 @@ metadata:
   repository: "https://github.com/vanillagreencom/kendex"
   bugs: "https://github.com/vanillagreencom/kendex/issues"
   version: "3.0.0"
+tags: [ui]
 ---
 
 # Iced 0.14

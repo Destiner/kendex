@@ -5,6 +5,7 @@ model: opus
 role: engineer
 effort: xhigh
 color: orange
+tags: [performance]
 ---
 
 # Rust Systems Engineer

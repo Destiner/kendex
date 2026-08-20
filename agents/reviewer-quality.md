@@ -5,6 +5,7 @@ model: opus
 role: reviewer
 effort: xhigh
 color: purple
+tags: [review]
 ---
 
 # Code Quality Review

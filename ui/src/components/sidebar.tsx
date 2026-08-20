@@ -26,7 +26,7 @@ import { useUpdatesStore, visibleUpdateCount } from "@/stores/updates";
 // the selected row shows one, and without it here every other row would
 // shift a pixel when selection moved.
 const NAV_ROW =
-  "flex h-9 items-center gap-2.5 rounded-lg border border-transparent px-2 text-sm";
+  "flex h-9 items-center gap-2.5 rounded-lg border border-transparent px-2 font-mono text-sm";
 
 const NAV: { page: Page; label: string; icon: typeof Home }[] = [
   { page: "home", label: "Home", icon: Home },
@@ -71,7 +71,7 @@ export function Sidebar() {
       >
         {/* Weight carries the mark rather than a second typeface: the "ken"
             is the thing to recognise, "dex" is the word it sits in. */}
-        <span className="text-[15px] tracking-tight">
+        <span className="font-mono text-[15px] tracking-tight">
           <span className="font-bold">ken</span>
           <span className="font-light text-foreground/80">dex</span>
         </span>

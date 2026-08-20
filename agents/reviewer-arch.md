@@ -5,6 +5,7 @@ model: opus
 role: reviewer
 effort: xhigh
 color: yellow
+tags: [review]
 ---
 
 # Architecture Reviewer

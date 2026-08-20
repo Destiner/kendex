@@ -5,6 +5,7 @@ model: opus
 role: reviewer
 effort: xhigh
 color: orange
+tags: [review, debugging]
 ---
 
 # Error Handling Review

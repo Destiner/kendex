@@ -27,7 +27,7 @@ export function PageHeader({
             description can run to eight lines, and buttons centred against
             that end up floating in the middle of the page. */}
         <div className="flex items-start justify-between gap-4">
-          <h1 className="min-w-0 text-2xl font-semibold tracking-tight">
+          <h1 className="min-w-0 font-mono text-2xl font-semibold tracking-tight">
             {title}
           </h1>
           {action ? (

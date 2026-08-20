@@ -12,6 +12,7 @@ metadata:
   repository: "https://github.com/vanillagreencom/kendex"
   bugs: "https://github.com/vanillagreencom/kendex/issues"
   version: "2.0.0"
+tags: [review]
 ---
 
 # Reviewer

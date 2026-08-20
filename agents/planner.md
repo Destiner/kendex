@@ -5,6 +5,7 @@ model: opus
 role: analyst
 effort: xhigh
 color: blue
+tags: [planning, research]
 ---
 
 # Planner Agent

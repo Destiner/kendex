@@ -5,6 +5,7 @@ model: opus
 role: analyst
 effort: xhigh
 color: purple
+tags: [research]
 ---
 
 # Researcher Agent

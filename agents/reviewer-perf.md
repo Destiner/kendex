@@ -5,6 +5,7 @@ model: opus
 role: reviewer
 effort: xhigh
 color: red
+tags: [review, performance]
 ---
 
 # Performance QA Engineer

@@ -5,6 +5,7 @@ model: sonnet
 role: analyst
 effort: medium
 color: cyan
+tags: [research]
 ---
 
 # Scout Agent

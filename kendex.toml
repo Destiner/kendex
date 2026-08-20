@@ -11,6 +11,64 @@ license = "MIT"
 homepage = "https://kendex.ai"
 tags = ["agents", "skills", "hooks", "official"]
 
+# Curated sets, drawn from how these packages depend on one another. Install
+# a whole set with one preview, or pick from it.
+[bundles.orchestration]
+description = "Multi-agent workflow orchestration and the skills it drives"
+members = [
+  "skill/orch",
+  "skill/dev",
+  "skill/github",
+  "skill/worktree",
+  "skill/project-management",
+  "skill/decider",
+  "skill/reviewer",
+  "skill/linear",
+]
+
+[bundles.code-review]
+description = "The review agents and the skills that run a review"
+members = [
+  "agent/reviewer-arch",
+  "agent/reviewer-correctness",
+  "agent/reviewer-doc",
+  "agent/reviewer-error",
+  "agent/reviewer-perf",
+  "agent/reviewer-quality",
+  "agent/reviewer-safety",
+  "agent/reviewer-security",
+  "agent/reviewer-test",
+  "skill/reviewer",
+  "skill/review-gate",
+  "skill/second-opinion",
+  "skill/code-quality",
+]
+
+[bundles.research]
+description = "Research and planning agents with the deep-research skill"
+members = [
+  "agent/researcher",
+  "agent/scout",
+  "agent/planner",
+  "skill/deep-research",
+  "skill/decider",
+]
+
+[bundles.commit-guards]
+description = "Hooks and skills that guard what gets committed"
+members = [
+  "hook/block-bare-cd",
+  "hook/block-repo-copy",
+  "hook/block-unsafe-rm",
+  "hook/post-edit-lint",
+  "hook/pre-commit-check",
+  "hook/session-drift-check",
+  "hook/task-completed-check",
+  "skill/growth-guards",
+  "skill/size-ratchet",
+  "skill/preflight",
+]
+
 # Skill mappings per agent — always loaded into context.
 [agent-skills]
 rust = ["github", "linear"]

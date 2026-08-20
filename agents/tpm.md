@@ -5,6 +5,7 @@ model: opus
 role: manager
 effort: high
 color: blue
+tags: [planning]
 ---
 
 # Technical Program Manager

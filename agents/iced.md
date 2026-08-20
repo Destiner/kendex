@@ -5,6 +5,7 @@ model: opus
 role: engineer
 effort: xhigh
 color: cyan
+tags: [ui]
 ---
 
 # Iced UI Engineer

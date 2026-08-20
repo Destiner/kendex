@@ -10,6 +10,7 @@ metadata:
   repository: "https://github.com/vanillagreencom/kendex"
   bugs: "https://github.com/vanillagreencom/kendex/issues"
   version: "1.0.0"
+tags: [review]
 ---
 
 # Second Opinion
