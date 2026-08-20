@@ -6,3 +6,6 @@ tmp/
 docs/roadmaps/
 docs/plans/
 .claude/settings.json
+docs/handoff/
+docs/reviews/
+.agents/skills/shadcn/
