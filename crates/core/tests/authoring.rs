@@ -226,15 +226,15 @@ fn the_scaffold_matches_its_checked_in_golden_digest() {
     for (license, expected) in [
         (
             License::Mit,
-            "d6db2c1ac5332e848518c793bba266880c925910ab6ca6f56bd62602ef4eee5f",
+            "df65c4e972e7fcf85459c2030b2933ecf5d9af06f26f321f663d1843a6ea1ded",
         ),
         (
             License::Apache2,
-            "bffebce64f0abab9de2b0e8bab4d298eb7af77539905596b54b92bec9a94d394",
+            "7f8703f6999631efc692e1bfe9db21dfa5636e96a930177f74ba1ecf957093e8",
         ),
         (
             License::NoneYet,
-            "6f3f86eba273a381ca8a1b1b5d2a765bf6fab069620f5496e14460a9b5691983",
+            "f99f2b34f98f9a480b34e1b3b543d2ddf731dc27c783c61aaa109d61b5c1116e",
         ),
     ] {
         let files: Vec<(std::path::PathBuf, Vec<u8>)> =

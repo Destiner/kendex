@@ -4,7 +4,16 @@ Notable changes, per [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Entries are written when a change lands, not batched at release. Breaking
 changes carry a **Breaking** call-out with their migration note inline.
 
-## [Unreleased]
+## [5.0.0] — 2026-08-20
+
+The first kendex release — the successor to vstack v4. The version
+continues this repository's own lineage (vstack ended at 4.9), so
+nothing ever collides with a v1-era tag. Everything
+below is relative to vstack 4.x: the product, the binary and every file
+kendex writes are renamed, a desktop app joins the CLI, and the
+kendex.ai community (directory, publishing, sign-in, collections) ships
+alongside. Existing vstack projects migrate with `kendex import` +
+`kendex refresh`; the breaking changes are called out inline below.
 
 ### Removed
 

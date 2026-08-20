@@ -348,7 +348,7 @@ on:
   pull_request:
 jobs:
   kendex:
-    uses: vanillagreencom/kendex/.github/workflows/catalog-check.yml@v1.0.0
+    uses: vanillagreencom/kendex/.github/workflows/catalog-check.yml@v5.0.0
     with:
       path: .
       strict: true
