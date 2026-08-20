@@ -3,6 +3,11 @@
 # below say what the catalog states about itself and how its agents and
 # skills belong together.
 
+# This file is the canonical catalog, not an install manifest. kendex routes
+# this repo's own install state to a sibling kendex-local.toml, so nothing a
+# maintainer installs for local use lands in the published catalog.
+is_source_catalog = true
+
 [marketplace]
 name = "kendex"
 description = "The official kendex catalog: agents, skills, hooks and Pi extensions for AI coding harnesses"

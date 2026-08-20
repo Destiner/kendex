@@ -1,0 +1,152 @@
+schema = 5
+
+[sources."."]
+path = "."
+enabled = true
+
+[sources.kendex]
+repo = "vanillagreencom/kendex"
+enabled = true
+
+[install]
+harnesses = [
+    "claude",
+    "codex",
+    "pi",
+]
+method = "symlink"
+
+[skills.app-deploy]
+source = "local"
+harnesses = [
+    "claude",
+    "codex",
+    "pi",
+]
+enabled = true
+
+[skills.decider]
+source = "."
+harnesses = [
+    "claude",
+    "codex",
+    "pi",
+]
+enabled = true
+
+[skills.deep-research]
+source = "."
+harnesses = [
+    "claude",
+    "codex",
+    "pi",
+]
+enabled = true
+
+[skills.dev]
+source = "."
+harnesses = [
+    "claude",
+    "codex",
+    "pi",
+]
+enabled = true
+
+[skills.github]
+source = "."
+harnesses = [
+    "claude",
+    "codex",
+    "pi",
+]
+enabled = true
+
+[skills.iced-rs]
+source = "."
+harnesses = [
+    "claude",
+    "codex",
+    "pi",
+]
+enabled = true
+
+[skills.kendex-issues]
+source = "local"
+harnesses = [
+    "claude",
+    "codex",
+    "pi",
+]
+enabled = true
+
+[skills.linear]
+source = "."
+harnesses = [
+    "claude",
+    "codex",
+    "pi",
+]
+enabled = true
+
+[skills.orch]
+source = "."
+harnesses = [
+    "claude",
+    "codex",
+    "pi",
+]
+enabled = true
+
+[skills.price-handling]
+source = "."
+harnesses = [
+    "claude",
+    "codex",
+    "pi",
+]
+enabled = true
+
+[skills.project-management]
+source = "."
+harnesses = [
+    "claude",
+    "codex",
+    "pi",
+]
+enabled = true
+
+[skills.reviewer]
+source = "."
+harnesses = [
+    "claude",
+    "codex",
+    "pi",
+]
+enabled = true
+
+[skills.second-opinion]
+source = "."
+harnesses = [
+    "claude",
+    "codex",
+    "pi",
+]
+enabled = true
+
+[skills.trading-design]
+source = "."
+harnesses = [
+    "claude",
+    "codex",
+    "pi",
+]
+enabled = true
+
+[skills.worktree]
+source = "."
+harnesses = [
+    "claude",
+    "codex",
+    "pi",
+]
+enabled = true

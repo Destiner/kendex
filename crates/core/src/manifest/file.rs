@@ -27,16 +27,8 @@ pub enum ManifestFile {
 /// one when only it exists — an old-name scope keeps loading until its
 /// rename op runs (the read-as-import posture, not a second format).
 pub fn manifest_path(env: &Env, scope: &Scope) -> std::path::PathBuf {
-    match scope {
-        Scope::Global => crate::rename::existing_or_new(
-            env.global_manifest_file(),
-            env.legacy_global_manifest_file(),
-        ),
-        Scope::Project { root } => crate::rename::existing_or_new(
-            Env::project_manifest_file(root),
-            root.join(crate::rename::LEGACY_MANIFEST_FILE),
-        ),
-    }
+    let (new, old) = crate::rename::manifest_pair(env, scope);
+    crate::rename::existing_or_new(new, old)
 }
 
 pub fn load(path: &Path) -> Result<ManifestFile> {

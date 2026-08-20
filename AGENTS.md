@@ -11,5 +11,6 @@ Rules the tooling cannot enforce:
 - An `else` that "shouldn't happen" is a bug: assert or return an error, never continue silently.
 - Plain words over jargon: name things by what they do. Comments say why, never what or when — no temporal markers, no references to the change that wrote them. Commit bodies explain intent, never narrate the diff.
 - Delete unused code completely — no compat shims, no `_renamed` vars, no "removed" comments.
+- The CHANGELOG is for consumers (Keep a Changelog): document app, CLI, and package changes; keep engine-internal and maintainer-only details out.
 
 `tools/guard` (the pre-commit hook) enforces the rest — read the script; it is the list.

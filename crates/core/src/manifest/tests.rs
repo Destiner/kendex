@@ -95,3 +95,49 @@ fn seed_declares_the_default_source_once() {
     assert_eq!(manifest.declared(ItemKind::Agent).len(), 0);
     assert_eq!(manifest.install.harnesses, [HarnessId::Claude]);
 }
+
+#[test]
+fn source_catalog_routes_install_state_to_a_sibling() {
+    use crate::env::{Env, FakeOs};
+    use crate::model::Scope;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let env = Env::fake(root, FakeOs::Linux);
+    let scope = Scope::Project {
+        root: root.to_path_buf(),
+    };
+
+    // No catalog marker: install state lives in the project's own kendex.toml.
+    assert_eq!(
+        crate::manifest::manifest_path(&env, &scope)
+            .file_name()
+            .unwrap(),
+        "kendex.toml",
+    );
+
+    // A source catalog keeps kendex.toml as its definition and routes install
+    // state to the sibling instead.
+    std::fs::write(
+        root.join("kendex.toml"),
+        "is_source_catalog = true\n[marketplace]\nname = \"c\"\n",
+    )
+    .unwrap();
+    assert!(crate::rename::is_source_catalog(root));
+    assert_eq!(
+        crate::manifest::manifest_path(&env, &scope)
+            .file_name()
+            .unwrap(),
+        "kendex-local.toml",
+    );
+
+    // The flag off is not a catalog: back to the project's own kendex.toml.
+    std::fs::write(root.join("kendex.toml"), "is_source_catalog = false\n").unwrap();
+    assert!(!crate::rename::is_source_catalog(root));
+    assert_eq!(
+        crate::manifest::manifest_path(&env, &scope)
+            .file_name()
+            .unwrap(),
+        "kendex.toml",
+    );
+}

@@ -20,6 +20,23 @@ pub const LOCK_FILE: &str = ".kendex-lock.json";
 pub const LEGACY_LOCK_FILE: &str = ".vstack-lock.json";
 pub const LOCAL_SOURCE_DIR: &str = ".kendex-local";
 pub const LEGACY_LOCAL_SOURCE_DIR: &str = ".vstack-local";
+pub const LOCAL_MANIFEST_FILE: &str = "kendex-local.toml";
+pub const LEGACY_LOCAL_MANIFEST_FILE: &str = "vstack-local.toml";
+
+/// Whether a project root's kendex.toml marks itself the canonical catalog
+/// (`is_source_catalog = true`), so install state routes to the sibling.
+pub fn is_source_catalog(root: &Path) -> bool {
+    [MANIFEST_FILE, LEGACY_MANIFEST_FILE]
+        .iter()
+        .find_map(|name| fs::read_to_string(root.join(name)).ok())
+        .and_then(|text| text.parse::<toml::Table>().ok())
+        .and_then(|table| {
+            table
+                .get("is_source_catalog")
+                .and_then(toml::Value::as_bool)
+        })
+        .unwrap_or(false)
+}
 
 /// Every rename-generation op leads with this, so a plan's generation
 /// prefix can be found again after the ops are built.
@@ -63,11 +80,15 @@ pub fn refuse_both_generations(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn manifest_pair(env: &Env, scope: &Scope) -> (PathBuf, PathBuf) {
+pub(crate) fn manifest_pair(env: &Env, scope: &Scope) -> (PathBuf, PathBuf) {
     match scope {
         Scope::Global => (
             env.global_manifest_file(),
             env.legacy_global_manifest_file(),
+        ),
+        Scope::Project { root } if is_source_catalog(root) => (
+            root.join(LOCAL_MANIFEST_FILE),
+            root.join(LEGACY_LOCAL_MANIFEST_FILE),
         ),
         Scope::Project { root } => (
             Env::project_manifest_file(root),

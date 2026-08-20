@@ -6,24 +6,21 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ## [Unreleased]
 
+### Added
+
+- New ways to install. A one-line installer,
+  `curl -fsSL https://kendex.ai/install.sh | sh`, that installs the app and
+  the CLI on Linux and the CLI on macOS; `brew install --cask kendex` and
+  `yay -S kendex-bin`, which install the app and the CLI together; and
+  CLI-only channels `brew install kendex`, `yay -S kendex`, and `kendex-git`.
+- The default catalog now offers curated bundles and tagged packages, so you
+  can install a working set in one step: orchestration, code-review,
+  research, and commit-guards.
+
 ### Changed
 
 - The app uses the Geist typeface, with titles and navigation in Geist Mono
   to match the website.
-
-### Added
-
-- The catalog gains four bundles built from how its packages depend on one
-  another (orchestration, code-review, research, commit-guards), and every
-  agent and skill carries tags.
-
-- Install channels beyond the release page. A one-line curl installer
-  (`curl -fsSL https://kendex.ai/install.sh | sh`) that installs the app and
-  the CLI on Linux and the CLI on macOS; a Homebrew cask
-  (`brew install --cask kendex`) and Arch package (`yay -S kendex-bin`) that
-  install the app and the CLI together; and CLI-only channels (`brew install
-  kendex`, `yay -S kendex`, `kendex-git`). The recipes live under
-  `packaging/`; the README leads with curl.
 
 ## [5.0.1] — 2026-08-20
 
