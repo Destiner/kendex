@@ -14,16 +14,10 @@ fn feed_url() -> String {
     })
 }
 
+/// The feed keys its assets by the build target, one per lane in
+/// `.github/workflows/release.yml`; `build.rs` bakes it in from Cargo.
 fn target_triple() -> &'static str {
-    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        "x86_64-unknown-linux-gnu"
-    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        "aarch64-apple-darwin"
-    } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
-        "x86_64-pc-windows-msvc"
-    } else {
-        "unsupported"
-    }
+    env!("KENDEX_TARGET")
 }
 
 fn fetch(url: &str) -> Result<Vec<u8>, String> {

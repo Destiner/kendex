@@ -18,12 +18,20 @@ class KendexCli < Formula
       url "https://github.com/vanillagreencom/kendex/releases/download/v#{version}/kendex-aarch64-apple-darwin"
       sha256 "e1a1d7199afc8ce08e7c9cb19ccc313f4489c3b256aa787de9310de7a3816c87"
     end
+    on_intel do
+      url "https://github.com/vanillagreencom/kendex/releases/download/v#{version}/kendex-x86_64-apple-darwin"
+      sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+    end
   end
 
   on_linux do
     on_intel do
       url "https://github.com/vanillagreencom/kendex/releases/download/v#{version}/kendex-x86_64-unknown-linux-gnu"
       sha256 "a3dee4c286614016198db72603fcf95de277ddf1a245da052dc815821f0e84c0"
+    end
+    on_arm do
+      url "https://github.com/vanillagreencom/kendex/releases/download/v#{version}/kendex-aarch64-unknown-linux-gnu"
+      sha256 "0000000000000000000000000000000000000000000000000000000000000000"
     end
   end
 
