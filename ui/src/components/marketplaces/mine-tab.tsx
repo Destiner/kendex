@@ -1,9 +1,17 @@
-import { FolderOpen, Hammer, Plus } from "lucide-react";
+import { BookOpen, FolderOpen, Hammer, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { commands } from "@/bindings";
 import { EmptyState } from "@/components/empty-state";
 import { TextBar } from "@/components/loading";
+import { MarkdownView } from "@/components/markdown-view";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useMineStore } from "@/stores/mine";
 import { MineCreateDialog } from "./mine-create-dialog";
 import { MineImportDialog } from "./mine-import-dialog";
@@ -18,6 +26,8 @@ export function MineTab() {
   const actionError = useMineStore((s) => s.actionError);
   const [creating, setCreating] = useState(false);
   const [importTarget, setImportTarget] = useState<string | null>(null);
+  const [doc, setDoc] = useState<string | null>(null);
+  const [docOpen, setDocOpen] = useState(false);
 
   useEffect(() => {
     void load();
@@ -31,6 +41,13 @@ export function MineTab() {
     });
   };
 
+  const openDoc = () => {
+    setDocOpen(true);
+    if (doc === null) {
+      void commands.mineAuthoringDoc().then((text) => setDoc(text));
+    }
+  };
+
   const actions = (
     <div className="flex gap-2">
       <Button onClick={() => setCreating(true)}>
@@ -38,6 +55,9 @@ export function MineTab() {
       </Button>
       <Button variant="outline" onClick={pickExisting}>
         <FolderOpen className="size-4" /> Use an existing folder…
+      </Button>
+      <Button variant="ghost" onClick={openDoc}>
+        <BookOpen className="size-4" /> How a marketplace repo works
       </Button>
     </div>
   );
@@ -87,6 +107,20 @@ export function MineTab() {
           {actionError}
         </p>
       ) : null}
+      <Dialog open={docOpen} onOpenChange={setDocOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>How a marketplace repo works</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="max-h-[70vh] pr-3">
+            {doc === null ? (
+              <TextBar width="w-64" />
+            ) : (
+              <MarkdownView source={doc} />
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
       <MineCreateDialog open={creating} onOpenChange={setCreating} />
       <MineImportDialog
         target={importTarget ?? ""}

@@ -243,6 +243,11 @@ export const commands = {
 	mineOfferManifest: (path: string, name: string, description: string, authorName: string) => typedError<OfferPreview, string>(__TAURI_INVOKE("mine_offer_manifest", { path, name, description, authorName })),
 	mineOfferWorkflow: (path: string) => typedError<OfferPreview, string>(__TAURI_INVOKE("mine_offer_workflow", { path })),
 	mineAcceptOffer: (path: string, rel: string, bytes: string) => typedError<MineRow, string>(__TAURI_INVOKE("mine_accept_offer", { path, rel, bytes })),
+	/**
+	 *  The one authoring document, compiled in so the app renders the same
+	 *  text the repository publishes.
+	 */
+	mineAuthoringDoc: () => __TAURI_INVOKE<string>("mine_authoring_doc"),
 	packageVersions: (scope: Scope, kind: ItemKind, name: string) => typedError<VersionRow[], string>(__TAURI_INVOKE("package_versions", { scope, kind, name })),
 	/**
 	 *  Every scope's update standing in one query — the sidebar badge, the

@@ -115,6 +115,8 @@ const candidates: ImportCandidate[] = [
 ];
 
 export const mineHandlers: Record<string, Handler> = {
+  mine_authoring_doc: () =>
+    "# How a marketplace repo works\n\nA kendex marketplace is a git repository.\n",
   mine_list: () => rows,
   mine_use_existing: (args: { path: string }) => {
     const added = row({

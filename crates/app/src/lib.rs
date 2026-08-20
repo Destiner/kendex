@@ -74,6 +74,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         mine::mine_offer_manifest,
         mine::mine_offer_workflow,
         mine::mine_accept_offer,
+        mine::mine_authoring_doc,
         packages::package_versions,
         packages::updates_overview,
         packages::updates_refresh,

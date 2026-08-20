@@ -39,6 +39,18 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- Build your own marketplace. The Marketplaces → Mine tab creates a
+  ready-to-publish repository (kendex.toml, README, licence, a CI
+  workflow that runs the check), registers any folder you already have
+  without changing a byte inside it, and imports packages from your
+  machine — your own, ones found on disk, or ones from a marketplace
+  you subscribe to, which ask you to confirm their licence before they
+  copy. The same flows exist as `kendex marketplace new | use | mine |
+  import`, one flag per question, and `docs/AUTHORING.md` (also
+  rendered in-app) explains the format. `kendex check --catalog` now
+  reads a repository exactly the way subscribing reads it, so a repo
+  that checks clean installs clean — and `kendex init` marks its
+  folder as a catalog so scaffolded hooks are actually offered.
 - `kendex login` and `kendex logout`: sign in to kendex.ai from the
   terminal with a short code and a browser tab — the CLI never sees a
   password, the credential lives in your system keychain (with no silent

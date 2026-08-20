@@ -136,3 +136,11 @@ pub fn mine_accept_offer(path: PathBuf, rel: String, bytes: String) -> Result<Mi
     author::scaffold::accept_offer(&path, &rel, &bytes).map_err(|e| e.to_string())?;
     author::status(&path).map_err(|e| e.to_string())
 }
+
+/// The one authoring document, compiled in so the app renders the same
+/// text the repository publishes.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn mine_authoring_doc() -> String {
+    include_str!("../../../docs/AUTHORING.md").to_owned()
+}

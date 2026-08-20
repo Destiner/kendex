@@ -1,0 +1,99 @@
+# How a marketplace repo works
+
+A kendex marketplace is a git repository. There is no registration step
+and no special format to learn first: any repository that holds skills
+already works — `kendex marketplace subscribe owner/repo` finds them
+where they are (`skills/`, `.claude/skills`, a single root `SKILL.md`,
+or a Claude plugin registry). Everything below is optional structure
+that makes a repository easier to browse, check, and publish.
+
+## The layout
+
+```
+my-marketplace/
+  kendex.toml            what this marketplace says about itself
+  agents/<name>.md       one agent per file
+  skills/<name>/SKILL.md one folder per skill (its folder name is its name)
+  hooks/<name>.sh        commands/<name>.md   mcp/<name>.toml
+  README.md              how to subscribe
+  LICENSE
+  .github/workflows/kendex-check.yml   the check, on every push
+```
+
+Two rules worth knowing:
+
+- **A skill's identity is its directory name.** A `SKILL.md` whose
+  `name:` disagrees with its folder is a check finding.
+- **Executable kinds are never guessed.** Hooks, commands and MCP
+  servers install only from a repository that declares kendex's layout
+  (any parseable `kendex.toml` does) or from a plugin registry. A
+  `hooks/` folder in an undeclared repository is treated as repository
+  tooling, not as installable content.
+
+## kendex.toml
+
+```toml
+[marketplace]
+name = "my-marketplace"
+description = "Skills for the whole team"
+author = "Jane Doe"
+license = "MIT"            # an SPDX id; omit while undecided
+homepage = "https://example.com"
+tags = ["rust", "review"]
+
+# Optional: override where agents/skills live
+[catalog]
+skills = ["skills", "extra-skills"]
+agents = ["agents"]
+
+# Optional: curated sets people install with one click
+[bundles.starter]
+description = "Everything a new project needs"
+members = ["skill/review", "agent/scout"]
+```
+
+Everything is optional — a missing `[marketplace]` table just means the
+directory listing falls back to what GitHub knows. A `kendex.toml` that
+exists but does not parse makes the whole catalog unusable with a
+finding, never a silently different catalog.
+
+## What each kind needs
+
+- **Skill** — `skills/<name>/SKILL.md` with frontmatter `name` (matching
+  the folder) and `description`. Extra files in the folder ship with it.
+- **Agent** — `agents/<name>.md` with frontmatter `name` and
+  `description`; optional `model`, `color`, tool allow/deny lists.
+- **Hook** — `hooks/<name>.sh` with a comment header naming `event`
+  (e.g. `PreToolUse`), optional `matcher`, and a `description`.
+- **Command** — `commands/<name>.md`, frontmatter `description`.
+- **MCP server** — `mcp/<name>.toml` describing the server invocation.
+
+Descriptions are never guessed: an empty one stays empty and is a check
+finding, because a directory row with no description helps nobody.
+
+## Tags
+
+`tags = [...]` in `[marketplace]`, or per-item in frontmatter. Tags come
+from the author, never inferred from names — a wrong guess is worse
+than no answer.
+
+## The check
+
+```
+kendex check --catalog . --strict
+```
+
+Validates every package the way installing validates it: names each
+harness's loader would refuse, skill trees that disagree with
+themselves, and the same safety rules an install runs — so problems
+surface in your CI, not in somebody else's install preview. `--json`
+emits a versioned report for machines. The scaffolded workflow runs
+exactly this on each push and pull request.
+
+## Publishing
+
+Push the repository to GitHub, make it public, and submit it — from the
+app (Mine → Submit to community…) or at [kendex.ai/submit](https://kendex.ai/submit).
+kendex.ai verifies your push authority over the repository, indexes it,
+and lists it. The listing follows the repository id, so renaming the
+repository later keeps the listing; deleting and recreating it does not.
