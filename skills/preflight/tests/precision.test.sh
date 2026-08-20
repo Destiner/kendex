@@ -95,6 +95,7 @@ set -euo pipefail
 # Placeholders and globs are fragments: docs/<area>/file.md, docs/*.md.
 # Interpolations too: $DOCS_ROOT/gone.md, ${DOCS}/gone.md, {docs_root}/gone.md.
 # Another repo layout is not ours: notes/gone.md has no directory here.
+# A repo-qualified citation names a sibling checkout: kendex:docs/gone.md.
 MSG="a quoted path is data, not a citation: docs/gone.md"
 DOC='docs/gone.md'
 echo "$MSG" "$DOC"
@@ -186,13 +187,15 @@ echo "=== control: the same fixture still fails on a real defect ==="
 printf 'And a citation that is dead: `docs/gone.md`.\n' >>"$R/README.md"
 printf 'Hardened per qodo review.\n' >>"$R/README.md"
 printf '# and a source line whose citation is dead: docs/gone.md\n' >>"$R/scripts/cites.sh"
+printf '# and a line-qualified local citation is still judged: docs/gone.md:42\n' >>"$R/scripts/cites.sh"
 printf '#!/usr/bin/env bash\nset -euo pipefail\nD="$(mktemp -d)"\necho "$D"\n' >"$R/scripts/notrap.sh"
 printf '#!/usr/bin/env bash\nset -euo pipefail\necho x\ngit rev-parse --git-dir >/dev/null || true\n' >"$R/scripts/swallow.sh"
 printf '#!/usr/bin/env bash\nset -euo pipefail\necho orphan\n' >"$R/tests/orphan.test.sh"
 git -C "$R" add -A
 run_pf
 fires "the benign fixture is not clean because nothing ran" "README.md:24: [docs-cited-paths] cites a path that does not exist: docs/gone.md"
-fires "the benign source file is not clean because nothing ran" "scripts/cites.sh:11: [docs-cited-paths] cites a path that does not exist: docs/gone.md"
+fires "the benign source file is not clean because nothing ran" "scripts/cites.sh:12: [docs-cited-paths] cites a path that does not exist: docs/gone.md"
+fires "a line-suffixed local citation is not mistaken for a repo qualifier" "scripts/cites.sh:13: [docs-cited-paths] cites a path that does not exist: docs/gone.md"
 fires "the same benign bot mentions do not shield a real credit beside them" "README.md:25: [reviewer-attribution]"
 fires "the trapped scratch dir beside it does not shield an untrapped one" "scripts/notrap.sh:3: [mktemp-trap]"
 fires "the captured status beside it does not shield a swallowed one" "scripts/swallow.sh:4: [fail-open] git || true swallows exit 2"
