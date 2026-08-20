@@ -2143,7 +2143,7 @@ dependencies = [
 
 [[package]]
 name = "kendex-app"
-version = "5.0.0"
+version = "5.0.1"
 dependencies = [
  "kendex-core",
  "serde",
@@ -2160,7 +2160,7 @@ dependencies = [
 
 [[package]]
 name = "kendex-cli"
-version = "5.0.0"
+version = "5.0.1"
 dependencies = [
  "clap",
  "kendex-core",
@@ -2170,7 +2170,7 @@ dependencies = [
 
 [[package]]
 name = "kendex-core"
-version = "5.0.0"
+version = "5.0.1"
 dependencies = [
  "dirs",
  "fd-lock",

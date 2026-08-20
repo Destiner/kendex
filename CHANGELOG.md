@@ -4,6 +4,19 @@ Notable changes, per [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Entries are written when a change lands, not batched at release. Breaking
 changes carry a **Breaking** call-out with their migration note inline.
 
+## [5.0.1] — 2026-08-20
+
+### Fixed
+
+- Hardening from the release review: a collection link can no longer
+  point kendex at a local directory (a member repository must be a
+  GitHub `owner/repo`); a reused subscription installs the exact commit
+  the collection pinned rather than the current branch head; a
+  momentary network problem while refreshing your kendex.ai sign-in no
+  longer signs you out; and the submit preflight's "everything is
+  pushed" check now measures against the repository you're actually
+  submitting.
+
 ## [5.0.0] — 2026-08-20
 
 The first kendex release — the successor to vstack v4. The version
