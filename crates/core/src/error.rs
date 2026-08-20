@@ -321,6 +321,11 @@ pub enum CoreError {
     /// taken — the loud exit-2 state, never a silent pass.
     #[error("{check}: {message}")]
     Guard { check: String, message: String },
+
+    /// An authoring operation refused; the message is the whole sentence,
+    /// including what to do instead.
+    #[error("{message}")]
+    Authoring { message: String },
 }
 
 impl CoreError {
