@@ -2,6 +2,8 @@
 
 User-initiated research: scope the question, gather prior work, then hand off to `research-issue`.
 
+Reach for this only when the research is **delegated** — standalone tracked work the researcher agent runs, or with `auto_execute: false` prepares for later pickup — because it is too large for the session that needs it. Research a planning session can do now is done there (roadmap-plan § 1's inline option), its findings written to disk and cited; it never becomes an issue.
+
 ## 1. Scope the Question
 
 Ask in plain text: **"What research are you conducting?"** Expect a 1-2 sentence description.
@@ -30,7 +32,7 @@ On a match, read `[RESEARCH_DOCS_PATH]/[ISSUE_ID]/findings.md` and extract its f
 
 Type follows domain count: one domain is Targeted, two or more Pervasive. Strategic (initiative-level, 10+ issues) requires the user to say so.
 
-Run `⤵ workflows/research-issue.md § 1-5 → § 4` with `topic` (§ 1), `questions` (§ 1), `domains` (§ 2), `project` (above), `type`, `prior_research` (§ 2, or empty), and no `blocked_issue` — a spike has no blocker.
+Run `⤵ workflows/research-issue.md § 1-5 → § 4` with `topic` (§ 1), `questions` (§ 1), `domains` (§ 2), `project` (above), `type`, `prior_research` (§ 2, or empty), `auto_execute` as the caller passed it (roadmap-plan § 1 always passes it; a standalone spike defaults to true), and no `blocked_issue` — a spike has no blocker.
 
 ## 4. Report
 
