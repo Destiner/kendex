@@ -72,80 +72,70 @@ pub enum MarketplaceCommand {
         /// The marketplace directory (default: the current directory)
         dir: Option<std::path::PathBuf>,
     },
-}
-
-type BrowseRow = (
-    kendex_core::model::Scope,
-    String,
-    kendex_core::source::browse::AvailablePackage,
-);
-
-fn run_browse(
-    env: &Env,
-    marketplace: Option<String>,
-    json: bool,
-    global: bool,
-    scope: Option<String>,
-    community: bool,
-) -> CliResult {
-    if community {
-        return Err(
-            "the community directory is not available yet — it arrives with the kendex.ai platform; browse a subscription by name for now"
-                .into(),
-        );
-    }
-    let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::All)?;
-    let mut rows: Vec<BrowseRow> = Vec::new();
-    for scope in resolve_scopes(env, filter)? {
-        let names: Vec<String> = match &marketplace {
-            Some(name) => vec![name.clone()],
-            None => source_ops::list_subscriptions(env, &scope)?
-                .into_iter()
-                .map(|row| row.name)
-                .collect(),
-        };
-        for name in names {
-            // A subscription that will not open costs its own rows, not the
-            // whole listing — the same tolerance the app's overview shows.
-            let Ok(packages) = kendex_core::source::browse::packages(env, &scope, &name) else {
-                continue;
-            };
-            for package in packages {
-                rows.push((scope.clone(), name.clone(), package));
-            }
-        }
-    }
-    if json {
-        let items: Vec<_> = rows
-            .iter()
-            .map(|(scope, marketplace, package)| {
-                serde_json::json!({
-                    "scope": scope.label(),
-                    "marketplace": marketplace,
-                    "package": package,
-                })
-            })
-            .collect();
-        out(&serde_json::to_string_pretty(&serde_json::json!({
-            "schema": 1,
-            "packages": items,
-        }))?);
-        return Ok(());
-    }
-    for (scope, marketplace, package) in rows {
-        let description = package
-            .description
-            .map(|d| format!("  — {d}"))
-            .unwrap_or_default();
-        out(&format!(
-            "{}  {marketplace}::{}  ({}) [{}]{description}",
-            scope.label(),
-            package.name,
-            package.kind.name(),
-            install_state(&package.state),
-        ));
-    }
-    Ok(())
+    /// Create a marketplace: a folder with kendex.toml, README, the check
+    /// workflow and a licence, initialised as a git repository
+    New {
+        name: String,
+        #[arg(long)]
+        description: Option<String>,
+        /// Defaults to `git config user.name`
+        #[arg(long)]
+        author: Option<String>,
+        /// mit | apache-2.0 | none (default none — valid locally, blocks
+        /// submission until chosen)
+        #[arg(long)]
+        license: Option<String>,
+        /// Where to create it (default: ./<name>)
+        #[arg(long)]
+        dir: Option<std::path::PathBuf>,
+    },
+    /// Register a folder you already have under Mine, read as-is — zero
+    /// bytes inside it change
+    Use { dir: std::path::PathBuf },
+    /// The marketplaces you author, with their local readiness
+    Mine {
+        /// Machine-readable rows (schema 1)
+        #[arg(long)]
+        json: bool,
+    },
+    /// Copy packages from this machine into an authored marketplace. With
+    /// no selections, lists every candidate and where its bytes live.
+    Import {
+        /// The authored marketplace directory to copy into
+        target: std::path::PathBuf,
+        #[arg(long = "skill")]
+        skills: Vec<String>,
+        #[arg(long = "agent")]
+        agents: Vec<String>,
+        #[arg(long = "hook")]
+        hooks: Vec<String>,
+        #[arg(long = "command")]
+        commands: Vec<String>,
+        #[arg(long = "mcp")]
+        mcp: Vec<String>,
+        /// project | global | all (default all) — where candidates come from
+        #[arg(long)]
+        from_scope: Option<String>,
+        /// When one name exists with different bytes in several places:
+        /// the hash (prefix) of the origin to copy
+        #[arg(long)]
+        origin: Option<String>,
+        /// Destination name when the original would be refused (one
+        /// selection only)
+        #[arg(long = "as")]
+        rename: Option<String>,
+        /// Confirm the shown licence of a marketplace-origin package
+        /// permits republishing
+        #[arg(long)]
+        confirm_license: bool,
+        /// Marketplace-origin with no detectable licence: your stated
+        /// basis for copying
+        #[arg(long)]
+        license_basis: Option<String>,
+        /// Machine-readable candidate list (schema 1)
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn run_unsubscribe(
@@ -193,15 +183,73 @@ fn run_unsubscribe(
     Ok(())
 }
 
-fn install_state(state: &kendex_core::source::browse::InstallState) -> &'static str {
-    use kendex_core::source::browse::InstallState;
-    match state {
-        InstallState::Installed => "installed",
-        InstallState::Available => "available",
-        InstallState::HeldBackBySafety => "held back by safety",
-        InstallState::NotOffered => "no longer offered",
-        InstallState::RemovedByYou => "removed by you",
+fn run_list(env: &Env, json: bool, global: bool, scope: Option<String>) -> CliResult {
+    let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::All)?;
+    let mut rows = Vec::new();
+    for scope in resolve_scopes(env, filter)? {
+        rows.extend(source_ops::list_subscriptions(env, &scope)?);
     }
+    if json {
+        out(&serde_json::to_string_pretty(&serde_json::json!({
+            "schema": 1,
+            "subscriptions": rows,
+        }))?);
+        return Ok(());
+    }
+    for row in rows {
+        let what = row.repo.or(row.path).unwrap_or_default();
+        let rev = row.rev.map(|rev| format!(" @ {rev}")).unwrap_or_default();
+        let counted = match row.counts {
+            Some(counts) => {
+                let total: usize = counts.values().sum();
+                format!("{total} package(s)")
+            }
+            None => "not fetched yet".to_owned(),
+        };
+        let state = if row.enabled { "" } else { "  (disabled)" };
+        out(&format!(
+            "{}  {}  {what}{rev}  [{counted}]{state}",
+            row.scope.label(),
+            row.name,
+        ));
+    }
+    Ok(())
+}
+
+fn run_subscribe(
+    env: &Env,
+    reference: &str,
+    name: Option<&str>,
+    global: bool,
+    scope: Option<String>,
+) -> CliResult {
+    let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::Project)?;
+    let scope = resolve_scopes(env, filter)?.remove(0);
+    let subscribed = source_ops::subscribe(env, &scope, reference, name)?;
+    for note in &subscribed.report.notes {
+        say(note);
+    }
+    kendex_core::apply::execute(env, &subscribed.report.plan, None)?;
+    // Subscribing fetches so counts can land; a failure costs the
+    // counts, never the subscription.
+    if let Ok(Some(manifest)) =
+        kendex_core::manifest::load_for_mutation(&kendex_core::manifest::manifest_path(env, &scope))
+        && let Some(decl) = manifest.sources.get(&subscribed.name)
+        && let Some(repo) = decl.repo.clone()
+        && let Err(error) = kendex_core::remote::sync(env, &repo, decl.rev.as_deref())
+    {
+        say(&format!("warning: not fetched yet ({error})"));
+    }
+    say(&format!(
+        "{}: subscribed to '{}' ({})",
+        scope.label(),
+        subscribed.name,
+        subscribed.reference
+    ));
+    if let Some(lead) = subscribed.lead {
+        say(&format!("package: {lead}"));
+    }
+    Ok(())
 }
 
 pub fn run(env: &Env, command: MarketplaceCommand) -> CliResult {
@@ -210,70 +258,13 @@ pub fn run(env: &Env, command: MarketplaceCommand) -> CliResult {
             json,
             global,
             scope,
-        } => {
-            let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::All)?;
-            let mut rows = Vec::new();
-            for scope in resolve_scopes(env, filter)? {
-                rows.extend(source_ops::list_subscriptions(env, &scope)?);
-            }
-            if json {
-                out(&serde_json::to_string_pretty(&serde_json::json!({
-                    "schema": 1,
-                    "subscriptions": rows,
-                }))?);
-                return Ok(());
-            }
-            for row in rows {
-                let what = row.repo.or(row.path).unwrap_or_default();
-                let rev = row.rev.map(|rev| format!(" @ {rev}")).unwrap_or_default();
-                let counted = match row.counts {
-                    Some(counts) => {
-                        let total: usize = counts.values().sum();
-                        format!("{total} package(s)")
-                    }
-                    None => "not fetched yet".to_owned(),
-                };
-                let state = if row.enabled { "" } else { "  (disabled)" };
-                out(&format!(
-                    "{}  {}  {what}{rev}  [{counted}]{state}",
-                    row.scope.label(),
-                    row.name,
-                ));
-            }
-        }
+        } => run_list(env, json, global, scope)?,
         MarketplaceCommand::Subscribe {
             reference,
             name,
             global,
             scope,
-        } => {
-            let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::Project)?;
-            let scope = resolve_scopes(env, filter)?.remove(0);
-            let subscribed = source_ops::subscribe(env, &scope, &reference, name.as_deref())?;
-            for note in &subscribed.report.notes {
-                say(note);
-            }
-            kendex_core::apply::execute(env, &subscribed.report.plan, None)?;
-            // Subscribing fetches so counts can land; a failure costs the
-            // counts, never the subscription.
-            if let Ok(Some(manifest)) = kendex_core::manifest::load_for_mutation(
-                &kendex_core::manifest::manifest_path(env, &scope),
-            ) && let Some(decl) = manifest.sources.get(&subscribed.name)
-                && let Some(repo) = decl.repo.clone()
-                && let Err(error) = kendex_core::remote::sync(env, &repo, decl.rev.as_deref())
-            {
-                say(&format!("warning: not fetched yet ({error})"));
-            }
-            say(&format!(
-                "{}: subscribed to '{}' ({})",
-                scope.label(),
-                subscribed.name,
-                subscribed.reference
-            ));
-            if let Some(lead) = subscribed.lead {
-                say(&format!("package: {lead}"));
-            }
-        }
+        } => run_subscribe(env, &reference, name.as_deref(), global, scope)?,
         MarketplaceCommand::Unsubscribe {
             name,
             remove_packages,
@@ -296,7 +287,9 @@ pub fn run(env: &Env, command: MarketplaceCommand) -> CliResult {
             global,
             scope,
             community,
-        } => run_browse(env, marketplace, json, global, scope, community)?,
+        } => {
+            super::marketplace_browse::run_browse(env, marketplace, json, global, scope, community)?
+        }
         MarketplaceCommand::Check { dir } => {
             let dir = match dir {
                 Some(dir) => dir,
@@ -304,6 +297,45 @@ pub fn run(env: &Env, command: MarketplaceCommand) -> CliResult {
             };
             super::check_catalog::run(&dir, true, false)?;
         }
+        MarketplaceCommand::New {
+            name,
+            description,
+            author,
+            license,
+            dir,
+        } => super::marketplace_author::new(env, &name, description, author, license, dir)?,
+        MarketplaceCommand::Use { dir } => super::marketplace_author::use_existing(env, &dir)?,
+        MarketplaceCommand::Mine { json } => super::marketplace_author::mine(env, json)?,
+        MarketplaceCommand::Import {
+            target,
+            skills,
+            agents,
+            hooks,
+            commands,
+            mcp,
+            from_scope,
+            origin,
+            rename,
+            confirm_license,
+            license_basis,
+            json,
+        } => super::marketplace_author::import(
+            env,
+            super::marketplace_author::ImportArgs {
+                target,
+                skills,
+                agents,
+                hooks,
+                commands,
+                mcp,
+                from_scope,
+                origin,
+                rename,
+                confirm_license,
+                license_basis,
+                json,
+            },
+        )?,
     }
     Ok(())
 }
