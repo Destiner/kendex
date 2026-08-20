@@ -5,7 +5,10 @@ commands, MCP servers, plugins, and Pi extensions — across Claude Code,
 Codex, OpenCode, Cursor, Pi, Gemini CLI, and GitHub Copilot, personally and
 per-project.
 
-Desktop app + CLI over one engine.
+Desktop app + CLI over one engine, with a community at
+[kendex.ai](https://kendex.ai).
+
+![kendex](docs/img/tour.gif)
 
 ## Features
 
@@ -29,7 +32,23 @@ Desktop app + CLI over one engine.
   instructions, per-tool settings; no config editing.
 - **Adopt** — bring hand-made files under management without rewriting
   them.
-- **Self-updating** app and CLI, with v1 migration built in.
+- **Self-updating** app and CLI, with v1 (vstack) migration built in.
+- **Marketplaces** — subscribe to any repository that holds skills (no
+  special format needed: skills.sh-style repos, Claude plugin
+  registries, or plain folders all work), browse what it offers with a
+  safety check on every package, and install with one preview.
+- **Community** — the [kendex.ai](https://kendex.ai) directory and the
+  whole skills.sh index, searchable inside the app; offline it degrades
+  to your cached copy, never a blank page.
+- **Build and publish your own** — the Mine tab scaffolds a
+  ready-to-publish marketplace repo, imports packages you already have
+  (with licence checks on anything that came from someone else's
+  marketplace), runs the same validation installing runs, and submits
+  to the community directory after verifying you can actually push to
+  the repository.
+- **Collections** — share a curated set across repositories with one
+  link; `kendex add https://kendex.ai/c/<id>` installs the whole set at
+  the exact commits the link resolved to.
 
 ## What's supported
 
@@ -97,7 +116,11 @@ lives only in `kendex.toml`.
 
 ## Install
 
-Build from source (Rust + Node required):
+Download the app or CLI for your platform from the
+[latest release](https://github.com/vanillagreencom/kendex/releases/latest)
+— or from [kendex.ai/download](https://kendex.ai/download).
+
+Or build from source (Rust + Node required):
 
 ```sh
 cargo build --release -p kendex-cli               # the `kendex` CLI
@@ -151,3 +174,19 @@ regenerates everything.
 
 Scopes: `--scope project|global|all` (v1-compatible aliases `p/local`,
 `g/user`, `both/*`), `-g` as a shortcut for global.
+
+## Marketplaces and the community
+
+| Verb | Does |
+|---|---|
+| `marketplace subscribe/unsubscribe/list/browse` | point a scope at any catalog repo; leave keeping or removing its packages |
+| `marketplace new/use/mine/import` | build your own marketplace: scaffold, register an existing folder as-is, copy packages you already have |
+| `marketplace check` (or `check --catalog . --strict`) | validate every package the way installing validates it — the scaffolded CI workflow runs exactly this |
+| `marketplace submit [--dry-run/--status]` | preflight + submit to the kendex.ai directory (verifies your push authority first) |
+| `login` / `logout` | sign in to kendex.ai with a code and a browser tab; the credential lives in your system keychain |
+| `add https://kendex.ai/c/<id>` | install a shared collection — every repo, every member, one preview |
+
+Authoring a marketplace repo is one page: [docs/AUTHORING.md](docs/AUTHORING.md)
+(also rendered inside the app). This repository doubles as the default
+catalog — the `agents/`, `skills/`, `hooks/` and `pi-extensions/`
+directories at its root are what a fresh kendex install offers.
