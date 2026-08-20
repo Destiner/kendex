@@ -236,7 +236,9 @@ pub fn add_source(env: &Env, scope: &Scope, name: &str, reference: &str) -> Resu
     Ok(subscribe(env, scope, reference, Some(name))?.report)
 }
 
+mod collection;
 mod subscribe;
+pub use collection::{CollectionStep, SourceAction, collection_steps};
 pub use subscribe::{Subscribed, install_project_from_personal, subscribe, subscribe_project_to};
 
 pub fn remove_source(env: &Env, scope: &Scope, name: &str) -> Result<EngineReport> {

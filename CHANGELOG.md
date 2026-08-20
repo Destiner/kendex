@@ -39,6 +39,15 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- Collections: share a curated set of packages across repositories with
+  one link. Create it at kendex.ai/collections; anyone with the link
+  runs `kendex add https://kendex.ai/c/<id>` and gets one preview that
+  subscribes each repository and installs each member — at the exact
+  commits the link resolved to, recorded in the lock, so later
+  refreshes never need kendex.ai and deleting the collection only stops
+  new installs. A repository you already subscribe to is reused when
+  its revision matches the snapshot; when it doesn't, kendex refuses
+  with both sides named rather than silently re-pinning what you have.
 - Publish what you build. A Mine row's "Submit to community…" walks a
   preflight (check passes, licence, git state, everything pushed, the
   repository visible to the world — each row honest about what this

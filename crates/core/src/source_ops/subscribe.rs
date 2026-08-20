@@ -56,6 +56,13 @@ pub fn subscribe(
             },
             None,
         ),
+        crate::source_ref::SourceRef::Collection { .. } => {
+            return Err(CoreError::SourceRefInvalid {
+                reference: reference.to_owned(),
+                reason: "a collection link is a set across repositories — install it with `kendex add <link>`"
+                    .to_owned(),
+            });
+        }
         crate::source_ref::SourceRef::SkillsSh { repo, package } => (
             SourceDecl {
                 repo: Some(repo),

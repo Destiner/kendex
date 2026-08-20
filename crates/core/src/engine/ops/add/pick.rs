@@ -54,6 +54,13 @@ pub(super) fn ensure_source(manifest: &mut Manifest, requested: Option<&str>) ->
                         .to_owned(),
             });
         }
+        crate::source_ref::SourceRef::Collection { .. } => {
+            return Err(CoreError::SourceRefInvalid {
+                reference: requested.to_owned(),
+                reason: "a collection link installs its whole set — pass it to `kendex add` with nothing else"
+                    .to_owned(),
+            });
+        }
     };
     let reference = decl
         .repo

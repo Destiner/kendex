@@ -41,6 +41,9 @@ pub enum SourceRef {
     /// A skills.sh package URL: the repository, plus the package the
     /// person was looking at.
     SkillsSh { repo: String, package: String },
+    /// A kendex.ai collection link: one unlisted id that resolves to a
+    /// set of repositories and packages.
+    Collection { id: String },
 }
 
 fn refuse<T>(reference: &str, reason: impl Into<String>) -> Result<T> {
@@ -70,6 +73,9 @@ pub fn parse_typed(reference: &str) -> Result<SourceRef> {
         }
         if let Some(path) = rest.strip_prefix("skills.sh/") {
             return parse_skills_sh_url(reference, path);
+        }
+        if let Some(path) = rest.strip_prefix("kendex.ai/") {
+            return parse_collection_url(reference, path);
         }
         return remote_url(reference);
     }
@@ -266,6 +272,33 @@ fn parse_skills_sh_url(reference: &str, path: &str) -> Result<SourceRef> {
         repo: format!("{owner}/{repo}"),
         package: package.clone(),
     })
+}
+
+/// The path half of a `kendex.ai` URL. Only `/c/<id>` names something a
+/// reference can be — the id shape is pinned to what the site mints, so
+/// anything else refuses before a request is ever built from it.
+fn parse_collection_url(reference: &str, path: &str) -> Result<SourceRef> {
+    let segments = decode_segments(reference, path)?;
+    let [kind, id] = segments.as_slice() else {
+        return refuse(
+            reference,
+            "not a collection link — expected kendex.ai/c/<id>",
+        );
+    };
+    if kind != "c" {
+        return refuse(
+            reference,
+            "not a collection link — expected kendex.ai/c/<id>",
+        );
+    }
+    if id.len() != 16
+        || !id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+    {
+        return refuse(reference, "not a collection id kendex.ai mints");
+    }
+    Ok(SourceRef::Collection { id: id.clone() })
 }
 
 /// A URL path as validated segments: split on `/`, each percent-decoded

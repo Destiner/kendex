@@ -45,6 +45,15 @@ pub fn run(env: &Env, args: AddArgs) -> CliResult {
     };
     let scope = resolve_scopes(env, filter)?.remove(0);
 
+    // A collection link is a whole install of its own: the set the link
+    // resolves to, never mixed with item flags.
+    if let Some(reference) = &args.source
+        && let Ok(kendex_core::source_ref::SourceRef::Collection { id }) =
+            kendex_core::source_ref::parse_typed(reference)
+    {
+        return super::add_collection::run(env, &scope, &id, args.yes);
+    }
+
     let agents = split(&args.agent);
     let skills = split(&args.skill);
     let hooks = split(&args.hook);
