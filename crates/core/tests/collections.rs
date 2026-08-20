@@ -116,12 +116,13 @@ fn member(repo: &str, name: &str, commit: Option<&str>) -> CollectionMember {
     }
 }
 
+#[allow(clippy::unwrap_used)]
 fn scoped(manifest: &str) -> (tempfile::TempDir, Env, Scope) {
-    let tmp = tempfile::tempdir().expect("tempdir");
+    let tmp = tempfile::tempdir().unwrap();
     let env = Env::fake(tmp.path(), FakeOs::Linux);
     let project = tmp.path().join("app");
-    fs::create_dir_all(&project).expect("project dir");
-    fs::write(project.join("kendex.toml"), manifest).expect("manifest");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(project.join("kendex.toml"), manifest).unwrap();
     (tmp, env, Scope::Project { root: project })
 }
 
@@ -242,4 +243,19 @@ fn one_repo_pinned_at_two_commits_is_not_a_snapshot() {
         .unwrap_err()
         .to_string();
     assert!(refused.contains("two different commits"), "{refused}");
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_member_repo_cannot_be_a_filesystem_path() {
+    for repo in ["../.ssh", "..", "./x", "/etc", ".hidden/repo"] {
+        let body = format!(
+            r#"{{"schema":1,"id":"aB3-_dEf12345678","name":"n","members":[{{"repo":"{repo}","kind":"skill","name":"x","commit":"ab12cd34ef12345678901234567890123456abcd"}}]}}"#
+        );
+        let fetch = canned(200, &body);
+        assert!(
+            resolve(&fetch, "aB3-_dEf12345678").is_err(),
+            "member repo '{repo}' must be refused"
+        );
+    }
 }

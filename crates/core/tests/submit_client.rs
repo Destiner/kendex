@@ -188,3 +188,23 @@ fn submissions_parse_the_versioned_rows() {
         Some("description missing")
     );
 }
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_transient_refresh_failure_keeps_the_credential() {
+    // 401 on the call, then the refresh endpoint answers 503 (server down)
+    // — a transient failure must not sign the machine out.
+    let fetch = Canned::new(vec![
+        (401, r#"{"error":"invalid_token"}"#),
+        (503, r#"{"error":"upstream unavailable"}"#),
+    ]);
+    let store = MemoryStore::signed_in();
+    let refused = submit(&fetch, &store, "jane/skills")
+        .unwrap_err()
+        .to_string();
+    assert!(!refused.contains("run `kendex login`"), "{refused}");
+    assert!(
+        store.load().unwrap().is_some(),
+        "a transient refresh failure must keep the credential"
+    );
+}

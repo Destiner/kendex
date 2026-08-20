@@ -41,8 +41,6 @@ function gitLine(row: MineRowData): string {
   return parts.join(" · ");
 }
 
-/** One authored marketplace: what kendex found in the folder, what the
- * check says, what git says — and the actions that grow it. */
 /** What a submission status reads as on the row. */
 function submissionLine(submission: SubmissionRow): string {
   switch (submission.status) {
@@ -61,6 +59,8 @@ function submissionLine(submission: SubmissionRow): string {
   }
 }
 
+/** One authored marketplace: what kendex found in the folder, what the
+ * check says, what git says — and the actions that grow it. */
 export function MineRowCard({
   row,
   submission,

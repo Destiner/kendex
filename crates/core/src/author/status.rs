@@ -132,7 +132,17 @@ fn git_readiness(path: &Path) -> GitReadiness {
     }
     let porcelain = git_line(path, &["status", "--porcelain"]);
     let remote = git_line(path, &["remote", "get-url", "origin"]).filter(|url| !url.is_empty());
-    let ahead = git_line(path, &["rev-list", "--count", "@{upstream}..HEAD"])
+    // Submission sends `origin`, so "ahead" must measure against origin's
+    // copy of this branch — not `@{upstream}`, which on a fork tracks the
+    // upstream and would call a branch pushed to origin's fork clean while
+    // origin has none of its commits.
+    let ahead = git_line(path, &["symbolic-ref", "--short", "HEAD"])
+        .and_then(|branch| {
+            git_line(
+                path,
+                &["rev-list", "--count", &format!("origin/{branch}..HEAD")],
+            )
+        })
         .and_then(|count| count.parse::<u32>().ok());
     GitReadiness {
         repository: true,

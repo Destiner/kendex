@@ -183,6 +183,10 @@ fn curl_quote(value: &str) -> String {
             '"' => quoted.push_str("\\\""),
             '\\' => quoted.push_str("\\\\"),
             '\n' => quoted.push_str("\\n"),
+            // A bare carriage return would end the config line, letting a
+            // header value smuggle a second header — escape it too, even
+            // though every value we send today is control-char-free.
+            '\r' => quoted.push_str("\\r"),
             _ => quoted.push(ch),
         }
     }

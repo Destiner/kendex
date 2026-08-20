@@ -103,24 +103,29 @@ fn with_access(
             return Ok(retried);
         }
     }
-    let pair = refresh(fetch, &credential.refresh_token).map_err(|error| {
-        // The refresh being refused means this sign-in is over (revoked,
-        // expired, or its family burned) — the stale credential is cleared
-        // so the next attempt asks for a fresh login instead of retrying a
-        // dead one forever. Cleared only while it is still the credential
-        // we presented: a concurrent process's fresh rotation must survive.
-        let ours = store
-            .load()
-            .ok()
-            .flatten()
-            .is_none_or(|kept| kept.refresh_token == credential.refresh_token);
-        if ours {
-            let _ = store.clear();
+    let pair = match refresh(fetch, &credential.refresh_token) {
+        Ok(pair) => pair,
+        // Only the server definitively refusing (a 4xx) means the sign-in
+        // is over — a network failure or a 5xx is transient and must not
+        // sign the machine out. The definitive case clears the stale
+        // credential so the next attempt asks for a fresh login instead of
+        // retrying a dead one forever, and only while it is still the token
+        // we presented — a concurrent process's fresh rotation must survive.
+        Err(Refused::Definitive(why)) => {
+            let ours = store
+                .load()
+                .ok()
+                .flatten()
+                .is_none_or(|kept| kept.refresh_token == credential.refresh_token);
+            if ours {
+                let _ = store.clear();
+            }
+            return Err(CoreError::Authoring {
+                message: format!("your sign-in has expired ({why}) — run `kendex login` again"),
+            });
         }
-        CoreError::Authoring {
-            message: format!("your sign-in has expired ({error}) — run `kendex login` again"),
-        }
-    })?;
+        Err(Refused::Transient(error)) => return Err(error),
+    };
     let rotated = Credential {
         endpoint: base_url(),
         access_token: pair.access_token,
@@ -138,20 +143,36 @@ fn with_access(
     Ok(second)
 }
 
-fn refresh(fetch: &dyn Fetch, refresh_token: &str) -> Result<TokenPair> {
+/// Why a refresh did not yield a token — the two cases the caller must
+/// treat differently.
+enum Refused {
+    /// The server refused this token (4xx): the sign-in is over.
+    Definitive(String),
+    /// Network away, or a 5xx: retry later, keep the credential.
+    Transient(CoreError),
+}
+
+fn refresh(fetch: &dyn Fetch, refresh_token: &str) -> std::result::Result<TokenPair, Refused> {
     let body = serde_json::json!({
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
     })
     .to_string();
-    let response = fetch.post_json(&format!("{}/api/v1/device/token", base_url()), &body)?;
-    if response.status != 200 {
-        return Err(CoreError::RegistryUnavailable {
-            why: server_message(&response),
-        });
+    let response = fetch
+        .post_json(&format!("{}/api/v1/device/token", base_url()), &body)
+        .map_err(Refused::Transient)?;
+    if (400..500).contains(&response.status) {
+        return Err(Refused::Definitive(server_message(&response)));
     }
-    serde_json::from_slice(&response.body).map_err(|error| CoreError::RegistryMalformed {
-        why: error.to_string(),
+    if response.status != 200 {
+        return Err(Refused::Transient(CoreError::RegistryUnavailable {
+            why: server_message(&response),
+        }));
+    }
+    serde_json::from_slice(&response.body).map_err(|error| {
+        Refused::Transient(CoreError::RegistryMalformed {
+            why: error.to_string(),
+        })
     })
 }
 

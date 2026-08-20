@@ -92,7 +92,15 @@ pub fn resolve(fetch: &dyn Fetch, id: &str) -> Result<Collection> {
 
 fn validated(member: WireMember) -> Result<CollectionMember> {
     let refuse = |why: String| CoreError::RegistryMalformed { why };
-    let repo_ok = {
+    // A member repo is untrusted content, not something the person typed:
+    // it must be a GitHub `owner/repo`, never a filesystem path. The
+    // untrusted parser refuses `..`, a leading `.`, absolute paths and URLs
+    // — exactly the traversal a hostile resolver would try to smuggle
+    // through as a "repo".
+    let repo_ok = matches!(
+        crate::source_ref::parse_untrusted(&member.repo),
+        Ok(crate::source_ref::SourceRef::Remote { rev: None, .. })
+    ) && {
         let mut split = member.repo.split('/');
         let owner = split.next().unwrap_or_default();
         let name = split.next().unwrap_or_default();
@@ -100,7 +108,7 @@ fn validated(member: WireMember) -> Result<CollectionMember> {
     };
     if !repo_ok {
         return Err(refuse(format!(
-            "'{}' is not owner/repo",
+            "'{}' is not a GitHub owner/repo",
             capped(&member.repo)
         )));
     }
@@ -150,6 +158,10 @@ fn validated(member: WireMember) -> Result<CollectionMember> {
 fn segment_ok(segment: &str) -> bool {
     !segment.is_empty()
         && segment.len() <= 100
+        // A leading dot is how a path segment hides — GitHub names start
+        // with an alphanumeric, and requiring that closes `.`, `..` and
+        // dotfile spellings in one rule.
+        && segment.starts_with(|c: char| c.is_ascii_alphanumeric())
         && segment
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
