@@ -1,0 +1,148 @@
+{
+  "name": "@vanillagreen/pi-hooks",
+  "version": "0.4.0",
+  "description": "First-class Pi port of the kendex safety hooks: bare-cd blocking, pre-commit fmt+clippy, post-edit clippy, end-of-turn lint, session-start kendex drift report. Per-hook toggles via pi-extension-manager.",
+  "license": "MIT",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "coding-agent",
+    "hooks",
+    "safety",
+    "lint"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/hooks.ts"
+    ]
+  },
+  "scripts": {
+    "test": "bun test ./tests"
+  },
+  "kendex": {
+    "extensionManager": {
+      "displayName": "Hooks",
+      "settings": [
+        {
+          "key": "enabled",
+          "label": "Enable hooks",
+          "description": "Master toggle for all pi-hooks safety checks. Disable to make the extension inert without uninstalling.",
+          "type": "boolean",
+          "default": true,
+          "category": "General",
+          "apply": "live"
+        },
+        {
+          "key": "blockBareCd",
+          "label": "Block bare cd",
+          "description": "Block bash commands consisting of a bare `cd /path` (no subshell, no `&&` chain). A bare cd permanently changes the agent's working directory across tool calls, which leaks state between unrelated tools. Use `(cd /path && command)` instead.",
+          "type": "boolean",
+          "default": true,
+          "category": "Bash",
+          "apply": "live"
+        },
+        {
+          "key": "blockRepoCopy",
+          "label": "Block repo copy into scratch",
+          "description": "Refuse a recursive copy (`cp -r`/`-R`/`-a`, recursive or archive `rsync`, `git clone` of a local path, `tar` create-to-extract pipe) when the source carries repository history or a build tree AND the destination resolves under a temp/scratch root (`/tmp`, `/var/tmp`, `$TMPDIR`, `$CLAUDE_CODE_TMPDIR`, a `mktemp -d`, or any path containing `scratchpad`). Temp roots are commonly RAM-backed tmpfs, where such a copy fills the filesystem and every process writing there fails with ENOSPC. Both halves of the predicate are required, so an expensive tree copied elsewhere and an ordinary directory copied into scratch both pass. Mirrors hooks/block-repo-copy.sh.",
+          "type": "boolean",
+          "default": true,
+          "category": "Bash",
+          "apply": "live"
+        },
+        {
+          "key": "preCommitCheck",
+          "label": "Pre-commit fmt + clippy",
+          "description": "When the agent runs `git commit` in the project repo, run `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D warnings` first using async child processes. Block the commit if either fails. Skips commits targeting other repos and only fires when staged or modified .rs files exist; if the bash command contains `git add`, untracked .rs files are treated conservatively as possibly staged by that command. Cost: only paid at commit time.",
+          "type": "boolean",
+          "default": true,
+          "category": "Bash",
+          "apply": "live"
+        },
+        {
+          "key": "postEditLint",
+          "label": "Post-edit clippy",
+          "description": "After every edit/write of a .rs file, run `cargo clippy --workspace --all-targets -- -D warnings` and append any issues that mention the edited file to the tool result. Advisory only \u2014 does not undo the edit. Cost: full workspace clippy on every Rust edit.",
+          "type": "boolean",
+          "default": true,
+          "category": "Rust",
+          "apply": "live"
+        },
+        {
+          "key": "taskCompletedCheck",
+          "label": "End-of-turn clippy",
+          "description": "At turn end, if any .rs files were touched during the turn, run a final `cargo clippy --workspace --all-targets -- -D warnings` and surface workspace errors via a UI notification. Pi has no equivalent of Claude Code's `TaskCompleted` block semantics, so this is advisory.",
+          "type": "boolean",
+          "default": true,
+          "category": "Rust",
+          "apply": "live"
+        },
+        {
+          "key": "sessionDriftCheck",
+          "label": "Session-start drift report",
+          "description": "On a fresh session start (startup, new, fork \u2014 not resume or reload), run `kendex check --quiet` in the background and hand the agent the drift report: outdated items (`kendex refresh`), items removed upstream (`kendex remove <name>`), unreachable sources, and \u2014 alongside drift \u2014 items available in the source but not installed (`kendex add --<kind> <name>`, pending your approval). Silent when the install is current; one line when no kendex binary is on PATH, and one line naming the reason if the check itself fails unexpectedly. Never blocks startup. Informational only \u2014 never installs or removes anything and never touches the project's git; kendex's own source caches under ~/.kendex/cache may be fetched at most once per TTL. Mirrors hooks/session-drift-check.sh.",
+          "type": "boolean",
+          "default": true,
+          "category": "Session",
+          "apply": "live"
+        },
+        {
+          "key": "sessionDriftAvailable",
+          "label": "Include available-but-not-installed items",
+          "description": "Include the available-but-not-installed suggestions in the session-start drift report. Off passes `--no-available`, so only outdated, removed, orphaned, and missing items are reported. Mirrors KENDEX_DRIFT_HOOK_AVAILABLE=off for the shell hook.",
+          "type": "boolean",
+          "default": true,
+          "category": "Session",
+          "apply": "live"
+        },
+        {
+          "key": "driftCheckTimeoutMs",
+          "label": "Drift check timeout",
+          "description": "Maximum milliseconds the session-start `kendex check` may run before it is abandoned. Matches the `timeout: 30` declared in hooks/session-drift-check.sh.",
+          "type": "number",
+          "default": 30000,
+          "category": "Session",
+          "apply": "live"
+        },
+        {
+          "key": "clippyTimeoutMs",
+          "label": "Clippy timeout",
+          "description": "Maximum milliseconds any single cargo clippy invocation is allowed to run. Advisory post-edit/end-of-turn clippy timeouts are abandoned so the tool/turn can continue; blocking pre-commit fmt/clippy timeouts block the commit with a timeout reason. Matches the `timeout: 30` declared in hooks/post-edit-lint.sh. Raise for slow workspaces.",
+          "type": "number",
+          "default": 30000,
+          "category": "Rust",
+          "apply": "live"
+        }
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "files": [
+    "extensions/",
+    "README.md",
+    "package.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vanillagreencom/kendex.git",
+    "directory": "pi-extensions/pi-hooks"
+  },
+  "homepage": "https://github.com/vanillagreencom/kendex/tree/main/pi-extensions/pi-hooks",
+  "bugs": {
+    "url": "https://github.com/vanillagreencom/kendex/issues"
+  },
+  "author": "vanillagreen",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  }
+}

@@ -1,0 +1,13 @@
+# Session guard limits
+
+The claim/release/status contract, exit codes, and lifecycle table live in [../SKILL.md](../SKILL.md).
+
+The lease is scoped to the OWNER string, which the calling workflow sets to the issue ID, so two sessions on the same issue share one lease and either may release it. What refuses a second implementer is bare `create <ID>`, which surveys worktrees, refs, and open PRs and exits 75 on existing ownership; `create --reuse|--restack` skips that refusal by design, so **nothing prevents a second implementer there**. The per-issue claim lock is not that gate either — it is a repository-local flock held only inside one `create` invocation.
+
+Staleness is heartbeat age with **no liveness check**. The recorded pid and host identify who took a claim but are never consulted, so a session that is still running and has **outlived its TTL without refreshing** is indistinguishable from an abandoned one and will be unlocked by `release --stale` or `sweep`. Nothing refreshes a lease automatically and nothing runs `sweep` automatically; confirm the owner is really gone before releasing.
+
+The guard serializes every mutating command through `flock(1)` when it is on PATH, and through a `mkdir` mutex beside the lock file otherwise — it is a capability, not a platform, so **wherever the repository's common dir is writable, the claim is mandatory**, stock flock-less macOS included. When neither mechanism can take the lock (an unwritable common dir), mutating commands fail loudly rather than leaving the session silently unguarded.
+
+A Git worktree lock does not block writes, commits, or rebases inside the worktree, and `git worktree remove -f -f` or a plain `rm -rf` still destroy a claimed tree — `status` and `list` exist so such a removal can be attributed afterwards.
+
+Owner identity for the lifecycle commands is derived from the command itself where possible: `remove <ID>` and `create <ID> --reuse` probe with the issue ID they were addressed with first, so claim and release agree on a default install with no session env plumbing. The env ladder (`$KENDEX_SESSION_OWNER`, else `$HT_SESSION_OWNER`, else `$USER`) is probed as the second identity and is the only identity for path-addressed calls. `$USER` is a login rather than a session: two sessions on one machine share that fallback identity, and either can `remove` a tree the other claimed under it. Naming an issue in `remove <ID>` releases that issue's lease whoever claimed it — unless the lease's recorded claiming session (its session-leader pid) is still alive on this host and is not the removing session or an ancestor, which refuses without `remove <ID> --force`. `cleanup` never releases on an owner match — it skips every lease regardless of owner.

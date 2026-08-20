@@ -18,6 +18,7 @@ while IFS= read -r f; do
   # Size ceiling: no binary/asset bloat (lockfiles exempt).
   case "$f" in
     *.lock | package-lock.json) : ;;
+    agents/* | skills/* | hooks/* | pi-extensions/* | skill-templates/*) : ;; # catalog content, not app source
     *) [ "$(wc -c <"$f")" -gt 204800 ] &&
       say "$f is over 200 KB — assets and binaries don't belong here" ;;
   esac
@@ -26,6 +27,7 @@ while IFS= read -r f; do
   # governed by the size ceiling above, not by line counts.
   case "$f" in
     *.md | *.lock | *.json | *.svg | *.png | *.ico | *.icns) continue ;;
+    agents/* | skills/* | hooks/* | pi-extensions/* | skill-templates/*) continue ;; # catalog content
     ui/src/components/ui/* | ui/src/bindings.ts) continue ;; # generated: shadcn, tauri-specta
     *.rs) cap=400 ;;
     *.ts | *.tsx) cap=250 ;;
@@ -43,6 +45,7 @@ scan() {
     [ -f "$f" ] || continue
     case "$f" in
       tools/* | ui/src/components/ui/* | ui/src/bindings.ts) continue ;;
+      agents/* | skills/* | hooks/* | pi-extensions/* | skill-templates/*) continue ;; # catalog content
       *.md | *.lock | *.json | *.svg) continue ;;
     esac
     [[ "$f" =~ $filter ]] || continue

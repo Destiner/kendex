@@ -1,0 +1,125 @@
+---
+name: size-ratchet
+description: "Tighten-only file-size gate: tracked files over their threshold (default 400, per-class via SIZE_RATCHET_CLASSES) are frozen in a baseline TSV that only moves down. Load to add, tune, or debug the ratchet, its baseline, or SIZE_RATCHET_* settings."
+license: MIT
+user-invocable: true
+metadata:
+  author: vanillagreen
+  source: kendex
+  repository: "https://github.com/vanillagreencom/kendex"
+  bugs: "https://github.com/vanillagreencom/kendex/issues"
+  version: "1.0.0"
+---
+
+# Size Ratchet
+
+> **Problem with this skill?** Run `kendex report` — it files to the owning repo automatically. Do not hand-file.
+
+One check, one direction: **no tracked file gets bigger than its threshold,
+and the files already over it only shrink.** Existing offenders are frozen
+in a baseline at their current line counts; everything else must stay at or
+under the threshold its path class carries. The baseline is a ratchet, not
+a ledger: rows only go down or away, and the only way a number goes up is a
+human editing the row in a reviewed diff.
+
+```bash
+.agents/skills/size-ratchet/scripts/size-ratchet            # check (pre-PR / CI)
+.agents/skills/size-ratchet/scripts/size-ratchet --staged   # check what a commit records (git hook)
+.agents/skills/size-ratchet/scripts/size-ratchet --update   # tighten the baseline
+.agents/skills/size-ratchet/scripts/size-ratchet --seed     # write the FIRST baseline
+```
+
+`--staged` judges the commit's snapshot: index blobs, and index policy.
+Details in [DEVELOPMENT.md](DEVELOPMENT.md).
+
+## Verdicts
+
+`check` scans every tracked file (`git ls-files`) minus the exclusion list
+and fails (exit 1) on any of:
+
+| Failure | Meaning |
+|---|---|
+| **new offender** | Over its threshold with no baseline row. |
+| **baselined file grew** | Actual lines exceed the file's baseline row. |
+| **baseline looser than reality** | A row higher than the file's actual count, a row for a file now at/under its threshold, or a row for a file no longer tracked (or now excluded). Slack in the baseline is itself a failure — the ratchet must move down. |
+
+Every diagnostic names the file, its count and the baseline row it violated,
+and — wherever a threshold decided the verdict — that threshold and whether
+it came from a class pattern or the default, plus the remedies: *split at a
+concept seam, or raise the baseline row in this diff with justification*.
+
+Exit codes: `0` clean, `1` violations, `2` usage/config/collection error
+(malformed baseline or excludes, bad threshold, a tracked path containing
+a tab or newline, or a file the gate could not measure). Line counts are
+newline counts (`wc -l`). A tracked file absent from the worktree
+(unstaged deletion, sparse checkout) is counted from the INDEX blob — a
+partial tree can neither smuggle a new offender past the gate nor loosen a
+baselined row; an index blob that cannot be read is a collection error
+(exit 2, naming the file), never a skip. A submodule gitlink at a tracked
+path is not a countable file.
+
+## `--update` — tighten only
+
+`--update` rewrites the baseline to current reality in the downward
+direction only: rows are lowered to the actual count or removed (file
+shrank to/under its own threshold, was deleted, or is now excluded). It **never
+adds a row and never raises a number** — a grown file keeps its old row and
+keeps failing, and a new offender stays a failure. Deliberate growth or a
+new freeze is a hand-edit of the baseline TSV, visible in the diff. After
+the rewrite the check re-runs, so `--update` exits 1 while growth or new
+offenders remain.
+
+## `--seed` — bootstrap only
+
+`--seed` writes the FIRST baseline from the gate's own collector: every
+tracked, non-excluded file over its deciding threshold enters at its
+current count, sorted, with a self-row when the baseline outgrows its own
+threshold. A baseline that already has rows in the worktree, the index or
+`HEAD` refuses — the ratchet is live there, and growth stays a reviewed
+hand-edit. Commit the seeded file.
+
+## Configuration
+
+Resolution order for every key: explicit environment > `.env.local`
+(personal, untracked) > `.kendex/settings.toml` > the repo's committed
+`kendex.settings.toml` (flat `KEY = "value"` under `[env]`) > `.env` >
+built-in default. Only an ABSENT source is skipped: a source that exists
+but is unusable — unreadable, a directory, FIFO, socket or device, or a
+symlink that does not resolve — is a config error (exit 2), never a
+fall-through to the next layer. `SIZE_RATCHET_SETTINGS_FILE=/dev/null`
+selects no settings source at all (`.env.local`, the settings file and
+`.env` are all skipped), leaving environment variables and the defaults.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `SIZE_RATCHET_THRESHOLD` | `400` | Line threshold for paths matching no class. |
+| `SIZE_RATCHET_CLASSES` | *(none)* | `pattern=threshold` entries separated by `;`, first match wins. |
+| `SIZE_RATCHET_BASELINE` | `tools/size-ratchet-baseline.tsv` | Baseline path (also `--baseline FILE`). |
+| `SIZE_RATCHET_EXCLUDES` | `tools/size-ratchet-excludes` | Exclusion-list path (also `--excludes FILE`). |
+
+**Path classes** — a file's threshold is the first `SIZE_RATCHET_CLASSES`
+pattern it matches, else `SIZE_RATCHET_THRESHOLD`. Patterns are the excludes
+file's globs and every other semantic is per file, so a class only moves the
+number a path is judged against:
+
+```toml
+SIZE_RATCHET_CLASSES = "tests/*=800;*/tests/*=800;*.test.*=800"
+```
+
+A directory name needs both forms: `*/tests/*` requires a slash-delimited
+prefix, so a root-level `tests/` matches only `tests/*`.
+
+A malformed entry (no `=`, an empty pattern, a non-positive-integer
+threshold) is a config error naming the entry; an unset or empty value is
+single-threshold behavior.
+
+**Baseline format** — `path<TAB>lines`, `LC_ALL=C` sorted, unique paths,
+counts above the path's threshold. **Excludes format** — `pattern<TAB>reason` per
+line (shell glob against the full repo-relative path; `*` crosses `/`);
+blank lines and `#` comments are ignored, and a pattern without a reason is
+a config error — every exclusion carries its justification (generated,
+vendored, fixtures, lockfiles).
+
+Formats, path classes, and seeding a first baseline: [README.md](README.md).
+Collection internals and the migration note for repos already using this
+format: [DEVELOPMENT.md](DEVELOPMENT.md).

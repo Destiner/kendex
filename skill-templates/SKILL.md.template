@@ -1,0 +1,97 @@
+---
+name: skill-name
+description: "One-line trigger description. Be specific — agents use this to decide whether to load the skill."
+license: MIT
+user-invocable: true
+# dependencies:
+#   required: [skill-a, skill-b]
+#   optional: [skill-c]
+metadata:
+  author: your-name
+  # source: your-project
+  # repository: "https://github.com/owner/repo"
+  # bugs: "https://github.com/owner/repo/issues"
+  version: "1.0.0"
+---
+
+# Skill Title
+
+Brief description of what this skill covers (1-2 sentences).
+
+<!-- SKILL.md loads on every use: keep it to what every agent needs on every
+     load — commands, contracts, rules. Depth goes in references/ and
+     workflows/ files read on demand. No history, no issue citations. -->
+
+<!-- CLI skills: add entry point here
+```bash
+.agents/skills/skill-name/scripts/entry-point <command> [options]
+```
+-->
+
+## Resources
+
+Documentation lookup order: local skill files → ctx7 CLI → web fallback.
+
+### ctx7 CLI
+
+| Library | ctx7 ID | Use For |
+|---------|---------|---------|
+| Example | `/websites/example` | What to look up |
+
+### Web
+
+| Source | URL | Use For |
+|--------|-----|---------|
+| Official docs | `https://example.com/docs` | API reference |
+
+<!-- CLI skills: ## Commands goes here (before Workflows) -->
+<!-- Workflow skills: omit Commands -->
+
+## Workflows
+
+<!-- Omit if no workflow files -->
+
+| Workflow | Purpose |
+|----------|---------|
+| [workflow-name](workflows/workflow-name.md) | When and what it does |
+
+## References
+
+<!-- Omit if no reference files -->
+
+| Topic | Location |
+|-------|----------|
+| Reference name | [references/name.md](references/name.md) |
+
+<!-- Other internal file sections: ## Templates, ## Schemas, ## Scripts -->
+<!-- Place after Workflows/References, before content sections -->
+
+## Dev Tools
+
+<!-- Omit if no dev tools -->
+
+| Tool | Purpose | Install |
+|------|---------|---------|
+| `tool-name` | What it does | `cargo install tool-name` |
+
+<!-- Content sections go here (Nomenclature, Patterns, etc.) -->
+
+## Rules
+
+<!-- Inline rules — no separate rules/ directory.
+     Group by category with ### headers, individual rules as #### headers.
+     Each rule: what the constraint is, why it matters, correct/incorrect example. -->
+
+### Category Name
+
+#### Rule Name
+
+Description of the constraint and what breaks if violated.
+
+```rust
+// WRONG: why this fails
+bad_example();
+
+// RIGHT: why this works
+good_example();
+```

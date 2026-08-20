@@ -5,7 +5,7 @@
 #
 #     jobs:
 #       kendex:
-#         uses: vanillagreencom/kendex-app/.github/workflows/catalog-check.yml@main
+#         uses: vanillagreencom/kendex/.github/workflows/catalog-check.yml@main
 #         with:
 #           path: .          # the catalog directory inside the repo
 #           strict: false    # true also fails on advisories
@@ -45,7 +45,7 @@ jobs:
           path: catalog
       - uses: actions/checkout@v4
         with:
-          repository: vanillagreencom/kendex-app
+          repository: vanillagreencom/kendex
           ref: ${{ inputs.ref || 'main' }}
           path: kendex
       - uses: dtolnay/rust-toolchain@stable

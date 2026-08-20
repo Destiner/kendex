@@ -1,0 +1,1327 @@
+import { spawn } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import type { Message } from "@earendil-works/pi-ai";
+import {
+	formatSize,
+	truncateHead,
+	truncateTail,
+	withFileMutationQueue,
+	type AgentToolResult,
+	type ExtensionAPI,
+	type TruncationResult,
+} from "@earendil-works/pi-coding-agent";
+import type { AgentConfig } from "./agents.js";
+import { sanitizeCwdSnapshotText, setGitExecFileForTests as setSnapshotGitExecFileForTests, snapshotCwdGitState } from "./cwd-snapshot.js";
+import { getFinalOutput, stringifyError } from "./format.js";
+import { safeFileName } from "./names.js";
+import {
+	getPiInvocation,
+	PI_SUBAGENT_CHILD_PANE_ENV,
+	PI_SUBAGENT_DEPTH_ENV,
+	PI_SUBAGENT_ENTRY_ENV,
+	removePromptTempDir,
+	writePromptToTempFile,
+} from "./pane.js";
+import {
+	oneShotTranscriptPath,
+} from "./paths.js";
+import { randomHex } from "./random.js";
+import {
+	bgTaskTimeoutMs,
+	resultLimits,
+	selectedEffortForAgent,
+	selectedModelForAgent,
+	selectedThinkingLevelForAgent,
+	selectedToolsForAgent,
+	normalizedPiToolName,
+	settingBoolean,
+} from "./settings.js";
+import {
+	guardReusedSessionBudget,
+	isContextLengthExceededEnvelope,
+	resolveBgSession,
+	resultHasContextLengthExceeded,
+	summarizeAttempt,
+	type BgSessionSelection,
+} from "./sessions.js";
+import { createTaskId, emitSubagentEvent, tryEmitSubagentEvent } from "./tasks.js";
+import {
+	applyPartialAssistantMessage,
+	createPartialAssistantMessageState,
+	normalizePiStreamEvent,
+	partialAssistantMessage,
+	partialAssistantMessageDiagnostic,
+	resetPartialAssistantMessage,
+} from "./transcripts.js";
+import {
+	DETAIL_STRING_MAX_CHARS,
+	type CwdSnapshot,
+	type PreparedSingleResult,
+	type ResultLimits,
+	type SingleResult,
+	type SubagentDetails,
+} from "./types.js";
+
+export type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void;
+
+type SpawnProcess = typeof spawn;
+let spawnProcess: SpawnProcess = spawn;
+const MAX_RESULT_DIAGNOSTICS = 12;
+const BG_EXCLUDED_TOOLS = ["complete_subagent"];
+const BG_EXCLUDED_TOOL_SET = new Set(BG_EXCLUDED_TOOLS.map(normalizedPiToolName));
+const BG_TIMEOUT_KILL_GRACE_MS = 5_000;
+const BG_SETTLED_SHUTDOWN_GRACE_MS = 250;
+let bgTimeoutKillGraceMsForTests: number | undefined;
+let bgSettledShutdownGraceMsForTests: number | undefined;
+
+export function setBgTimeoutKillGraceMsForTests(ms?: number): void {
+	bgTimeoutKillGraceMsForTests = ms;
+}
+
+export function setBgSettledShutdownGraceMsForTests(ms?: number): void {
+	bgSettledShutdownGraceMsForTests = ms;
+}
+
+export function setSingleAgentSpawnForTests(spawner?: SpawnProcess): void {
+	spawnProcess = spawner ?? spawn;
+}
+
+export function setGitExecFileForTests(execFileOverride?: Parameters<typeof setSnapshotGitExecFileForTests>[0]): void {
+	setSnapshotGitExecFileForTests(execFileOverride);
+}
+
+function appendResultDiagnostic(result: Pick<SingleResult, "diagnostics">, diagnostic: string): void {
+	const compact = sanitizeCwdSnapshotText(diagnostic, { multiline: true }).replace(/\s+/g, " ").trim();
+	if (!compact) return;
+	const diagnostics = [...(result.diagnostics ?? [])];
+	if (!diagnostics.includes(compact)) diagnostics.push(compact);
+	result.diagnostics = diagnostics.slice(-MAX_RESULT_DIAGNOSTICS);
+}
+
+function transcriptFullStreamEnabled(): boolean {
+	return /^(1|true|yes|on)$/i.test(process.env.PI_AGENTS_TMUX_TRANSCRIPT_FULL?.trim() ?? "");
+}
+
+function activeToolsForBgAgent(activeTools: string[]): string[] {
+	return activeTools.filter((tool) => !BG_EXCLUDED_TOOL_SET.has(normalizedPiToolName(tool)));
+}
+
+function shouldAppendTranscriptEvent(eventName: string | undefined, fullStream = transcriptFullStreamEnabled()): boolean {
+	return fullStream || eventName !== "message_update";
+}
+
+interface AgentStartTranscriptMetadata {
+	agent: string;
+	model?: string;
+	args: string[];
+}
+
+function transcriptMetadataArgs(args: string[]): string[] {
+	const sanitized = [...args];
+	if (sanitized.at(-1)?.startsWith("Task: ")) sanitized.pop();
+	return sanitized;
+}
+
+function withAgentStartTranscriptMetadata(event: any, metadata: AgentStartTranscriptMetadata): any {
+	if (!event || typeof event !== "object" || Array.isArray(event)) return event;
+	const enriched = {
+		agent: metadata.agent,
+		model: metadata.model ?? null,
+		args: transcriptMetadataArgs(metadata.args),
+	};
+	if (event.event && typeof event.event === "object" && !Array.isArray(event.event) && event.event.type === "agent_start") {
+		return { ...event, event: { ...event.event, ...enriched } };
+	}
+	if (event.type === "event" && event.event === "agent_start") {
+		const data = event.data && typeof event.data === "object" && !Array.isArray(event.data) ? event.data : {};
+		return { ...event, data: { ...data, ...enriched } };
+	}
+	if (event.type === "agent_start") return { ...event, ...enriched };
+	return event;
+}
+
+function eventContentValue(payload: any): unknown {
+	if (payload && typeof payload === "object" && "content" in payload) return payload.content;
+	if (payload?.message && typeof payload.message === "object" && "content" in payload.message) return payload.message.content;
+	return undefined;
+}
+
+function contentHasTextPart(content: unknown): boolean {
+	if (!Array.isArray(content)) return false;
+	return content.some((part) => {
+		if (!part || typeof part !== "object") return false;
+		const candidate = part as { text?: unknown; type?: unknown };
+		return candidate.type === "text" && typeof candidate.text === "string" && candidate.text.length > 0;
+	});
+}
+
+function agentEndHasTextlessContent(payload: any): boolean {
+	const content = eventContentValue(payload);
+	if (content == null) return true;
+	return Array.isArray(content) && !contentHasTextPart(content);
+}
+
+function malformedAgentEndContentDiagnostic(payload: any): string | undefined {
+	const content = eventContentValue(payload);
+	if (content == null || Array.isArray(content)) return undefined;
+	return `compact-then-empty detector skipped malformed agent_end content: expected array/null/undefined, got ${typeof content}`;
+}
+
+function compactThenEmptySummary(cwdSnapshot?: CwdSnapshot): string {
+	const base = "Subagent compacted and exited without a final text message; inspect the worker cwd before assuming failure.";
+	if (!cwdSnapshot) return base;
+	const dirty = cwdSnapshot.dirty ? "dirty" : "clean";
+	return `${base} HEAD ${cwdSnapshot.head.slice(0, 12)} (${dirty}) ${cwdSnapshot.lastCommit.subject}`;
+}
+
+function formatDurationMs(ms: number): string {
+	if (ms < 1000) return `${ms}ms`;
+	const seconds = ms / 1000;
+	if (seconds < 60) return `${Math.round(seconds)}s`;
+	const minutes = seconds / 60;
+	if (minutes < 60) return `${Math.round(minutes)}m`;
+	return `${Math.round(minutes / 60)}h`;
+}
+
+interface SignalOutcome {
+	error?: string;
+	ok: boolean;
+	signal: NodeJS.Signals;
+	target: "child" | "process-group";
+}
+
+function signalProcessGroupOrChild(proc: ReturnType<SpawnProcess>, signal: NodeJS.Signals): SignalOutcome[] {
+	const outcomes: SignalOutcome[] = [];
+	const pid = typeof proc.pid === "number" && proc.pid > 0 ? proc.pid : undefined;
+	if (pid && process.platform !== "win32") {
+		try {
+			process.kill(-pid, signal);
+			return [{ ok: true, signal, target: "process-group" }];
+		} catch (error) {
+			outcomes.push({ error: stringifyError(error), ok: false, signal, target: "process-group" });
+		}
+	}
+	try {
+		const ok = proc.kill(signal);
+		outcomes.push({
+			error: ok ? undefined : "proc.kill returned false",
+			ok,
+			signal,
+			target: "child",
+		});
+	} catch (error) {
+		outcomes.push({ error: stringifyError(error), ok: false, signal, target: "child" });
+	}
+	return outcomes;
+}
+
+function formatSignalOutcomes(outcomes: SignalOutcome[]): string {
+	return outcomes.map((outcome) => {
+		if (outcome.ok) return `${outcome.signal} ${outcome.target} delivered`;
+		const failedSuffix = outcome.error ? `: ${outcome.error}` : "";
+		return `${outcome.signal} ${outcome.target} failed${failedSuffix}`;
+	}).join("; ");
+}
+
+function matchesDeliveredSettledSignalExit(
+	code: number | null,
+	signalName: NodeJS.Signals | undefined,
+	deliveredSignals: ReadonlySet<NodeJS.Signals>,
+): boolean {
+	return (
+		(signalName === "SIGTERM" && deliveredSignals.has("SIGTERM")) ||
+		(signalName === "SIGKILL" && deliveredSignals.has("SIGKILL")) ||
+		(!signalName && code === 143 && deliveredSignals.has("SIGTERM")) ||
+		(!signalName && code === 137 && deliveredSignals.has("SIGKILL"))
+	);
+}
+
+export function formatTruncationNotice(
+	truncation: TruncationResult,
+	fullOutputPath?: string,
+	fullOutputError?: string,
+	direction: "head" | "tail" = "head",
+): string {
+	const omittedLines = Math.max(0, truncation.totalLines - truncation.outputLines);
+	const omittedBytes = Math.max(0, truncation.totalBytes - truncation.outputBytes);
+	const shown = direction === "tail" ? `showing last ${truncation.outputLines}` : `showing ${truncation.outputLines}`;
+	const artifact = fullOutputPath
+		? ` Full output saved to: ${fullOutputPath}`
+		: fullOutputError
+			? ` Full output preservation failed: ${fullOutputError}`
+			: "";
+	return `[Output truncated (${direction}): ${shown} of ${truncation.totalLines} lines (${formatSize(
+		truncation.outputBytes,
+	)} of ${formatSize(truncation.totalBytes)}). ${omittedLines} lines (${formatSize(omittedBytes)}) omitted.${artifact}]`;
+}
+
+export async function writeFullOutputArtifact(
+	runtimeRoot: string,
+	agentName: string,
+	label: string,
+	text: string,
+): Promise<{ error?: string; path?: string }> {
+	const dir = path.join(runtimeRoot, "outputs", safeFileName(agentName || "subagent"));
+	const filePath = path.join(
+		dir,
+		`${Date.now()}-${randomHex(8)}-${safeFileName(label || "output")}.txt`,
+	);
+	try {
+		await withFileMutationQueue(filePath, async () => {
+			await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
+			await fs.promises.writeFile(filePath, text, { encoding: "utf-8", mode: 0o600 });
+		});
+		return { path: filePath };
+	} catch (error) {
+		return { error: stringifyError(error) };
+	}
+}
+
+export async function truncateForToolResult(
+	text: string,
+	runtimeRoot: string,
+	cwd: string,
+	agentName: string,
+	label: string,
+	direction: "head" | "tail" = "head",
+	limits: ResultLimits = resultLimits(cwd),
+): Promise<Omit<PreparedSingleResult, "result">> {
+	if (!settingBoolean("truncateResults", true, cwd)) return { text };
+	const truncation = (direction === "tail" ? truncateTail : truncateHead)(text, limits);
+	if (!truncation.truncated) return { text: truncation.content };
+
+	const artifact = settingBoolean("preserveFullOutput", true, cwd)
+		? await writeFullOutputArtifact(runtimeRoot, agentName, label, text)
+		: {};
+	return {
+		fullOutputError: artifact.error,
+		fullOutputPath: artifact.path,
+		text: `${truncation.content}\n\n${formatTruncationNotice(truncation, artifact.path, artifact.error, direction)}`,
+		truncation,
+	};
+}
+
+export function truncateForDetails(text: string, cwd?: string): string {
+	if (!settingBoolean("truncateResults", true, cwd)) return text;
+	const truncation = truncateHead(text, resultLimits(cwd));
+	if (!truncation.truncated) return truncation.content;
+	return `${truncation.content}\n\n[Output truncated in agent details: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(
+		truncation.outputBytes,
+	)} of ${formatSize(truncation.totalBytes)}).]`;
+}
+
+function sanitizeDetailValue(value: unknown, depth = 0): unknown {
+	if (depth > 4) return "[Max detail depth reached]";
+	if (value == null || typeof value === "number" || typeof value === "boolean") return value;
+	if (typeof value === "string") {
+		return value.length > DETAIL_STRING_MAX_CHARS
+			? `${value.slice(0, DETAIL_STRING_MAX_CHARS)}… [detail string truncated]`
+			: value;
+	}
+	if (Array.isArray(value)) return value.slice(0, 50).map((item) => sanitizeDetailValue(item, depth + 1));
+	if (typeof value === "object") {
+		const out: Record<string, unknown> = {};
+		for (const [index, [key, nested]] of Object.entries(value as Record<string, unknown>).entries()) {
+			if (index >= 80) {
+				out["[truncated]"] = "detail object field cap reached";
+				break;
+			}
+			out[key] = sanitizeDetailValue(nested, depth + 1);
+		}
+		return out;
+	}
+	return String(value);
+}
+
+function lastAssistantTextPart(messages: Message[]): { messageIndex: number; partIndex: number } | undefined {
+	for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+		const message = messages[messageIndex];
+		if (message.role !== "assistant") continue;
+		for (let partIndex = message.content.length - 1; partIndex >= 0; partIndex -= 1) {
+			const part = message.content[partIndex] as any;
+			if (part?.type === "text" && typeof part.text === "string") return { messageIndex, partIndex };
+		}
+	}
+	return undefined;
+}
+
+export function cloneMessagesForDetails(messages: Message[], finalOutputText: string | undefined, cwd?: string): Message[] {
+	const final = lastAssistantTextPart(messages);
+	const cloned: Message[] = [];
+	messages.forEach((message, messageIndex) => {
+		if (message.role !== "assistant") return;
+		const content = message.content.map((part, partIndex) => {
+			const candidate = part as any;
+			if (candidate?.type === "text" && typeof candidate.text === "string") {
+				const isFinal = final?.messageIndex === messageIndex && final?.partIndex === partIndex;
+				return { ...candidate, text: isFinal && finalOutputText !== undefined ? finalOutputText : truncateForDetails(candidate.text, cwd) };
+			}
+			if (candidate?.type === "toolCall") {
+				const next = { ...candidate };
+				if ("arguments" in next) next.arguments = sanitizeDetailValue(next.arguments);
+				if ("args" in next) next.args = sanitizeDetailValue(next.args);
+				return next;
+			}
+			return candidate;
+		});
+		cloned.push({ ...message, content } as Message);
+	});
+	return cloned;
+}
+
+export async function prepareSingleResultForReturn(
+	result: SingleResult,
+	runtimeRoot: string,
+	cwd: string,
+	label: string,
+	textOverride?: string,
+	limits?: ResultLimits,
+): Promise<PreparedSingleResult> {
+	const finalOutput = getFinalOutput(result.messages);
+	const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
+	const rawText = textOverride ?? (finalOutput || (isError ? result.errorMessage || result.stderr : finalOutput));
+	const direction = isError && !finalOutput ? "tail" : "head";
+	const output = rawText
+		? await truncateForToolResult(rawText, runtimeRoot, cwd, result.agent, label, direction, limits)
+		: { text: rawText };
+	const prepared: SingleResult = {
+		...result,
+		messages: cloneMessagesForDetails(result.messages, output.text || undefined, cwd),
+	};
+	if (isError && output.text && !prepared.errorMessage) prepared.errorMessage = output.text;
+	if (output.truncation) {
+		prepared.fullOutputError = output.fullOutputError;
+		prepared.fullOutputPath = output.fullOutputPath;
+		prepared.truncation = output.truncation;
+	}
+	return { ...output, result: prepared };
+}
+
+export function detailsWithTruncation(details: SubagentDetails, prepared: PreparedSingleResult): SubagentDetails {
+	if (!prepared.truncation) return details;
+	return {
+		...details,
+		fullOutputError: prepared.fullOutputError,
+		fullOutputPath: prepared.fullOutputPath,
+		truncation: prepared.truncation,
+	};
+}
+
+/**
+ * Append-only JSONL writer for one transcript. Records are written strictly in
+ * call order: each append starts after the previous one settles, because
+ * concurrent `appendFile` calls on one path complete in any order and a
+ * transcript whose records are out of order misreports the last assistant
+ * text (kendex#1311). A failed write never blocks the next one.
+ */
+export function createTranscriptAppender(
+	transcriptPath: string,
+	appendFile: (path: string, data: string) => Promise<void> = (p, data) => fs.promises.appendFile(p, data, { encoding: "utf-8" }),
+	onError: (error: unknown) => void = () => undefined,
+): { append: (record: Record<string, unknown>) => void; settled: () => Promise<void> } {
+	let chain: Promise<void> = Promise.resolve();
+	return {
+		append(record) {
+			const line = `${JSON.stringify({ ts: new Date().toISOString(), ...record })}\n`;
+			chain = chain.then(() => appendFile(transcriptPath, line)).catch((error) => onError(error));
+		},
+		settled: () => chain,
+	};
+}
+
+export async function runSingleAgent(
+	defaultCwd: string,
+	runtimeRoot: string,
+	agents: AgentConfig[],
+	agentName: string,
+	task: string,
+	cwd: string | undefined,
+	parentModel: string | undefined,
+	parentThinkingLevel: string | undefined,
+	step: number | undefined,
+	pi: ExtensionAPI,
+	signal: AbortSignal | undefined,
+	onUpdate: OnUpdateCallback | undefined,
+	makeDetails: (results: SingleResult[]) => SubagentDetails,
+	sessionKey?: string,
+): Promise<SingleResult> {
+	const agent = agents.find((a) => a.name === agentName);
+
+	if (!agent) {
+		const available = agents.map((a) => `"${a.name}"`).join(", ") || "none";
+		return {
+			agent: agentName,
+			agentSource: "unknown",
+			task,
+			kind: "oneshot",
+			refused: true,
+			exitCode: 1,
+			messages: [],
+			stderr: `Unknown agent: "${agentName}". Available agents: ${available}.`,
+			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+			step,
+		};
+	}
+
+	const selectedModel = selectedModelForAgent(agent, parentModel, defaultCwd);
+	const selectedThinking = selectedThinkingLevelForAgent(parentThinkingLevel, defaultCwd);
+	const selectedEffort = selectedEffortForAgent(agent, selectedModel, selectedThinking);
+	const firstSession = resolveBgSession(runtimeRoot, agent.name, sessionKey);
+	await fs.promises.mkdir(path.dirname(firstSession.path), { recursive: true, mode: 0o700 }).catch(() => undefined);
+
+	const budgetGuard = firstSession.explicit
+		? await guardReusedSessionBudget(firstSession.path, agent.name, selectedModel, cwd ?? defaultCwd)
+		: undefined;
+	if (budgetGuard && !budgetGuard.ok) {
+		const errorMessage = budgetGuard.warning ?? `Refusing reused session for ${agent.name}: estimated context budget exceeded.`;
+		return {
+			agent: agentName,
+			agentSource: agent.source,
+			task,
+			kind: "oneshot",
+			refused: true,
+			exitCode: 1,
+			messages: [],
+			stderr: errorMessage,
+			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: budgetGuard.estimate.tokens, turns: 0 },
+			model: selectedModel,
+			effort: selectedEffort,
+			sessionMode: "resumed",
+			sessionKey: firstSession.key,
+			sessionKeyExplicit: true,
+			sessionPath: firstSession.path,
+			ephemeralSession: false,
+			stopReason: "session_budget_exceeded",
+			errorMessage,
+			step,
+		};
+	}
+
+	const first = await runSingleAgentAttempt(
+		defaultCwd,
+		runtimeRoot,
+		agent,
+		agentName,
+		task,
+		cwd,
+		selectedModel,
+		selectedThinking,
+		selectedEffort,
+		step,
+		pi,
+		signal,
+		onUpdate,
+		makeDetails,
+		firstSession,
+		1,
+	);
+	if (budgetGuard?.warning) first.stderr = [budgetGuard.warning, first.stderr].filter(Boolean).join("\n");
+
+	if (!resultHasContextLengthExceeded(first)) return first;
+
+	const retrySession = resolveBgSession(runtimeRoot, agent.name);
+	const warning = `Context length exceeded for ${agent.name} session ${firstSession.key}; retrying once with fresh session ${retrySession.key}.`;
+	first.stderr = [first.stderr, warning].filter(Boolean).join("\n");
+	first.errorMessage = first.errorMessage ?? warning;
+	emitSubagentEvent(pi, "subagents:retrying", {
+		mode: "oneshot",
+		agent: agent.name,
+		taskId: first.taskId,
+		task,
+		runtimeRoot,
+		transcriptPath: first.transcriptPath,
+		model: first.model,
+		effort: first.effort,
+		usage: first.usage,
+		reason: "context_length_exceeded",
+		retrySessionKey: retrySession.key,
+	});
+
+	const retry = await runSingleAgentAttempt(
+		defaultCwd,
+		runtimeRoot,
+		agent,
+		agentName,
+		task,
+		cwd,
+		selectedModel,
+		selectedThinking,
+		selectedEffort,
+		step,
+		pi,
+		signal,
+		onUpdate,
+		makeDetails,
+		retrySession,
+		2,
+	);
+	const attempts = [summarizeAttempt(first), summarizeAttempt(retry)];
+	retry.attempts = attempts;
+	const retryFailed = retry.exitCode !== 0 || retry.stopReason === "error" || retry.stopReason === "aborted" || resultHasContextLengthExceeded(retry);
+	if (!retryFailed) {
+		retry.stderr = [warning, retry.stderr].filter(Boolean).join("\n");
+		return retry;
+	}
+
+	const retryError = retry.errorMessage || retry.stderr || "retry failed without output";
+	const firstError = first.errorMessage || first.stderr || "first attempt failed without output";
+	const combinedError = [
+		`Context length exceeded for ${agent.name}; retry with fresh session also failed.`,
+		first.errorEnvelope ? `First raw error envelope: ${first.errorEnvelope}` : "",
+		retry.errorEnvelope ? `Retry raw error envelope: ${retry.errorEnvelope}` : "",
+		`First attempt (${first.sessionKey ?? firstSession.key}) exit ${first.exitCode}: ${firstError}`,
+		`Retry attempt (${retry.sessionKey ?? retrySession.key}) exit ${retry.exitCode}: ${retryError}`,
+	].filter(Boolean).join("\n");
+	retry.exitCode = retry.exitCode === 0 ? 1 : retry.exitCode;
+	retry.errorMessage = combinedError;
+	retry.stderr = [warning, combinedError, retry.stderr].filter(Boolean).join("\n");
+	return retry;
+}
+
+async function runSingleAgentAttempt(
+	defaultCwd: string,
+	runtimeRoot: string,
+	agent: AgentConfig,
+	agentName: string,
+	task: string,
+	cwd: string | undefined,
+	selectedModel: string | undefined,
+	selectedThinking: string | undefined,
+	selectedEffort: string | undefined,
+	step: number | undefined,
+	pi: ExtensionAPI,
+	signal: AbortSignal | undefined,
+	onUpdate: OnUpdateCallback | undefined,
+	makeDetails: (results: SingleResult[]) => SubagentDetails,
+	session: BgSessionSelection,
+	attempt: number,
+): Promise<SingleResult> {
+	const args: string[] = ["--mode", "json", "-p", "--name", agent.name, "--session", session.path];
+	if (selectedModel) args.push("--model", selectedModel);
+	if (selectedThinking && selectedThinking !== "off") args.push("--thinking", selectedThinking);
+	args.push("--exclude-tools", BG_EXCLUDED_TOOLS.join(","));
+	const inheritedActiveTools = pi.getActiveTools?.() ?? [];
+	const selectedTools = selectedToolsForAgent(agent, defaultCwd, [], activeToolsForBgAgent(inheritedActiveTools));
+	if (selectedTools && selectedTools.length > 0) args.push("--tools", selectedTools.join(","));
+	else if (inheritedActiveTools.length > 0) args.push("--no-tools");
+
+	let tmpPromptDir: string | null = null;
+	let tmpPromptPath: string | null = null;
+	const oneShotTaskId = createTaskId(agent.name);
+	const transcriptPath = oneShotTranscriptPath(runtimeRoot, agent.name, oneShotTaskId);
+	// A dropped record leaves the transcript incomplete for whoever reads the
+	// final answer out of it, so a write failure surfaces on the result.
+	const transcript = createTranscriptAppender(transcriptPath, undefined, (error) =>
+		appendResultDiagnostic(currentResult, `transcript write failed (${transcriptPath}): ${stringifyError(error)}`),
+	);
+	const appendTranscript = transcript.append;
+
+	const currentResult: SingleResult = {
+		agent: agentName,
+		agentSource: agent.source,
+		task,
+		kind: "oneshot",
+		sessionMode: session.explicit ? "resumed" : "fresh",
+		// -1 = still running. Real exit code is set after proc.close; streaming
+		// partials must not look completed to callers that key on exitCode.
+		exitCode: -1,
+		attempt,
+		messages: [],
+		stderr: "",
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+		model: selectedModel,
+		effort: selectedEffort,
+		sessionKey: session.key,
+		sessionKeyExplicit: session.explicit,
+		sessionPath: session.path,
+		ephemeralSession: session.ephemeral,
+		taskId: oneShotTaskId,
+		transcriptPath,
+		step,
+	};
+
+	const emitUpdate = () => {
+		if (onUpdate) {
+			const rawOutput = getFinalOutput(currentResult.messages);
+			const displayText = rawOutput ? truncateForDetails(rawOutput, cwd ?? defaultCwd) : "(running...)";
+			const partialResult: SingleResult = {
+				...currentResult,
+				messages: cloneMessagesForDetails(currentResult.messages, rawOutput ? displayText : undefined, cwd ?? defaultCwd),
+			};
+			onUpdate({
+				content: [{ type: "text", text: displayText }],
+				details: makeDetails([partialResult]),
+			});
+		}
+	};
+
+	try {
+		await fs.promises.mkdir(path.dirname(transcriptPath), { recursive: true, mode: 0o700 });
+		await fs.promises.writeFile(transcriptPath, "", { encoding: "utf-8", mode: 0o600 });
+		if (agent.systemPrompt.trim()) {
+			const tmp = await writePromptToTempFile(agent.name, agent.systemPrompt);
+			tmpPromptDir = tmp.dir;
+			tmpPromptPath = tmp.filePath;
+			args.push("--append-system-prompt", tmpPromptPath);
+		}
+
+		args.push(`Task: ${task}`);
+		let wasAborted = false;
+		let timedOut = false;
+
+		// Resolved after the last args push but BEFORE subagents:started, so a
+		// refused spawn (depth guard, kendex#192) never announces itself — a
+		// throw after `started` would leave the task permanently "running" in
+		// the dashboard/registry because nothing emits a terminal event for the
+		// taskId (PR #1178 round 4). Also outside the spawn promise so the
+		// throw rejects through the finally cleanup below instead of wedging
+		// inside the promise executor.
+		const invocation = getPiInvocation(args);
+
+		emitSubagentEvent(pi, "subagents:started", {
+			mode: "oneshot",
+			agent: agent.name,
+			taskId: oneShotTaskId,
+			task,
+			runtimeRoot,
+			transcriptPath,
+			model: selectedModel,
+			effort: selectedEffort,
+			sessionMode: currentResult.sessionMode,
+			sessionKey: session.explicit ? session.key : undefined,
+			sessionPath: session.path,
+			ephemeralSession: session.ephemeral,
+			attempt,
+		});
+		appendTranscript({ type: "start", agent: agent.name, taskId: oneShotTaskId, task, cwd: cwd ?? defaultCwd, sessionMode: currentResult.sessionMode, sessionKey: session.explicit ? session.key : undefined, sessionPath: session.path, ephemeralSession: session.ephemeral, attempt });
+
+		const exitCode = await new Promise<number>((resolve) => {
+			// Child identity env mirrors the pane launcher's agent identity
+			// for bg one-shot lanes (issue #228). Restricted delegation reads
+			// PI_SUBAGENT_CHILD_AGENT to authorize the caller. Strip pane-only
+			// ownership/session markers, including PI_SUBAGENT_CHILD_PANE, so
+			// bg lanes never mutate an inherited tmux pane or attach to pane
+			// session/bridge scope —
+			// without an explicit delete a parent process that already has
+			// those vars set (for example, this Pi running inside a pane
+			// itself) would leak them into the bg child and
+			// `runtimeSessionId()` would attach the child to the wrong
+			// runtime root.
+			const childEnv: NodeJS.ProcessEnv = { ...process.env, PI_SUBAGENT_CHILD_AGENT: agent.name };
+			childEnv[PI_SUBAGENT_DEPTH_ENV] = String(invocation.childDepth);
+			// PR #1178 round 3: a relative script override was resolved for THIS
+			// spawn only; the child would inherit the relative form and
+			// re-resolve it from its delegated cwd. Hand down the resolved value.
+			if (invocation.childEntryOverride) childEnv[PI_SUBAGENT_ENTRY_ENV] = invocation.childEntryOverride;
+			if (agent.color) childEnv.PI_SUBAGENT_CHILD_COLOR = agent.color;
+			else delete childEnv.PI_SUBAGENT_CHILD_COLOR;
+			delete childEnv[PI_SUBAGENT_CHILD_PANE_ENV];
+			delete childEnv.PI_SUBAGENT_PARENT_SESSION_ID;
+			for (const key of Object.keys(childEnv)) {
+				if (key.startsWith("PI_BRIDGE_")) delete childEnv[key];
+			}
+			const proc = spawnProcess(invocation.command, invocation.args, {
+				cwd: cwd ?? defaultCwd,
+				detached: process.platform !== "win32",
+				env: childEnv,
+				shell: false,
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+			const keepFullTranscript = transcriptFullStreamEnabled();
+			let buffer = "";
+			let processClosed = false;
+			let resolved = false;
+			let sawSessionCompact = false;
+			let compactThenEmptyAgentEnd = false;
+			let postCompactAssistantHasText = false;
+			let agentGeneration = 0;
+			let latestEndedGeneration: number | undefined;
+			let agentActive = false;
+			let settledShutdownOwnsLifecycle = false;
+			const deliveredSettledSignals = new Set<NodeJS.Signals>();
+			let latestFilteredMessageUpdate: any;
+			const partialMessageState = createPartialAssistantMessageState();
+			const timeoutMs = bgTaskTimeoutMs(cwd ?? defaultCwd);
+			const timeoutDeadline = timeoutMs > 0 ? Date.now() + timeoutMs : undefined;
+			let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+			let timeoutGeneration = 0;
+			let killEscalationTimer: ReturnType<typeof setTimeout> | undefined;
+			let settledShutdownTimer: ReturnType<typeof setTimeout> | undefined;
+			let settledCloseTimer: ReturnType<typeof setTimeout> | undefined;
+			let abortCloseTimer: ReturnType<typeof setTimeout> | undefined;
+			let abortListener: (() => void) | undefined;
+			const killGraceMs = bgTimeoutKillGraceMsForTests ?? BG_TIMEOUT_KILL_GRACE_MS;
+			const settledShutdownGraceMs = bgSettledShutdownGraceMsForTests ?? BG_SETTLED_SHUTDOWN_GRACE_MS;
+
+			const clearTimeoutTimer = () => {
+				timeoutGeneration++;
+				if (!timeoutTimer) return;
+				clearTimeout(timeoutTimer);
+				timeoutTimer = undefined;
+			};
+
+			const clearKillEscalationTimer = () => {
+				if (!killEscalationTimer) return;
+				clearTimeout(killEscalationTimer);
+				killEscalationTimer = undefined;
+			};
+
+			const clearSettledShutdownTimer = () => {
+				if (!settledShutdownTimer) return;
+				clearTimeout(settledShutdownTimer);
+				settledShutdownTimer = undefined;
+			};
+
+			const clearSettledCloseTimer = () => {
+				if (!settledCloseTimer) return;
+				clearTimeout(settledCloseTimer);
+				settledCloseTimer = undefined;
+			};
+
+			const clearAbortCloseTimer = () => {
+				if (!abortCloseTimer) return;
+				clearTimeout(abortCloseTimer);
+				abortCloseTimer = undefined;
+			};
+
+			// The abort path's analogue of scheduleSettledCloseFailure: once the
+			// abort SIGKILL escalation has fired, a child that still never emits
+			// `close` (unkillable D-state, EPERM on both targets) must not hang
+			// the attempt forever — the settled path got this bound, and the old
+			// code relied on the bg timeout timer, which killProc now clears.
+			const scheduleAbortCloseFailure = () => {
+				clearAbortCloseTimer();
+				abortCloseTimer = setTimeout(() => {
+					abortCloseTimer = undefined;
+					if (resolved || processClosed) return;
+					const diagnostic = `Abort termination unconfirmed: child process did not emit close within ${formatDurationMs(killGraceMs)} after SIGKILL; releasing the worker.`;
+					appendResultDiagnostic(currentResult, diagnostic);
+					if (!currentResult.errorMessage) currentResult.errorMessage = diagnostic;
+					currentResult.stderr = [currentResult.stderr, diagnostic].filter(Boolean).join("\n");
+					appendTranscript({ type: "abort_close_timeout", diagnostic, attempt });
+					proc.stdout.destroy?.();
+					proc.stderr.destroy?.();
+					proc.unref?.();
+					resolveOnce(1);
+				}, killGraceMs);
+				abortCloseTimer.unref?.();
+			};
+
+			const resolveOnce = (code: number) => {
+				if (resolved) return;
+				resolved = true;
+				clearTimeoutTimer();
+				clearKillEscalationTimer();
+				clearSettledShutdownTimer();
+				clearSettledCloseTimer();
+				clearAbortCloseTimer();
+				if (signal && abortListener) signal.removeEventListener("abort", abortListener);
+				transcript.settled().finally(() => resolve(code));
+			};
+
+			const scheduleKillEscalation = (onSignal?: (outcomes: SignalOutcome[]) => void) => {
+				if (killEscalationTimer) return;
+				killEscalationTimer = setTimeout(() => {
+					if (processClosed) return;
+					const outcomes = signalProcessGroupOrChild(proc, "SIGKILL");
+					onSignal?.(outcomes);
+				}, killGraceMs);
+				killEscalationTimer.unref?.();
+			};
+
+			const recordSettledSignalDelivery = (signalName: NodeJS.Signals, outcomes: SignalOutcome[]) => {
+				if (outcomes.some((outcome) => outcome.ok)) deliveredSettledSignals.add(signalName);
+			};
+
+			const failSettledShutdown = (diagnostic: string) => {
+				if (resolved || processClosed || !settledShutdownOwnsLifecycle) return;
+				settledShutdownOwnsLifecycle = false;
+				appendResultDiagnostic(currentResult, diagnostic);
+				currentResult.errorMessage = diagnostic;
+				currentResult.stderr = [currentResult.stderr, diagnostic].filter(Boolean).join("\n");
+				appendTranscript({ type: "settled_shutdown_failed", diagnostic, attempt });
+				proc.stdout.destroy?.();
+				proc.stderr.destroy?.();
+				proc.unref?.();
+				resolveOnce(1);
+			};
+
+			const scheduleSettledCloseFailure = () => {
+				clearSettledCloseTimer();
+				settledCloseTimer = setTimeout(() => {
+					settledCloseTimer = undefined;
+					failSettledShutdown(`Settled shutdown failed: child process did not emit close within ${formatDurationMs(killGraceMs)} after SIGKILL.`);
+				}, killGraceMs);
+				settledCloseTimer.unref?.();
+			};
+
+			const scheduleSettledShutdown = () => {
+				if (resolved || processClosed || timedOut || wasAborted) return;
+				if (settledShutdownOwnsLifecycle && deliveredSettledSignals.size > 0) return;
+				settledShutdownOwnsLifecycle = true;
+				deliveredSettledSignals.clear();
+				clearTimeoutTimer();
+				clearSettledShutdownTimer();
+				clearSettledCloseTimer();
+				settledShutdownTimer = setTimeout(() => {
+					settledShutdownTimer = undefined;
+					if (resolved || processClosed || timedOut || wasAborted || !settledShutdownOwnsLifecycle) return;
+					const outcomes = signalProcessGroupOrChild(proc, "SIGTERM");
+					recordSettledSignalDelivery("SIGTERM", outcomes);
+					appendTranscript({
+						type: "settled_shutdown",
+						reason: "agent_settled",
+						signal: "SIGTERM",
+						graceMs: settledShutdownGraceMs,
+						outcomes,
+						attempt,
+					});
+					scheduleKillEscalation((killOutcomes) => {
+						if (resolved || processClosed || !settledShutdownOwnsLifecycle) return;
+						recordSettledSignalDelivery("SIGKILL", killOutcomes);
+						appendTranscript({ type: "settled_shutdown_escalation", signal: "SIGKILL", outcomes: killOutcomes, attempt });
+						if (deliveredSettledSignals.size === 0) {
+							failSettledShutdown(`Settled shutdown failed: ${formatSignalOutcomes([...outcomes, ...killOutcomes])}`);
+							return;
+						}
+						scheduleSettledCloseFailure();
+					});
+				}, Math.max(0, settledShutdownGraceMs));
+				settledShutdownTimer.unref?.();
+			};
+
+			const handleAgentSettled = () => {
+				if (settledShutdownOwnsLifecycle && deliveredSettledSignals.size > 0) {
+					appendTranscript({
+						type: "settled_shutdown_skipped",
+						reason: "signal_delivered",
+						signals: [...deliveredSettledSignals],
+						agentGeneration,
+						attempt,
+					});
+					return;
+				}
+				if (agentActive || latestEndedGeneration === undefined || latestEndedGeneration !== agentGeneration) {
+					let reason: "missing_agent_end" | "agent_active" | "newer_agent_generation";
+					if (latestEndedGeneration === undefined) {
+						reason = "missing_agent_end";
+					} else if (agentActive) {
+						reason = "agent_active";
+					} else {
+						reason = "newer_agent_generation";
+					}
+					appendTranscript({
+						type: "settled_shutdown_skipped",
+						reason,
+						...(latestEndedGeneration === undefined ? {} : { latestEndedGeneration }),
+						agentGeneration,
+						attempt,
+					});
+					return;
+				}
+				scheduleSettledShutdown();
+			};
+
+			const flushFilteredMessageUpdate = (reason: "nonzero_exit" | "process_error" | "timeout") => {
+				// Pi's delta-only wire event leaves the newest update holding one delta, so restore the
+				// cumulative `message` Pi used to send. Every transcript reader (summary backfill,
+				// dashboard activity, transcript display) already looks there, so putting the
+				// reconstruction anywhere else leaves the record unreadable.
+				const partialMessage = partialAssistantMessage(partialMessageState);
+				// Computed before any early return. A stream whose shapes we no longer recognize
+				// produces NO partialMessage, so the diagnostic is the only signal that the wire
+				// format moved -- skipping it on any path restores the silent failure this
+				// accumulator exists to prevent.
+				const diagnostic = partialAssistantMessageDiagnostic(partialMessageState);
+				// Route through result diagnostics, not the transcript alone: a failed
+				// transcript write is itself only a diagnostic, so a transcript-only
+				// signal has no second chance to surface.
+				const emitDiagnostic = () => {
+					if (!diagnostic) return;
+					appendResultDiagnostic(currentResult, diagnostic);
+					appendTranscript({ type: "diagnostic", diagnostic, attempt });
+				};
+				// Full-stream mode keeps every raw update, so there is no buffered event to flush --
+				// but the reconstruction is still the only readable form of the partial answer.
+				if (keepFullTranscript && !latestFilteredMessageUpdate) {
+					if (partialMessage) {
+						const reconstructed = { type: "message_update", message: partialMessage };
+						appendTranscript({ stream: "stdout", raw: JSON.stringify(reconstructed), event: reconstructed, buffered: true, reason, partialMessage });
+					}
+					emitDiagnostic();
+					if (partialMessage || diagnostic) resetPartialAssistantMessage(partialMessageState);
+					return;
+				}
+				if (!latestFilteredMessageUpdate) return;
+				const flushedEvent = partialMessage
+					? { ...latestFilteredMessageUpdate, message: partialMessage }
+					: latestFilteredMessageUpdate;
+				appendTranscript({
+					stream: "stdout",
+					raw: JSON.stringify(flushedEvent),
+					event: flushedEvent,
+					buffered: true,
+					reason,
+					...(partialMessage ? { partialMessage } : {}),
+				});
+				emitDiagnostic();
+				latestFilteredMessageUpdate = undefined;
+				resetPartialAssistantMessage(partialMessageState);
+			};
+
+			const appendTimeoutDiagnostic = (diagnostics: string[], diagnostic: string) => {
+				diagnostics.push(diagnostic);
+				appendResultDiagnostic(currentResult, diagnostic);
+				appendTranscript({ type: "diagnostic", diagnostic, attempt });
+				currentResult.errorMessage = diagnostics.join("\n");
+				currentResult.stderr = [currentResult.stderr, diagnostic].filter(Boolean).join("\n");
+			};
+
+			const handleTimeout = async (generation: number) => {
+				if (generation !== timeoutGeneration || resolved || processClosed || timedOut || wasAborted || settledShutdownOwnsLifecycle) return;
+				timedOut = true;
+				settledShutdownOwnsLifecycle = false;
+				deliveredSettledSignals.clear();
+				clearSettledShutdownTimer();
+				clearKillEscalationTimer();
+				clearSettledCloseTimer();
+				const message = `Agent ${agent.name} exceeded bg task timeout (${formatDurationMs(timeoutMs)}) without completing; marking it unresponsive and terminating the child process group.`;
+				const timeoutDiagnostics = [message];
+				const recordTimeoutError = (label: string, error: unknown) => {
+					appendTimeoutDiagnostic(timeoutDiagnostics, `${label}: ${stringifyError(error)}`);
+				};
+				try {
+					currentResult.status = "failed";
+					currentResult.stopReason = "unresponsive_timeout";
+					currentResult.errorMessage = message;
+					currentResult.stderr = [currentResult.stderr, message].filter(Boolean).join("\n");
+					appendResultDiagnostic(currentResult, message);
+					appendTranscript({ type: "timeout", reason: "bg-task-timeout", timeoutMs, attempt });
+					flushFilteredMessageUpdate("timeout");
+					emitUpdate();
+				} catch (error) {
+					recordTimeoutError("Timeout update callback failed", error);
+				} finally {
+					try {
+						const termOutcomes = signalProcessGroupOrChild(proc, "SIGTERM");
+						appendTimeoutDiagnostic(timeoutDiagnostics, `Timeout termination SIGTERM: ${formatSignalOutcomes(termOutcomes)}`);
+						await new Promise((resume) => setTimeout(resume, killGraceMs));
+						if (!resolved && !processClosed) {
+							const killOutcomes = signalProcessGroupOrChild(proc, "SIGKILL");
+							appendTimeoutDiagnostic(timeoutDiagnostics, `Timeout termination SIGKILL: ${formatSignalOutcomes(killOutcomes)}`);
+							appendTimeoutDiagnostic(timeoutDiagnostics, `Timeout termination unconfirmed: child process did not emit close within ${formatDurationMs(killGraceMs)} after SIGTERM.`);
+						}
+					} catch (error) {
+						recordTimeoutError("Timeout termination failed", error);
+					} finally {
+						resolveOnce(1);
+					}
+				}
+			};
+
+			const armTimeoutTimer = () => {
+				if (timeoutDeadline === undefined || resolved || processClosed || timedOut || wasAborted) return;
+				clearTimeoutTimer();
+				const generation = timeoutGeneration;
+				timeoutTimer = setTimeout(() => {
+					timeoutTimer = undefined;
+					void handleTimeout(generation);
+				}, Math.max(0, timeoutDeadline - Date.now()));
+				timeoutTimer.unref?.();
+			};
+
+			const cancelSettledShutdownForActivity = () => {
+				if (!settledShutdownOwnsLifecycle) return;
+				if (deliveredSettledSignals.size > 0) {
+					appendTranscript({
+						type: "settled_shutdown_cancellation_skipped",
+						reason: "signal_delivered",
+						signals: [...deliveredSettledSignals],
+						agentGeneration,
+						attempt,
+					});
+					return;
+				}
+				settledShutdownOwnsLifecycle = false;
+				deliveredSettledSignals.clear();
+				clearSettledShutdownTimer();
+				clearKillEscalationTimer();
+				clearSettledCloseTimer();
+				appendTranscript({ type: "settled_shutdown_cancelled", reason: "agent_activity", agentGeneration, attempt });
+				armTimeoutTimer();
+			};
+
+			const processLine = (line: string) => {
+				if (!line.trim()) return;
+				let event: any;
+				try {
+					event = JSON.parse(line);
+				} catch {
+					appendTranscript({ stream: "stdout", raw: line, parseError: true });
+					return;
+				}
+				const normalized = normalizePiStreamEvent(event);
+				const eventName = normalized.name;
+				if (eventName === "message_start") {
+					// Both halves of "pending unflushed partial output" reset together; clearing only the
+					// accumulator would pair a stale event with a fresh reconstruction.
+					latestFilteredMessageUpdate = undefined;
+					resetPartialAssistantMessage(partialMessageState);
+				}
+				if (eventName === "message_update") {
+					// Accumulate in both modes. In full-stream mode the raw deltas are already in the
+					// transcript, but no reader folds deltas, so without the reconstruction a failed
+					// agent's partial answer is just as unrecoverable there as in filtered mode.
+					if (!keepFullTranscript) latestFilteredMessageUpdate = normalized.event;
+					applyPartialAssistantMessage(partialMessageState, normalized.payload);
+				}
+				if (shouldAppendTranscriptEvent(eventName, keepFullTranscript)) {
+					const transcriptEvent = eventName === "agent_start"
+						? withAgentStartTranscriptMetadata(normalized.event, { agent: agent.name, model: selectedModel, args })
+						: normalized.event;
+					appendTranscript({ stream: "stdout", raw: JSON.stringify(transcriptEvent), event: transcriptEvent });
+				}
+				const payload = normalized.payload;
+
+				if (eventName === "agent_start") {
+					agentGeneration++;
+					cancelSettledShutdownForActivity();
+					agentActive = true;
+				}
+				if (eventName === "turn_start") {
+					cancelSettledShutdownForActivity();
+					agentActive = true;
+				}
+				if (eventName === "agent_settled") handleAgentSettled();
+
+				if (eventName === "session_compact") {
+					sawSessionCompact = true;
+					compactThenEmptyAgentEnd = false;
+					postCompactAssistantHasText = false;
+				}
+
+				if (eventName === "agent_end") {
+					agentActive = false;
+					latestEndedGeneration = agentGeneration;
+					const malformedDiagnostic = malformedAgentEndContentDiagnostic(payload);
+					if (malformedDiagnostic) appendResultDiagnostic(currentResult, malformedDiagnostic);
+					compactThenEmptyAgentEnd = sawSessionCompact && !postCompactAssistantHasText && agentEndHasTextlessContent(payload);
+				}
+
+				if (eventName === "message_end") {
+					latestFilteredMessageUpdate = undefined;
+					resetPartialAssistantMessage(partialMessageState);
+				}
+				if (eventName === "message_end" && payload.message) {
+					const msg = payload.message as Message;
+					currentResult.messages.push(msg);
+
+					if (msg.role === "assistant") {
+						if (sawSessionCompact && contentHasTextPart(msg.content)) postCompactAssistantHasText = true;
+						currentResult.usage.turns++;
+						const usage = msg.usage;
+						if (usage) {
+							currentResult.usage.input += usage.input || 0;
+							currentResult.usage.output += usage.output || 0;
+							currentResult.usage.reasoning = (currentResult.usage.reasoning ?? 0) + ((usage as typeof usage & { reasoning?: number }).reasoning || 0);
+							currentResult.usage.cacheRead += usage.cacheRead || 0;
+							currentResult.usage.cacheWrite += usage.cacheWrite || 0;
+							currentResult.usage.cost += usage.cost?.total || 0;
+							currentResult.usage.contextTokens = usage.totalTokens || 0;
+						}
+						if (!currentResult.model && msg.model) currentResult.model = msg.model;
+						if (msg.stopReason) currentResult.stopReason = msg.stopReason;
+						if (msg.errorMessage) currentResult.errorMessage = msg.errorMessage;
+					}
+					emitUpdate();
+				}
+
+				const hasContextOverflowEnvelope = isContextLengthExceededEnvelope(event) || isContextLengthExceededEnvelope(payload);
+				if (eventName === "error" || hasContextOverflowEnvelope) {
+					const rawEnvelope = line;
+					const errorText = typeof payload.error === "string" ? payload.error : JSON.stringify(payload.error ?? payload ?? event);
+					currentResult.errorEnvelope = rawEnvelope;
+					currentResult.errorMessage = errorText;
+					currentResult.stderr += `${rawEnvelope}\n`;
+					emitUpdate();
+				}
+
+				if (eventName === "tool_result_end") {
+					emitUpdate();
+				}
+			};
+
+			proc.stdout.on("data", (data) => {
+				if (resolved) return;
+				buffer += data.toString();
+				const lines = buffer.split("\n");
+				buffer = lines.pop() || "";
+				for (const line of lines) processLine(line);
+			});
+
+			proc.stderr.on("data", (data) => {
+				if (resolved) return;
+				const text = data.toString();
+				currentResult.stderr += text;
+				appendTranscript({ stream: "stderr", text });
+			});
+
+			proc.on("close", (code, closeSignal) => {
+				processClosed = true;
+				clearKillEscalationTimer();
+				clearSettledShutdownTimer();
+				clearSettledCloseTimer();
+				clearAbortCloseTimer();
+				if (resolved) return;
+				if (buffer.trim()) processLine(buffer);
+				if (compactThenEmptyAgentEnd) currentResult.needsCompletionReason = "compact-then-empty";
+				const signalName = typeof closeSignal === "string" && closeSignal ? closeSignal : undefined;
+				const normalZeroExit = !signalName && (code ?? 0) === 0;
+				const expectedSettledSignalExit = matchesDeliveredSettledSignalExit(code, signalName, deliveredSettledSignals);
+				const settledShutdownExit = settledShutdownOwnsLifecycle && !wasAborted && !timedOut && (normalZeroExit || expectedSettledSignalExit);
+				let exitCode: number;
+				if (settledShutdownExit) {
+					exitCode = 0;
+				} else if (signalName || wasAborted || timedOut) {
+					exitCode = code && code !== 0 ? code : 1;
+				} else {
+					exitCode = code ?? 0;
+				}
+				if (signalName && !settledShutdownExit && !currentResult.errorMessage) currentResult.errorMessage = `Agent process terminated by signal ${signalName}`;
+				if (exitCode !== 0) flushFilteredMessageUpdate("nonzero_exit");
+				appendTranscript({
+					type: "exit",
+					code: exitCode,
+					...(signalName ? { signal: signalName } : {}),
+					...(settledShutdownExit ? { semanticCompletion: "agent_settled" } : {}),
+					attempt,
+				});
+				resolveOnce(exitCode);
+			});
+
+			proc.on("error", (error) => {
+				if (resolved) return;
+				currentResult.errorMessage = stringifyError(error);
+				flushFilteredMessageUpdate("process_error");
+				appendTranscript({ type: "process_error", error: stringifyError(error), attempt });
+				resolveOnce(1);
+			});
+
+			if (signal) {
+				const killProc = () => {
+					wasAborted = true;
+					settledShutdownOwnsLifecycle = false;
+					deliveredSettledSignals.clear();
+					clearTimeoutTimer();
+					clearKillEscalationTimer();
+					clearSettledShutdownTimer();
+					clearSettledCloseTimer();
+					signalProcessGroupOrChild(proc, "SIGTERM");
+					scheduleKillEscalation(() => scheduleAbortCloseFailure());
+				};
+				if (signal.aborted) killProc();
+				else {
+					abortListener = killProc;
+					signal.addEventListener("abort", killProc, { once: true });
+				}
+			}
+
+			armTimeoutTimer();
+		});
+
+		currentResult.exitCode = exitCode;
+		if (wasAborted) {
+			currentResult.stopReason = "aborted";
+			currentResult.errorMessage = "Agent was aborted";
+			const summary = "Agent was aborted before completion.";
+			emitSubagentEvent(pi, "subagents:failed", {
+				mode: "oneshot",
+				agent: agent.name,
+				taskId: oneShotTaskId,
+				task,
+				status: "aborted",
+				summary,
+				runtimeRoot,
+				transcriptPath,
+				model: currentResult.model,
+				effort: currentResult.effort,
+				usage: currentResult.usage,
+				error: currentResult.errorMessage || "Agent was aborted",
+				sessionMode: currentResult.sessionMode,
+				sessionKey: session.explicit ? session.key : undefined,
+				sessionPath: session.path,
+				ephemeralSession: session.ephemeral,
+				attempt,
+			});
+			throw new Error("Agent was aborted");
+		}
+		if (
+			currentResult.needsCompletionReason === "compact-then-empty" &&
+			!resultHasContextLengthExceeded(currentResult)
+		) {
+			currentResult.status = "needs_completion";
+			currentResult.stopReason = "needs_completion";
+			const cwdSnapshot = await snapshotCwdGitState(cwd ?? defaultCwd, (diagnostic) => appendResultDiagnostic(currentResult, diagnostic));
+			if (cwdSnapshot) currentResult.cwdSnapshot = cwdSnapshot;
+			const summary = compactThenEmptySummary(cwdSnapshot);
+			currentResult.errorMessage = summary;
+			const needsCompletionPayload = {
+				mode: "oneshot",
+				agent: agent.name,
+				taskId: oneShotTaskId,
+				task,
+				status: "needs_completion",
+				reason: "compact-then-empty",
+				summary,
+				runtimeRoot,
+				transcriptPath,
+				model: currentResult.model,
+				effort: currentResult.effort,
+				usage: currentResult.usage,
+				sessionMode: currentResult.sessionMode,
+				sessionKey: session.explicit ? session.key : undefined,
+				sessionPath: session.path,
+				ephemeralSession: session.ephemeral,
+				attempt,
+				diagnostics: currentResult.diagnostics,
+				...(cwdSnapshot ? { cwdSnapshot } : {}),
+			};
+			const emitted = tryEmitSubagentEvent(pi, "subagents:needs_completion", needsCompletionPayload);
+			if (!emitted.ok) {
+				const diagnostic = `Failed to emit subagents:needs_completion for ${agent.name} (${oneShotTaskId}): ${emitted.error ?? "unknown error"}`;
+				appendResultDiagnostic(currentResult, diagnostic);
+				appendTranscript({ type: "diagnostic", diagnostic, attempt });
+			}
+			return currentResult;
+		}
+		const failed = exitCode !== 0 || currentResult.stopReason === "error" || currentResult.stopReason === "aborted";
+		const finalOutput = getFinalOutput(currentResult.messages);
+		emitSubagentEvent(pi, failed ? "subagents:failed" : "subagents:completed", {
+			mode: "oneshot",
+			agent: agent.name,
+			taskId: oneShotTaskId,
+			task,
+			status: failed ? "failed" : "completed",
+			...(finalOutput ? { summary: finalOutput, finalOutput } : {}),
+			runtimeRoot,
+			transcriptPath,
+			model: currentResult.model,
+			effort: currentResult.effort,
+			usage: currentResult.usage,
+			reason: failed ? currentResult.stopReason : undefined,
+			error: failed ? currentResult.errorMessage || currentResult.stderr || undefined : undefined,
+			sessionMode: currentResult.sessionMode,
+			sessionKey: session.explicit ? session.key : undefined,
+			sessionPath: session.path,
+			ephemeralSession: session.ephemeral,
+			attempt,
+		});
+		return currentResult;
+	} finally {
+		await transcript.settled();
+		// kendex#192: recursive+force removal so the session tmp dir is reclaimed
+		// on child failure/refusal paths too, not only after a clean unlink.
+		if (tmpPromptDir) removePromptTempDir(tmpPromptDir);
+	}
+}

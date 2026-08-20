@@ -1,0 +1,46 @@
+# The kendex catalog: what this repository offers to every kendex install.
+# Items live in agents/, skills/, hooks/ and pi-extensions/; the tables
+# below say what the catalog states about itself and how its agents and
+# skills belong together.
+
+[marketplace]
+name = "kendex"
+description = "The official kendex catalog: agents, skills, hooks and Pi extensions for AI coding harnesses"
+author = "vanillagreen"
+license = "MIT"
+homepage = "https://kendex.ai"
+tags = ["agents", "skills", "hooks", "official"]
+
+# Skill mappings per agent — always loaded into context.
+[agent-skills]
+rust = ["github", "linear"]
+iced = ["iced-rs"]
+reviewer-arch = ["reviewer"]
+reviewer-correctness = ["reviewer"]
+reviewer-quality = ["reviewer"]
+reviewer-perf = ["reviewer"]
+reviewer-safety = ["reviewer"]
+reviewer-test = ["reviewer"]
+reviewer-doc = ["reviewer"]
+reviewer-error = ["reviewer"]
+reviewer-security = ["reviewer"]
+generalist = ["decider", "github", "dev", "linear", "dep-radar", "review-gate"]
+planner = ["github", "linear"]
+scout = ["github", "linear"]
+tpm = ["decider", "github", "dev", "linear", "project-management"]
+researcher = ["deep-research", "decider", "github", "linear"]
+
+# Skills given to all agents of a role.
+[role-skills]
+analyst = ["linear", "github"]
+engineer = ["dev", "github", "decider", "linear", "preflight", "code-quality"]
+manager = ["dev", "github", "project-management", "linear", "decider"]
+reviewer = ["reviewer"]
+
+# Per-harness frontmatter defaults beneath any project-level overrides.
+[agent-frontmatter.claude]
+iced = { effort = "max" }
+planner = { effort = "max" }
+researcher = { effort = "max" }
+rust = { effort = "max" }
+scout = { effort = "high" }
