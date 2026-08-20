@@ -120,6 +120,10 @@ fn decide(
     let Some(commit) = commit else {
         return Ok(SourceAction::Reuse { name: name.clone() });
     };
+    // A declared rev equal to the snapshot (same full commit) reuses
+    // outright; anything else — including an abbreviation that merely
+    // looks like a prefix — is judged by the fetched commit, because only
+    // git knows what an abbreviation resolves to.
     if decl
         .rev
         .as_deref()
@@ -149,8 +153,8 @@ fn decide(
     }
 }
 
-/// One commit names the other: equal, or one is the other's abbreviation.
+/// The same full commit — nothing shorter counts. A textual prefix match
+/// would accept a different object after an abbreviation collision.
 fn same_commit(a: &str, b: &str) -> bool {
-    let (a, b) = (a.to_ascii_lowercase(), b.to_ascii_lowercase());
-    a.starts_with(&b) || b.starts_with(&a)
+    a.len() == 40 && a.eq_ignore_ascii_case(b)
 }

@@ -50,6 +50,15 @@ fn check(ok: impl Into<Option<bool>>, label: &str, fix: &str) -> PreflightCheck 
 /// GitHub lookup (is the repository visible to the world?); a network
 /// failure makes that row unknown, never a guess.
 pub fn submit_preflight(path: &std::path::Path, fetch: &dyn Fetch) -> Result<SubmitPreflight> {
+    // The pushed/committed rows read the remote-tracking refs, which can
+    // be stale — fetch first so "everything is pushed" is pronounced
+    // against what GitHub holds now, not what it held last time. A failed
+    // fetch (offline, no remote yet) costs freshness, not the preflight.
+    let fetched = crate::process::Hardened::git_in(path, &["fetch", "--quiet", "origin"])
+        .timeout(std::time::Duration::from_secs(20))
+        .run()
+        .map(|output| output.status.success())
+        .unwrap_or(false);
     let row = super::status::status(path)?;
     let mut checks = Vec::new();
     checks.push(check(
@@ -92,11 +101,24 @@ pub fn submit_preflight(path: &std::path::Path, fetch: &dyn Fetch) -> Result<Sub
             "Everything is committed",
             "commit your changes so what is submitted is what you have",
         ));
-        checks.push(check(
-            row.git.ahead.map(|ahead| ahead == 0),
-            "Everything is pushed",
-            "push to GitHub — your latest change is not there yet",
-        ));
+        // Without a fresh fetch the tracking ref may flatter local state,
+        // so the row degrades to unknown rather than guessing.
+        let pushed = match fetched {
+            true => row.git.ahead.map(|ahead| ahead == 0),
+            false => None,
+        };
+        checks.push(match pushed {
+            Some(_) => check(
+                pushed,
+                "Everything is pushed",
+                "push to GitHub — your latest change is not there yet",
+            ),
+            None => check(
+                None,
+                "Everything is pushed",
+                "could not reach the remote to check — the submit itself will verify",
+            ),
+        });
     }
     checks.push(visibility(fetch, candidate.as_deref()));
     let ready = checks.iter().all(|row| row.ok == Some(true));

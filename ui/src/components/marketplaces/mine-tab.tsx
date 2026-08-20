@@ -42,7 +42,12 @@ export function MineTab() {
   }, [load, loadAccount]);
 
   useEffect(() => {
-    if (signedIn) void loadSubmissions();
+    if (!signedIn) return;
+    void loadSubmissions();
+    // The submissions API names a 60-second poll interval; a row saying
+    // "in review" forever after the server listed it would be a lie.
+    const timer = setInterval(() => void loadSubmissions(), 60_000);
+    return () => clearInterval(timer);
   }, [signedIn, loadSubmissions]);
 
   const pickExisting = () => {

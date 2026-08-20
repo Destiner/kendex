@@ -63,14 +63,17 @@ fn the_resolver_parses_strictly_and_refuses_junk() {
     let good = canned(
         200,
         r#"{"schema":1,"id":"aB3-_dEf12345678","name":"starter","description":null,
-            "members":[{"repo":"acme/kit","kind":"skill","name":"gh","commit":"AB12CD34EF"},
-                       {"repo":"acme/kit","kind":"agent","name":"scout","commit":null}]}"#,
+            "members":[{"repo":"acme/kit","kind":"skill","name":"gh","commit":"AB12CD34EF12345678901234567890123456ABCD"},
+                       {"repo":"acme/kit","kind":"agent","name":"scout","commit":"ab12cd34ef12345678901234567890123456abcd"}]}"#,
     );
     let collection = resolve(&good, "aB3-_dEf12345678").unwrap();
     assert_eq!(collection.name, "starter");
     assert_eq!(collection.members.len(), 2);
     assert_eq!(collection.members[0].kind, ItemKind::Skill);
-    assert_eq!(collection.members[0].commit.as_deref(), Some("ab12cd34ef"));
+    assert_eq!(
+        collection.members[0].commit.as_deref(),
+        Some("ab12cd34ef12345678901234567890123456abcd")
+    );
 
     let gone = canned(404, r#"{"error":"no such collection"}"#);
     let why = resolve(&gone, "x").unwrap_err().to_string();
@@ -87,6 +90,18 @@ fn the_resolver_parses_strictly_and_refuses_junk() {
         r#"{"schema":1,"id":"i","name":"n","members":[{"repo":"a/b","kind":"skill","name":"x","commit":"main"}]}"#,
     );
     assert!(resolve(&bad_commit, "i").is_err());
+
+    // An abbreviation is not a snapshot; neither is a missing commit.
+    let short_commit = canned(
+        200,
+        r#"{"schema":1,"id":"i","name":"n","members":[{"repo":"a/b","kind":"skill","name":"x","commit":"ab12cd34ef"}]}"#,
+    );
+    assert!(resolve(&short_commit, "i").is_err());
+    let no_commit = canned(
+        200,
+        r#"{"schema":1,"id":"i","name":"n","members":[{"repo":"a/b","kind":"skill","name":"x","commit":null}]}"#,
+    );
+    assert!(resolve(&no_commit, "i").is_err());
 
     let empty = canned(200, r#"{"schema":1,"id":"i","name":"n","members":[]}"#);
     assert!(resolve(&empty, "i").is_err());
@@ -118,8 +133,16 @@ fn a_fresh_scope_subscribes_each_repo_at_the_snapshot() {
         id: "i".to_owned(),
         name: "starter".to_owned(),
         members: vec![
-            member("acme/kit", "gh", Some("ab12cd34ef")),
-            member("acme/kit", "review", Some("ab12cd34ef")),
+            member(
+                "acme/kit",
+                "gh",
+                Some("ab12cd34ef12345678901234567890123456abcd"),
+            ),
+            member(
+                "acme/kit",
+                "review",
+                Some("ab12cd34ef12345678901234567890123456abcd"),
+            ),
             member("other/tools", "deploy", None),
         ],
     };
@@ -129,7 +152,7 @@ fn a_fresh_scope_subscribes_each_repo_at_the_snapshot() {
     assert_eq!(
         kit.action,
         SourceAction::Subscribe {
-            reference: "acme/kit@ab12cd34ef".to_owned()
+            reference: "acme/kit@ab12cd34ef12345678901234567890123456abcd".to_owned()
         }
     );
     assert_eq!(kit.skills, ["gh", "review"]);
@@ -148,12 +171,17 @@ fn a_fresh_scope_subscribes_each_repo_at_the_snapshot() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn an_existing_subscription_is_reused_when_its_pin_matches() {
-    let (_tmp, env, scope) =
-        scoped("schema = 5\n[sources.kit]\nrepo = \"acme/kit\"\nrev = \"ab12cd34ef\"\n");
+    let (_tmp, env, scope) = scoped(
+        "schema = 5\n[sources.kit]\nrepo = \"acme/kit\"\nrev = \"ab12cd34ef12345678901234567890123456abcd\"\n",
+    );
     let collection = Collection {
         id: "i".to_owned(),
         name: "starter".to_owned(),
-        members: vec![member("acme/kit", "gh", Some("ab12cd34"))],
+        members: vec![member(
+            "acme/kit",
+            "gh",
+            Some("ab12cd34ef12345678901234567890123456abcd"),
+        )],
     };
     let steps = collection_steps(&env, &scope, &collection).unwrap();
     assert_eq!(
@@ -172,7 +200,11 @@ fn a_mismatched_pin_refuses_naming_both_halves() {
     let collection = Collection {
         id: "i".to_owned(),
         name: "starter".to_owned(),
-        members: vec![member("acme/kit", "gh", Some("ab12cd34ef"))],
+        members: vec![member(
+            "acme/kit",
+            "gh",
+            Some("ab12cd34ef12345678901234567890123456abcd"),
+        )],
     };
     // The declared rev disagrees and nothing is fetched: kendex cannot
     // verify, so it refuses rather than re-pinning or guessing.
@@ -194,8 +226,16 @@ fn one_repo_pinned_at_two_commits_is_not_a_snapshot() {
         id: "i".to_owned(),
         name: "starter".to_owned(),
         members: vec![
-            member("acme/kit", "gh", Some("ab12cd34ef")),
-            member("acme/kit", "review", Some("ffff000011")),
+            member(
+                "acme/kit",
+                "gh",
+                Some("ab12cd34ef12345678901234567890123456abcd"),
+            ),
+            member(
+                "acme/kit",
+                "review",
+                Some("ffff000011112222333344445555666677778888"),
+            ),
         ],
     };
     let refused = collection_steps(&env, &scope, &collection)

@@ -92,12 +92,31 @@ fn with_access(
     if first.status != 401 {
         return Ok(first);
     }
+    // Another kendex process may have refreshed meanwhile — a rotation is
+    // one-use, so presenting the old refresh token would burn the family.
+    // Reload and prefer any newer credential before refreshing ourselves.
+    if let Some(newer) = store.load()?
+        && newer.access_token != credential.access_token
+    {
+        let retried = call(&newer.access_token)?;
+        if retried.status != 401 {
+            return Ok(retried);
+        }
+    }
     let pair = refresh(fetch, &credential.refresh_token).map_err(|error| {
         // The refresh being refused means this sign-in is over (revoked,
         // expired, or its family burned) — the stale credential is cleared
-        // so the next attempt asks for a fresh login instead of retrying
-        // a dead one forever.
-        let _ = store.clear();
+        // so the next attempt asks for a fresh login instead of retrying a
+        // dead one forever. Cleared only while it is still the credential
+        // we presented: a concurrent process's fresh rotation must survive.
+        let ours = store
+            .load()
+            .ok()
+            .flatten()
+            .is_none_or(|kept| kept.refresh_token == credential.refresh_token);
+        if ours {
+            let _ = store.clear();
+        }
         CoreError::Authoring {
             message: format!("your sign-in has expired ({error}) — run `kendex login` again"),
         }

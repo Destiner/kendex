@@ -59,6 +59,12 @@ pub fn run(env: &Env, scope: &Scope, id: &str, yes: bool) -> CliResult {
             return Err("apply cancelled".into());
         }
     }
+    // Every repository is fetched and every member proven present before
+    // the first mutation — a collection whose third repository is broken
+    // must refuse up front, not leave the first two half-installed.
+    for step in &steps {
+        prevalidate(env, step)?;
+    }
     for step in steps {
         let source = match step.action {
             SourceAction::Reuse { name } => name,
@@ -106,5 +112,35 @@ pub fn run(env: &Env, scope: &Scope, id: &str, yes: bool) -> CliResult {
         kendex_core::apply::execute(env, &report.plan, None)?;
     }
     say("collection installed — every member is in the lock at its resolved commit");
+    Ok(())
+}
+
+/// Fetch one step's repository at its snapshot commit and prove every
+/// member exists there, mutating nothing.
+fn prevalidate(env: &Env, step: &kendex_core::source_ops::CollectionStep) -> CliResult {
+    let resolution = kendex_core::remote::sync(env, &step.repo, step.commit.as_deref())
+        .map_err(|error| format!("{}: {error}", step.repo))?;
+    let sealed = kendex_core::source_read::SealedSource::open(&resolution.root)?;
+    let config =
+        kendex_core::source::source_config(&sealed, kendex_core::source::repo_leaf(&step.repo))?;
+    let wanted: [(kendex_core::model::ItemKind, &Vec<String>); 5] = [
+        (kendex_core::model::ItemKind::Agent, &step.agents),
+        (kendex_core::model::ItemKind::Skill, &step.skills),
+        (kendex_core::model::ItemKind::Hook, &step.hooks),
+        (kendex_core::model::ItemKind::Command, &step.commands),
+        (kendex_core::model::ItemKind::McpServer, &step.mcp_servers),
+    ];
+    for (kind, names) in wanted {
+        for name in names {
+            if kendex_core::source::find_item(&sealed, &config, kind, name).is_none() {
+                return Err(format!(
+                    "{} does not offer {} '{name}' at the collection's snapshot — nothing was installed",
+                    step.repo,
+                    kind.name()
+                )
+                .into());
+            }
+        }
+    }
     Ok(())
 }

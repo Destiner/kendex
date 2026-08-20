@@ -38,13 +38,48 @@ pub fn reveal_path(path: String) -> Result<(), String> {
 /// Opens a web page in the person's browser. https only — the one thing
 /// this is for is kendex.ai and GitHub pages, and a file: or custom-scheme
 /// URL through the system opener is an execution vector, not a page.
+/// Plain http is allowed only when the host is exactly the local machine:
+/// a prefix check would wave through `http://localhost.evil.example`.
 #[tauri::command(async)]
 #[specta::specta]
 pub fn open_url(url: String) -> Result<(), String> {
-    if !url.starts_with("https://") && !url.starts_with("http://localhost") {
+    if !openable(&url) {
         return Err("only web pages can be opened".to_owned());
     }
     tauri_plugin_opener::open_url(&url, None::<String>).map_err(|e| e.to_string())
+}
+
+fn openable(url: &str) -> bool {
+    if url.starts_with("https://") {
+        return true;
+    }
+    let Some(rest) = url.strip_prefix("http://") else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    // Credentials in the authority relocate the real host past the `@`.
+    if authority.contains('@') {
+        return false;
+    }
+    let host = authority.split(':').next().unwrap_or_default();
+    matches!(host, "localhost" | "127.0.0.1" | "[::1]")
+}
+
+#[cfg(test)]
+mod url_tests {
+    use super::openable;
+
+    #[test]
+    fn only_https_or_the_local_machine_opens() {
+        assert!(openable("https://kendex.ai/submit"));
+        assert!(openable("http://localhost:5173/x"));
+        assert!(openable("http://127.0.0.1:8080/"));
+        assert!(!openable("http://localhost.evil.example/"));
+        assert!(!openable("http://localhost@evil.example/"));
+        assert!(!openable("file:///etc/passwd"));
+        assert!(!openable("javascript:alert(1)"));
+        assert!(!openable("http://evil.example/"));
+    }
 }
 
 /// Editors kendex looks for, in preference order, after `KENDEX_EDITOR`.

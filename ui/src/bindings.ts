@@ -156,6 +156,8 @@ export const commands = {
 	 *  Opens a web page in the person's browser. https only — the one thing
 	 *  this is for is kendex.ai and GitHub pages, and a file: or custom-scheme
 	 *  URL through the system opener is an execution vector, not a page.
+	 *  Plain http is allowed only when the host is exactly the local machine:
+	 *  a prefix check would wave through `http://localhost.evil.example`.
 	 */
 	openUrl: (url: string) => typedError<null, string>(__TAURI_INVOKE("open_url", { url })),
 	/**  Every declared source in every scope — the Sources page's one query. */

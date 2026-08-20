@@ -123,12 +123,21 @@ fn validated(member: WireMember) -> Result<CollectionMember> {
             capped(&member.name)
         )));
     }
-    if let Some(commit) = &member.commit
-        && !(commit.len() >= 7
-            && commit.len() <= 40
-            && commit.chars().all(|c| c.is_ascii_hexdigit()))
-    {
-        return Err(refuse(format!("'{}' is not a commit id", capped(commit))));
+    // The snapshot rule: every resolved member carries a full commit —
+    // an abbreviation cannot independently name an immutable object, and
+    // a missing one would let one link install different things for
+    // different people.
+    let Some(commit) = &member.commit else {
+        return Err(refuse(format!(
+            "member '{}' resolved without a commit — not a snapshot this build installs",
+            capped(&member.name)
+        )));
+    };
+    if commit.len() != 40 || !commit.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(refuse(format!(
+            "'{}' is not a full commit id",
+            capped(commit)
+        )));
     }
     Ok(CollectionMember {
         repo: member.repo,
