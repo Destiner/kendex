@@ -1,0 +1,26 @@
+# Homebrew cask for the kendex desktop app. Lives in the tap
+# `vanillagreencom/homebrew-kendex` as `Casks/kendex.rb`, installed with:
+#
+#   brew install --cask kendex
+#
+# Installs the app and, through the formula dependency, the kendex command.
+cask "kendex" do
+  version "5.0.1"
+  sha256 "f8215e1c059d2afcebfc1b56d64094b2f9fe7dacb1a773ce127acc85c262fb3b"
+
+  url "https://github.com/vanillagreencom/kendex/releases/download/v#{version}/kendex_#{version}_aarch64.dmg"
+  name "kendex"
+  desc "Package manager for AI coding agents, skills, and hooks"
+  homepage "https://kendex.ai"
+
+  depends_on arch: :arm64
+  depends_on formula: "vanillagreencom/kendex/kendex"
+
+  app "kendex.app"
+
+  zap trash: [
+    "~/Library/Application Support/ai.kendex.app",
+    "~/Library/Caches/ai.kendex.app",
+    "~/Library/Preferences/ai.kendex.app.plist",
+  ]
+end

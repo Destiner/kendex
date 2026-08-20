@@ -1,34 +1,49 @@
 # Install channels
 
-The headline install is the curl script; the rest are package-manager
-entries that point at the same GitHub release artifacts.
+The headline install is the curl script. The rest are package-manager entries
+that point at the same GitHub release artifacts. On Linux and macOS the app
+and the CLI install together; the CLI is also available on its own.
 
-| Channel | Command | Recipe |
-|---|---|---|
-| curl | `curl -fsSL https://kendex.ai/install.sh \| sh` | [`/install.sh`](../install.sh) |
-| Homebrew | `brew install vanillagreencom/kendex/kendex` | [`homebrew/kendex.rb`](homebrew/kendex.rb) |
-| Arch (prebuilt) | `yay -S kendex` | [`arch/kendex/`](arch/kendex/) |
-| Arch (latest commit) | `yay -S kendex-git` | [`arch/kendex-git/`](arch/kendex-git/) |
-| App bundles | download from the release | built by `release.yml` (`.dmg`/`.msi`/`.AppImage`/`.deb`/`.rpm`) |
+| Channel | Command | Installs | Recipe |
+|---|---|---|---|
+| curl | `curl -fsSL https://kendex.ai/install.sh \| sh` | app + CLI (Linux), CLI (macOS) | [`/install.sh`](../install.sh) |
+| Homebrew cask | `brew install --cask kendex` | app + CLI | [`homebrew/kendex-cask.rb`](homebrew/kendex-cask.rb) |
+| Homebrew formula | `brew install kendex` | CLI | [`homebrew/kendex.rb`](homebrew/kendex.rb) |
+| Arch | `yay -S kendex-bin` | app + CLI | [`arch/kendex-bin/`](arch/kendex-bin/) |
+| Arch (CLI) | `yay -S kendex` | CLI | [`arch/kendex/`](arch/kendex/) |
+| Arch (latest commit) | `yay -S kendex-git` | CLI | [`arch/kendex-git/`](arch/kendex-git/) |
+| App bundles | download from the release | app | built by `release.yml` |
 
-The desktop app ships as native bundles attached to every release; only
-the CLI is installed by curl, Homebrew, and AUR.
+The desktop app binary is named `kendex`, the same as the CLI, so every
+channel that installs both keeps the app off `PATH` (the AppImage on Linux,
+the `.app` bundle on macOS) and leaves the `kendex` command to the CLI.
 
 ## Per release
 
 Each new `vX.Y.Z` changes the artifact checksums. Update, in this repo:
 
-- `arch/kendex/PKGBUILD` and `.SRCINFO`: `pkgver` and the `sha256sums`
-  line (the released `kendex-x86_64-unknown-linux-gnu`).
+- `arch/kendex/PKGBUILD` + `.SRCINFO`: `pkgver` and the `sha256sums` (the
+  released `kendex-x86_64-unknown-linux-gnu`).
+- `arch/kendex-bin/PKGBUILD` + `.SRCINFO`: `pkgver` and all three
+  `sha256sums` (AppImage, CLI binary, icon).
 - `homebrew/kendex.rb`: `version` and both `sha256` lines.
+- `homebrew/kendex-cask.rb`: `version` and the `.dmg` `sha256`.
 
 Then push the recipes to their channels:
 
-- **Homebrew**: copy `homebrew/kendex.rb` into the tap repo
-  `vanillagreencom/homebrew-kendex` and commit.
-- **Arch**: in each AUR package clone, copy the `PKGBUILD` + `.SRCINFO`
-  and `git push` to `ssh://aur@aur.archlinux.org/kendex.git` (and
-  `kendex-git.git`). Pushing needs the AUR account's SSH key.
+- **Homebrew**: copy `homebrew/kendex.rb` to `Formula/kendex.rb` and
+  `homebrew/kendex-cask.rb` to `Casks/kendex.rb` in the tap repo
+  `vanillagreencom/homebrew-kendex`, and commit.
+- **Arch**: in each AUR package clone, copy the `PKGBUILD` + `.SRCINFO` and
+  `git push` to `ssh://aur@aur.archlinux.org/<name>.git`. Pushing needs the
+  AUR account's SSH key.
 
 `kendex-git` needs no checksum change; its `pkgver()` is computed at build
 time from the cloned commit.
+
+## Caveats
+
+- The macOS `.app` is not yet notarized, so the cask install shows Gatekeeper's
+  unidentified-developer prompt on first launch until signing is added to the
+  release.
+- The Linux AppImage needs FUSE (`fuse2`) to run.

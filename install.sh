@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# kendex CLI installer. Downloads the prebuilt `kendex` binary for this
-# machine from the latest GitHub release and puts it on your PATH.
+# kendex installer.
 #
 #   curl -fsSL https://kendex.ai/install.sh | sh
 #
-# The desktop app is a separate download: https://kendex.ai/download
+# On Linux this installs the desktop app and the kendex command. On macOS it
+# installs the kendex command; get the app with `brew install --cask kendex`
+# or from https://kendex.ai/download.
 set -euo pipefail
 
 repo="vanillagreencom/kendex"
@@ -28,11 +29,11 @@ done
 os="$(uname -s)"
 arch="$(uname -m)"
 case "$os-$arch" in
-  Linux-x86_64|Linux-amd64)   target="x86_64-unknown-linux-gnu" ;;
-  Darwin-arm64|Darwin-aarch64) target="aarch64-apple-darwin" ;;
+  Linux-x86_64|Linux-amd64)   target="x86_64-unknown-linux-gnu"; kind="linux" ;;
+  Darwin-arm64|Darwin-aarch64) target="aarch64-apple-darwin"; kind="macos" ;;
   Darwin-x86_64)
     echo "install.sh: no prebuilt binary for Intel macOS yet." >&2
-    echo "  Use Homebrew instead: brew install vanillagreencom/kendex/kendex" >&2
+    echo "  Use Homebrew instead: brew install kendex" >&2
     exit 1 ;;
   *)
     echo "install.sh: unsupported platform: $os $arch" >&2
@@ -45,9 +46,8 @@ if [ "$version" = latest ]; then
     | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1)"
 fi
 [ -n "$version" ] || { echo "install.sh: could not resolve the latest release" >&2; exit 1; }
-
-asset="kendex-$target"
-url="https://github.com/$repo/releases/download/$version/$asset"
+plain="${version#v}"
+base="https://github.com/$repo/releases/download/$version"
 
 # Pick a bin dir already on PATH; prefer a writable user dir over sudo.
 bindir=""
@@ -56,20 +56,61 @@ for candidate in "$HOME/.local/bin" "/usr/local/bin"; do
 done
 [ -n "$bindir" ] || bindir="$HOME/.local/bin"
 
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
-echo "Downloading kendex $version ($target)…"
-curl -fSL --proto '=https' -o "$tmp/kendex" "$url"
-chmod +x "$tmp/kendex"
+install_cli() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+  echo "Downloading the kendex command ($target)…"
+  curl -fSL --proto '=https' -o "$tmp/kendex" "$base/kendex-$target"
+  chmod +x "$tmp/kendex"
+  if [ -w "$bindir" ] || mkdir -p "$bindir" 2>/dev/null; then
+    install -m 0755 "$tmp/kendex" "$bindir/kendex"
+  else
+    echo "Installing to $bindir needs elevated permissions."
+    sudo install -D -m 0755 "$tmp/kendex" "$bindir/kendex"
+  fi
+  echo "Installed the kendex command to $bindir/kendex"
+}
 
-if [ -w "$bindir" ] || mkdir -p "$bindir" 2>/dev/null; then
-  install -m 0755 "$tmp/kendex" "$bindir/kendex"
+# The desktop app on Linux is the AppImage, kept off PATH so the `kendex`
+# command stays the CLI. A .desktop entry launches it from the app menu.
+install_app_linux() {
+  local data libdir tmp
+  data="${XDG_DATA_HOME:-$HOME/.local/share}"
+  libdir="$data/kendex"
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+  echo "Downloading the desktop app…"
+  if ! curl -fSL --proto '=https' -o "$tmp/kendex.AppImage" \
+      "$base/kendex_${plain}_amd64.AppImage"; then
+    echo "install.sh: could not download the desktop app; the kendex command is installed." >&2
+    return 0
+  fi
+  mkdir -p "$libdir" "$data/applications" \
+    "$data/icons/hicolor/128x128/apps"
+  install -m 0755 "$tmp/kendex.AppImage" "$libdir/kendex.AppImage"
+  curl -fsSL --proto '=https' -o "$data/icons/hicolor/128x128/apps/kendex.png" \
+    "https://raw.githubusercontent.com/$repo/$version/crates/app/icons/128x128.png" || true
+  cat > "$data/applications/kendex.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=kendex
+Comment=Manage AI coding agents, skills, and hooks
+Exec=$libdir/kendex.AppImage
+Icon=kendex
+Categories=Development;Utility;
+Terminal=false
+DESKTOP
+  echo "Installed the desktop app to $libdir/kendex.AppImage"
+}
+
+install_cli
+if [ "$kind" = linux ]; then
+  install_app_linux
 else
-  echo "Installing to $bindir needs elevated permissions."
-  sudo install -D -m 0755 "$tmp/kendex" "$bindir/kendex"
+  echo "Desktop app: brew install --cask kendex, or https://kendex.ai/download"
 fi
 
-echo "Installed kendex to $bindir/kendex"
 case ":$PATH:" in
   *":$bindir:"*) ;;
   *) echo "Note: $bindir is not on your PATH. Add it, e.g.:"

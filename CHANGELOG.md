@@ -8,11 +8,13 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
-- Install channels beyond the release page: a one-line curl installer
-  (`curl -fsSL https://kendex.ai/install.sh | sh`), a Homebrew formula
-  (`brew install vanillagreencom/kendex/kendex`), and Arch AUR packages
-  (`kendex` for the prebuilt binary, `kendex-git` for the latest commit).
-  The recipes live under `packaging/`; the README leads with curl.
+- Install channels beyond the release page. A one-line curl installer
+  (`curl -fsSL https://kendex.ai/install.sh | sh`) that installs the app and
+  the CLI on Linux and the CLI on macOS; a Homebrew cask
+  (`brew install --cask kendex`) and Arch package (`yay -S kendex-bin`) that
+  install the app and the CLI together; and CLI-only channels (`brew install
+  kendex`, `yay -S kendex`, `kendex-git`). The recipes live under
+  `packaging/`; the README leads with curl.
 
 ## [5.0.1] — 2026-08-20
 

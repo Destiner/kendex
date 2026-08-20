@@ -8,25 +8,25 @@ Manages agents, skills, hooks, commands, MCP servers, plugins, and Pi
 extensions. Desktop app and CLI over one engine, with a community at
 [kendex.ai](https://kendex.ai).
 
+Here for the packages? Browse the
+[marketplace of skills, agents, and Pi extensions](https://kendex.ai/m/vanillagreencom/kendex).
+
 ![kendex](docs/img/tour.gif)
 
 ## Features
 
-- **Install once, use everywhere.** One library serves all seven managed tools.
-- **Author once.** One markdown file per agent or skill; kendex renders each tool's native format.
-- **Preview first.** Every change shows its plan and asks before touching a file.
-- **Reversible.** Applies are journaled with crash recovery; removals go to a trash, not a delete.
-- **Edits are preserved.** Your changes and removals persist; files kendex did not create are not touched.
-- **Personal and per-project.** Personal setup follows you; project setup lives in the repo.
-- **Catalogs are git repos.** Use the default, your team's, or a local folder, enabled per project.
-- **Sync.** See what is out of date across every tool and fix it in one step.
-- **Point-and-click customization.** Skills per agent, extra instructions, per-tool settings.
-- **Adopt.** Bring hand-made files under management without rewriting them.
-- **Self-updating.** App and CLI update themselves, with v1 (vstack) migration built in.
-- **Marketplaces.** Subscribe to any repository that holds skills, browse it with a per-package safety check, and install with one preview.
-- **Community.** Search the kendex.ai directory and the skills.sh index inside the app; offline it uses your cached copy.
-- **Publish your own.** Scaffold a marketplace repo, import packages you have, validate them, and submit to the directory.
-- **Collections.** Share a set across repositories with one link; `kendex add https://kendex.ai/c/<id>` installs it at fixed commits.
+- Install a skill, agent, or hook once and it lands in the right place for every tool.
+- Write an agent or skill as one file. kendex builds each tool's own format from it.
+- See every change before it happens, and undo it after.
+- Your edits and removals stay. kendex does not touch files it did not create.
+- Keep a personal setup and a separate setup per project.
+- Manage your existing skills, agents, hooks, or extensions inside kendex.
+- Subscribe to any git repository of skills and install from it.
+- Browse the community marketplace, and publish your own.
+- Install a shared collection from one link.
+- See what is out of date across every tool and fix it in one step.
+- Set skills per agent, add instructions, and change per-tool settings.
+- Update the app and CLI from inside kendex.
 
 ## What's supported
 
@@ -53,17 +53,23 @@ Notes:
 
 ## Install
 
+The app and the CLI. Each command installs both.
+
 ```sh
 curl -fsSL https://kendex.ai/install.sh | sh
 ```
 
-That installs the `kendex` CLI. Other channels:
+On Linux this installs the app and the `kendex` command. On macOS it installs
+the command; get the app with the cask below.
 
-- **Homebrew** (macOS, Linux). `brew install vanillagreencom/kendex/kendex`
-- **Arch** (AUR). `yay -S kendex`, or `kendex-git` for the latest commit.
-- **Desktop app.** Download the installer for your platform from the
-  [latest release](https://github.com/vanillagreencom/kendex/releases/latest)
-  or [kendex.ai/download](https://kendex.ai/download).
+- macOS: `brew install --cask kendex`
+- Arch: `yay -S kendex-bin`
+- Windows: download the installer from
+  [kendex.ai/download](https://kendex.ai/download).
+
+For the CLI on its own: `brew install kendex`, `yay -S kendex`, or the curl
+command on macOS. Every install option is on
+[kendex.ai/download](https://kendex.ai/download).
 
 Build from source (Rust and Node required):
 
@@ -116,7 +122,7 @@ kendex owner/catalog-repo --agent rust --skill github   # declare + install
 kendex list                                             # what exists, everywhere
 kendex verify                                           # non-zero exit on drift
 kendex refresh                                          # regenerate from sources
-kendex adopt skill handmade                             # bring an unmanaged item under management
+kendex adopt skill handmade                             # manage an existing item
 kendex apply --plan                                     # preview the full reconcile
 ```
 
