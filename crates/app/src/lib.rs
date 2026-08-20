@@ -1,3 +1,4 @@
+mod account;
 pub mod audit;
 mod commands;
 mod community;
@@ -44,6 +45,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         native::pick_folder,
         native::reveal_path,
         native::open_in_editor,
+        native::open_url,
         sources::sources_overview,
         sources::source_add,
         sources::source_remove,
@@ -75,6 +77,13 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         mine::mine_offer_workflow,
         mine::mine_accept_offer,
         mine::mine_authoring_doc,
+        account::account_status,
+        account::account_login_start,
+        account::account_login_poll,
+        account::account_logout,
+        account::mine_submit_preflight,
+        account::mine_submit,
+        account::mine_submissions,
         packages::package_versions,
         packages::updates_overview,
         packages::updates_refresh,

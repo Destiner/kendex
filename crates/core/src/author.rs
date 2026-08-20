@@ -10,11 +10,13 @@
 //! question, never guessed from here.
 
 pub mod import;
+pub mod preflight;
 pub mod registry;
 pub mod scaffold;
 pub mod status;
 
 pub use import::{ImportCandidate, ImportOutcome, ImportSelection, apply, inventory};
+pub use preflight::{PreflightCheck, SubmitPreflight, submit_preflight};
 pub use registry::{list, register, unregister};
 pub use scaffold::{CreateRequest, License, create, plan};
 pub use status::{GitReadiness, MineRow, status, use_existing};

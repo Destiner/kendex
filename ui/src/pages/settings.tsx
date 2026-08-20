@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Appearance } from "@/bindings";
 import { commands } from "@/bindings";
+import { AccountSection } from "@/components/account-section";
 import { PageHeader } from "@/components/page-header";
 import { RecordedDecisions } from "@/components/recorded-decisions";
 import { Section, SettingRow } from "@/components/section";
@@ -109,6 +110,8 @@ export function SettingsPage() {
               </Select>
             </SettingRow>
           </Section>
+
+          <AccountSection />
 
           <RecordedDecisions />
 

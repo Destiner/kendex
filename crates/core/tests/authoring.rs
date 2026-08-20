@@ -168,3 +168,49 @@ fn a_name_no_harness_accepts_refuses_before_any_write() {
     assert!(author::create(&env, &bad).is_err());
     assert!(!dir.exists(), "a refused create must write nothing");
 }
+
+struct NoNetwork;
+impl kendex_core::registry::Fetch for NoNetwork {
+    fn get_auth(
+        &self,
+        _url: &str,
+        _etag: Option<&str>,
+        _bearer: Option<&str>,
+    ) -> kendex_core::error::Result<kendex_core::registry::FetchResponse> {
+        panic!("the preflight must not touch the network without a GitHub remote");
+    }
+    fn post_json_auth(
+        &self,
+        _url: &str,
+        _body: &str,
+        _bearer: Option<&str>,
+    ) -> kendex_core::error::Result<kendex_core::registry::FetchResponse> {
+        panic!("the preflight never posts");
+    }
+}
+
+/// A fresh scaffold is honest about what is missing: local rows pass, the
+/// remote rows fail or wait, and nothing asks the network before a GitHub
+/// remote exists.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn the_preflight_stays_local_until_a_remote_exists() {
+    let (tmp, env) = fake();
+    let dir = tmp.path().join("made");
+    author::create(&env, &request(&dir, License::Mit)).unwrap();
+    let preflight = author::submit_preflight(&dir, &NoNetwork).unwrap();
+    assert!(!preflight.ready);
+    assert_eq!(preflight.candidate, None);
+    let row = |label: &str| {
+        preflight
+            .checks
+            .iter()
+            .find(|check| check.label.starts_with(label))
+            .unwrap_or_else(|| panic!("no row {label}"))
+            .ok
+    };
+    assert_eq!(row("Passes the check"), Some(true));
+    assert_eq!(row("Has a licence"), Some(true));
+    assert_eq!(row("Has a GitHub remote"), Some(false));
+    assert_eq!(row("Repository is public"), None);
+}

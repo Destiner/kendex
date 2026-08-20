@@ -35,6 +35,18 @@ pub fn reveal_path(path: String) -> Result<(), String> {
     tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| e.to_string())
 }
 
+/// Opens a web page in the person's browser. https only — the one thing
+/// this is for is kendex.ai and GitHub pages, and a file: or custom-scheme
+/// URL through the system opener is an execution vector, not a page.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn open_url(url: String) -> Result<(), String> {
+    if !url.starts_with("https://") && !url.starts_with("http://localhost") {
+        return Err("only web pages can be opened".to_owned());
+    }
+    tauri_plugin_opener::open_url(&url, None::<String>).map_err(|e| e.to_string())
+}
+
 /// Editors kendex looks for, in preference order, after `KENDEX_EDITOR`.
 const EDITOR_CANDIDATES: [&str; 5] = ["codium", "code", "cursor", "zed", "subl"];
 

@@ -7,6 +7,7 @@ pub mod credentials;
 pub mod index;
 pub mod login;
 pub mod skillssh;
+pub mod submit;
 pub mod view;
 
 use crate::error::{CoreError, Result};
@@ -33,11 +34,27 @@ pub struct FetchResponse {
 /// The one seam registry reads go through — tests hand in a canned
 /// transport, production hands in curl.
 pub trait Fetch {
-    fn get(&self, url: &str, if_none_match: Option<&str>) -> Result<FetchResponse>;
+    fn get(&self, url: &str, if_none_match: Option<&str>) -> Result<FetchResponse> {
+        self.get_auth(url, if_none_match, None)
+    }
 
-    /// POST a JSON body. Secrets ride in the body and the body rides in
-    /// a 0600 config file, so neither ever shows in a process list.
-    fn post_json(&self, url: &str, body: &str) -> Result<FetchResponse>;
+    /// GET with an optional bearer credential. The credential rides in a
+    /// 0600 config file, never in argv.
+    fn get_auth(
+        &self,
+        url: &str,
+        if_none_match: Option<&str>,
+        bearer: Option<&str>,
+    ) -> Result<FetchResponse>;
+
+    fn post_json(&self, url: &str, body: &str) -> Result<FetchResponse> {
+        self.post_json_auth(url, body, None)
+    }
+
+    /// POST a JSON body, optionally bearer-authenticated. Secrets ride in
+    /// the body or the header and both ride in a 0600 config file, so
+    /// neither ever shows in a process list.
+    fn post_json_auth(&self, url: &str, body: &str, bearer: Option<&str>) -> Result<FetchResponse>;
 }
 
 /// curl under the hardened runner: TLS and proxy configuration come from
@@ -46,7 +63,28 @@ pub trait Fetch {
 pub struct CurlFetch;
 
 impl Fetch for CurlFetch {
-    fn get(&self, url: &str, if_none_match: Option<&str>) -> Result<FetchResponse> {
+    fn get_auth(
+        &self,
+        url: &str,
+        if_none_match: Option<&str>,
+        bearer: Option<&str>,
+    ) -> Result<FetchResponse> {
+        // A bearer credential in argv would sit in the process list, so an
+        // authenticated read goes through the config-file path instead.
+        if let Some(bearer) = bearer {
+            let mut config = format!(
+                "url = {}\nheader = {}\n",
+                curl_quote(url),
+                curl_quote(&format!("Authorization: Bearer {bearer}")),
+            );
+            if let Some(etag) = if_none_match {
+                config.push_str(&format!(
+                    "header = {}\n",
+                    curl_quote(&format!("If-None-Match: {etag}"))
+                ));
+            }
+            return run_with_config(url, &config);
+        }
         let proto = if url.starts_with("http://") {
             "=http"
         } else {
@@ -84,43 +122,54 @@ impl Fetch for CurlFetch {
         parse_http_response(&output.stdout)
     }
 
-    fn post_json(&self, url: &str, body: &str) -> Result<FetchResponse> {
-        let proto = if url.starts_with("http://") {
-            "=http"
-        } else {
-            "=https"
-        };
+    fn post_json_auth(&self, url: &str, body: &str, bearer: Option<&str>) -> Result<FetchResponse> {
         // Everything sensitive goes through a curl config file readable
-        // only by us: a device code or token in argv would sit in the
-        // process list for anyone on the machine to read.
-        let config = format!(
+        // only by us: a device code, token or bearer header in argv would
+        // sit in the process list for anyone on the machine to read.
+        let mut config = format!(
             "url = {}\nrequest = \"POST\"\nheader = \"Content-Type: application/json\"\ndata = {}\n",
             curl_quote(url),
             curl_quote(body)
         );
-        let file = tempfile_0600(&config)?;
-        let path = file.path().to_string_lossy().into_owned();
-        let args = [
-            "-sS",
-            "-i",
-            "--max-time",
-            "20",
-            "--proto",
-            proto,
-            "--config",
-            &path,
-        ];
-        let output = Hardened::curl(&args)
-            .timeout(Duration::from_secs(25))
-            .max_output(MAX_RESPONSE_BYTES)
-            .run()?;
-        if !output.status.success() {
-            return Err(CoreError::RegistryUnavailable {
-                why: String::from_utf8_lossy(&output.stderr).trim().to_string(),
-            });
+        if let Some(bearer) = bearer {
+            config.push_str(&format!(
+                "header = {}\n",
+                curl_quote(&format!("Authorization: Bearer {bearer}"))
+            ));
         }
-        parse_http_response(&output.stdout)
+        run_with_config(url, &config)
     }
+}
+
+/// One curl run whose request details live in a 0600 config file.
+fn run_with_config(url: &str, config: &str) -> Result<FetchResponse> {
+    let proto = if url.starts_with("http://") {
+        "=http"
+    } else {
+        "=https"
+    };
+    let file = tempfile_0600(config)?;
+    let path = file.path().to_string_lossy().into_owned();
+    let args = [
+        "-sS",
+        "-i",
+        "--max-time",
+        "20",
+        "--proto",
+        proto,
+        "--config",
+        &path,
+    ];
+    let output = Hardened::curl(&args)
+        .timeout(Duration::from_secs(25))
+        .max_output(MAX_RESPONSE_BYTES)
+        .run()?;
+    if !output.status.success() {
+        return Err(CoreError::RegistryUnavailable {
+            why: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        });
+    }
+    parse_http_response(&output.stdout)
 }
 
 /// curl config-file quoting: backslash and double-quote escaped, the

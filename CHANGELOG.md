@@ -39,6 +39,16 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Added
 
+- Publish what you build. A Mine row's "Submit to community…" walks a
+  preflight (check passes, licence, git state, everything pushed, the
+  repository visible to the world — each row honest about what this
+  machine can know), signs you in with GitHub the first time (a code, a
+  browser tab, done — the app never sees a password), and submits to
+  kendex.ai, which verifies you can actually push to that repository
+  before anything is listed. The row then follows the outcome: in
+  review, listed, or needs changes with the reviewer's written reason.
+  Sign in/out lives in Settings → Account; the same flow is
+  `kendex marketplace submit [--dry-run | --status]` in the terminal.
 - Build your own marketplace. The Marketplaces → Mine tab creates a
   ready-to-publish repository (kendex.toml, README, licence, a CI
   workflow that runs the check), registers any folder you already have

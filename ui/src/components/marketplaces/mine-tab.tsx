@@ -12,10 +12,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useAccountStore } from "@/stores/account";
 import { useMineStore } from "@/stores/mine";
 import { MineCreateDialog } from "./mine-create-dialog";
 import { MineImportDialog } from "./mine-import-dialog";
 import { MineRowCard } from "./mine-row";
+import { MineSubmitDialog } from "./mine-submit-dialog";
 
 /** The marketplaces the user authors. Rows are computed fresh from each
  * folder; a folder that stopped reading keeps its place with the reason. */
@@ -28,10 +30,20 @@ export function MineTab() {
   const [importTarget, setImportTarget] = useState<string | null>(null);
   const [doc, setDoc] = useState<string | null>(null);
   const [docOpen, setDocOpen] = useState(false);
+  const [submitTarget, setSubmitTarget] = useState<string | null>(null);
+  const loadAccount = useAccountStore((s) => s.load);
+  const loadSubmissions = useAccountStore((s) => s.loadSubmissions);
+  const signedIn = useAccountStore((s) => s.signedIn);
+  const submissions = useAccountStore((s) => s.submissions);
 
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadAccount();
+  }, [load, loadAccount]);
+
+  useEffect(() => {
+    if (signedIn) void loadSubmissions();
+  }, [signedIn, loadSubmissions]);
 
   const pickExisting = () => {
     void commands.pickFolder().then((picked) => {
@@ -86,7 +98,13 @@ export function MineTab() {
               <MineRowCard
                 key={entry.row.path}
                 row={entry.row}
+                submission={
+                  submissions?.find(
+                    (candidate) => candidate.repo === entry.row.git.candidate,
+                  ) ?? null
+                }
                 onImport={(path) => setImportTarget(path)}
+                onSubmit={(path) => setSubmitTarget(path)}
               />
             ) : (
               <div
@@ -121,6 +139,14 @@ export function MineTab() {
           </ScrollArea>
         </DialogContent>
       </Dialog>
+      <MineSubmitDialog
+        path={submitTarget ?? ""}
+        open={submitTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setSubmitTarget(null);
+        }}
+        onSubmitted={() => void loadSubmissions()}
+      />
       <MineCreateDialog open={creating} onOpenChange={setCreating} />
       <MineImportDialog
         target={importTarget ?? ""}

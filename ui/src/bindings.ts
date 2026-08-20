@@ -152,6 +152,12 @@ export const commands = {
 	 *  the user's own long-lived GUI app and is meant to outlive us.
 	 */
 	openInEditor: (path: string) => typedError<null, string>(__TAURI_INVOKE("open_in_editor", { path })),
+	/**
+	 *  Opens a web page in the person's browser. https only — the one thing
+	 *  this is for is kendex.ai and GitHub pages, and a file: or custom-scheme
+	 *  URL through the system opener is an execution vector, not a page.
+	 */
+	openUrl: (url: string) => typedError<null, string>(__TAURI_INVOKE("open_url", { url })),
 	/**  Every declared source in every scope — the Sources page's one query. */
 	sourcesOverview: () => typedError<SourceRow[], string>(__TAURI_INVOKE("sources_overview")),
 	sourceAdd: (scope: Scope, name: string, reference: string) => typedError<SourceRow[], string>(__TAURI_INVOKE("source_add", { scope, name, reference })),
@@ -248,6 +254,14 @@ export const commands = {
 	 *  text the repository publishes.
 	 */
 	mineAuthoringDoc: () => __TAURI_INVOKE<string>("mine_authoring_doc"),
+	accountStatus: () => typedError<AccountStatus, string>(__TAURI_INVOKE("account_status")),
+	accountLoginStart: () => typedError<LoginStart, string>(__TAURI_INVOKE("account_login_start")),
+	/**  One poll; the frontend owns the timer so a closed dialog stops asking. */
+	accountLoginPoll: (deviceCode: string) => typedError<string, string>(__TAURI_INVOKE("account_login_poll", { deviceCode })),
+	accountLogout: () => typedError<null, string>(__TAURI_INVOKE("account_logout")),
+	mineSubmitPreflight: (path: string) => typedError<SubmitPreflight, string>(__TAURI_INVOKE("mine_submit_preflight", { path })),
+	mineSubmit: (repo: string) => typedError<SubmittedView, string>(__TAURI_INVOKE("mine_submit", { repo })),
+	mineSubmissions: () => typedError<SubmissionRow[], string>(__TAURI_INVOKE("mine_submissions")),
 	packageVersions: (scope: Scope, kind: ItemKind, name: string) => typedError<VersionRow[], string>(__TAURI_INVOKE("package_versions", { scope, kind, name })),
 	/**
 	 *  Every scope's update standing in one query — the sidebar badge, the
@@ -309,6 +323,11 @@ export type AboutView = {
 	mode: CatalogMode,
 	found: AboutFound[],
 	findings: CatalogFinding[],
+};
+
+export type AccountStatus = {
+	signedIn: boolean,
+	endpoint: string,
 };
 
 export type AntiPattern = {
@@ -1438,6 +1457,14 @@ export type Line = {
 
 export type LineKind = "context" | "add" | "remove";
 
+export type LoginStart = {
+	deviceCode: string,
+	userCode: string,
+	/**  The page to open, with the code already in it. */
+	verificationUrl: string,
+	intervalSeconds: number,
+};
+
 export type Manifest = Manifest_Serialize | Manifest_Deserialize;
 
 export type Manifest_Deserialize = {
@@ -1830,6 +1857,17 @@ export type PluginDecl = {
 	harness?: HarnessId,
 };
 
+/**
+ *  One preflight row. `ok: None` is "cannot be known from this machine
+ *  right now" — shown, never guessed.
+ */
+export type PreflightCheck = {
+	ok: boolean | null,
+	label: string,
+	/**  What to do when the row fails. */
+	fix: string | null,
+};
+
 /**  One installation's origin, keyed the way the Library table joins it. */
 export type ProvenanceRow = {
 	scope: Scope,
@@ -2083,6 +2121,32 @@ export type StatusFinding = {
 	severity: string,
 	message: string,
 	fix: string,
+};
+
+/**  One row of GET /api/v1/submissions — what a Mine row polls. */
+export type SubmissionRow = {
+	repo: string,
+	status: string,
+	status_reason: string | null,
+	head_commit: string | null,
+	indexed_at: string | null,
+};
+
+export type SubmitPreflight = {
+	row: MineRow,
+	checks: PreflightCheck[],
+	/**  The `owner/repo` a submit would send. */
+	candidate: string | null,
+	/**
+	 *  Every locally-checkable row passes. The server still has the last
+	 *  word on visibility and push authority.
+	 */
+	ready: boolean,
+};
+
+export type SubmittedView = {
+	repo: string,
+	status: string,
 };
 
 /**  What subscribing declared, after the plan ran. */

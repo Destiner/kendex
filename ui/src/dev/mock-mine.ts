@@ -6,7 +6,9 @@ import type {
   ImportSelection,
   MineListRow,
   MineRow,
+  SubmitPreflight,
 } from "@/bindings";
+import { isSignedIn } from "./mock-account";
 import type { Handler } from "./mock-state";
 
 function row(overrides: Partial<MineRow>): MineRow {
@@ -114,7 +116,64 @@ const candidates: ImportCandidate[] = [
   },
 ];
 
+function preflightFor(path: string): SubmitPreflight {
+  const entry = rows.find(
+    (kept) => kept.state === "ready" && kept.row.path === path,
+  );
+  const mine = entry && entry.state === "ready" ? entry.row : row({});
+  const ready = mine.git.candidate !== null;
+  return {
+    row: mine,
+    candidate: mine.git.candidate,
+    ready,
+    checks: [
+      { ok: true, label: "Passes the check", fix: null },
+      { ok: true, label: "Has a name and description", fix: null },
+      {
+        ok: mine.license !== null,
+        label: "Has a licence",
+        fix:
+          mine.license !== null
+            ? null
+            : 'add license = "<SPDX id>" to kendex.toml — submission needs one',
+      },
+      { ok: mine.git.repository, label: "Is a git repository", fix: null },
+      {
+        ok: mine.git.candidate !== null,
+        label: mine.git.candidate
+          ? `Has a GitHub remote: github.com/${mine.git.candidate}`
+          : "Has a GitHub remote",
+        fix: mine.git.candidate
+          ? null
+          : "push the repository to GitHub and add it as `origin`",
+      },
+      {
+        ok: null,
+        label: "Repository is public",
+        fix: "could not reach GitHub to check — the submit itself will verify",
+      },
+    ],
+  };
+}
+
 export const mineHandlers: Record<string, Handler> = {
+  mine_submit_preflight: (args: { path: string }) => preflightFor(args.path),
+  mine_submit: (args: { repo: string }) => {
+    if (!isSignedIn()) return Promise.reject("sign in first");
+    return { repo: args.repo, status: "pending" };
+  },
+  mine_submissions: () =>
+    isSignedIn()
+      ? [
+          {
+            repo: "jane/team-skills",
+            status: "pending",
+            status_reason: null,
+            head_commit: null,
+            indexed_at: null,
+          },
+        ]
+      : Promise.reject("sign in first"),
   mine_authoring_doc: () =>
     "# How a marketplace repo works\n\nA kendex marketplace is a git repository.\n",
   mine_list: () => rows,

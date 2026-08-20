@@ -1,0 +1,155 @@
+import { Check, CircleHelp, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { commands, type SubmitPreflight } from "@/bindings";
+import { DotSpinner } from "@/components/loading";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useAccountStore } from "@/stores/account";
+
+/** The preflight checklist and the submit itself. The server has the last
+ * word — push authority and visibility are its verdicts, and its refusal
+ * sentence shows here verbatim. */
+export function MineSubmitDialog({
+  path,
+  open,
+  onOpenChange,
+  onSubmitted,
+}: {
+  path: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmitted: () => void;
+}) {
+  const signedIn = useAccountStore((s) => s.signedIn);
+  const signingIn = useAccountStore((s) => s.signingIn);
+  const userCode = useAccountStore((s) => s.userCode);
+  const signIn = useAccountStore((s) => s.signIn);
+  const cancelSignIn = useAccountStore((s) => s.cancelSignIn);
+  const accountError = useAccountStore((s) => s.error);
+  const loadAccount = useAccountStore((s) => s.load);
+  const [preflight, setPreflight] = useState<SubmitPreflight | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setPreflight(null);
+      setError(null);
+      setSubmitted(null);
+      cancelSignIn();
+      return;
+    }
+    void loadAccount();
+    void commands.mineSubmitPreflight(path).then((answer) => {
+      if (answer.status === "ok") setPreflight(answer.data);
+      else setError(answer.error);
+    });
+  }, [open, path, loadAccount, cancelSignIn]);
+
+  const submit = () => {
+    if (!preflight?.candidate) return;
+    setBusy(true);
+    setError(null);
+    void commands.mineSubmit(preflight.candidate).then((answer) => {
+      setBusy(false);
+      if (answer.status === "error") {
+        setError(answer.error);
+        return;
+      }
+      setSubmitted(answer.data.status);
+      onSubmitted();
+    });
+  };
+
+  const openOnSite = () => {
+    void commands.openUrl("https://kendex.ai/submit");
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Submit to the community</DialogTitle>
+          <DialogDescription>
+            kendex.ai verifies you can push to the repository, indexes it, and
+            lists it for everyone to subscribe to.
+          </DialogDescription>
+        </DialogHeader>
+        {submitted ? (
+          <p className="text-sm">
+            Submitted.{" "}
+            {submitted === "listed"
+              ? "It is live in the community directory."
+              : "It is in the review queue — the row will say when it is listed."}
+          </p>
+        ) : preflight === null && error === null ? (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <DotSpinner /> Checking this folder…
+          </p>
+        ) : preflight ? (
+          <ul className="space-y-1.5 text-sm">
+            {preflight.checks.map((row) => (
+              <li key={row.label} className="flex items-start gap-2">
+                {row.ok === true ? (
+                  <Check className="mt-0.5 size-4 shrink-0 text-ok" />
+                ) : row.ok === false ? (
+                  <X className="mt-0.5 size-4 shrink-0 text-critical" />
+                ) : (
+                  <CircleHelp className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                )}
+                <span>
+                  {row.label}
+                  {row.fix ? (
+                    <span className="block text-xs text-muted-foreground">
+                      {row.fix}
+                    </span>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {signingIn && userCode ? (
+          <p className="text-sm text-muted-foreground">
+            A kendex.ai page just opened with the code{" "}
+            <span className="font-mono font-medium">{userCode}</span> — approve
+            it there and this dialog finishes on its own.
+          </p>
+        ) : null}
+        {(error ?? accountError) ? (
+          <p className="text-sm text-critical" role="alert">
+            {error ?? accountError}
+          </p>
+        ) : null}
+        <DialogFooter>
+          <Button variant="ghost" onClick={openOnSite}>
+            Open kendex.ai/submit
+          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {submitted ? "Done" : "Cancel"}
+          </Button>
+          {submitted ? null : signedIn ? (
+            <Button
+              onClick={submit}
+              disabled={busy || !preflight?.candidate || !preflight.ready}
+            >
+              {busy ? "Submitting…" : "Submit"}
+            </Button>
+          ) : (
+            <Button onClick={() => void signIn()} disabled={signingIn}>
+              {signingIn ? "Waiting for approval…" : "Sign in with GitHub"}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

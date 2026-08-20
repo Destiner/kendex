@@ -256,6 +256,64 @@ fn summarize(row: &author::MineRow) {
     }
 }
 
+pub fn submit(env: &Env, dir: Option<PathBuf>, dry_run: bool, status: bool) -> CliResult {
+    use kendex_core::registry::credentials::KeyringStore;
+    use kendex_core::registry::{CurlFetch, submit};
+    let _ = env;
+    let fetch = CurlFetch;
+    if status {
+        for row in submit::submissions(&fetch, &KeyringStore)? {
+            let reason = row
+                .status_reason
+                .map(|reason| format!(" — {reason}"))
+                .unwrap_or_default();
+            out(&format!("{}  {}{}", row.repo, row.status, reason));
+        }
+        return Ok(());
+    }
+    let dir = match dir {
+        Some(dir) => dir,
+        None => std::env::current_dir()?,
+    };
+    let preflight = author::submit_preflight(&dir, &fetch)?;
+    for check in &preflight.checks {
+        let mark = match check.ok {
+            Some(true) => "ok",
+            Some(false) => " ✗",
+            None => " ?",
+        };
+        say(&format!("{mark}  {}", check.label));
+        if let Some(fix) = &check.fix {
+            say(&format!("      {fix}"));
+        }
+    }
+    let Some(candidate) = &preflight.candidate else {
+        return Err("nothing to submit yet — push the repository to GitHub first".into());
+    };
+    if dry_run {
+        say(&format!(
+            "would submit {candidate} to {}",
+            kendex_core::registry::base_url()
+        ));
+        return Ok(());
+    }
+    if !preflight.ready {
+        return Err("fix the rows marked ✗ first — or --dry-run to see what would be sent".into());
+    }
+    let outcome = submit::submit(&fetch, &KeyringStore, candidate)?;
+    say(&format!(
+        "submitted {} — status: {}{}",
+        outcome.repo,
+        outcome.status,
+        match outcome.status.as_str() {
+            "pending" => " (in the review queue; `kendex marketplace submit --status` follows it)",
+            "listed" => " (live in the community directory)",
+            _ => "",
+        }
+    ));
+    Ok(())
+}
+
 fn git_config_name() -> Option<String> {
     let output = Hardened::git(&["config", "user.name"], None)
         .timeout(std::time::Duration::from_secs(5))

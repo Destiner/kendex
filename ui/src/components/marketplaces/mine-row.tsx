@@ -1,6 +1,10 @@
 import { ChevronDown, ChevronRight, MoreHorizontal } from "lucide-react";
 import { useState } from "react";
-import { commands, type MineRow as MineRowData } from "@/bindings";
+import {
+  commands,
+  type MineRow as MineRowData,
+  type SubmissionRow,
+} from "@/bindings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,12 +43,34 @@ function gitLine(row: MineRowData): string {
 
 /** One authored marketplace: what kendex found in the folder, what the
  * check says, what git says — and the actions that grow it. */
+/** What a submission status reads as on the row. */
+function submissionLine(submission: SubmissionRow): string {
+  switch (submission.status) {
+    case "pending":
+      return "Submitted · in review";
+    case "listed":
+      return "Listed in the community directory";
+    case "needs-changes":
+      return submission.status_reason
+        ? `Needs changes — ${submission.status_reason}`
+        : "Needs changes";
+    case "delisted":
+      return "Delisted";
+    default:
+      return `Submitted · ${submission.status}`;
+  }
+}
+
 export function MineRowCard({
   row,
+  submission,
   onImport,
+  onSubmit,
 }: {
   row: MineRowData;
+  submission: SubmissionRow | null;
   onImport: (path: string) => void;
+  onSubmit: (path: string) => void;
 }) {
   const forget = useMineStore((s) => s.forget);
   const acceptWorkflow = useMineStore((s) => s.acceptWorkflow);
@@ -74,6 +100,17 @@ export function MineRowCard({
           <p className="mt-1 text-sm text-muted-foreground">
             {countsLine(row)} · {gitLine(row)}
           </p>
+          {submission ? (
+            <p
+              className={
+                submission.status === "needs-changes"
+                  ? "mt-1 text-sm text-warning"
+                  : "mt-1 text-sm text-muted-foreground"
+              }
+            >
+              {submissionLine(submission)}
+            </p>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button
@@ -82,6 +119,9 @@ export function MineRowCard({
             onClick={() => onImport(row.path)}
           >
             Import packages…
+          </Button>
+          <Button size="sm" onClick={() => onSubmit(row.path)}>
+            {submission ? "Re-submit…" : "Submit to community…"}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger

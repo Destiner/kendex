@@ -136,6 +136,18 @@ pub enum MarketplaceCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Submit an authored marketplace to the kendex.ai community
+    /// directory (needs `kendex login`); prints the preflight first
+    Submit {
+        /// The marketplace directory (default: the current directory)
+        dir: Option<std::path::PathBuf>,
+        /// Print the preflight and what would be sent, then stop
+        #[arg(long)]
+        dry_run: bool,
+        /// Show the status of everything you have submitted
+        #[arg(long)]
+        status: bool,
+    },
 }
 
 fn run_unsubscribe(
@@ -336,6 +348,11 @@ pub fn run(env: &Env, command: MarketplaceCommand) -> CliResult {
                 json,
             },
         )?,
+        MarketplaceCommand::Submit {
+            dir,
+            dry_run,
+            status,
+        } => super::marketplace_author::submit(env, dir, dry_run, status)?,
     }
     Ok(())
 }

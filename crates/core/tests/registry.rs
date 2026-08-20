@@ -26,14 +26,20 @@ impl Canned {
 }
 
 impl Fetch for Canned {
-    fn post_json(&self, url: &str, _body: &str) -> kendex_core::error::Result<FetchResponse> {
+    fn post_json_auth(
+        &self,
+        url: &str,
+        _body: &str,
+        _bearer: Option<&str>,
+    ) -> kendex_core::error::Result<FetchResponse> {
         self.get(url, None)
     }
 
-    fn get(
+    fn get_auth(
         &self,
         _url: &str,
         if_none_match: Option<&str>,
+        _bearer: Option<&str>,
     ) -> kendex_core::error::Result<FetchResponse> {
         *self.calls.borrow_mut() += 1;
         *self.saw_etag.borrow_mut() = if_none_match.map(str::to_string);
