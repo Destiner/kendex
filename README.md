@@ -51,7 +51,29 @@ Notes:
 - ‡Gemini records MCP server state in one machine-wide file, so a project can declare a server but not switch it off there.
 - ‡Gemini extensions install globally and switch on through an undocumented file, so they stay read-only.
 
-## How kendex works
+## Install
+
+```sh
+curl -fsSL https://kendex.ai/install.sh | sh
+```
+
+That installs the `kendex` CLI. Other channels:
+
+- **Homebrew** (macOS, Linux). `brew install vanillagreencom/kendex/kendex`
+- **Arch** (AUR). `yay -S kendex`, or `kendex-git` for the latest commit.
+- **Desktop app.** Download the installer for your platform from the
+  [latest release](https://github.com/vanillagreencom/kendex/releases/latest)
+  or [kendex.ai/download](https://kendex.ai/download).
+
+Build from source (Rust and Node required):
+
+```sh
+cargo build --release -p kendex-cli               # the `kendex` CLI
+npm ci --prefix ui
+cd crates/app && ../../ui/node_modules/.bin/tauri dev   # the desktop app
+```
+
+## How it works
 
 ```
   CATALOGS                YOUR CHOICES               YOUR TOOLS
@@ -86,20 +108,6 @@ Agents are generated per tool from one source file. MCP servers and hooks
 are edits inside a tool's own config that leave every other key untouched.
 Pi extensions are npm packages, copied and registered. Generated files are
 safe to regenerate; your intent lives only in `kendex.toml`.
-
-## Install
-
-Download the app or CLI from the
-[latest release](https://github.com/vanillagreencom/kendex/releases/latest)
-or from [kendex.ai/download](https://kendex.ai/download).
-
-Or build from source (Rust and Node required):
-
-```sh
-cargo build --release -p kendex-cli               # the `kendex` CLI
-npm ci --prefix ui
-cd crates/app && ../../ui/node_modules/.bin/tauri dev   # the desktop app
-```
 
 ## Quick start
 

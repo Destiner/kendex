@@ -4,6 +4,16 @@ Notable changes, per [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Entries are written when a change lands, not batched at release. Breaking
 changes carry a **Breaking** call-out with their migration note inline.
 
+## [Unreleased]
+
+### Added
+
+- Install channels beyond the release page: a one-line curl installer
+  (`curl -fsSL https://kendex.ai/install.sh | sh`), a Homebrew formula
+  (`brew install vanillagreencom/kendex/kendex`), and Arch AUR packages
+  (`kendex` for the prebuilt binary, `kendex-git` for the latest commit).
+  The recipes live under `packaging/`; the README leads with curl.
+
 ## [5.0.1] — 2026-08-20
 
 ### Fixed
