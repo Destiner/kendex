@@ -3,7 +3,7 @@
 #
 #   brew install vanillagreencom/kendex/kendex
 #
-# Stable installs the prebuilt release binary; `--HEAD` builds from source.
+# Installs the prebuilt release binary — no toolchain needed.
 class Kendex < Formula
   desc "Package manager for agents, skills, and hooks across AI coding tools"
   homepage "https://kendex.ai"
@@ -24,16 +24,8 @@ class Kendex < Formula
     end
   end
 
-  head "https://github.com/vanillagreencom/kendex.git", branch: "main"
-
-  depends_on "rust" => :build if build.head?
-
   def install
-    if build.head?
-      system "cargo", "install", *std_cargo_args(path: "crates/cli"), "--bin", "kendex"
-    else
-      bin.install Dir["*"].first => "kendex"
-    end
+    bin.install Dir["*"].first => "kendex"
   end
 
   test do
