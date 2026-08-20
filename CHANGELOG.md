@@ -15,6 +15,15 @@ changes carry a **Breaking** call-out with their migration note inline.
   project drops the key with a note; a manifest still carrying it gets a
   "remove it" finding from `kendex check`.
 
+### Fixed
+
+- Unsubscribing with "keep the packages" now leaves the scope perfectly
+  clean: a kept agent used to show as out of date right afterwards,
+  because the marketplace's own skill and settings tables shaped how it
+  was written and those tables left with the marketplace. Keeping now
+  moves the effective values into your own kendex.toml, so what you
+  kept keeps rendering exactly as it was installed.
+
 ### Changed
 
 - **Breaking** — vstack is now **kendex**. The app, the CLI binary

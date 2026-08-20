@@ -82,7 +82,18 @@ pub fn marketplace_unsubscribe(
             .map_err(|e| e.to_string())?
             .plan
     };
-    apply::execute(&env, &plan, None)
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    apply::execute(&env, &plan, None).map_err(|e| e.to_string())?;
+    if keep {
+        // Keeping moved the catalog's mapping tables into the manifest, so
+        // the install records are re-synced here — otherwise every kept
+        // agent would read as drifted until the next refresh.
+        let resync = kendex_core::engine::plan_apply(
+            &env,
+            &scope,
+            &kendex_core::engine::PlanOptions::default(),
+        )
+        .map_err(|e| e.to_string())?;
+        apply::execute(&env, &resync.plan, None).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }

@@ -82,14 +82,35 @@ pub fn source(env: &Env, scope: &Scope, source_name: &str) -> Result<Plan> {
 
     let local_root = local_source_root(env, &scope);
     let mut ops = Vec::new();
+    let mut carried: Vec<AgentCarry> = Vec::new();
     for item in &closure.items {
         // Read this item's source-form bytes at the exact commit it installed
         // from — not the source head, which may have moved. A declared item
         // that was never applied has no lock entry; its own pin is the commit.
         let commit = effective_commit(&lock, item)?;
-        let files = source_form(env, &scope, &manifest, item, commit.as_deref())?;
+        let (files, carry) = source_form(env, &scope, &manifest, item, commit.as_deref())?;
+        carried.extend(carry);
         let target = local_target(&local_root, item.kind, &item.name)?;
         ops.extend(capture_to_local(item.kind, &item.name, &target, files)?);
+    }
+    // The catalog's own mapping tables shaped every rendering — skills the
+    // catalog attached, frontmatter defaults it set. The local source has
+    // no such tables, so the effective values move into the manifest here
+    // or the very next apply would silently re-render every kept agent
+    // differently.
+    for carry in carried {
+        if !manifest.agent_skills.contains_key(&carry.name) && !carry.skills.is_empty() {
+            manifest
+                .agent_skills
+                .insert(carry.name.clone(), carry.skills);
+        }
+        for (harness, merged) in carry.frontmatter {
+            manifest
+                .agent_frontmatter
+                .entry(harness)
+                .or_default()
+                .insert(carry.name.clone(), merged);
+        }
     }
 
     // Flip every converted item to the local source and record the fork.
@@ -138,16 +159,29 @@ pub fn source(env: &Env, scope: &Scope, source_name: &str) -> Result<Plan> {
     })
 }
 
+/// The catalog-level tables one kept agent rendered with: the effective
+/// skill list and the merged per-harness frontmatter. What must land in
+/// the manifest so the rendering survives losing the catalog.
+struct AgentCarry {
+    name: String,
+    skills: Vec<String>,
+    frontmatter: Vec<(String, crate::manifest::FrontmatterOverrides)>,
+}
+
+/// `(relative path, bytes)` pairs ready to write under the local target.
+type SourceFiles = Vec<(PathBuf, Vec<u8>)>;
+
 /// One item's source-form files, read through the sealed catalog at the commit
 /// it was installed from: the skill's tree, or the single file the other kinds
-/// keep. `(relative path, bytes)`, ready to write under the local target.
+/// keep. `(relative path, bytes)`, ready to write under the local target —
+/// plus, for an agent, the catalog tables its rendering depended on.
 fn source_form(
     env: &Env,
     scope: &Scope,
     manifest: &Manifest,
     item: &ClosureItem,
     commit: Option<&str>,
-) -> Result<Vec<(PathBuf, Vec<u8>)>> {
+) -> Result<(SourceFiles, Option<AgentCarry>)> {
     let resolved = match crate::source::resolve_at(env, scope, &item.decl.source, manifest, commit)?
     {
         crate::source::SourceState::Ready(ready) => ready,
@@ -180,20 +214,70 @@ fn source_form(
                         .then(|| parent.to_path_buf())
                 })
                 .collect();
-            Ok(files
-                .into_iter()
-                .filter(|(rel, _)| !nested.iter().any(|dir| rel.starts_with(dir)))
-                .collect())
+            Ok((
+                files
+                    .into_iter()
+                    .filter(|(rel, _)| !nested.iter().any(|dir| rel.starts_with(dir)))
+                    .collect(),
+                None,
+            ))
         }
         _ => {
             let bytes = sealed.read(&path)?;
+            let carry = match item.kind {
+                ItemKind::Agent => agent_carry(manifest, &sealed, &config, item, &bytes),
+                _ => None,
+            };
             let file = path
                 .file_name()
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from(&item.name));
-            Ok(vec![(file, bytes)])
+            Ok((vec![(file, bytes)], carry))
         }
     }
+}
+
+/// What the catalog contributed to this agent's rendering. Skills carry
+/// only where the manifest has no entry of its own (an entry already
+/// governs); frontmatter carries the catalog-beneath-project merge, which
+/// keeps the same precedence the rendering used.
+fn agent_carry(
+    manifest: &Manifest,
+    sealed: &crate::source_read::SealedSource,
+    config: &crate::source::SourceConfig,
+    item: &ClosureItem,
+    bytes: &[u8],
+) -> Option<AgentCarry> {
+    let text = String::from_utf8_lossy(bytes);
+    let role = crate::render::agent::parse_source_agent(&text)
+        .ok()
+        .and_then(|agent| agent.role);
+    let available = crate::source::list_items(sealed, config, ItemKind::Skill);
+    let skills =
+        crate::mapping::effective_skills(&item.name, role, manifest, config, &available, None)
+            .effective;
+    let mut frontmatter = Vec::new();
+    for (harness, by_agent) in &config.frontmatter {
+        let Some(defaults) = by_agent.get(&item.name) else {
+            continue;
+        };
+        let merged = crate::render::agent::merge_overrides(
+            Some(defaults),
+            manifest
+                .agent_frontmatter
+                .get(harness)
+                .and_then(|agents| agents.get(&item.name)),
+        );
+        frontmatter.push((harness.clone(), merged));
+    }
+    if skills.is_empty() && frontmatter.is_empty() {
+        return None;
+    }
+    Some(AgentCarry {
+        name: item.name.clone(),
+        skills,
+        frontmatter,
+    })
 }
 
 /// The write op for one detached item, after preflighting the local target:
