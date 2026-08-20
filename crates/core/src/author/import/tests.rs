@@ -86,6 +86,16 @@ fn seeded() -> (tempfile::TempDir, Env, Scope) {
     (tmp, env, scope)
 }
 
+/// Apply refuses unregistered targets, so every test target is created and
+/// registered under Mine first.
+#[allow(clippy::unwrap_used)]
+fn target(env: &Env, tmp: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
+    let dir = tmp.path().join(name);
+    fs::create_dir_all(&dir).unwrap();
+    crate::author::registry::register(env, &dir).unwrap();
+    dir.canonicalize().unwrap()
+}
+
 #[allow(clippy::unwrap_used)]
 fn find<'a>(candidates: &'a [ImportCandidate], name: &str) -> &'a ImportCandidate {
     candidates
@@ -132,8 +142,7 @@ fn selection(candidate: &ImportCandidate, confirmed: bool) -> ImportSelection {
 fn marketplace_origin_copies_only_past_licence_confirmation() {
     let (tmp, env, scope) = seeded();
     let scopes = [scope];
-    let target = tmp.path().join("mine-market");
-    fs::create_dir_all(&target).unwrap();
+    let target = target(&env, &tmp, "mine-market");
     let candidates = inventory(&env, &scopes).unwrap();
     let gh = find(&candidates, "gh");
 
@@ -159,8 +168,7 @@ fn marketplace_origin_copies_only_past_licence_confirmation() {
 fn own_and_unmanaged_content_import_without_a_licence_question() {
     let (tmp, env, scope) = seeded();
     let scopes = [scope];
-    let target = tmp.path().join("mine-own");
-    fs::create_dir_all(&target).unwrap();
+    let target = target(&env, &tmp, "mine-own");
     let candidates = inventory(&env, &scopes).unwrap();
     let selections = [
         selection(find(&candidates, "mine"), false),
@@ -177,7 +185,7 @@ fn own_and_unmanaged_content_import_without_a_licence_question() {
 fn a_destination_holding_different_bytes_is_a_refusal_naming_it() {
     let (tmp, env, scope) = seeded();
     let scopes = [scope];
-    let target = tmp.path().join("mine-clash");
+    let target = target(&env, &tmp, "mine-clash");
     skill(
         &target.join("skills"),
         "mine",
@@ -199,7 +207,7 @@ fn a_destination_holding_different_bytes_is_a_refusal_naming_it() {
 fn a_case_folding_sibling_refuses_before_the_copy() {
     let (tmp, env, scope) = seeded();
     let scopes = [scope];
-    let target = tmp.path().join("mine-fold");
+    let target = target(&env, &tmp, "mine-fold");
     skill(&target.join("skills"), "MINE", "upper-case sibling");
     let candidates = inventory(&env, &scopes).unwrap();
     let refused = apply(
@@ -217,8 +225,7 @@ fn a_case_folding_sibling_refuses_before_the_copy() {
 fn a_stale_hash_refuses_instead_of_copying_moved_bytes() {
     let (tmp, env, scope) = seeded();
     let scopes = [scope.clone()];
-    let target = tmp.path().join("mine-stale");
-    fs::create_dir_all(&target).unwrap();
+    let target = target(&env, &tmp, "mine-stale");
     let candidates = inventory(&env, &scopes).unwrap();
     let mut chosen = selection(find(&candidates, "mine"), false);
     // The preview goes stale: the local source's bytes change under it.
@@ -239,3 +246,5 @@ fn a_stale_hash_refuses_instead_of_copying_moved_bytes() {
     chosen.hash = find(&fresh, "mine").origins[0].hash.clone();
     apply(&env, &scopes, &target, &[chosen]).unwrap();
 }
+
+mod review;

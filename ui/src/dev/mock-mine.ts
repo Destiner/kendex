@@ -1,6 +1,4 @@
-// The Mine tab against canned data: one healthy authored row, one row
-// with findings, an import inventory covering all three origins, and
-// create/use flows that mutate the in-memory list.
+// The Mine tab against canned data: rows, import inventory, submit.
 import type {
   ImportCandidate,
   ImportSelection,
@@ -96,6 +94,7 @@ const candidates: ImportCandidate[] = [
           source: "agent-kit",
           repo: "acme/agent-kit",
           license: "MIT",
+          licenseRecognized: true,
         },
         locations: ["acme/agent-kit:skills/gh"],
         hash: "bbbb2222bbbb2222",
@@ -234,14 +233,17 @@ export const mineHandlers: Record<string, Handler> = {
     rel: ".github/workflows/kendex-check.yml",
     bytes: "name: kendex check\n",
   }),
-  mine_accept_offer: (args: { path: string }) => {
-    const entry = rows.find(
-      (kept) => kept.state === "ready" && kept.row.path === args.path,
-    );
-    if (entry && entry.state === "ready") {
-      entry.row.declared = true;
-      return entry.row;
-    }
-    return row({});
-  },
+  mine_accept_manifest: (args: { path: string }) => acceptInto(args.path),
+  mine_accept_workflow: (args: { path: string }) => acceptInto(args.path),
 };
+
+function acceptInto(path: string): MineRow {
+  const entry = rows.find(
+    (kept) => kept.state === "ready" && kept.row.path === path,
+  );
+  if (entry && entry.state === "ready") {
+    entry.row.declared = true;
+    return entry.row;
+  }
+  return row({});
+}

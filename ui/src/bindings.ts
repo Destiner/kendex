@@ -248,7 +248,8 @@ export const commands = {
 	mineImportApply: (target: string, selections: ImportSelection[]) => typedError<ImportOutcome, string>(__TAURI_INVOKE("mine_import_apply", { target, selections })),
 	mineOfferManifest: (path: string, name: string, description: string, authorName: string) => typedError<OfferPreview, string>(__TAURI_INVOKE("mine_offer_manifest", { path, name, description, authorName })),
 	mineOfferWorkflow: (path: string) => typedError<OfferPreview, string>(__TAURI_INVOKE("mine_offer_workflow", { path })),
-	mineAcceptOffer: (path: string, rel: string, bytes: string) => typedError<MineRow, string>(__TAURI_INVOKE("mine_accept_offer", { path, rel, bytes })),
+	mineAcceptManifest: (path: string, name: string, description: string, authorName: string) => typedError<MineRow, string>(__TAURI_INVOKE("mine_accept_manifest", { path, name, description, authorName })),
+	mineAcceptWorkflow: (path: string) => typedError<MineRow, string>(__TAURI_INVOKE("mine_accept_workflow", { path })),
 	/**
 	 *  The one authoring document, compiled in so the app renders the same
 	 *  text the repository publishes.
@@ -503,10 +504,21 @@ export type CandidateGroup =
 /**  The person's own content in a local source. */
 { group: "own" } | 
 /**
- *  Copied from a subscribed marketplace; its licence is shown and the
- *  person confirms they may republish.
+ *  Copied from a subscribed marketplace; its licence is shown and
+ *  gates the copy.
  */
-{ group: "marketplace"; source: string; repo: string; license: string | null } | 
+{ group: "marketplace"; source: string; repo: string; license: string | null; 
+/**
+ *  Whether kendex recognizes the licence as redistributable — a
+ *  recognized one is confirmable, anything else needs a basis.
+ */
+licenseRecognized: boolean } | 
+/**
+ *  The installed copy of a marketplace package that no longer matches
+ *  the marketplace's bytes — "your edited copy", shown beside the
+ *  original and gated by the same licence.
+ */
+{ group: "edited"; source: string; repo: string; license: string | null; licenseRecognized: boolean } | 
 /**  On disk, managed by nothing — captured the way adopt captures. */
 { group: "unmanaged" };
 
@@ -1165,9 +1177,10 @@ export type ImportCandidate = {
 	 */
 	nameProblem: string | null,
 	/**
-	 *  Distinct byte origins, presentation-ordered own → marketplace →
-	 *  unmanaged. Identical bytes collapse to one entry listing every
-	 *  location; differing bytes stay separate for the person to choose.
+	 *  Distinct byte variants, presentation-ordered own → marketplace →
+	 *  edited → unmanaged. Identical bytes collapse to one entry listing
+	 *  every location, under the strictest provenance among them; differing
+	 *  bytes stay separate for the person to choose.
 	 */
 	origins: CandidateOrigin[],
 };
@@ -1192,12 +1205,13 @@ export type ImportSelection = {
 	/**  Which bytes: the chosen origin's hash. */
 	hash: string,
 	/**
-	 *  Marketplace-origin only: the person confirms the shown licence
-	 *  permits republishing.
+	 *  Licensed-origin only: the person confirms the shown, recognized
+	 *  licence permits republishing. An unrecognized licence cannot be
+	 *  confirmed — it needs a basis.
 	 */
 	licenseConfirmed?: boolean,
 	/**
-	 *  Marketplace-origin with no detectable licence: the person's stated
+	 *  Licensed-origin with no recognized licence: the person's stated
 	 *  basis for copying ("author granted permission", say). Never
 	 *  synthesized.
 	 */

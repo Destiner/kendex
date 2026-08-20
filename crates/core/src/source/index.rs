@@ -104,62 +104,43 @@ pub struct IndexFinding {
 
 /// Summarize one marketplace directory. `display` names the repository the
 /// way [`super::source_config`] wants it — the repo leaf.
+///
+/// The item set, the findings and the counts all come from one
+/// [`check_catalog::check_with`] run — the same answer `kendex check`
+/// gives, so the directory can never call clean what the check fails.
 pub fn index(sealed: &SealedSource, display: &str) -> Result<MarketplaceIndex> {
     let config = super::source_config(sealed, display)?;
     let about = super::about(sealed, &config);
-    let mut findings: Vec<IndexFinding> = about
-        .findings
+    let report = check_catalog::check_with(sealed, &config, display)?;
+    let findings: Vec<IndexFinding> = report
+        .catalog
         .iter()
         .map(|finding| IndexFinding {
-            location: safe_text(&finding.location, MAX_TEXT),
-            problem: safe_text(&finding.problem, MAX_DESCRIPTION),
+            location: safe_text(&finding.file, MAX_TEXT),
+            problem: safe_text(&finding.message, MAX_DESCRIPTION),
             fix: safe_text(&finding.fix, MAX_DESCRIPTION),
         })
         .collect();
-    let mut checked = IndexChecked::default();
+    let tally = report.tally();
+    let checked = IndexChecked {
+        breakage: tally.breakage,
+        held_back: tally.held_back,
+        warned: tally.warned,
+    };
     let mut packages = Vec::new();
-    for kind in [
-        ItemKind::Agent,
-        ItemKind::Skill,
-        ItemKind::Hook,
-        ItemKind::Command,
-        ItemKind::McpServer,
-    ] {
-        for name in super::list_items(sealed, &config, kind) {
-            let Some(path) = super::find_item(sealed, &config, kind, &name) else {
-                // A listed name every lookup refuses (an illegal spelling,
-                // say) is a catalog problem, not content to score.
-                findings.push(IndexFinding {
-                    location: safe_text(&name, MAX_TEXT),
-                    problem: format!("this {} is listed but cannot be read", kind.name()),
-                    fix: "give it a plain installable name at the path the catalog declares"
-                        .to_owned(),
-                });
-                continue;
-            };
-            let item = check_catalog::check_item(sealed, kind, &name, &path)?;
-            checked.breakage += item
-                .findings
-                .iter()
-                .filter(|finding| finding.is_breakage())
-                .count();
-            match item.verdict {
-                Verdict::Block => checked.held_back += 1,
-                Verdict::Warn => checked.warned += 1,
-                Verdict::Clean => {}
-            }
-            let (description, tags) = describe(sealed, kind, &path)?;
-            packages.push(IndexPackage {
-                kind: kind.name(),
-                name: safe_text(&name, MAX_TEXT),
-                description,
-                tags,
-                safety: IndexSafety {
-                    score: item.score,
-                    verdict: item.verdict,
-                },
-            });
-        }
+    for item in &report.items {
+        let path = sealed.root().join(&item.file);
+        let (description, tags) = describe(sealed, item.kind, &path)?;
+        packages.push(IndexPackage {
+            kind: item.kind.name(),
+            name: safe_text(&item.name, MAX_TEXT),
+            description,
+            tags,
+            safety: IndexSafety {
+                score: item.score,
+                verdict: item.verdict,
+            },
+        });
     }
     let bundles = bundle_rows(sealed, &config)?;
     let meta = config.marketplace.clone().unwrap_or_default();

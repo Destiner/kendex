@@ -132,8 +132,23 @@ pub fn mine_offer_workflow(path: PathBuf) -> Result<OfferPreview, String> {
 
 #[tauri::command(async)]
 #[specta::specta]
-pub fn mine_accept_offer(path: PathBuf, rel: String, bytes: String) -> Result<MineRow, String> {
-    author::scaffold::accept_offer(&path, &rel, &bytes).map_err(|e| e.to_string())?;
+pub fn mine_accept_manifest(
+    path: PathBuf,
+    name: String,
+    description: String,
+    author_name: String,
+) -> Result<MineRow, String> {
+    let env = env()?;
+    author::scaffold::accept_manifest_offer(&env, &path, &name, &description, &author_name)
+        .map_err(|e| e.to_string())?;
+    author::status(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub fn mine_accept_workflow(path: PathBuf) -> Result<MineRow, String> {
+    let env = env()?;
+    author::scaffold::accept_workflow_offer(&env, &path).map_err(|e| e.to_string())?;
     author::status(&path).map_err(|e| e.to_string())
 }
 

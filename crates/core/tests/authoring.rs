@@ -214,3 +214,36 @@ fn the_preflight_stays_local_until_a_remote_exists() {
     assert_eq!(row("Has a GitHub remote"), Some(false));
     assert_eq!(row("Repository is public"), None);
 }
+
+/// The golden pin: these exact tree digests, per licence. Any byte change
+/// in the scaffold must land here alongside a SCAFFOLD_VERSION bump —
+/// comparing two calls of the same code can never catch drift, a
+/// checked-in digest can.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn the_scaffold_matches_its_checked_in_golden_digest() {
+    assert_eq!(kendex_core::author::scaffold::SCAFFOLD_VERSION, 1);
+    for (license, expected) in [
+        (
+            License::Mit,
+            "d6db2c1ac5332e848518c793bba266880c925910ab6ca6f56bd62602ef4eee5f",
+        ),
+        (
+            License::Apache2,
+            "bffebce64f0abab9de2b0e8bab4d298eb7af77539905596b54b92bec9a94d394",
+        ),
+        (
+            License::NoneYet,
+            "6f3f86eba273a381ca8a1b1b5d2a765bf6fab069620f5496e14460a9b5691983",
+        ),
+    ] {
+        let files: Vec<(std::path::PathBuf, Vec<u8>)> =
+            author::plan(&request(Path::new("/golden"), license))
+                .unwrap()
+                .into_iter()
+                .map(|(rel, bytes)| (std::path::PathBuf::from(rel), bytes.into_bytes()))
+                .collect();
+        let digest = kendex_core::hash::hash_files(&files);
+        assert_eq!(digest, expected, "{license:?} scaffold bytes drifted");
+    }
+}

@@ -226,6 +226,12 @@ fn list_candidates(candidates: &[author::ImportCandidate], json: bool) -> CliRes
                     Some(license) => format!("from '{source}' ({license})"),
                     None => format!("from '{source}' (no licence found)"),
                 },
+                author::import::CandidateGroup::Edited {
+                    source, license, ..
+                } => match license {
+                    Some(license) => format!("your edited copy from '{source}' ({license})"),
+                    None => format!("your edited copy from '{source}' (no licence found)"),
+                },
                 author::import::CandidateGroup::Unmanaged => "found on disk".to_owned(),
             };
             let hash = match origin.hash.is_empty() {

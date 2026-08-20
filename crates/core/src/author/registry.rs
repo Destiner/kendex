@@ -52,6 +52,30 @@ pub fn list(env: &Env) -> Result<Vec<PathBuf>> {
     Ok(load(env)?.marketplaces)
 }
 
+/// Everything `register` will check, checked before a caller creates the
+/// folder it intends to register: the registry file parses and the row is
+/// not already taken. `path` may not exist yet, so the duplicate check
+/// canonicalizes its parent.
+pub(crate) fn can_register(env: &Env, path: &Path) -> Result<()> {
+    let authored = load(env)?;
+    let probable = match (path.parent(), path.file_name()) {
+        (Some(parent), Some(leaf)) => parent
+            .canonicalize()
+            .map(|parent| parent.join(leaf))
+            .unwrap_or_else(|_| path.to_path_buf()),
+        _ => path.to_path_buf(),
+    };
+    if authored.marketplaces.contains(&probable) {
+        return Err(CoreError::Authoring {
+            message: format!(
+                "{} is already under Mine — open its row instead",
+                probable.display()
+            ),
+        });
+    }
+    Ok(())
+}
+
 /// Register one folder under Mine. Canonicalized so two spellings of one
 /// folder cannot become two rows; a duplicate is an error naming the row
 /// that already exists.

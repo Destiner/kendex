@@ -99,20 +99,11 @@ export const useMineStore = create<MineState>((set, get) => ({
   acceptManifest: async (path, name, description, author) => {
     set({ busy: true, actionError: null });
     try {
-      const offered = await commands.mineOfferManifest(
+      const accepted = await commands.mineAcceptManifest(
         path,
         name,
         description,
         author,
-      );
-      if (offered.status === "error") {
-        set({ actionError: offered.error });
-        return false;
-      }
-      const accepted = await commands.mineAcceptOffer(
-        path,
-        offered.data.rel,
-        offered.data.bytes,
       );
       if (accepted.status === "error") {
         set({ actionError: accepted.error });
@@ -128,16 +119,7 @@ export const useMineStore = create<MineState>((set, get) => ({
   acceptWorkflow: async (path) => {
     set({ busy: true, actionError: null });
     try {
-      const offered = await commands.mineOfferWorkflow(path);
-      if (offered.status === "error") {
-        set({ actionError: offered.error });
-        return false;
-      }
-      const accepted = await commands.mineAcceptOffer(
-        path,
-        offered.data.rel,
-        offered.data.bytes,
-      );
+      const accepted = await commands.mineAcceptWorkflow(path);
       if (accepted.status === "error") {
         set({ actionError: accepted.error });
         return false;

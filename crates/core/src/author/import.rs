@@ -3,24 +3,23 @@
 //!
 //! One inventory, keyed by `(kind, name)`, every byte origin listed.
 //! Provenance decides the group: the person's own local-source content,
-//! marketplace content (whose licence gates the copy), and unmanaged
-//! on-disk content captured as-is. Nothing is guessed: unknown licence
-//! blocks marketplace-origin copying unless the person states a basis, a
-//! moved origin refuses at apply, and a destination collision — byte or
-//! case-fold — is a refusal naming both sides.
+//! marketplace content (whose licence gates the copy), an edited copy of
+//! marketplace content (shown beside the original, gated the same), and
+//! unmanaged on-disk content captured as-is. Nothing is guessed: identical
+//! bytes collapse to one origin under the *strictest* provenance, an
+//! unrecognized licence cannot be confirmed away, a moved origin refuses
+//! at apply, and collisions — byte, path or case-fold, on disk or between
+//! selections — are refused before anything is written.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::env::Env;
-use crate::error::{CoreError, Result};
-use crate::library::Origin;
-use crate::manifest::{LOCAL_SOURCE_NAME, Manifest, ManifestFile};
+use crate::error::Result;
 use crate::model::{ItemKind, Scope};
-use crate::source_read::SealedSource;
 
 /// One importable package, with every byte origin that offers it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -31,9 +30,10 @@ pub struct ImportCandidate {
     /// Why a harness would refuse this name, when one would — the wizard
     /// requires a different destination name then.
     pub name_problem: Option<String>,
-    /// Distinct byte origins, presentation-ordered own → marketplace →
-    /// unmanaged. Identical bytes collapse to one entry listing every
-    /// location; differing bytes stay separate for the person to choose.
+    /// Distinct byte variants, presentation-ordered own → marketplace →
+    /// edited → unmanaged. Identical bytes collapse to one entry listing
+    /// every location, under the strictest provenance among them; differing
+    /// bytes stay separate for the person to choose.
     pub origins: Vec<CandidateOrigin>,
 }
 
@@ -56,15 +56,61 @@ pub struct CandidateOrigin {
 pub enum CandidateGroup {
     /// The person's own content in a local source.
     Own,
-    /// Copied from a subscribed marketplace; its licence is shown and the
-    /// person confirms they may republish.
+    /// Copied from a subscribed marketplace; its licence is shown and
+    /// gates the copy.
     Marketplace {
         source: String,
         repo: String,
         license: Option<String>,
+        /// Whether kendex recognizes the licence as redistributable — a
+        /// recognized one is confirmable, anything else needs a basis.
+        license_recognized: bool,
+    },
+    /// The installed copy of a marketplace package that no longer matches
+    /// the marketplace's bytes — "your edited copy", shown beside the
+    /// original and gated by the same licence.
+    Edited {
+        source: String,
+        repo: String,
+        license: Option<String>,
+        license_recognized: bool,
     },
     /// On disk, managed by nothing — captured the way adopt captures.
     Unmanaged,
+}
+
+impl CandidateGroup {
+    /// Merge order for identical bytes: the strictest provenance wins, so
+    /// equal bytes can never dodge a licence gate by also existing
+    /// somewhere friendlier.
+    fn strictness(&self) -> u8 {
+        match self {
+            CandidateGroup::Marketplace { .. } => 3,
+            CandidateGroup::Edited { .. } => 2,
+            CandidateGroup::Unmanaged => 1,
+            CandidateGroup::Own => 0,
+        }
+    }
+
+    /// The licence question applies to marketplace bytes and to edited
+    /// copies of them alike — editing does not launder provenance.
+    pub(super) fn licensed_source(&self) -> Option<(&str, Option<&str>, bool)> {
+        match self {
+            CandidateGroup::Marketplace {
+                source,
+                license,
+                license_recognized,
+                ..
+            }
+            | CandidateGroup::Edited {
+                source,
+                license,
+                license_recognized,
+                ..
+            } => Some((source, license.as_deref(), *license_recognized)),
+            _ => None,
+        }
+    }
 }
 
 /// What the wizard chose for one candidate.
@@ -79,11 +125,12 @@ pub struct ImportSelection {
     pub destination: String,
     /// Which bytes: the chosen origin's hash.
     pub hash: String,
-    /// Marketplace-origin only: the person confirms the shown licence
-    /// permits republishing.
+    /// Licensed-origin only: the person confirms the shown, recognized
+    /// licence permits republishing. An unrecognized licence cannot be
+    /// confirmed — it needs a basis.
     #[serde(default)]
     pub license_confirmed: bool,
-    /// Marketplace-origin with no detectable licence: the person's stated
+    /// Licensed-origin with no recognized licence: the person's stated
     /// basis for copying ("author granted permission", say). Never
     /// synthesized.
     #[serde(default)]
@@ -100,18 +147,31 @@ pub struct ImportOutcome {
 }
 
 /// The bytes of one origin: a single file or a whole skill tree.
-enum Bytes {
+pub(super) enum Bytes {
     File(Vec<u8>),
     Tree(Vec<(PathBuf, Vec<u8>)>),
 }
 
 impl Bytes {
-    fn hash(&self) -> String {
+    pub(super) fn hash(&self) -> String {
         match self {
             Bytes::File(bytes) => crate::hash::hash_bytes(bytes),
             Bytes::Tree(files) => crate::hash::hash_files(files),
         }
     }
+}
+
+/// One selection's bytes re-resolved at apply time, with the provenance
+/// that governs it and the licence evidence files that travel with it.
+pub(super) struct ResolvedSelection {
+    pub bytes: Bytes,
+    pub group: CandidateGroup,
+    /// Root-level LICENSE/NOTICE/COPYING files of a licensed origin's
+    /// catalog — copied beside the bytes, provenance retained.
+    pub notices: Vec<(String, Vec<u8>)>,
+    /// Where on this machine the bytes were read from, when they were —
+    /// what the target-overlap refusal compares against.
+    pub read_from: Option<PathBuf>,
 }
 
 /// Every package the given scopes hold, grouped and deduplicated. Origins
@@ -121,25 +181,29 @@ pub fn inventory(env: &Env, scopes: &[Scope]) -> Result<Vec<ImportCandidate>> {
     let unmanaged = unmanaged_paths(env, scopes);
     let mut candidates: BTreeMap<(ItemKind, String), Vec<CandidateOrigin>> = BTreeMap::new();
     for row in crate::library::provenance(env, scopes)? {
-        let Some((group, bytes, location)) = origin_bytes(env, &row, &unmanaged) else {
-            continue;
-        };
-        let hash = bytes.map(|bytes| bytes.hash()).unwrap_or_default();
-        let origins = candidates.entry((row.kind, row.name.clone())).or_default();
-        match origins
-            .iter_mut()
-            .find(|origin| origin.hash == hash && origin.group == group)
-        {
-            Some(origin) => {
-                if !origin.locations.contains(&location) {
-                    origin.locations.push(location);
+        for (group, bytes, location, _) in origins_of(env, &row, &unmanaged) {
+            let hash = bytes.map(|bytes| bytes.hash()).unwrap_or_default();
+            let origins = candidates.entry((row.kind, row.name.clone())).or_default();
+            // Identical bytes are one origin whatever offered them; the
+            // strictest provenance among the claimants governs it.
+            match origins
+                .iter_mut()
+                .find(|origin| !hash.is_empty() && origin.hash == hash)
+            {
+                Some(origin) => {
+                    if !origin.locations.contains(&location) {
+                        origin.locations.push(location);
+                    }
+                    if group.strictness() > origin.group.strictness() {
+                        origin.group = group;
+                    }
                 }
+                None => origins.push(CandidateOrigin {
+                    group,
+                    locations: vec![location],
+                    hash,
+                }),
             }
-            None => origins.push(CandidateOrigin {
-                group,
-                locations: vec![location],
-                hash,
-            }),
         }
     }
     Ok(candidates
@@ -148,7 +212,8 @@ pub fn inventory(env: &Env, scopes: &[Scope]) -> Result<Vec<ImportCandidate>> {
             origins.sort_by_key(|origin| match origin.group {
                 CandidateGroup::Own => 0u8,
                 CandidateGroup::Marketplace { .. } => 1,
-                CandidateGroup::Unmanaged => 2,
+                CandidateGroup::Edited { .. } => 2,
+                CandidateGroup::Unmanaged => 3,
             });
             ImportCandidate {
                 kind,
@@ -160,161 +225,33 @@ pub fn inventory(env: &Env, scopes: &[Scope]) -> Result<Vec<ImportCandidate>> {
         .collect())
 }
 
-/// The observed on-disk path of every unmanaged installation — provenance
-/// rows carry no path, so the scan is asked once and joined here.
-fn unmanaged_paths(env: &Env, scopes: &[Scope]) -> BTreeMap<(Scope, ItemKind, String), PathBuf> {
-    let Ok(settings) = crate::settings::load(env) else {
-        return BTreeMap::new();
-    };
-    let scopes: Vec<Scope> = scopes.iter().map(Scope::canonical).collect();
-    let observed = crate::scan::scan_scopes(env, &settings.harness_roots, &scopes);
-    let mut paths = BTreeMap::new();
-    for item in observed.items {
-        if item.vendor.is_some() {
-            continue;
-        }
-        paths
-            .entry((item.scope, item.kind, item.name))
-            .or_insert(item.path);
-    }
-    paths
-}
+/// Licences kendex recognizes as redistributable. A licence outside this
+/// list is not "unknown but confirmable" — it needs a stated basis, the
+/// same as no licence at all, because a checkbox cannot make proprietary
+/// text copyable.
+pub const REDISTRIBUTABLE: &[&str] = &[
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+    "Unlicense",
+    "CC0-1.0",
+    "0BSD",
+    "Zlib",
+    "CC-BY-4.0",
+    "CC-BY-SA-4.0",
+];
 
-/// Where one provenance row's bytes live, or `None` for rows import cannot
-/// carry (vendor content never reaches provenance; config-entry kinds have
-/// no file of their own to copy).
-fn origin_bytes(
-    env: &Env,
-    row: &crate::library::ProvenanceRow,
-    unmanaged: &BTreeMap<(Scope, ItemKind, String), PathBuf>,
-) -> Option<(CandidateGroup, Option<Bytes>, String)> {
-    match &row.origin {
-        Origin::Own { .. } => {
-            let root = crate::source::local_source_root(env, &row.scope);
-            let (bytes, location) = catalog_bytes(&root, LOCAL_SOURCE_NAME, row)?;
-            Some((CandidateGroup::Own, bytes, location))
-        }
-        Origin::Marketplace { source, repo } => {
-            let manifest = scope_manifest(env, &row.scope);
-            let group = CandidateGroup::Marketplace {
-                source: source.clone(),
-                repo: repo.clone(),
-                license: None,
-            };
-            let resolved = match crate::source::resolve(env, &row.scope, source, &manifest) {
-                Ok(crate::source::SourceState::Ready(resolved)) => resolved,
-                // Unreachable provenance is listed, not guessed: the row
-                // shows with no bytes and selecting it refuses.
-                _ => return Some((group, None, format!("{repo} (not fetched)"))),
-            };
-            let sealed = SealedSource::open(&resolved.root).ok()?;
-            let config = crate::source::source_config_for(&sealed, &resolved.provenance).ok()?;
-            let license = config
-                .marketplace
-                .as_ref()
-                .and_then(|meta| meta.license.clone());
-            let group = CandidateGroup::Marketplace {
-                source: source.clone(),
-                repo: repo.clone(),
-                license,
-            };
-            let path = crate::source::find_item(&sealed, &config, row.kind, &row.name)?;
-            let bytes = read_bytes(&sealed, row.kind, &path)?;
-            Some((
-                group,
-                Some(bytes),
-                format!("{repo}:{}", rel(&sealed, &path)),
-            ))
-        }
-        Origin::Unmanaged => {
-            if !matches!(
-                row.kind,
-                ItemKind::Skill | ItemKind::Agent | ItemKind::Command
-            ) {
-                return None;
-            }
-            let path = unmanaged.get(&(row.scope.clone(), row.kind, row.name.clone()))?;
-            let sealed = SealedSource::open(path.parent()?).ok()?;
-            let bytes = read_bytes(&sealed, row.kind, path)?;
-            Some((
-                CandidateGroup::Unmanaged,
-                Some(bytes),
-                path.display().to_string(),
-            ))
-        }
-    }
-}
-
-fn catalog_bytes(
-    root: &Path,
-    provenance: &str,
-    row: &crate::library::ProvenanceRow,
-) -> Option<(Option<Bytes>, String)> {
-    let sealed = SealedSource::open(root).ok()?;
-    let config = crate::source::source_config_for(&sealed, provenance).ok()?;
-    let path = crate::source::find_item(&sealed, &config, row.kind, &row.name)?;
-    let bytes = read_bytes(&sealed, row.kind, &path)?;
-    let location = root.join(rel(&sealed, &path)).display().to_string();
-    Some((Some(bytes), location))
-}
-
-fn read_bytes(sealed: &SealedSource, kind: ItemKind, path: &Path) -> Option<Bytes> {
-    match kind {
-        ItemKind::Skill => {
-            let dir = match sealed.is_dir(path) {
-                true => path.to_path_buf(),
-                // A one-skill repo hands the SKILL.md itself.
-                false => path.parent()?.to_path_buf(),
-            };
-            let files = sealed.collect_skill_tree(&dir).ok()?;
-            Some(Bytes::Tree(files))
-        }
-        _ => Some(Bytes::File(sealed.read(path).ok()?)),
-    }
-}
-
-fn rel(sealed: &SealedSource, path: &Path) -> String {
-    path.strip_prefix(sealed.root())
-        .unwrap_or(path)
-        .display()
-        .to_string()
-}
-
-fn scope_manifest(env: &Env, scope: &Scope) -> Manifest {
-    crate::manifest::load(&crate::manifest::manifest_path(env, scope))
-        .ok()
-        .and_then(|file| match file {
-            ManifestFile::Current(manifest) => Some(*manifest),
-            _ => None,
-        })
-        .unwrap_or_default()
-}
-
-/// The bytes behind one selection, re-read now so the hash the person saw
-/// is revalidated against what is on disk at apply time.
-fn selection_bytes(env: &Env, scopes: &[Scope], selection: &ImportSelection) -> Result<Bytes> {
-    let unmanaged = unmanaged_paths(env, scopes);
-    for row in crate::library::provenance(env, scopes)? {
-        if row.kind != selection.kind || row.name != selection.name {
-            continue;
-        }
-        if let Some((_, Some(bytes), _)) = origin_bytes(env, &row, &unmanaged)
-            && bytes.hash() == selection.hash
-        {
-            return Ok(bytes);
-        }
-    }
-    Err(CoreError::Authoring {
-        message: format!(
-            "the bytes of {} '{}' changed since the preview — re-open the import to re-preview",
-            selection.kind.name(),
-            selection.name
-        ),
-    })
+pub fn license_recognized(license: &str) -> bool {
+    REDISTRIBUTABLE.contains(&license)
 }
 
 mod apply;
+mod origins;
 pub use apply::apply;
+use origins::{origins_of, resolve_selection, unmanaged_paths};
 
 #[cfg(test)]
 mod tests;

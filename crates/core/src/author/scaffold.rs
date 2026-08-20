@@ -89,6 +89,11 @@ pub fn plan(request: &CreateRequest) -> Result<Vec<(String, String)>> {
 /// Create the folder, write the plan, initialise git, register under Mine.
 /// A folder kendex just made is kendex's to initialise; nothing is
 /// committed. Refuses a folder that already exists — creating never merges.
+///
+/// Everything that can refuse is asked first (the plan, the destination,
+/// the registry file), then the tree is built in a sibling staging
+/// directory and renamed into place — a failure part-way leaves the
+/// destination absent, never half a marketplace.
 pub fn create(env: &Env, request: &CreateRequest) -> Result<MineRow> {
     let files = plan(request)?;
     if request.dir.exists() {
@@ -99,9 +104,37 @@ pub fn create(env: &Env, request: &CreateRequest) -> Result<MineRow> {
             ),
         });
     }
-    std::fs::create_dir_all(&request.dir).map_err(|e| CoreError::io(&request.dir, e))?;
-    for (rel, bytes) in &files {
-        let path = request.dir.join(rel);
+    super::registry::can_register(env, &request.dir)?;
+    let (Some(parent), Some(leaf)) = (request.dir.parent(), request.dir.file_name()) else {
+        return Err(CoreError::Authoring {
+            message: format!("{} is not a creatable folder path", request.dir.display()),
+        });
+    };
+    let staging = parent.join(format!(".{}.kendex-new", leaf.to_string_lossy()));
+    if staging.exists() {
+        // A previous crashed create; wholly ours to clear.
+        std::fs::remove_dir_all(&staging).map_err(|e| CoreError::io(&staging, e))?;
+    }
+    let built = build_in(&staging, &files).and_then(|()| {
+        std::fs::rename(&staging, &request.dir).map_err(|e| CoreError::io(&request.dir, e))
+    });
+    if let Err(error) = built {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(error);
+    }
+    if let Err(error) = super::registry::register(env, &request.dir) {
+        // The folder was wholly created by this call — a registry that
+        // refused after all takes it back with it.
+        let _ = std::fs::remove_dir_all(&request.dir);
+        return Err(error);
+    }
+    super::status::status(&request.dir)
+}
+
+fn build_in(staging: &Path, files: &[(String, String)]) -> Result<()> {
+    std::fs::create_dir_all(staging).map_err(|e| CoreError::io(staging, e))?;
+    for (rel, bytes) in files {
+        let path = staging.join(rel);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
         }
@@ -109,11 +142,10 @@ pub fn create(env: &Env, request: &CreateRequest) -> Result<MineRow> {
     }
     // git init failing (no git on the machine) costs the init, not the
     // folder: the row reports repository:false and the person decides.
-    let _ = Hardened::git_in(&request.dir, &["init", "--quiet"])
+    let _ = Hardened::git_in(staging, &["init", "--quiet"])
         .timeout(std::time::Duration::from_secs(10))
         .run();
-    super::registry::register(env, &request.dir)?;
-    super::status::status(&request.dir)
+    Ok(())
 }
 
 /// The two optional offers a "use existing" row shows. Each is its own
@@ -139,7 +171,7 @@ pub fn offer_manifest(dir: &Path, name: &str, description: &str, author: &str) -
 }
 
 pub fn offer_workflow(dir: &Path) -> Result<String> {
-    let target = dir.join(".github/workflows/kendex-check.yml");
+    let target = dir.join(WORKFLOW_REL);
     if target.exists() {
         return Err(CoreError::Authoring {
             message: format!(
@@ -151,17 +183,69 @@ pub fn offer_workflow(dir: &Path) -> Result<String> {
     Ok(WORKFLOW_TEXT.to_owned())
 }
 
-/// Write one offered file. The caller previews the exact bytes first; this
-/// re-runs the refusal so a file that appeared meanwhile survives.
-pub fn accept_offer(dir: &Path, rel: &str, bytes: &str) -> Result<()> {
+/// Accept the manifest offer: the bytes are regenerated here from the
+/// given fields — never taken from the caller — and land at the one fixed
+/// path. Only a folder registered under Mine can be written to.
+pub fn accept_manifest_offer(
+    env: &Env,
+    dir: &Path,
+    name: &str,
+    description: &str,
+    author: &str,
+) -> Result<()> {
+    let dir = require_registered(env, dir)?;
+    let bytes = offer_manifest(&dir, name, description, author)?;
+    write_offer(&dir, crate::rename::MANIFEST_FILE, &bytes)
+}
+
+/// Accept the workflow offer — same contract as the manifest offer.
+pub fn accept_workflow_offer(env: &Env, dir: &Path) -> Result<()> {
+    let dir = require_registered(env, dir)?;
+    let bytes = offer_workflow(&dir)?;
+    write_offer(&dir, WORKFLOW_REL, &bytes)
+}
+
+pub const WORKFLOW_REL: &str = ".github/workflows/kendex-check.yml";
+
+/// Offers write only into folders the person registered — an arbitrary
+/// path over IPC is not a folder kendex has any business writing into.
+fn require_registered(env: &Env, dir: &Path) -> Result<std::path::PathBuf> {
+    let canonical = dir.canonicalize().map_err(|e| CoreError::io(dir, e))?;
+    if !super::registry::list(env)?.contains(&canonical) {
+        return Err(CoreError::Authoring {
+            message: format!("{} is not under Mine — register it first", dir.display()),
+        });
+    }
+    Ok(canonical)
+}
+
+/// One offered write at a fixed relative path. Anything already at the
+/// target — a file, a directory, even a dangling symlink — refuses, and a
+/// symlinked intermediate directory refuses rather than being followed
+/// out of the folder.
+fn write_offer(dir: &Path, rel: &str, bytes: &str) -> Result<()> {
     let path = dir.join(rel);
-    if path.exists() {
+    if path.symlink_metadata().is_ok() {
         return Err(CoreError::Authoring {
             message: format!(
                 "{} appeared since the preview — nothing was written",
                 path.display()
             ),
         });
+    }
+    let mut walked = dir.to_path_buf();
+    for component in Path::new(rel).components() {
+        walked.push(component);
+        if let Ok(meta) = walked.symlink_metadata()
+            && meta.file_type().is_symlink()
+        {
+            return Err(CoreError::Authoring {
+                message: format!(
+                    "{} is a symlink — kendex writes only inside the folder itself",
+                    walked.display()
+                ),
+            });
+        }
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;

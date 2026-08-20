@@ -145,9 +145,13 @@ fn git_readiness(path: &Path) -> GitReadiness {
 
 /// One git question, one trimmed answer; `None` on any failure. Multi-line
 /// output collapses to the whole trimmed text, which is empty exactly when
-/// `git status --porcelain` has nothing to say.
+/// `git status --porcelain` has nothing to say. `--no-optional-locks`
+/// keeps even `status` from refreshing `.git/index` — reading a folder
+/// must not change a byte inside it.
 fn git_line(path: &Path, args: &[&str]) -> Option<String> {
-    let output = Hardened::git_in(path, args)
+    let mut no_locks: Vec<&str> = vec!["--no-optional-locks"];
+    no_locks.extend_from_slice(args);
+    let output = Hardened::git_in(path, &no_locks)
         .timeout(std::time::Duration::from_secs(10))
         .run()
         .ok()?;

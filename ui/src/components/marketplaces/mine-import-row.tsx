@@ -28,6 +28,10 @@ export function groupLabel(group: CandidateGroup): string {
       return group.license
         ? `From '${group.source}' · ${group.license}`
         : `From '${group.source}' · no licence found`;
+    case "edited":
+      return group.license
+        ? `Your edited copy from '${group.source}' · ${group.license}`
+        : `Your edited copy from '${group.source}' · no licence found`;
   }
 }
 
@@ -46,8 +50,11 @@ export function MineImportRow({
   const readable = candidate.origins.filter((origin) => origin.hash !== "");
   const chosen =
     readable.find((origin) => origin.hash === choice.hash) ?? readable[0];
-  const marketplace =
-    chosen && chosen.group.group === "marketplace" ? chosen.group : null;
+  const licensed =
+    chosen &&
+    (chosen.group.group === "marketplace" || chosen.group.group === "edited")
+      ? chosen.group
+      : null;
 
   return (
     <div className="space-y-2 rounded-md border border-border p-3">
@@ -107,25 +114,25 @@ export function MineImportRow({
           />
         </div>
       ) : null}
-      {choice.checked && marketplace ? (
-        marketplace.license ? (
+      {choice.checked && licensed ? (
+        licensed.license && licensed.licenseRecognized ? (
           <div className="flex items-center gap-2 pl-6 text-sm">
             <Checkbox
-              aria-label={`The ${marketplace.license} licence lets me republish ${candidate.name}`}
+              aria-label={`The ${licensed.license} licence lets me republish ${candidate.name}`}
               checked={choice.licenseConfirmed}
               onCheckedChange={(checked) =>
                 onChange({ ...choice, licenseConfirmed: checked === true })
               }
             />
-            <span>
-              The {marketplace.license} licence lets me republish this
-            </span>
+            <span>The {licensed.license} licence lets me republish this</span>
           </div>
         ) : (
           <div className="space-y-1 pl-6">
             <p className="text-xs text-warning">
-              No licence was found in '{marketplace.source}'. Copying needs a
-              basis you can stand behind.
+              {licensed.license
+                ? `'${licensed.license}' is not a licence kendex recognizes as redistributable.`
+                : `No licence was found in '${licensed.source}'.`}{" "}
+              Copying needs a basis you can stand behind.
             </p>
             <Input
               aria-label={`Licence basis for ${candidate.name}`}
