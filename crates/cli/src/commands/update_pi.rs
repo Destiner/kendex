@@ -217,14 +217,27 @@ fn declared_sources(
     for (name, decl) in &manifest.pi_extensions {
         match source::require_ready(env, scope, &decl.source, &manifest) {
             Ok(ready) => {
-                let dir = ready.root.join("pi-extensions").join(name);
-                if dir.join("package.json").is_file() {
+                let sealed = match kendex_core::source_read::SealedSource::open(&ready.root) {
+                    Ok(sealed) => sealed,
+                    Err(error) => {
+                        notes.push(format!("{name}: {error}"));
+                        continue;
+                    }
+                };
+                let dir = sealed.root().join("pi-extensions").join(name);
+                if sealed.is_file(&dir.join("package.json")) {
                     found.insert(name.clone(), dir);
                 } else {
-                    notes.push(format!(
-                        "{name}: source '{}' no longer ships pi-extensions/{name}",
-                        decl.source
-                    ));
+                    match pi_ext::find_by_package_name(&sealed, name) {
+                        Ok(Some(dir)) => {
+                            found.insert(name.clone(), dir);
+                        }
+                        Ok(None) => notes.push(format!(
+                            "{name}: source '{}' no longer ships pi-extensions/{name}",
+                            decl.source
+                        )),
+                        Err(error) => notes.push(format!("{name}: {error}")),
+                    }
                 }
             }
             Err(error) => notes.push(format!("{name}: {error}")),

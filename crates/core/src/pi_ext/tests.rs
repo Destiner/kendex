@@ -255,3 +255,97 @@ fn a_package_without_an_append_system_file_writes_no_block() {
     install(&f.env, &f.scope, &source).unwrap();
     assert!(!append_system_path(&f.scope).exists());
 }
+
+#[test]
+#[cfg(unix)]
+fn find_by_package_name_reads_sealed_and_skips_symlinked_metadata() {
+    let tmp = tempfile::tempdir().unwrap();
+    let base = tmp.path().canonicalize().unwrap().join("pi-extensions");
+    write(
+        &base.join("pi-hooks/package.json"),
+        "{\"name\": \"@vg/pi-hooks\", \"version\": \"1.0.0\"}",
+    );
+    write(
+        &base.join("@scope/pi-deep/package.json"),
+        "{\"name\": \"@scope/pi-deep\", \"version\": \"1.0.0\"}",
+    );
+    // A hostile catalog linking metadata at host files must be skipped,
+    // not followed.
+    write(
+        &tmp.path().join("outside.json"),
+        "{\"name\": \"@vg/pi-evil\", \"version\": \"9.9.9\"}",
+    );
+    std::fs::create_dir_all(base.join("pi-evil")).unwrap();
+    std::os::unix::fs::symlink(
+        tmp.path().join("outside.json"),
+        base.join("pi-evil/package.json"),
+    )
+    .unwrap();
+
+    let sealed = crate::source_read::SealedSource::open(base.parent().unwrap()).unwrap();
+    assert_eq!(
+        find_by_package_name(&sealed, "@vg/pi-hooks").unwrap(),
+        Some(base.join("pi-hooks"))
+    );
+    assert_eq!(
+        find_by_package_name(&sealed, "@scope/pi-deep").unwrap(),
+        Some(base.join("@scope/pi-deep"))
+    );
+    assert_eq!(find_by_package_name(&sealed, "@vg/pi-evil").unwrap(), None);
+}
+
+#[test]
+fn find_by_package_name_refuses_an_ambiguous_registration() {
+    let tmp = tempfile::tempdir().unwrap();
+    let base = tmp.path().canonicalize().unwrap().join("pi-extensions");
+    for dir in ["first", "second"] {
+        write(
+            &base.join(dir).join("package.json"),
+            "{\"name\": \"@vg/pi-hooks\", \"version\": \"1.0.0\"}",
+        );
+    }
+    let sealed = crate::source_read::SealedSource::open(base.parent().unwrap()).unwrap();
+    let error = find_by_package_name(&sealed, "@vg/pi-hooks").unwrap_err();
+    assert!(
+        error.to_string().contains("refusing to pick one"),
+        "{error}"
+    );
+}
+
+/// A catalog whose `pi-extensions` is itself a symlink out of the catalog
+/// must not have the escape laundered by sealing the folder as a root —
+/// the traversal stays beneath the catalog's own seal and refuses the
+/// link.
+#[test]
+#[cfg(unix)]
+fn find_by_package_name_refuses_a_symlinked_extensions_folder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let outside = tmp.path().canonicalize().unwrap().join("outside");
+    write(
+        &outside.join("pi-hooks/package.json"),
+        "{\"name\": \"@vg/pi-hooks\", \"version\": \"9.9.9\"}",
+    );
+    let catalog = tmp.path().canonicalize().unwrap().join("catalog");
+    std::fs::create_dir_all(&catalog).unwrap();
+    std::os::unix::fs::symlink(&outside, catalog.join("pi-extensions")).unwrap();
+
+    let sealed = crate::source_read::SealedSource::open(&catalog).unwrap();
+    assert_eq!(find_by_package_name(&sealed, "@vg/pi-hooks").unwrap(), None);
+}
+
+/// The scan carries one aggregate budget across both levels — thousands
+/// of scope directories must not multiply into millions of candidates.
+#[test]
+fn find_by_package_name_bounds_the_aggregate_scan() {
+    let tmp = tempfile::tempdir().unwrap();
+    let catalog = tmp.path().canonicalize().unwrap().join("catalog");
+    let base = catalog.join("pi-extensions");
+    for scope in 0..3 {
+        for pkg in 0..2000 {
+            std::fs::create_dir_all(base.join(format!("@s{scope}/p{pkg}"))).unwrap();
+        }
+    }
+    let sealed = crate::source_read::SealedSource::open(&catalog).unwrap();
+    let error = find_by_package_name(&sealed, "@vg/pi-hooks").unwrap_err();
+    assert!(error.to_string().contains("refusing to scan"), "{error}");
+}

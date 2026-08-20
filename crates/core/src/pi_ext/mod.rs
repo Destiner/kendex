@@ -116,6 +116,74 @@ pub fn read(package_dir: &Path) -> Result<PiPackage> {
     })
 }
 
+/// Where a package whose registered name differs from its directory
+/// lives under a catalog's `pi-extensions/` folder — kendex's own catalog
+/// shelves scoped names in short directories. `sealed` is the CATALOG
+/// root, and the folder is traversed beneath it: sealing the folder
+/// itself would canonicalize a symlinked `pi-extensions` into a trusted
+/// root and launder an escape. Symlinked or oversized metadata is
+/// skipped, never followed. One nested level covers npm-style
+/// `@scope/name` layouts. Two directories registering the same name is
+/// an error, not a coin toss over which bytes install.
+pub fn find_by_package_name(
+    sealed: &crate::source_read::SealedSource,
+    name: &str,
+) -> Result<Option<PathBuf>> {
+    let base = sealed.root().join("pi-extensions");
+    if !sealed.is_dir(&base) {
+        return Ok(None);
+    }
+    // One aggregate budget across both levels: per-directory caps alone
+    // would let thousands of @scope directories multiply into millions of
+    // candidates.
+    const MAX_CANDIDATES: usize = 4096;
+    let mut candidates = sealed.list_dir(&base)?;
+    for dir in std::mem::take(&mut candidates) {
+        if dir
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with('@'))
+        {
+            candidates.extend(sealed.list_dir(&dir).unwrap_or_default());
+        } else {
+            candidates.push(dir);
+        }
+        if candidates.len() > MAX_CANDIDATES {
+            return Err(CoreError::PiPackage {
+                name: name.to_owned(),
+                message: format!(
+                    "more than {MAX_CANDIDATES} package directories under {} — refusing to scan them all",
+                    base.display()
+                ),
+            });
+        }
+    }
+    let mut matches = Vec::new();
+    for dir in candidates {
+        let manifest = dir.join("package.json");
+        if !sealed.is_file(&manifest) {
+            continue;
+        }
+        let Ok(text) = sealed.read_to_string(&manifest) else {
+            continue;
+        };
+        if serde_json::from_str::<RawPackage>(&text).is_ok_and(|raw| raw.name == name) {
+            matches.push(dir);
+        }
+    }
+    match matches.len() {
+        0 => Ok(None),
+        1 => Ok(matches.pop()),
+        _ => Err(CoreError::PiPackage {
+            name: name.to_owned(),
+            message: format!(
+                "{} directories under {} register this package name — refusing to pick one",
+                matches.len(),
+                base.display()
+            ),
+        }),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstallOutcome {
     pub name: String,
