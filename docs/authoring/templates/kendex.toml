@@ -1,0 +1,6 @@
+[marketplace]
+name = "my-marketplace"
+description = "What this marketplace offers"
+author = "your-name"
+license = "MIT"
+tags = ["example"]

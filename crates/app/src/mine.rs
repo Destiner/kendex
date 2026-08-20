@@ -157,5 +157,5 @@ pub fn mine_accept_workflow(path: PathBuf) -> Result<MineRow, String> {
 #[tauri::command(async)]
 #[specta::specta]
 pub fn mine_authoring_doc() -> String {
-    include_str!("../../../docs/AUTHORING.md").to_owned()
+    include_str!("../../../docs/authoring/README.md").to_owned()
 }

@@ -167,8 +167,10 @@ Scopes: `--scope project|global|all` (v1 aliases `p/local`, `g/user`,
 | `login` / `logout` | sign in to kendex.ai with a code and a browser tab; the credential lives in your system keychain |
 | `add https://kendex.ai/c/<id>` | install a shared collection in one preview |
 
-Authoring a marketplace repo is one page:
-[docs/AUTHORING.md](docs/AUTHORING.md), also rendered inside the app.
+Make your own marketplace: `kendex marketplace new <name>` scaffolds the
+repository. The how-to and templates are in
+[docs/authoring](docs/authoring/README.md), and on
+[kendex.ai/docs/authoring](https://kendex.ai/docs/authoring).
 
 This repository is the default catalog. The `agents/`, `skills/`, `hooks/`
 and `pi-extensions/` directories at its root are what a fresh kendex
