@@ -146,6 +146,21 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ### Fixed
 
+- A debug build no longer touches your real setup. A debug build is what
+  `cargo build` and `tauri dev` produce — what a contributor or an agent
+  runs from a branch — and it now keeps its own home under the platform data
+  directory, so it cannot leave lock records, harness files, or caches that
+  the kendex you installed will not read. That was the case that showed up
+  as `lock.json was written by a newer kendex`. Your global skills and
+  agents are not visible to such a build, and nothing it writes reaches
+  them. Three things stay outside that boundary: a repository you point it
+  at is the real one, so project-scoped work reads and writes it as usual; a
+  harness folder set to an explicit absolute path is used as written; and
+  programs kendex runs for you, `npm` among them, still see your real home.
+  To point a debug build at your real setup deliberately, run it with
+  `KENDEX_REAL_HOME=1` — only that exact value opts out. Release builds are
+  unaffected, whether you installed one or built it with `--release`.
+
 - The project-management skill's issue pipeline creates Linear issues
   directly in Backlog instead of the team's Triage default. Pipeline output
   is already fully triaged — project, labels, priority, relations — and a

@@ -205,6 +205,9 @@ fn installer_output(
         .arg(repo_root().join("install.sh"))
         .env("PATH", path)
         .env("HOME", tmp.path())
+        // install.sh is a shell script and never resolves an Env, but the
+        // rule holds for every fixture home so no case has to be argued.
+        .env("KENDEX_REAL_HOME", "1")
         .env("XDG_DATA_HOME", tmp.path().join(data_dir))
         .output()
         .expect("install.sh runs");

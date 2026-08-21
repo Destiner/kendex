@@ -53,14 +53,14 @@ describe("a repository's summary", () => {
     await useMarketplacesStore.getState().loadSummary(repo);
 
     const held = useMarketplacesStore.getState().summaries[key]?.subscription;
-    expect(held).toBeDefined();
+    if (!held) throw new Error("no subscription was held");
     // What useCatalog derives from it addresses the subscription's own
     // cache, so rows a subscribed page already loaded are found.
     expect(
       catalogKey({
         by: "subscription",
-        scope: held!.scope,
-        source: held!.source,
+        scope: held.scope,
+        source: held.source,
       }),
     ).toBe(marketKey(scope, "kit"));
   });

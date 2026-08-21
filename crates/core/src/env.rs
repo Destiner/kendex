@@ -3,6 +3,11 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{CoreError, Result};
 
+mod sandbox;
+
+pub(crate) use sandbox::sandboxed;
+use sandbox::{dev_home, real_home_opt_in, sandbox_vars};
+
 /// The one spelling of the app's directory segment under config/cache/data.
 const APP_DIR: &str = "kendex";
 /// Where those directories lived before the product rename — read only by
@@ -30,6 +35,7 @@ const HARNESS_VARS: [&str; 7] = [
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Env {
     pub home: PathBuf,
+    real_home: PathBuf,
     config_dir: PathBuf,
     cache_dir: PathBuf,
     data_dir: PathBuf,
@@ -38,17 +44,42 @@ pub struct Env {
 
 impl Env {
     pub fn detect() -> Result<Self> {
+        let data_dir = dirs::data_dir().ok_or(CoreError::NoHomeDir)?;
+        let home = dirs::home_dir().ok_or(CoreError::NoHomeDir)?;
+        let machine = Env {
+            real_home: home.clone(),
+            home,
+            config_dir: dirs::config_dir().ok_or(CoreError::NoHomeDir)?,
+            cache_dir: dirs::cache_dir().ok_or(CoreError::NoHomeDir)?,
+            data_dir: data_dir.clone(),
+            vars: BTreeMap::new(),
+        };
         let vars = HARNESS_VARS
             .iter()
             .filter_map(|k| std::env::var(k).ok().map(|v| ((*k).to_owned(), v)))
             .collect();
-        Ok(Env {
-            home: dirs::home_dir().ok_or(CoreError::NoHomeDir)?,
-            config_dir: dirs::config_dir().ok_or(CoreError::NoHomeDir)?,
-            cache_dir: dirs::cache_dir().ok_or(CoreError::NoHomeDir)?,
-            data_dir: dirs::data_dir().ok_or(CoreError::NoHomeDir)?,
-            vars,
-        })
+        let dev = dev_home(
+            cfg!(debug_assertions),
+            real_home_opt_in().as_deref(),
+            &data_dir,
+        );
+        Ok(Self::resolve(dev, machine, vars))
+    }
+
+    /// The whole decision with the process read out of it: given the
+    /// machine's own roots, the vars this build was launched with, and the
+    /// home a sandbox would give it, the environment it runs in. `detect`
+    /// keeps only the reading, so there is nothing in it left to get wrong.
+    fn resolve(dev_home: Option<PathBuf>, machine: Env, vars: BTreeMap<String, String>) -> Self {
+        let Some(home) = dev_home else {
+            return Env { vars, ..machine };
+        };
+        let mut env = Self::rooted(home, HOST_OS);
+        env.real_home = machine.home;
+        for (key, value) in sandbox_vars(vars) {
+            env = env.with_var(&key, &value);
+        }
+        env
     }
 
     pub fn var(&self, key: &str) -> Option<&str> {
@@ -62,7 +93,11 @@ impl Env {
 
     /// Fixture environment shaped like the given OS, rooted under `home`.
     pub fn fake(home: impl Into<PathBuf>, os: FakeOs) -> Self {
-        let home: PathBuf = home.into();
+        Self::rooted(home.into(), os)
+    }
+
+    /// Every root under one home, laid out the way `os` lays them out.
+    fn rooted(home: PathBuf, os: FakeOs) -> Self {
         let (config, cache, data) = match os {
             FakeOs::Linux => (
                 home.join(".config"),
@@ -81,12 +116,29 @@ impl Env {
             ),
         };
         Env {
+            real_home: home.clone(),
             home,
             config_dir: config,
             cache_dir: cache,
             data_dir: data,
             vars: BTreeMap::new(),
         }
+    }
+
+    /// A fixture whose sandbox home and real home differ, the way a debug
+    /// build's do. Without it a test cannot tell the two apart, and a call
+    /// that reads the wrong one still passes.
+    pub fn with_real_home(mut self, home: impl Into<PathBuf>) -> Self {
+        self.real_home = home.into();
+        self
+    }
+
+    /// The machine's own home, which a sandbox does not move: it is where
+    /// the person lives, not where this build keeps its state. Discovery
+    /// asks so it does not mistake the real home for a project, and a `~`
+    /// someone typed resolves to the directory they meant.
+    pub fn real_home(&self) -> &Path {
+        &self.real_home
     }
 
     /// The platform config root itself — v1 kept its `vstack` state
@@ -218,4 +270,92 @@ pub enum FakeOs {
     Linux,
     Mac,
     Windows,
+}
+
+/// How this machine lays out its base directories — the same shapes
+/// `dirs` resolves to, so a sandboxed home is a faithful stand-in.
+const HOST_OS: FakeOs = if cfg!(target_os = "macos") {
+    FakeOs::Mac
+} else if cfg!(target_os = "windows") {
+    FakeOs::Windows
+} else {
+    FakeOs::Linux
+};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The hatch permits writes to a real machine, so only the documented
+    /// value spends it — a `0` or a typo reads as nobody's consent.
+    /// A git base names a host and the Gemini override a read-only policy
+    /// file, so a sandboxed build still reaches the fixture tree and the
+    /// fixture settings its launcher pointed it at — dropping either would
+    /// send it to the real ones.
+    /// Every relocating var is a harness var: a name in one list and not the
+    /// other would be read from the process and never dropped.
+    /// The vars a sandboxed build ends up holding, and the home it holds
+    /// them under. Reached through `resolve` rather than through the
+    /// filter alone: dropping the carry-over from the decision would leave
+    /// a filter that still passes its own test while every debug build
+    /// loses the fixture git host and the fixture policy file.
+    #[test]
+    fn a_sandbox_resolves_to_its_own_home_and_keeps_what_is_safe() {
+        let env = Env::resolve(
+            Some(PathBuf::from("/data/kendex-dev")),
+            Env::fake("/home/pat", FakeOs::Linux),
+            BTreeMap::from([
+                ("KENDEX_GIT_BASE".to_owned(), "file:///fixtures".to_owned()),
+                (
+                    "GEMINI_CLI_SYSTEM_SETTINGS_PATH".to_owned(),
+                    "/fixtures/gemini.json".to_owned(),
+                ),
+                ("CODEX_HOME".to_owned(), "/home/pat/.codex".to_owned()),
+            ]),
+        );
+        assert_eq!(env.home, PathBuf::from("/data/kendex-dev"));
+        assert_eq!(env.real_home(), Path::new("/home/pat"));
+        assert_eq!(env.var("KENDEX_GIT_BASE"), Some("file:///fixtures"));
+        assert_eq!(
+            env.var("GEMINI_CLI_SYSTEM_SETTINGS_PATH"),
+            Some("/fixtures/gemini.json")
+        );
+        assert_eq!(env.var("CODEX_HOME"), None);
+    }
+
+    /// Without a sandbox the machine's own roots and every var stand.
+    #[test]
+    fn a_real_build_resolves_to_the_machine_it_is_on() {
+        let env = Env::resolve(
+            None,
+            Env::fake("/home/pat", FakeOs::Linux),
+            BTreeMap::from([("CODEX_HOME".to_owned(), "/home/pat/.codex".to_owned())]),
+        );
+        assert_eq!(env.home, PathBuf::from("/home/pat"));
+        assert_eq!(env.real_home(), Path::new("/home/pat"));
+        assert_eq!(env.var("CODEX_HOME"), Some("/home/pat/.codex"));
+    }
+
+    /// The lock, the harness dirs it applies into and the caches all hang
+    /// off the roots, so redirecting the home is what moves every write.
+    #[test]
+    fn a_sandboxed_home_holds_every_root_it_writes() {
+        let env = Env::rooted(PathBuf::from("/data/kendex-dev"), FakeOs::Linux);
+        for path in [
+            env.global_lock_file(),
+            env.settings_file(),
+            env.source_cache_dir(),
+            env.journal_dir(),
+            crate::harness::HarnessAdapter::default_global_root(
+                &crate::harness::claude::Claude,
+                &env,
+            ),
+        ] {
+            assert!(
+                path.starts_with("/data/kendex-dev"),
+                "{} escaped the sandbox",
+                path.display()
+            );
+        }
+    }
 }
