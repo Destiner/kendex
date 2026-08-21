@@ -112,6 +112,14 @@ pub enum CoreError {
     #[error("unknown source '{name}' — declare [sources.{name}] first")]
     UnknownSource { name: String },
 
+    #[error(
+        "'{reference}' is not a GitHub repository (owner/repo) — subscribe to it to browse its contents"
+    )]
+    NotBrowsable { reference: String },
+
+    #[error("{repo} could not be fetched: {reason}")]
+    FetchFailed { repo: String, reason: String },
+
     #[error("'{reference}': {reason}")]
     SourceRefInvalid { reference: String, reason: String },
 
