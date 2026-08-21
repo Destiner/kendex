@@ -89,6 +89,16 @@ changes carry a **Breaking** call-out with their migration note inline.
   publishes is told so plainly, and settles nothing.
 ### Changed
 
+- **Breaking:** the install record's version moves to 5. Older files still
+  load and the first apply upgrades them in place, through the normal
+  journaled, previewed plan. What moves the version is the new evidence in
+  it: which Pi hooks have finished moving out of the directory pi
+  reserved, and the matcher a hook registration went in under. An earlier
+  kendex would load the file, ignore both, and drop them the next time it
+  wrote — and then read a finished move as unfinished and take back files
+  you had put there yourself. It refuses the file instead. Migration:
+  automatic on first apply; if you run two versions of kendex against one
+  project, update both.
 - The Updates page is a table with one row per package. A package out of
   date in several projects shows how many places, expands into a row per
   place — User level and each project by name — and each place has its
@@ -232,6 +242,25 @@ changes carry a **Breaking** call-out with their migration note inline.
   session, in a fresh install of kendex's own default catalog. The
   publisher's recorded review now travels with the package, and the default
   catalog ships nothing its own check has not settled.
+- Pi no longer halts every interactive start in a kendex-managed project.
+  Pi reserves the `hooks/` directory name beside every root it loads: it
+  warns whenever one exists, whatever is in it, and waits for a keypress
+  before the session opens. kendex's Pi hooks now live under
+  `.pi/kendex/hooks/` and `~/.pi/agent/kendex/hooks/`, and the next
+  `kendex refresh` moves an existing install there and takes the old
+  directory away with it — including for a hook you removed or switched
+  off, so nothing is left behind still firing. Nothing moves that kendex
+  cannot prove it wrote: a file you edited, one it never wrote, something
+  that is not a plain file where the script was, a registration you added
+  or moved by hand, a link, and a hook whose source is unreachable this
+  run all stay exactly where they are, and `refresh` says which and why.
+  Discarding the edits, or removing the hook by name, finishes the move.
+  A hook left behind still shows up in `kendex list`, in the app and in
+  the safety scan, read from where it is really firing, so the copy that
+  needs your attention is not the one you cannot see. Once a hook has
+  moved, the reserved name is yours again: a script, a registration or a
+  directory you put back there is left alone, however exactly it matches
+  what kendex used to write.
 - On Linux, a helper command that ran past its time limit could take
   unrelated processes down with it: Ubuntu's `kill` misreads the negative
   process-group argument kendex passed, and for some process ids that
