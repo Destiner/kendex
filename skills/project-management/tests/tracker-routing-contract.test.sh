@@ -80,6 +80,49 @@ assert_linear_free "$(extract "$audit_issues" '^#### 1\.2\.3 ' '^### 1\.3 ' gith
 
 require "$audit_issues" '\*\*Linear route \(TRACKER=linear\)\*\*' 'Linear execution route'
 require "$audit_issues" '\*\*GitHub route \(TRACKER=github\)\*\*' 'GitHub execution route'
+
+# --- Pipeline creates are born in Backlog, never the team-default Triage -----
+# The workspace's Linear-native triage loop fires on Triage-state creations
+# and once re-routed fully triaged pipeline output into other projects; the
+# Backlog state on every create route is the mechanical half of that fix.
+
+linear_create_row="$(extract "$audit_issues" '^\*\*Linear route \(TRACKER=linear\)\*\*' '^\| expand, update' linear-create-row)" || fail "could not extract the Linear create row"
+grep -Fq -- '--state "Backlog"' "$linear_create_row" || fail 'Linear create route does not require --state "Backlog"'
+require_fixed "$audit_issues" 'Once every create has landed and its relations and parent are attached' 'Todo promotion waits for relations and parents'
+require_fixed "$audit_issues" 'Process creates in dependency order' 'creates are dependency-ordered and linked immediately'
+dev_implement="$SKILL_DIR/../dev/workflows/dev-implement.md"
+if [[ -f "$dev_implement" ]]; then
+  require_fixed "$dev_implement" 'issues create --state "Backlog" --project "[PARENT_PROJECT]" --parent [PARENT_ID]' 'dev-implement child create carries the parent project and Backlog'
+fi
+research_issue="$SKILL_DIR/workflows/research-issue.md"
+merge_pr="$SKILL_DIR/../orch/workflows/merge-pr.md"
+plan_issues="$SKILL_DIR/../orch/workflows/plan-issues.md"
+start_new="$SKILL_DIR/../orch/workflows/start-new.md"
+workflow_actions="$SKILL_DIR/../linear/patterns/workflow-actions.md"
+if [[ -f "$workflow_actions" ]]; then
+  wa_create_cmd="$(extract "$workflow_actions" 'issues create' '^```$' wa-create-cmd)" || fail "could not extract the workflow-actions follow-up create"
+  grep -Fq -- '--state "Backlog"' "$wa_create_cmd" || fail 'workflow-actions follow-up create does not pass --state "Backlog"'
+fi
+if [[ -f "$start_new" ]]; then
+  start_create_cmd="$(extract "$start_new" 'issues create' '^```$' start-create-cmd)" || fail "could not extract the start-new create command"
+  grep -Fq -- '--state "Backlog"' "$start_create_cmd" || fail 'start-new create does not pass --state "Backlog"'
+  require_fixed "$start_new" 'validate the complete label set' 'start-new preflights labels before a Backlog create'
+  require_fixed "$start_new" 'search existing issues (all states) for the same problem' 'start-new dedupes before a Backlog create'
+fi
+if [[ -f "$plan_issues" ]]; then
+  plan_create_cmd="$(extract "$plan_issues" 'issues create' '^```$' plan-create-cmd)" || fail "could not extract the plan-issues create command"
+  grep -Fq -- '--state "Backlog"' "$plan_create_cmd" || fail 'plan-issues create does not pass --state "Backlog"'
+  require_fixed "$plan_issues" 'validate the complete label set' 'plan-issues preflights labels before a Backlog create'
+  require_fixed "$plan_issues" 'search existing issues (all states) for the same problem' 'plan-issues dedupes before a Backlog create'
+  grep -Fq -- '--priority [PRIORITY]' "$plan_create_cmd" || fail 'plan-issues create does not pass a priority'
+  grep -Fq -- '--estimate [ESTIMATE]' "$plan_create_cmd" || fail 'plan-issues create does not pass an estimate'
+fi
+if [[ -f "$merge_pr" ]]; then
+  merge_create_cmd="$(extract "$merge_pr" 'issues create' '^```$' merge-create-cmd)" || fail "could not extract the merge-pr rebundle create command"
+  grep -Fq -- '--state "Backlog"' "$merge_create_cmd" || fail 'merge-pr rebundle create does not pass --state "Backlog"'
+fi
+research_create_cmd="$(extract "$research_issue" 'issues create \\$' '^```$' research-create-cmd)" || fail "could not extract the research-issue create command"
+grep -Fq -- '--state "Backlog"' "$research_create_cmd" || fail 'research-issue create command does not pass --state "Backlog"'
 require "$audit_issues" 'Never mix routes within one audit' 'single-route rule'
 require_fixed "$audit_issues" 'gh issue create --repo [OWNER/REPO] --title "[TITLE]" --body-file [BODY_FILE] --label "[VALIDATED_FINAL_LABELS]"' 'GitHub create with validated labels'
 require_fixed "$audit_issues" 'gh issue edit [N] --repo [OWNER/REPO] --body-file [BODY_FILE]' 'GitHub body-edit route'

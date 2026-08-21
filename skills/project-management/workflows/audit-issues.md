@@ -253,13 +253,13 @@ Order matters when both apply to one issue: relations first, then priority and l
 
 ### 7.2 Execute Approved Creations and Cancellations
 
-Process `create` first — created IDs resolve the `#N` references the other actions use. Action semantics are tracker-agnostic; the route comes from `TRACKER`. Never mix routes within one audit.
+Process creates in dependency order — every issue after the issues it is blocked by and its parent — and attach each issue's relations and parent immediately after its own create, never after the whole batch: created IDs resolve the `#N` references as they appear, and no issue sits unlinked while the rest of the batch is created, so the loop's ten-minute in-flight window bounds one create-and-link, never a batch. Action semantics are tracker-agnostic; the route comes from `TRACKER`. Never mix routes within one audit.
 
 **Linear route (TRACKER=linear)**
 
 | Action | Execution |
 |--------|-----------|
-| create | `issues create` with the Create template below and `--parent` per `hierarchy`. A `hierarchy.parent` of null with `make_child` resolves to the input's `parent_issue`. A child must share the parent's project; if it cannot, create it standalone with `related` — except for `hierarchy_contract` items, where the standalone fallback is not permitted: create the child in the contract parent's project and never downgrade to standalone. |
+| create | `issues create` with the Create template below, `--state "Backlog"`, and `--parent` per `hierarchy`. Backlog is mandatory, never the team-default Triage: pipeline output is already fully triaged (project, labels, priority, relations), and the workspace's Linear-native triage loop fires on Triage-state creations — it re-routed 8 of 30 pre-projected issues on 2026-08-20 before the loop's trigger was narrowed. § 7.2.1 then promotes to Todo where it applies. A `hierarchy.parent` of null with `make_child` resolves to the input's `parent_issue`. A child must share the parent's project; if it cannot, create it standalone with `related` — except for `hierarchy_contract` items, where the standalone fallback is not permitted: create the child in the contract parent's project and never downgrade to standalone. |
 | expand, update | workflow-actions § Descriptions + reason comment |
 | supersede, combine | workflow-actions § State Transitions (cancel/absorb), then Superseded issues below |
 | cancel | workflow-actions § State Transitions |
@@ -283,7 +283,7 @@ Process `create` first — created IDs resolve the `#N` references the other act
 
 **Linear only.** With `TRACKER=github`, record `positioning: n/a (github)` in § 8 and skip.
 
-After each create, position the issue in Todo unless any of these hold: the project state is not `started`, the issue is blocked by a non-Done issue in another project, or it is P4 with no blocking relations.
+Once every create has landed and its relations and parent are attached — never per create: a Todo issue whose blockers are still pending is exactly what a concurrent janitor would bundle — position each created issue in Todo unless any of these hold: the project state is not `started`, the issue is blocked by a non-Done issue in another project, or it is P4 with no blocking relations.
 
 ```bash
 .agents/skills/linear/scripts/linear.sh cache projects get [PROJECT_ID] | jq -r '.state'
