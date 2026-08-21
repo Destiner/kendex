@@ -816,12 +816,93 @@ lives in one capability table read by core and UI.
   `kendex-reviews.toml` at the catalog root (`check_catalog/dismissals.rs`):
   the same content-hash-bound dismissal records the install side keeps in a
   manifest, keyed `kind:name`, written by `dismiss --catalog` from the
-  tokens `check --catalog` prints. Only the authoring passes stop counting a
-  dismissed finding (still reported, marked); an install never reads a
-  catalog's own reviews, so a catalog cannot pre-approve itself on anyone
-  else's machine. Editing the item stales the record; the hold returns.
-- **The community directory is read like any remote: strictly, capped, and
-  honest about staleness.** `registry/` (core) consumes what
+  tokens `check --catalog` prints — for every kind whose review can travel,
+  which is every kind but a hook. The check refuses what an install
+  refuses, so a record a consumer would drop fails the maintainer's own run
+  rather than their consumers' installs, and it reads an item under the
+  same budget an install does, so it never mints a token for content no
+  install can see. A dismissed finding stops counting and
+  stays reported, marked — in the catalog's own passes and on the machines
+  that install from it. What that record is worth on somebody else's machine
+  is `quality/author.rs`, the neutral home for the travelling shape
+  (`AuthorReview`) and for the one derivation of "a settled finding is
+  reported and does not count" (`author::score`) the authoring check, the
+  gate, the audit and browsing all call. Three bounds, because the record
+  arrives from content kendex does not control: it binds to bytes — the item's
+  own plus all else its rendering reads, the control-file tables and the skill
+  list an agent resolves to, however it resolves
+  (`SourceConfig::rendering_inputs`), so editing any of it stales it; it
+  settles the publisher's own occurrences, at the weight the artifact being
+  scored gives each of them, so nothing a project repeats rides in on a
+  reviewed one however heavy and no injected line wears a publisher's name
+  while theirs stays open; and it carries only reasons an author can give —
+  `trusted-source` refused on read and not only on write, a timestamp that is
+  not one refused with it.
+  **The record never travels in a file this project commits.** The lock
+  carries none, and the fourth bound is why: a record kept there is a claim
+  about a catalog, and authenticating one — its shape, its name, its numbers —
+  answers a different question than what the content should be. So the audit
+  rebuilds instead (`engine::desired::desired_as_installed`): the plan that
+  produced what is on disk, each installation at the revision its lock entry
+  names, applied before the closure is derived and not to the bytes after it —
+  what a set carries and what a skill requires are read out of a catalog too,
+  so a member the set has since dropped comes back with it — and the record
+  out of *that* catalog, the gate's derivation on the gate's bytes. One item
+  can sit at two revisions at once, since a refresh applies per installation.
+  An installation answers for itself and nothing else — one row, one entry,
+  one revision, one record — and content no rebuild of its own produced is
+  content nobody reviewed. The commit an entry names chooses a revision and
+  asserts nothing, since naming another produces another artifact. An item no
+  rebuild covers — a catalog not on this machine, a manifest that will not
+  resolve — carries no review, and there is no signing scheme here. A hook
+  records none: the gate reads the script and the audit the shared settings
+  file, two readings of different bytes by design — so it is refused where it
+  is read, and neither `dismiss --catalog` nor `check --catalog` will produce
+  one. The audit matches an entry to an observation by kind and name, or those
+  of the artifact it emitted, and then by a review hash sealed by what is on
+  disk. Every settled finding is shown with the publisher and their reason —
+  under the line in the CLI, in its own row on a scope and in the app's
+  held-back panel, and on a marketplace package's page, which reads the same
+  record through `browse/safety.rs` so the preview cannot promise a verdict
+  the install will not give. Two decisions of theirs differing in reason or
+  date stay two rows. A record that settles nothing here is a note, never
+  silence. Finding identity is the rule and the sentence it fired with
+  (`Finding::fingerprint`). Which puts a standing obligation on every message:
+  it says what the rule fired *on* — the address a line runs, read as a shell
+  reads a line rather than searched for in one, the characters a file hides —
+  and never where it was found. Two different problems reading the same are
+  one decision, and one is displayed. A digest standing in for what a message
+  cannot print decides identity like the rest of the sentence, so every one is
+  `DIGEST_CHARS` wide: each stands for a value a project chooses, and a narrow
+  one is ground against until an injected finding wears a settled one's words.
+  Where a finding was found is its location, and every location a decision
+  covers is listed under it. Everything kendex's rendering moves is out of it:
+  the line, because rendering shifts lines; the file, because Codex renders a
+  command as a skill tree and an over-cap body splits into `references/`; the
+  severity, because a hit weighs one step less in a supporting file and the
+  split moves content between exactly those two. What bounds it instead is the
+  item — a fingerprint is read only within one item's records — the content
+  hash every decision binds to, and, for a publisher's record, which
+  occurrences here are theirs (`quality::publishers`) — one question with how
+  many, so the budget counts what it may be spent on. Where the rendering is
+  their own content with the project's block put into it, that boundary is the
+  answer: outside it is theirs at whatever weight this artifact gives it, so a
+  line the split carried into a supporting file is still theirs and settles a
+  step lighter. **A boundary is carried from the code that drew it, never
+  found again in the finished text.** That text is half the project's own and
+  answers any question put to it — a marker it spells itself ends the block
+  early and the rest reads as the publisher's — so the renderer hands the tree
+  and its offsets down as one value that no step can rename apart, and every
+  location they cover is composed rather than matched. Where the artifact is
+  generated from inputs instead, the answer is a rendering from their inputs
+  alone walked beside the real one, both sides read in the one deobfuscated
+  space or a hidden character makes a repeat match a raw comparison never
+  sees. Prose the project supplied is skipped there rather than credited to
+  whichever copy came first, which loses a review they did make and asks the
+  person instead; and a finding naming a whole document is theirs only where
+  their own rendering produces it.
+- **The community directory is read like any remote: strictly, capped,
+  and honest about staleness.** `registry/` (core) consumes what
   `source/index.rs` producers feed kendex.ai: `index.rs` re-parses the
   site's schema-1 payload under the site's own caps (a spoofed registry
   cannot grow a row), refusing structural problems whole and dropping only
@@ -1019,71 +1100,83 @@ lives in one capability table read by core and UI.
   they belong: they bound what is read for scoring, never what a decision
   covers, so content past a budget going unreviewable is said out loud
   instead of waved through.
-- **A dismissal settles one finding and unblocks nothing.** Beside the
-  item-level acceptance sits the smaller decision: this one finding, on
-  this one installation, is not the problem the rule says it is. It binds
-  the same way — review hash and rule set — and it lives in the same place,
-  the manifest of the scope the item belongs to: a personal decision stays
-  on this machine, a project decision is committed and shows up in code
-  review, which is what a security judgment should do. Because a project's
-  file travels, a dismissal carries a reason from a closed vocabulary and
-  never free text (`wrong-call`, `intended`, `trusted-source`) — every
-  reason is a claim about the content that means the same thing to whoever
-  reads it next, and none is one person's tolerance for risk. Trusting a
-  source binds the source: the record names the provenance it trusted and
-  goes stale when the same bytes arrive from anywhere else, a fork
+- - - - - - **A dismissal settles one finding; whose it is decides what it
+  buys.** Beside the item-level acceptance sits the smaller decision: this one
+  finding, on this one installation, is not the problem the rule says it is.
+  The two classes are not interchangeable. The person's own dismissal unblocks
+  nothing — it settles a question and is never offered on a held-back item at
+  all. The publisher's committed review is read *before* the verdict, so a
+  finding it settles stops counting toward the score and can therefore move an
+  item out of Block; that is the whole point of a catalog reviewing its own
+  content, and it is bounded by the checks above — every one of which is a
+  question put to the catalog rather than to a file this project commits. The
+  publisher's record does not live in the person's manifest and is not one of
+  their revocable records: it lives in the catalog's committed
+  `kendex-reviews.toml` and nowhere else, and an audit rebuilds the plan to
+  read it — so it never appears in the Recorded decisions registry, which
+  lists what the person can take back. It is shown instead wherever the
+  finding is, as above. A personal dismissal binds the same way — review hash
+  and rule set — and it lives in the same place, the manifest of the scope the
+  item belongs to: a personal decision stays on this machine, a project
+  decision is committed and shows up in code review, where a security judgment
+  belongs. Because a project's file travels, a dismissal carries a reason from
+  a closed vocabulary and never free text (`wrong-call`, `intended`,
+  `trusted-source`) — every reason is a claim about the content that means the
+  same thing to whoever reads it next, and none is one person's tolerance for
+  risk. Trusting a source binds the source: the record names the provenance it
+  trusted and goes stale when the same bytes arrive from anywhere else, a fork
   included. One snapshot per installation holds the proof once with each
-  dismissal beneath it; a decision on newer content replaces the snapshot,
-  since the older dismissals spoke for bytes that are gone. A held-back
-  item cannot be dismissed into silence — it is decided by accepting or
-  removing it — and an accepted item's findings already read as accepted.
-  The UI never spells a decision key: the backend issues a token per
-  finding (`kind:name:harness#fingerprint@review-hash/scope-digest`), and
-  a dismiss re-audits before it writes, refusing the whole batch if any
-  token no longer names what is installed or was minted for another
-  scope's manifest. Trusting a source needs a source kendex itself
-  resolved and recorded in the lock; a remote url found beside unmanaged
-  files is not one, since the files could have written it. Every write is one journaled manifest
-  op for one scope. Removing an item reaps its decisions; the registry
-  (`kendex decisions`, Recorded decisions) reads every record against what
-  is installed now — active, stale with the reason, or obsolete. An undo
-  from the app takes back exactly the record it was shown, never a newer
-  one at the same key; the CLI's revoke names the record by key.
-  How the two decisions compose, written down so no surface has to guess:
-  a held-back item's findings are decided by accepting or removing the
-  item, so they are never offered for dismissal and the item stays visible
-  with every finding whatever was decided about any of them; an active
-  acceptance covers every finding on its item, so those read as accepted
-  and cannot be dismissed on top; a threshold change that turns a warning
-  into a block leaves the dismissals recorded but the item shows as held
-  back with its findings in full, and one that turns a block into a warning
-  leaves the acceptance covering the findings until it is withdrawn;
-  withdrawing an acceptance uncovers the findings, and any dismissal made
-  before it applies again. What still needs a person is one derivation
-  (`lib/reviewable.ts`): held-back items, counted once each, plus open
-  findings counted once per distinct evidence — the same bytes carrying the
-  same finding through several tools, which one decision legitimately
+  dismissal beneath it, and a decision on newer content replaces it: the older
+  dismissals spoke for bytes that are gone. A held-back item cannot be
+  dismissed into silence: it is decided by accepting or removing it, and an
+  accepted item's findings already read as accepted. The UI never spells a
+  decision key: the backend issues a token per finding
+  (`kind:name:harness#fingerprint@review-hash/scope-digest`), and a dismiss
+  re-audits before it writes, refusing the whole batch if any token no longer
+  names what is installed or was minted for another scope's manifest. Trusting
+  a source needs one kendex itself resolved and recorded in the lock; a remote
+  url found beside unmanaged files is not one, since the files could have
+  written it. Every write is one journaled manifest op for one scope. Removing
+  an item reaps its decisions; the registry (`kendex decisions`, Recorded
+  decisions) reads every record against what is installed now — active, stale
+  with the reason, or obsolete. An undo from the app takes back exactly the
+  record it was shown, never a newer one at the same key; the CLI's revoke
+  names the record by key. How the two decisions compose, written down so no
+  surface has to guess: a held-back item's findings are decided by accepting
+  or removing the item, so they are never offered for dismissal and the item
+  stays visible with every finding whatever was decided about any of them; an
+  active acceptance covers every finding on its item, so those read as
+  accepted and cannot be dismissed on top; below that the person's own live
+  dismissal answers, and below that the publisher's record — so a personal
+  dismissal that has gone stale falls through to the publisher's rather than
+  straight to open, and a finding nobody has ruled on is open; a threshold
+  change that turns a warning into a block leaves the dismissals recorded but
+  the item shows as held back with its findings in full, and one that turns a
+  block into a warning leaves the acceptance covering the findings until it is
+  withdrawn; withdrawing an acceptance uncovers the findings, and any
+  dismissal made before it applies again. What still needs a person is one
+  derivation (`lib/reviewable.ts`): held-back items, counted once each, plus
+  open findings counted once per distinct evidence — the same bytes carrying
+  the same finding through several tools, which one decision legitimately
   covers because no rule reads the tool. Everything else is presentation.
-  Every count in the app — the sidebar, Home, the footer, a scope's
-  summary, and whether the Review page is finished — reads that one number,
-  so dismissing a finding moves all of them at once, and a scope whose every
-  finding is decided reads as done rather than as warning forever.
-  A dismissal is about installed bytes and is never made on a plan: the
-  observed audit is what a tool would load right now, and that is what a
-  decision has to bind to. What a plan would install is scored the same
-  way, and the rows that will install with findings travel with the view
+  Every count in the app — the sidebar, Home, the footer, a scope's summary,
+  and whether the Review page is finished — reads that one number, so
+  dismissing a finding moves all of them at once, and a scope whose every
+  finding is decided reads as done rather than as warning forever. A dismissal
+  is about installed bytes, never about a plan: what a tool would load right
+  now is what a decision binds to. What a plan would install is scored the
+  same way, and the rows that will install with findings travel with the view
   as `queued`, so the apply preview says how many decisions will be waiting
   once the content lands — review-after-install, said before the install
-  instead of discovered after it.
-  Grouping on the page is presentation only. A concern row collapses one
-  rule across everything it touched, which is how a person reads a list;
-  a decision is made per piece of evidence, which is how a person is
-  honest. Where a concern is one piece of evidence its row carries the
-  verb; where it spans different content, each piece has its own, and the
-  page offers a one-at-a-time walk through the scope's open evidence,
-  worst first, rather than any button that would decide twenty different
-  contents at once. There is no rule-level mute, no time-based snooze and
-  no cross-scope action: a plan belongs to one scope and locks one scope.
+  instead of discovered after it. Grouping on the page is presentation only. A
+  concern row collapses one rule across everything it touched, which is how a
+  person reads a list; a decision is made per piece of evidence, which is how
+  a person is honest. Where a concern is one piece of evidence its row carries
+  the verb; where it spans different content, each piece has its own, and the
+  page walks the scope's open evidence one at a time, worst first, never a
+  button that decides twenty contents at once. There is no rule-level mute, no
+  time-based snooze and no cross-scope action: a plan belongs to one scope and
+  locks one scope.
 - **Rule severities are calibrated against real catalogs, not inherited.**
   A Critical blocks an install on its own, so the tier is only worth
   something if it is precise. Patterns that fired only on legitimate

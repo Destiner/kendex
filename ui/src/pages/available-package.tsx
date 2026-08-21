@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/page-header";
 import { FindingLine } from "@/components/safety-findings";
 import { TagBadges } from "@/components/tag-badge";
 import { Button } from "@/components/ui/button";
+import { publisherSettledNote } from "@/lib/copy-safety";
 import { kindIcon } from "@/lib/kind-icon";
 import { kindLabel, packageDisplayName } from "@/lib/labels";
 import { latestOnly } from "@/lib/latest";
@@ -179,10 +180,30 @@ function AvailablePackage({ availableRef }: { availableRef: AvailableRef }) {
                     Before you install
                   </h3>
                   <div className="space-y-3">
-                    {view.safety.findings.map((finding) => (
+                    {/* A finding the publisher already ruled on is shown
+                        like any other and says whose call it was: it does
+                        not count toward the score here, exactly as it will
+                        not count when this installs. */}
+                    {/* One line can match a rule twice with the same
+                        address in both, and a record that paid for one
+                        occurrence settles the first of them — two rows
+                        alike in every field but whose call it was. The key
+                        carries that too, so the reason cannot land beside
+                        the row that did not get it; two rows alike in this
+                        as well are the same row to a reader. */}
+                    {view.safety.findings.map((row) => (
                       <FindingLine
-                        key={`${finding.location}:${finding.message}`}
-                        finding={finding}
+                        key={`${row.rule}:${row.location}:${row.message}:${row.settled?.reason ?? "open"}`}
+                        finding={row}
+                        settledBy={
+                          row.settled
+                            ? publisherSettledNote(
+                                view.safety.publisher ?? "The publisher",
+                                row.settled.reason,
+                                null,
+                              )
+                            : undefined
+                        }
                       />
                     ))}
                   </div>
@@ -195,7 +216,7 @@ function AvailablePackage({ availableRef }: { availableRef: AvailableRef }) {
               view={view}
               selectedFile={selectedFile}
               onSelectFile={setSelectedFile}
-            />
+            />{" "}
           </div>
         </div>
       </div>

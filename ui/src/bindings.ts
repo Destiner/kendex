@@ -485,6 +485,12 @@ export type AuditView_Serialize = {
 	error?: ScopeError | null,
 };
 
+/**  One finding the publisher settled. */
+export type AuthorDismissal = {
+	reason: DismissReason,
+	dismissedAt: string,
+};
+
 /**  One package a subscription offers, as the Packages table lists it. */
 export type AvailablePackage = {
 	kind: ItemKind,
@@ -730,14 +736,22 @@ export type DecisionState_Deserialize =
  *  Nobody has ruled on this finding for this content. `earlier` says why
  *  a previous ruling no longer applies, when there was one.
  */
-({ state: "open"; earlier: string | null }) & { dismissedAt?: never; grantedAt?: never; reason?: never } | 
+({ state: "open"; earlier: string | null }) & { dismissedAt?: never; grantedAt?: never; publisher?: never; reason?: never } | 
 /**  Judged not to be a problem, for exactly this content. */
-({ state: "dismissed"; reason: DismissReason; dismissedAt: string }) & { earlier?: never; grantedAt?: never } | 
+({ state: "dismissed"; reason: DismissReason; dismissedAt: string }) & { earlier?: never; grantedAt?: never; publisher?: never } | 
+/**
+ *  The catalog that publishes this content committed a review saying
+ *  this finding is not a problem, and that review still describes the
+ *  exact bytes we fetched. It is reported, not hidden: `publisher` is
+ *  the source the record was read from, recorded when it was read, so a
+ *  person can weigh whose judgement this is.
+ */
+({ state: "author-dismissed"; reason: DismissReason; dismissedAt: string; publisher: string }) & { earlier?: never; grantedAt?: never } | 
 /**
  *  Covered by an acceptance of the whole item: every finding on it was
  *  read and the item installed anyway.
  */
-({ state: "accepted"; grantedAt: string }) & { dismissedAt?: never; earlier?: never; reason?: never };
+({ state: "accepted"; grantedAt: string }) & { dismissedAt?: never; earlier?: never; publisher?: never; reason?: never };
 
 /**
  *  What is recorded about one finding, read against the content in front
@@ -748,14 +762,22 @@ export type DecisionState_Serialize =
  *  Nobody has ruled on this finding for this content. `earlier` says why
  *  a previous ruling no longer applies, when there was one.
  */
-({ state: "open"; earlier?: string | null }) & { dismissedAt?: never; grantedAt?: never; reason?: never } | 
+({ state: "open"; earlier?: string | null }) & { dismissedAt?: never; grantedAt?: never; publisher?: never; reason?: never } | 
 /**  Judged not to be a problem, for exactly this content. */
-({ state: "dismissed"; reason: DismissReason; dismissedAt: string }) & { earlier?: never; grantedAt?: never } | 
+({ state: "dismissed"; reason: DismissReason; dismissedAt: string }) & { earlier?: never; grantedAt?: never; publisher?: never } | 
+/**
+ *  The catalog that publishes this content committed a review saying
+ *  this finding is not a problem, and that review still describes the
+ *  exact bytes we fetched. It is reported, not hidden: `publisher` is
+ *  the source the record was read from, recorded when it was read, so a
+ *  person can weigh whose judgement this is.
+ */
+({ state: "author-dismissed"; reason: DismissReason; dismissedAt: string; publisher: string }) & { earlier?: never; grantedAt?: never } | 
 /**
  *  Covered by an acceptance of the whole item: every finding on it was
  *  read and the item installed anyway.
  */
-({ state: "accepted"; grantedAt: string }) & { dismissedAt?: never; earlier?: never; reason?: never };
+({ state: "accepted"; grantedAt: string }) & { dismissedAt?: never; earlier?: never; publisher?: never; reason?: never };
 
 /**
  *  A scope whose decisions could not be read, carried as data beside the
@@ -1864,6 +1886,16 @@ export type PackageFile = {
 	isReadme: boolean,
 };
 
+/**
+ *  One finding on an offered package, with the publisher's record about it
+ *  when they have one. A settled finding is reported here and does not
+ *  count toward the score or the verdict — the same answer the install
+ *  gate gives, which is the only reason this preview is worth showing.
+ */
+export type PackageFinding = {
+	settled: AuthorDismissal | null,
+} & Finding;
+
 export type PackageMeta = PackageMeta_Serialize | PackageMeta_Deserialize;
 
 export type PackageMeta_Deserialize = {
@@ -1932,7 +1964,11 @@ export type PackageRef = {
 export type PackageSafety = {
 	kind: ItemKind,
 	name: string,
-	findings: Finding[],
+	/**
+	 *  Every finding, each carrying whatever has already been decided about
+	 *  it. One row, not two arrays a reader has to keep in step by index.
+	 */
+	findings: PackageFinding[],
 	safety: SafetyScore,
 	/**  Advisory, never blocking. */
 	quality: QualityScore | null,
@@ -1943,6 +1979,8 @@ export type PackageSafety = {
 	ruleset: number,
 	/**  Whether a verified cache entry answered instead of a fresh score. */
 	fromCache: boolean,
+	/**  Who recorded the settled findings, when this package carries any. */
+	publisher: string | null,
 };
 
 /**
