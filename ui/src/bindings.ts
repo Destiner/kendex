@@ -302,7 +302,7 @@ export const commands = {
 	 *  "the catalog's version wins", scoped to the package the user named so
 	 *  a neighbour's edits are never taken along.
 	 */
-	applyDiscardEdits: (scope: Scope, kind: ItemKind, name: string) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("apply_discard_edits", { scope, kind, name })),
+	applyDiscardEdits: (scope: Scope, kind: ItemKind, name: string, rev: string | null) => typedError<AuditView_Serialize, string>(__TAURI_INVOKE("apply_discard_edits", { scope, kind, name, rev })),
 	packageFiles: (scope: Scope, kind: ItemKind, name: string) => typedError<PackageFile[], string>(__TAURI_INVOKE("package_files", { scope, kind, name })),
 	packageFile: (scope: Scope, kind: ItemKind, name: string, path: string) => typedError<ItemSource, string>(__TAURI_INVOKE("package_file", { scope, kind, name, path })),
 	packageReadme: (scope: Scope, kind: ItemKind, name: string) => typedError<{
@@ -1144,6 +1144,18 @@ export type GitReadiness = {
 };
 
 export type HarnessId = "claude" | "codex" | "opencode" | "cursor" | "pi" | "gemini" | "copilot";
+
+/**
+ *  Whose hold keeps a place at its revision — what the Follow source
+ *  switch may release, and what it may not.
+ */
+export type HoldOwner = 
+/**  This declaration's own `rev`: the switch releases it. */
+{ kind: "package" } | 
+/**  The source is pinned as a whole; released where the source is declared. */
+{ kind: "source"; name: string } | 
+/**  Propagated from the bundle or package that pulled this one in. */
+{ kind: "parent" };
 
 export type HookAgents = 
 /**  `"all"`, a role name, or a single agent name. */
@@ -2266,6 +2278,12 @@ export type UpdateRow = {
 	name: string,
 	source: string,
 	repo: string,
+	/**
+	 *  `repo` as [`crate::source_ref::repo_identity`] spells it — the one
+	 *  identity two scopes' rows share when they name one repository two
+	 *  ways, on any host.
+	 */
+	repoIdentity: string,
 	/**  The content revision installed now, when the lock records it. */
 	current: VersionRef | null,
 	/**  The newest content revision the mirror knows. */
@@ -2281,6 +2299,8 @@ export type UpdateRow = {
 	 *  pinned dependency parent all hold what they carry.
 	 */
 	pinned: boolean,
+	/**  Who holds it, when `pinned`. */
+	holdOwner: HoldOwner | null,
 	/**  The user asked to stop hearing about this package's updates. */
 	ignored: boolean,
 	/**
@@ -2288,6 +2308,38 @@ export type UpdateRow = {
 	 *  the edit is kept as a fork or discarded.
 	 */
 	blockedByLocalEdit: boolean,
+	/**
+	 *  Which renderings carry the edit, one entry per physical rendering:
+	 *  an agent renders once per tool, while tools sharing a skill's
+	 *  canonical tree count once. Keeping the edit as a fork captures one
+	 *  rendering's bytes — it has to be the one that was changed.
+	 */
+	editedHarnesses: HarnessId[],
+	/**
+	 *  The edited rendering a fork can capture, when one exists — an
+	 *  agent edited only in a tool whose format cannot be read back has
+	 *  none, and the UI must not offer what the engine will refuse.
+	 */
+	forkableHarness: HarnessId | null,
+	/**
+	 *  Whether dropping the edits can put the currently resolved content
+	 *  back in place, without moving any revision — the source content
+	 *  resolved, whether or not its history could be read. False once the
+	 *  source no longer carries the package.
+	 */
+	canDiscard: boolean,
+	/**
+	 *  Whether this place can move to the newest content on its own: the
+	 *  newest is known, and the hold — if any — is this declaration's to
+	 *  move rather than a bundle's or parent's.
+	 */
+	canTakeLatest: boolean,
+	/**
+	 *  Installed as a bundle member or a dependency, with no declaration
+	 *  of its own: whatever pulled it in owns its revision, and a fork
+	 *  needs a declaration to turn local.
+	 */
+	derived: boolean,
 	/**  This package is a local fork of a catalog item. */
 	forked: boolean,
 	/**  Installations of this package disagree on their source commit. */
