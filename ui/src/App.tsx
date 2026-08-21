@@ -27,6 +27,7 @@ import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 import { useSettingsStore } from "@/stores/settings";
 import { useUpdatesStore } from "@/stores/updates";
+import { zoom } from "@/stores/zoom";
 
 const FOCUS_RESCAN_DEBOUNCE_MS = 5000;
 
@@ -45,6 +46,29 @@ function useAppearance() {
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
   }, [appearance]);
+}
+
+// Ctrl and + or - resize the whole app, the way they resize a page in a
+// browser. The keys work anywhere, fields included, because that is where a
+// browser's zoom works too.
+function useZoomShortcuts() {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (zoom.onKeyDown(event)) event.preventDefault();
+    };
+    // Gives a size still inside its settle window its best chance rather
+    // than a certain one: this starts the write instead of waiting out the
+    // timer, and whether it lands depends on the runtime outliving the
+    // unload.
+    const onLeaving = () => zoom.flush();
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("beforeunload", onLeaving);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("beforeunload", onLeaving);
+      onLeaving();
+    };
+  }, []);
 }
 
 // The side buttons on a mouse mean back and forward everywhere else on the
@@ -105,6 +129,7 @@ export default function App() {
   useAppearance();
   useScanTriggers();
   useMouseNavigation();
+  useZoomShortcuts();
   const page = useNavStore((s) => s.page);
   const packageRef = useNavStore((s) => s.packageRef);
   const packageKey = packageRef

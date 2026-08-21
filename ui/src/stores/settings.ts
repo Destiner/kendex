@@ -5,11 +5,13 @@ import {
   type AppSettings,
   type CapabilityRow,
   commands,
+  ZOOM,
 } from "@/bindings";
 import { useProblemsStore } from "./problems";
 import { useScanStore } from "./scan";
+import { type ZoomSlice, zoomActions } from "./settings-zoom";
 
-interface SettingsState {
+interface SettingsState extends ZoomSlice {
   settings: AppSettings | null;
   capabilities: CapabilityRow[];
   load: () => Promise<void>;
@@ -28,14 +30,39 @@ async function rescan() {
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: null,
   capabilities: [],
+  ...zoomActions(set, get),
 
   load: async () => {
-    const [settings, capabilities] = await Promise.all([
+    // The size comes from the window, not from the file: the file holds
+    // what the person asked for, and the zoom outlives the page, so a page
+    // that has just reloaded is the one least able to work it out itself.
+    const [settings, capabilities, webview] = await Promise.all([
       commands.getSettings(),
       commands.capabilityTable(),
+      commands.windowZoomState(),
     ]);
     if (settings.status === "ok") {
-      set({ settings: settings.data, capabilities });
+      set({
+        settings: settings.data,
+        capabilities,
+        tookZoom: webview.percent,
+      });
+      // The opening had no UI to say this in, so it is said here rather
+      // than leaving the person with an app that quietly ignored their
+      // size. Both halves are needed: the refusal stands for the whole
+      // session, so on its own it would go on complaining after a resize
+      // put the person back where they wanted to be.
+      const asked = settings.data.zoom ?? ZOOM.default;
+      if (webview.launchRefused && webview.percent !== asked) {
+        useProblemsStore.getState().showError({
+          title: "Couldn't open at your saved zoom",
+          message: `kendex is at ${webview.percent}% instead of the ${asked}% you saved. Your saved zoom is unchanged.`,
+          steps: ["Try again", "If it keeps happening, restart kendex"],
+          actions: [
+            { label: "Retry", onClick: () => void get().setZoom(asked) },
+          ],
+        });
+      }
     } else {
       useProblemsStore.getState().showError({
         title: "Couldn't load your settings",

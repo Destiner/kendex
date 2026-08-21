@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::error::{CoreError, Result};
 
@@ -24,20 +25,39 @@ fn write_then_rename(path: &Path, contents: &str, durable: bool) -> Result<()> {
         .parent()
         .ok_or_else(|| CoreError::io(&path, std::io::Error::other("path has no parent")))?;
     fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
-    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
-    fs::write(&tmp, contents).map_err(|e| CoreError::io(&tmp, e))?;
+    // One temp name per write, not per process: two writers sharing a name
+    // truncate each other's bytes, and the one that loses the rename either
+    // fails with ENOENT or writes its payload straight over the live file
+    // the winner just moved into place. The app writes settings from a
+    // thread pool, so same-path writes really do overlap.
+    let tmp = path.with_extension(format!(
+        "tmp.{}.{}",
+        std::process::id(),
+        NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+    ));
+    // A failed write leaves nothing behind. With a name per attempt there is
+    // no next writer to overwrite an abandoned temp file, so it would just
+    // sit there beside the real one — a full copy of whatever was being
+    // saved, growing by one file per failure.
+    let discard = |error: std::io::Error, at: &Path| {
+        let _ = fs::remove_file(&tmp);
+        CoreError::io(at, error)
+    };
+    fs::write(&tmp, contents).map_err(|e| discard(e, &tmp))?;
     if durable {
         fs::File::open(&tmp)
             .and_then(|f| f.sync_all())
-            .map_err(|e| CoreError::io(&tmp, e))?;
+            .map_err(|e| discard(e, &tmp))?;
     }
-    fs::rename(&tmp, &path).map_err(|e| CoreError::io(&path, e))?;
+    fs::rename(&tmp, &path).map_err(|e| discard(e, &path))?;
     #[cfg(unix)]
     if durable && let Ok(dir) = fs::File::open(parent) {
         let _ = dir.sync_all();
     }
     Ok(())
 }
+
+static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
 /// The file a symlink chain ends at; the path itself when it is not a link
 /// or the link is broken (nothing to preserve, the rename replaces it).
@@ -59,6 +79,66 @@ pub fn read_if_exists(path: &Path) -> Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The app saves settings from a Tokio thread pool, so a slider drag can
+    /// put several writes of one file in flight at once. Sharing a temp name
+    /// made them collide: the loser either failed to rename or wrote its
+    /// payload over the live file, leaving it half one write and half the
+    /// other.
+    #[test]
+    fn concurrent_writers_of_one_file_all_succeed_and_leave_it_whole() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("settings.toml");
+        let bodies: Vec<String> = (0..8)
+            .map(|writer| {
+                format!(
+                    "writer = {writer}\npadding = \"{}\"\n",
+                    "x".repeat(writer * 40)
+                )
+            })
+            .collect();
+
+        for _ in 0..50 {
+            std::thread::scope(|scope| {
+                for body in &bodies {
+                    scope.spawn(|| atomic_write(&path, body).expect("every writer succeeds"));
+                }
+            });
+            let written = fs::read_to_string(&path).unwrap();
+            assert!(
+                bodies.iter().any(|body| *body == written),
+                "the file is one writer's bytes, not a mixture: {written:?}"
+            );
+        }
+        // Nothing is left behind for the next reader to trip over.
+        let leftovers: Vec<_> = fs::read_dir(tmp.path())
+            .unwrap()
+            .filter_map(|entry| entry.ok().map(|e| e.file_name()))
+            .filter(|name| name != "settings.toml")
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+    }
+
+    /// Renaming onto a directory is the failure this can force; every other
+    /// one leaves the same debris. Both entry points share the helper, so
+    /// both are checked.
+    #[test]
+    fn a_write_that_cannot_finish_leaves_no_temp_file_behind() {
+        let tmp = tempfile::tempdir().unwrap();
+        let occupied = tmp.path().join("settings.toml");
+        fs::create_dir(&occupied).unwrap();
+
+        for write in [atomic_write, atomic_write_durable] {
+            assert!(write(&occupied, "schema = 1\n").is_err());
+        }
+
+        let leftovers: Vec<_> = fs::read_dir(tmp.path())
+            .unwrap()
+            .filter_map(|entry| entry.ok().map(|e| e.file_name()))
+            .filter(|name| name != "settings.toml")
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+    }
 
     #[cfg(unix)]
     #[test]

@@ -15,7 +15,11 @@ vi.mock("@/bindings", () => ({
     unregisterProject: vi.fn(),
     discoverProjects: vi.fn(),
     scanMachine: vi.fn(),
+    windowSetZoom: vi.fn(),
+    windowZoomState: vi.fn(),
+    saveZoom: vi.fn(),
   },
+  ZOOM: { min: 50, max: 200, step: 10, default: 100 },
 }));
 
 vi.mock("sonner", () => ({
@@ -28,6 +32,7 @@ const settings: AppSettings = {
   safety: { "warn-below": 80, "block-below": 60 },
   "harness-roots": {},
   projects: [],
+  zoom: 100,
 };
 
 describe("settings store", () => {
@@ -47,6 +52,10 @@ describe("settings store", () => {
     vi.mocked(commands.scanMachine).mockResolvedValue({
       status: "ok",
       data: { harnesses: [], items: [], missingProjects: [], warnings: [] },
+    });
+    vi.mocked(commands.windowZoomState).mockResolvedValue({
+      percent: settings.zoom ?? 100,
+      launchRefused: false,
     });
   });
 

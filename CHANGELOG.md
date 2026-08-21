@@ -17,6 +17,13 @@ changes carry a **Breaking** call-out with their migration note inline.
   alongside Apple silicon, x86_64 Linux, and Windows. The installer script,
   `kendex update`, Homebrew, and the AUR packages all pick the build for
   your machine.
+- A zoom control for the app. Settings has minus and plus buttons that step
+  from 50% to 200%, and `Ctrl` `+`, `Ctrl` `-`, and `Ctrl` `0` — `Cmd` on a
+  Mac — change it from anywhere in the app the way they change a page in a
+  browser. The size you pick is remembered and applied before the window
+  opens. It is also the fix for a display set to a fractional scale, which
+  GTK rounds to a whole number. If the window cannot take your size, it
+  opens at 100% and says so, and the size you chose is kept for next time.
 - New ways to install. A one-line installer,
   `curl -fsSL https://kendex.ai/install.sh | sh`, that installs the app and
   the CLI on Linux and the CLI on macOS;
@@ -58,6 +65,23 @@ changes carry a **Breaking** call-out with their migration note inline.
   directly in Backlog instead of the team's Triage default. Pipeline output
   is already fully triaged — project, labels, priority, relations — and a
   Triage landing let triage automation re-route it into other projects.
+- The Linux app draws at the right size on a HiDPI Wayland display. The
+  AppImage always ran through XWayland, which reports a scale of 1 while the
+  compositor drives the display at 2, so every element came out at half its
+  size. The app now opens as a native Wayland client, falling back to X11 if
+  the Wayland display cannot be opened. `GDK_SCALE` and `GDK_DPI_SCALE` are
+  never touched, and a `GDK_BACKEND` you set is still yours — except inside
+  the AppImage, where the bundle overwrites it before kendex starts, so
+  `KENDEX_GDK_BACKEND` is how you choose a backend there. Set it to `x11` if
+  your machine turns out to need what the bundle was pinning.
+- Saving two things at the same moment can no longer leave a file
+  half-written. Settings, manifests, locks, and snapshots each get their own
+  temporary file, so two saves of one file cannot overwrite each other's
+  bytes partway through.
+- The app-menu entry now carries the app's window class, and every icon size
+  kendex ships is installed, so launchers and docks match the running window
+  to kendex and draw a sharp icon at any size. Both channels that write the
+  entry are fixed: `curl … | sh` and `yay -S kendex-bin`.
 - On Linux, a helper command that ran past its time limit could take
   unrelated processes down with it: Ubuntu's `kill` misreads the negative
   process-group argument kendex passed, and for some process ids that

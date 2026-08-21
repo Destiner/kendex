@@ -9,6 +9,18 @@ export const coreHandlers: Record<string, Handler> = {
   window_minimize: () => null,
   window_toggle_maximize: () => null,
   window_close: () => null,
+  // The one window command with a browser equivalent: CSS zoom scales the
+  // page the same way the webview's own zoom does.
+  window_set_zoom: ({ percent }: { percent: number }) => {
+    document.documentElement.style.zoom = String(percent / 100);
+    return null;
+  },
+  // Read off the page, the way the real reader reads it off the webview:
+  // the mock takes every size, so it is never at one it refused.
+  window_zoom_state: () => ({
+    percent: Math.round(Number(document.documentElement.style.zoom || 1) * 100),
+    launchRefused: false,
+  }),
   pick_folder: () => null,
   reveal_path: () => null,
   open_in_editor: () => null,
@@ -42,8 +54,14 @@ export const coreHandlers: Record<string, Handler> = {
   }),
   get_settings: () => store.state.settings,
   update_settings: ({ settings }: { settings: AppSettings }) => {
-    store.state.settings = settings;
+    // The size is the window's; a settings save carries a copy that may
+    // predate the last resize, so the stored one stands.
+    store.state.settings = { ...settings, zoom: store.state.settings.zoom };
     return store.state.settings;
+  },
+  save_zoom: ({ percent }: { percent: number }) => {
+    store.state.settings.zoom = percent;
+    return percent;
   },
   register_project: ({ path }: { path: string }) => {
     const projects = store.state.settings.projects ?? [];

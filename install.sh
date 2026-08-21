@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # kendex installer.
 #
 #   curl -fsSL https://kendex.ai/install.sh | sh
@@ -6,7 +6,11 @@
 # On Linux this installs the desktop app and the kendex command. On macOS it
 # installs the kendex command; get the app with `brew install vanillagreencom/kendex/kendex`
 # or from https://kendex.ai/download.
-set -euo pipefail
+# POSIX shell, because the published command pipes this into `sh` and that
+# is dash on Debian and Ubuntu. No `pipefail` either: the one pipeline here
+# is the release lookup, and an empty result is checked for by name a few
+# lines below, which says more than an abrupt exit would.
+set -eu
 
 repo="vanillagreencom/kendex"
 version="latest"
@@ -49,6 +53,13 @@ fi
 plain="${version#v}"
 base="https://github.com/$repo/releases/download/$version"
 
+# One directory for everything downloaded, removed however this run ends.
+# `sh` has no per-function cleanup — `trap ... RETURN` is bash's alone — and
+# an installer that leaves a temp directory behind on every failed attempt
+# fills a machine over time.
+work="$(mktemp -d)" || { echo "install.sh: nowhere to download to" >&2; exit 1; }
+trap 'rm -rf "$work"' EXIT
+
 # Pick a bin dir already on PATH; prefer a writable user dir over sudo.
 bindir=""
 for candidate in "$HOME/.local/bin" "/usr/local/bin"; do
@@ -57,13 +68,12 @@ done
 [ -n "$bindir" ] || bindir="$HOME/.local/bin"
 
 install_cli() {
-  local tmp
-  tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' RETURN
   echo "Downloading the kendex command ($target)…"
   # curl exits 22 on an HTTP error — here a 404 for an asset the release
-  # lacks; any other failure is the network, not the release.
-  if curl -fSL --proto '=https' -o "$tmp/kendex" "$base/kendex-$target"; then
+  # lacks; any other failure is the network, not the release. Testing curl
+  # in the condition and reading `$?` in the else is what keeps that code:
+  # `if ! curl` would hand back the negation instead.
+  if curl -fSL --proto '=https' -o "$work/kendex" "$base/kendex-$target"; then
     :
   else
     rc=$?
@@ -71,45 +81,109 @@ install_cli() {
     [ "$rc" -eq 22 ] && echo "  release $version may have no build for $target (see https://github.com/$repo/releases)" >&2
     exit 1
   fi
-  chmod +x "$tmp/kendex"
+  chmod +x "$work/kendex"
   # mkdir -p exits 0 on a directory that already exists, writable or not,
   # so create-if-missing first and let writability alone pick the branch.
   [ -d "$bindir" ] || mkdir -p "$bindir" 2>/dev/null || true
   if [ -w "$bindir" ]; then
-    install -m 0755 "$tmp/kendex" "$bindir/kendex"
+    install -m 0755 "$work/kendex" "$bindir/kendex"
   else
     echo "Installing to $bindir needs elevated permissions."
-    sudo install -D -m 0755 "$tmp/kendex" "$bindir/kendex"
+    sudo install -D -m 0755 "$work/kendex" "$bindir/kendex"
   fi
   echo "Installed the kendex command to $bindir/kendex"
 }
 
+# One icon size into the theme directory it belongs to.
+#
+# The download lands somewhere else first and is installed only once it has
+# arrived whole, the way every download here does. This script is the upgrade
+# path as well as the install, so a fetch that fails on a re-run must leave
+# the icon the last run installed exactly where it is — writing into the
+# slot and cleaning up afterwards would take a working icon away over a rate
+# limit. Nothing here can fail the install either: every failure is caught
+# and named, and the function always returns 0.
+install_icon() {
+  local dir="$1" source="$2" size file
+  size=${dir%/apps}
+  size=${size##*/}
+  file="$work/$size.png"
+  if ! curl -fsSL --proto '=https' -o "$file" "$source"; then
+    echo "install.sh: no $size icon this time; kendex keeps the one it has." >&2
+  elif ! { mkdir -p "$dir" && install -m 0644 "$file" "$dir/kendex.png"; }; then
+    echo "install.sh: cannot write $dir; skipped the $size icon." >&2
+  fi
+  return 0
+}
+
+# A path, ready to sit inside the quotes of an Exec key. Three layers of the
+# Desktop Entry spec meet in that one value, and none of them is shell
+# syntax:
+#
+#   * The value is a list of arguments. Every character the spec reserves —
+#     space, tab, newline, " ' \ > < ~ | & ; $ * ? # ( ) ` — has to sit
+#     inside quotes, which is why the whole path is written as one quoted
+#     argument. That alone settles all but five of them.
+#   * Inside those quotes " ` $ and \ each take a leading backslash.
+#   * A launcher reads the file's own escapes first, and only \\ \s \n \t
+#     \r exist there — so each backslash above is doubled again, a tab, a
+#     carriage return and a newline go in by name, and any other backslash
+#     makes a launcher refuse the whole key.
+#
+# Percent is the odd one out: it introduces a field code rather than being
+# reserved, and a literal one is written %%. Doubling it is what the spec
+# asks for, and it is still the better of two bad answers on GLib, which
+# checks that the Exec binary exists before it undoubles them: a path with a
+# percent in it gets a menu entry GLib will not read, where leaving the
+# percent alone gets one that quietly launches a truncated path.
+desktop_arg() {
+  local tab cr
+  tab=$(printf '\t')
+  cr=$(printf '\r')
+  # sed reads a line at a time, so a newline in the path arrives as two of
+  # them: mark every line but the last and join them back up afterwards.
+  printf '%s' "$1" | sed \
+    -e 's/\\/\\\\\\\\/g' \
+    -e 's/[$`"]/\\\\&/g' \
+    -e 's/%/%%/g' \
+    -e "s/$tab/\\\\t/g" \
+    -e "s/$cr/\\\\r/g" \
+    -e '$!s/$/\\n/' | tr -d '\n'
+}
+
 # The desktop app on Linux is the AppImage, kept off PATH so the `kendex`
 # command stays the CLI. A .desktop entry launches it from the app menu.
+# StartupWMClass ties the window to this entry: without it a launcher shows
+# the running app as a second, unnamed, iconless item.
 install_app_linux() {
-  local data libdir tmp
+  local data libdir
   data="${XDG_DATA_HOME:-$HOME/.local/share}"
   libdir="$data/kendex"
-  tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' RETURN
   echo "Downloading the desktop app…"
-  if ! curl -fSL --proto '=https' -o "$tmp/kendex.AppImage" \
+  if ! curl -fSL --proto '=https' -o "$work/kendex.AppImage" \
       "$base/kendex_${plain}_${appimage_arch}.AppImage"; then
     echo "install.sh: could not download the desktop app; the kendex command is installed." >&2
     return 0
   fi
-  mkdir -p "$libdir" "$data/applications" \
-    "$data/icons/hicolor/128x128/apps"
-  install -m 0755 "$tmp/kendex.AppImage" "$libdir/kendex.AppImage"
-  curl -fsSL --proto '=https' -o "$data/icons/hicolor/128x128/apps/kendex.png" \
-    "https://raw.githubusercontent.com/$repo/$version/crates/app/icons/128x128.png" || true
+  mkdir -p "$libdir" "$data/applications"
+  install -m 0755 "$work/kendex.AppImage" "$libdir/kendex.AppImage"
+  # Every size the app ships, each in its own slot: a launcher or dock that
+  # picks the 128px icon for a HiDPI slot has to upscale it, and the result
+  # looks soft.
+  local icons="https://raw.githubusercontent.com/$repo/$version/crates/app/icons"
+  local theme="$data/icons/hicolor"
+  install_icon "$theme/32x32/apps" "$icons/32x32.png"
+  install_icon "$theme/128x128/apps" "$icons/128x128.png"
+  install_icon "$theme/256x256/apps" "$icons/128x128@2x.png"
+  install_icon "$theme/512x512/apps" "$icons/icon.png"
   cat > "$data/applications/kendex.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
 Name=kendex
 Comment=Manage AI coding agents, skills, and hooks
-Exec=$libdir/kendex.AppImage
+Exec="$(desktop_arg "$libdir/kendex.AppImage")"
 Icon=kendex
+StartupWMClass=kendex-app
 Categories=Development;Utility;
 Terminal=false
 DESKTOP

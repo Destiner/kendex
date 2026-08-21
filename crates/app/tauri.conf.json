@@ -18,12 +18,14 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "kendex",
         "width": 1280,
         "height": 840,
         "minWidth": 900,
         "minHeight": 600,
-        "decorations": false
+        "decorations": false,
+        "visible": false
       }
     ],
     "security": {

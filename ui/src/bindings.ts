@@ -9,6 +9,12 @@ export const commands = {
 	scanMachine: () => typedError<ScanResult, string>(__TAURI_INVOKE("scan_machine")),
 	getSettings: () => typedError<AppSettings, string>(__TAURI_INVOKE("get_settings")),
 	updateSettings: (settings: AppSettings) => typedError<AppSettings, string>(__TAURI_INVOKE("update_settings", { settings })),
+	/**
+	 *  The size on screen, written on its own. Nothing else in the file moves
+	 *  with it, and nothing else can move it: a size the person is looking at
+	 *  survives whatever else is being saved at the same moment.
+	 */
+	saveZoom: (percent: number) => typedError<number, string>(__TAURI_INVOKE("save_zoom", { percent })),
 	registerProject: (path: string) => typedError<AppSettings, string>(__TAURI_INVOKE("register_project", { path })),
 	unregisterProject: (path: string) => typedError<AppSettings, string>(__TAURI_INVOKE("unregister_project", { path })),
 	/**
@@ -305,10 +311,23 @@ export const commands = {
 	truncated: boolean,
 } | null, string>(__TAURI_INVOKE("package_readme", { scope, kind, name })),
 	packageMeta: (scope: Scope, kind: ItemKind, name: string) => typedError<PackageMeta_Serialize, string>(__TAURI_INVOKE("package_meta", { scope, kind, name })),
+	/**
+	 *  Zoom is set on the webview rather than by restyling the page: it holds
+	 *  across reloads, and it scales the app's own titlebar along with
+	 *  everything else, the way a browser scales a page. Holding across reloads
+	 *  is also why the size is recorded here — the page forgets, the webview
+	 *  does not.
+	 */
+	windowSetZoom: (percent: number) => typedError<null, string>(__TAURI_INVOKE("window_set_zoom", { percent })),
+	/**  What the webview is showing, for a page with no memory of its own. */
+	windowZoomState: () => __TAURI_INVOKE<ZoomState>("window_zoom_state"),
 	windowMinimize: () => typedError<null, string>(__TAURI_INVOKE("window_minimize")),
 	windowToggleMaximize: () => typedError<null, string>(__TAURI_INVOKE("window_toggle_maximize")),
 	windowClose: () => typedError<null, string>(__TAURI_INVOKE("window_close")),
 };
+
+/* Constants */
+export const ZOOM = {"min":50,"max":200,"step":10,"default":100} as const;
 
 /* Types */
 /**  One About row: what was found under one root. */
@@ -359,6 +378,12 @@ export type AppSettings = {
 	 *  committed to a shared repository would silence a whole team.
 	 */
 	"ignored-updates"?: IgnoredUpdate[],
+	/**
+	 *  How large the interface draws, as a percent. Machine-local like
+	 *  everything else in this file: how big text needs to be belongs to
+	 *  the person and the display in front of them, not to a project.
+	 */
+	zoom?: number,
 };
 
 export type Appearance = "system" | "light" | "dark";
@@ -2337,6 +2362,21 @@ export type VersionSel =
 { at: "commit"; commit: string } | 
 /**  What is installed on disk right now. */
 { at: "installed" };
+
+export type ZoomState = {
+	/**
+	 *  The size on screen. Every resize the window takes moves it, so a
+	 *  page that has just reloaded reads what it is looking at.
+	 */
+	percent: number,
+	/**
+	 *  The window would not take the saved size when it opened, so
+	 *  `percent` is the fallback and the saved size is not on screen. A
+	 *  fact about the opening: a resize that works later moves the size but
+	 *  does not make the opening have worked.
+	 */
+	launchRefused: boolean,
+};
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

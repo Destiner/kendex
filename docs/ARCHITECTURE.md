@@ -312,6 +312,86 @@ lives in one capability table read by core and UI.
   thread, stay synchronous.
 - No database: manifests, locks, and native dirs are the state; scans are
   in-memory views (startup, focus, watch); app prefs in one settings file.
+- **The Linux app decides its own display environment, once, before GTK
+  starts.** The AppImage's bundled GTK hook pins `GDK_BACKEND=x11`, which
+  puts the window on XWayland, where a compositor driving the display at
+  scale 2 tells the client the scale is 1 — so the whole app draws at half
+  size. That pin is upstream's workaround for tauri-apps/tauri#8541, a
+  GLib-GIO schema lookup that aborts the process on bundles built old and
+  run new; it is a different failure from the WebKitGTK DMABUF crash, and
+  the two fixes do not substitute for each other. The app reads the session
+  and relaunches itself once (`crates/app/src/launch_env.rs`) with whichever
+  of `GDK_BACKEND` and the WebKit DMABUF workaround that session needs, and
+  not at all when it needs neither; the environment is never rewritten in
+  place, because the workspace forbids `unsafe`. Only the AppImage is pushed
+  onto a backend, and only onto `wayland,x11` — GDK's own ordered list, so a
+  compositor whose Wayland display cannot be opened still gets an X11 window
+  rather than none. That list is not a net under #8541: an abort kills the
+  process after Wayland has been chosen, so the second entry never runs.
+  Overriding the pin is a judgement, taken because upstream reports the
+  abort does not occur for bundles built on current Ubuntu — which is what
+  `release.yml` builds on — and because the released AppImage patched to
+  this value came up native on a Wayland session with an empty log. The
+  recourse if a host proves it wrong is `KENDEX_GDK_BACKEND=x11`, and the
+  launch prints that name whenever it overrides the pin.
+  Every other packaging is left alone: with the variable unset GDK already
+  tries Wayland first. A backend the person named is honoured on any
+  session and never overridden; inside the AppImage the `x11` sitting there
+  is the hook's rather than theirs, so `KENDEX_GDK_BACKEND` names one
+  instead. `GDK_SCALE` and `GDK_DPI_SCALE` are never written at all.
+- **Zoom is the webview's, applied before the window is shown.** The window
+  is configured hidden and revealed in `setup` once the saved zoom is on the
+  webview, so the first frame is already the right size — a page restyle
+  would re-lay out the app in front of the person. The range lives in core
+  and reaches the UI as a generated constant. The floor and the ceiling bind
+  the controls and the settings file alike — a value outside them is clamped
+  on the way in and on the way out — while the step is the controls' alone,
+  so a hand-edited 137 is honoured. This is also the answer to a compositor
+  set to a fractional scale, which GTK3 and WebKitGTK round to a whole
+  number: the person nudges the difference back by hand. A webview that
+  refuses the size still opens, at full size. What the webview is at is kept
+  beside it and read back on load, since the zoom outlives the page that set
+  it, while the stored percent stays a preference and is left alone.
+- **Zoom moves in steps, and writes once the stepping stops.** Nothing
+  offers a continuous zoom: a held `Ctrl` `+` and a repeatedly clicked
+  button are the two inputs, and both take one step per press. That is the
+  whole reason the control has buttons rather than a slider — every step
+  re-lays out the webview on the GTK thread, so a drag turned the app into a
+  flicker while a keypress never did. The window follows every step so the
+  control feels live, and the settings file is written once the steps stop.
+  Both inputs start the same timer, so neither can rewrite the file per
+  press. The window is asked for one size at a time, each press queued
+  behind the last, so there is never a second reply to interleave with: a
+  queue removes those orderings rather than reconciling them. The size still
+  shows the moment it is pressed, so the control stays immediate and two
+  presses in one frame cannot collapse into one. Three values track the
+  size, each with a single writer: what the app shows moves on a press, what
+  the window has taken moves only on the window's reply, and what the
+  settings object holds moves only when the file does. The first two are
+  kept out of that object because every settings action writes it whole — a
+  preview sitting in it would be persisted, faithfully, by an unrelated
+  save, and a reply that predates the last resize would put an older size
+  back over one the window has taken. The size reaches the file through a
+  command of its own for the same reason: it carries a percent and nothing
+  else, so no other setting can ride back with it, and `update_settings`
+  leaves the stored size exactly as it found it. At most one save is ever in
+  flight, and asks made while it runs collapse into a single follow-up that
+  writes whatever is on screen by then, so replies can never land out of
+  order and put back a size the person has already moved past. A write waits
+  for the resize before it reads what to write, so a size the window refuses
+  is never offered to the file; a size the file refuses stays on screen,
+  because taking it away would cost the person the size they are using to
+  read the message. What the settle costs is the last size chosen before
+  quitting: the write is IPC behind a promise chain, so unloading starts it
+  but cannot wait for it, and a close can end the runtime first. The close
+  is not held open to fix that — a window that will not shut while the
+  webview is busy is worse than losing one zoom step, and a timeout on the
+  wait brings the loss back anyway.
+- **Every atomic write gets its own temp file.** `write_then_rename` names
+  its temp file per write, not per process: the app saves from a thread
+  pool, so two writes of one path really do overlap, and a shared name
+  makes them truncate each other and lets the loser write its payload over
+  the live file the winner just renamed into place.
 - GUI + CLI are equal thin shells over `crates/core`; every core operation
   has a CLI verb. No CI until first release; `tools/guard` is the gate.
 - Multi-harness kept (v1 fleet workflows depend on Pi). Every capability
