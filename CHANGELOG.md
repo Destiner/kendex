@@ -130,6 +130,25 @@ changes carry a **Breaking** call-out with their migration note inline.
   reported as "the safety rules changed since it was reviewed" rather than
   as a different set of problems. Re-accept or re-dismiss from the tokens
   `kendex findings` prints now.
+- A project card on Projects opens that project's library. Clicking the
+  card — Personal included — shows everything installed there, unfiltered.
+  Seeing a whole project used to mean picking a kind you did not want and
+  then clearing the filter. A screen reader names the folder each card
+  opens, so two projects whose folders share a name — `/work/client` and
+  `/personal/client` — are told apart by ear as well as on screen.
+- Following a link into My Library starts from a clean filter strip. The
+  whole strip — every picker, the search box and where the table is looking —
+  is set to exactly what the link asked for, and nothing an earlier visit
+  left narrowed carries over, so a count badge, Home's "Installed" tile and a
+  recently-changed row each land on the list they name rather than on that
+  list narrowed again by whatever was on screen last time.
+- Scrolling surfaces are the app's own colour rather than the desktop's: a
+  long list used to end in a stripe of system chrome, and the thumb is now
+  drawn from the app's foreground with the track taken away, in light and
+  dark. Nothing gives up any width for it, so nothing moves that did not
+  move before. A system that does not let the app recolour its scrollbar
+  keeps exactly the bar it draws today, and will pick the app's colour up on
+  its own once it supports the setting.
 - The app uses the Geist typeface, with titles and navigation in Geist Mono
   to match the website.
 - **Breaking**: the default Homebrew install is now the app —
@@ -161,6 +180,10 @@ changes carry a **Breaking** call-out with their migration note inline.
   `KENDEX_REAL_HOME=1` — only that exact value opts out. Release builds are
   unaffected, whether you installed one or built it with `--release`.
 
+- "How a marketplace repo works" can be read from the keyboard. The document
+  is longer than the box it opens in and had no tab stop of its own, so the
+  only way in from the keyboard was a link near its end; `Tab` now reaches
+  the document itself and the keyboard scrolls it.
 - The project-management skill's issue pipeline creates Linear issues
   directly in Backlog instead of the team's Triage default. Pipeline output
   is already fully triaged — project, labels, priority, relations — and a
