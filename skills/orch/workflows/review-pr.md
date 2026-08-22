@@ -271,6 +271,7 @@ Omit empty categories. Decline any item that cannot affect real usage with one l
 **Disposition is by rule, not by prompt** — never present a selection menu over the findings. Every blocker and `category == "fix"` suggestion that survives declining goes to the fix round below, in EVERY decision mode: which findings to fix is a mechanics question the rule settles, so `ORCH_DECISION_MODE` does not gate it. The always-ask set in [SKILL.md § The Cycle](../SKILL.md#the-cycle) is unaffected and still applies. Nothing left after declines → § 5.
 
 ### Fix Delegation
+**From the third fix round on, converge before delegating it** ([SKILL.md § The Cycle](../SKILL.md#the-cycle)): `cycles` counts rounds already finished for this issue, so a third round enters here with `cycles` at 2; on a re-entry that carries a spent counter into a fresh diff, a genuine first round on this diff says so in one line and proceeds with no convergence decision. A diff still yielding new blockers is answered by cutting a surface the issue did not require, by fixing the recurring class structurally, or by splitting — decided BEFORE the delegation below, and carried into it so the round is told what shape its answer takes. Findings that leave `items` are disposed of, never dropped: declined per [finding-disposition](../references/finding-disposition.md) when their surface is gone, recorded in `escalated_items` when it moved.
 
 Never fix as the main agent.
 
@@ -278,7 +279,7 @@ Never fix as the main agent.
 .agents/skills/orch/scripts/workflow-state set-git-head [ISSUE_ID] pre_delegate_sha [WORKTREE_PATH]
 ```
 
-**Run Workflow**: `⤵ workflows/dev-fix.md § 1-3 → § 4 re-review` with context `worktree`, `lifecycle: "managed"`, `dev_agent`, `issue_id`, `items` (every blocker plus every `category == "fix"` suggestion that survived declining, each formatted `#[N] | [Agent] | [Location]` with Description and Recommendation), `source: pr-review`.
+**Run Workflow**: `⤵ workflows/dev-fix.md § 1-3 → § 4 re-review` with context `worktree`, `lifecycle: "managed"`, `dev_agent`, `issue_id`, `items` (every blocker plus every `category == "fix"` suggestion that survived declining, each formatted `#[N] | [Agent] | [Location]` with Description and Recommendation), `source: pr-review`, and `convergence` (the round's `choice` and `reason`) whenever the gate above produced a decision.
 
 ### Bounded Re-Review
 
