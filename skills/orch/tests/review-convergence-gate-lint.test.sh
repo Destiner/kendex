@@ -8,6 +8,7 @@
 # the agent reads the delegation, not the workflow. Neither is visible in
 # review, so order and delivery are checked mechanically and each check
 # carries a planted control.
+
 set -euo pipefail
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -31,27 +32,13 @@ GATE_RE='converge before delegating'
 # comparison is on position rather than presence.
 line_of() { grep -n "$2" "$1" | head -1 | cut -d: -f1; }
 
-check_order() {
-  local doc="$1" label="$2"
-  local gate deleg
-  gate="$(line_of "$doc" "$GATE_RE" || true)"
-  deleg="$(line_of "$doc" 'Run Workflow.*dev-fix.md' || true)"
-  if [[ -z "$gate" ]]; then
-    fail "$label (gate absent)"
-    return
-  fi
-  if [[ -z "$deleg" ]]; then
-    fail "$label (delegation absent)"
-    return
-  fi
-  if (( gate < deleg )); then
-    pass "$label"
-  else
-    fail "$label (gate at $gate, delegation at $deleg)"
-  fi
-}
-
-check_order "$REVIEW_PR_WF" "review-pr.md gates the fix round before delegating it"
+GATE_AT="$(line_of "$REVIEW_PR_WF" "$GATE_RE" || true)"
+DELEG_AT="$(line_of "$REVIEW_PR_WF" 'Run Workflow.*dev-fix.md' || true)"
+if [[ -n "$GATE_AT" && -n "$DELEG_AT" ]] && (( GATE_AT < DELEG_AT )); then
+  pass "review-pr.md gates the fix round before delegating it"
+else
+  fail "the gate does not sit above the delegation (gate ${GATE_AT:-absent}, delegation ${DELEG_AT:-absent})"
+fi
 
 # The phrase alone is not the contract: a gate that fires at two or four, or
 # that names no cycle at all, reads the same and bounds nothing.
@@ -79,13 +66,15 @@ else
   fail "a carried counter forces a fresh diff's first round to converge"
 fi
 
-# A finding that leaves items is disposed of one way or the other; absent from
-# both records it reads as declined, which is how a live blocker goes quiet.
-if sed -n '/### Fix Delegation/,/Run Workflow.*dev-fix.md/p' "$REVIEW_PR_WF" \
-  | grep -q 'never dropped'; then
-  pass "the gate says findings leaving items are disposed of"
+# Which record a finding lands in follows from why it left: a cut removed its
+# surface, a split moved it. Collapse the two and a split blocker files as
+# declined, which § 8 drops from the audit candidates.
+if printf '%s' "$GATE_LINE" | grep -q 'never dropped' \
+  && printf '%s' "$GATE_LINE" | grep -q 'a cut removed their surface' \
+  && printf '%s' "$GATE_LINE" | grep -q '`escalated_items` when a split moved them'; then
+  pass "the gate maps each disposition to the choice that caused it"
 else
-  fail "findings can leave items with nothing saying what becomes of them"
+  fail "a finding leaving items can be declined when it was only moved"
 fi
 
 # Accepted in caller context and absent from the template is the same as not
