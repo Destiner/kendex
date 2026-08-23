@@ -1,0 +1,39 @@
+---
+description: Cut a kendex release — version bump, tag, draft review — per docs/RELEASING.md
+argument-hint: "[patch|minor|major]"
+---
+Cut a kendex release. Optional bump: `$ARGUMENTS` (default: patch; minor when
+CHANGELOG's Unreleased section has an Added entry; major only when asked).
+
+`docs/RELEASING.md` is the procedure; this prompt only sequences it.
+
+## Rules
+- Release from `main`, clean, equal to `origin/main`. Dirty or untracked
+  files: stage only what should ship, commit first, ask about anything
+  ambiguous or private-looking. Never `git add -A`, never stash.
+- One version in three places, equal to the tag minus `v`: `Cargo.toml`
+  `[workspace.package].version`, `crates/app/tauri.conf.json` `version`,
+  and `Cargo.lock` (run `cargo build -q` after the bump).
+- Pi extension npm versions are not touched here (`/npm-deploy`).
+- Never move an existing tag.
+
+## Steps
+1. `git fetch origin && git status --short` — must be clean and at
+   `origin/main`. `gh release list --limit 1` — the last tag.
+2. `git log --oneline <last-tag>..HEAD` — confirm there is something to
+   ship; finalize `CHANGELOG.md`: rename `## [Unreleased]` to
+   `## [X.Y.Z] - YYYY-MM-DD` and open a fresh empty `## [Unreleased]`.
+3. Bump the three version sites; `cargo build -q`; `tools/guard`.
+4. Commit `chore(release): vX.Y.Z` with exactly `Cargo.toml Cargo.lock
+   crates/app/tauri.conf.json CHANGELOG.md`; push through the normal PR
+   flow if branch protection requires it, else push `main`.
+5. `git tag vX.Y.Z && git push origin vX.Y.Z`. The tag starts
+   `.github/workflows/release.yml`, which builds every target and creates a
+   **draft** release. Do not call `gh release create`.
+6. `gh run watch` the release workflow. When it finishes, `gh release view
+   vX.Y.Z` — the draft must list one `kendex-<target>` per target, the app
+   bundles, and `feed.json`. Missing asset → fix the workflow, re-tag only
+   after deleting the failed draft and tag.
+7. Publish the draft: `gh release edit vX.Y.Z --draft=false`. Confirm
+   `releases/latest/download/feed.json` serves the new version.
+8. Report: tag, assets, anything skipped.
