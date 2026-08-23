@@ -15,15 +15,13 @@ pub(in crate::engine) fn input_for(item: &Desired) -> AuditInput {
                 text: String::from_utf8_lossy(bytes).into_owned(),
             },
         ),
-        // Read through the same budgeted constructor the observed audit
-        // uses, so the two paths score and hash one construction.
+        // Read through the same constructor the observed audit uses, so the
+        // two paths score and hash one construction.
         Artifact::Tree {
             canonical, files, ..
         } => (
             canonical.display().to_string(),
-            Content::SkillTree {
-                files: crate::quality::observe::tree_files_from_bytes(files),
-            },
+            crate::quality::observe::tree_content_from_bytes(files),
         ),
         Artifact::Registration { script, edits } => registration(item, script.as_ref(), edits),
     };
