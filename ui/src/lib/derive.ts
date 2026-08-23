@@ -6,6 +6,7 @@ import type {
   Scope,
   Tag,
 } from "@/bindings";
+import { sameScope } from "@/lib/scope";
 
 export type ScopeSelection = "all" | "global" | { project: string };
 
@@ -115,6 +116,20 @@ export function groupItems(items: ObservedItem[]): ItemGroup[] {
     group.modifiedAt = times.length > 0 ? Math.max(...times) : null;
   }
   return [...groups.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/** The installation belonging to one place, where the group has one.
+ *
+ *  A package can be installed in several places and a page names one of
+ *  them, so everything that reads a file — the actions, the comparison —
+ *  reads that place's copy. Another place's is a different tool's path
+ *  and a different rendering. */
+export function installationAt(
+  group: ItemGroup | null | undefined,
+  scope: Scope | null | undefined,
+): ObservedItem | undefined {
+  if (!group || !scope) return undefined;
+  return group.installations.find((install) => sameScope(install.scope, scope));
 }
 
 /** Who ships this item, when a tool ships it itself — the vendor named by

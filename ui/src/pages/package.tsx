@@ -16,14 +16,11 @@ import {
 } from "@/components/package/use-package-data";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CUSTOMIZE_TAB, OVERVIEW_TAB } from "@/lib/copy-customize";
-import {
-  canCustomize,
-  isCustomized,
-  itemCustomization,
-} from "@/lib/customization";
-import { groupItems, groupScopes } from "@/lib/derive";
+import { canCustomize } from "@/lib/customization";
+import { groupItems, groupScopes, installationAt } from "@/lib/derive";
 import { packageDisplayName } from "@/lib/labels";
 import { PAGE_GUTTER, WIDE_CONTENT_WIDTH } from "@/lib/layout";
+import { usePackageMark } from "@/lib/package-mark";
 import { sameScope } from "@/lib/scope";
 import { cn } from "@/lib/utils";
 import { installedRow, latestRow, versionRowLabel } from "@/lib/versions";
@@ -42,7 +39,7 @@ export function PackagePage() {
   const back = useNavStore((s) => s.back);
   const result = useScanStore((s) => s.result);
   const toggle = useAuditStore((s) => s.toggle);
-  const { draft, dirty, saving, openScope, load, save } = useEditorStore();
+  const { dirty, saving, openScope, load, save } = useEditorStore();
 
   const [view, setView] = useState<PackageView>(() =>
     initialView
@@ -80,7 +77,7 @@ export function PackagePage() {
   const diff = usePackageDiff(
     ref,
     view,
-    diffHarness(view, group?.installations[0]?.harness ?? null),
+    diffHarness(view, installationAt(group, ref?.scope)?.harness ?? null),
   );
   const updatesLoaded = useUpdatesStore((s) => s.loaded);
   const edited = useUpdatesStore((s) =>
@@ -94,14 +91,25 @@ export function PackagePage() {
     ),
   );
 
+  const mark = usePackageMark(group, ref?.scope ?? null);
+  // The package can still be installed elsewhere while this place has no
+  // copy of it — a page about a place that does not have it has nothing
+  // to show and no actions that would land anywhere.
+  const installedHere = installationAt(group, ref?.scope) !== undefined;
+
   // The scan no longer knows this package (removed, renamed): leave the
   // way the user came.
   useEffect(() => {
-    if (ref && result && !group) back();
-  }, [ref, result, group, back]);
+    if (ref && result && !installedHere) back();
+  }, [ref, result, installedHere, back]);
 
   if (!ref || !group) return null;
-  const primary = group.installations[0];
+  // The installation this page is about. A package can be installed in
+  // several places and the page names one of them, so the actions that
+  // open files reach that place's copy. Falling back to another place's
+  // would have the page describe one place while its buttons work on
+  // another.
+  const primary = installationAt(group, ref.scope);
   if (!primary) return null;
 
   const displayName = packageDisplayName(ref);
@@ -117,9 +125,6 @@ export function PackagePage() {
     updatesLoaded &&
     !edited;
   const customizable = canCustomize(group.kind);
-  const customized = isCustomized(
-    itemCustomization(draft, group.kind, group.name),
-  );
 
   // Every scope this package sits in, one at a time — each apply takes
   // that scope's writer lock — and stopping at the first that fails.
@@ -179,7 +184,7 @@ export function PackagePage() {
         displayName={displayName}
         description={group.description}
         forked={meta?.fork != null}
-        customized={customized}
+        mark={mark}
         action={
           <PackageActions
             scope={primary.scope}

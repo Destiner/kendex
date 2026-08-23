@@ -18,7 +18,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TAGS_ROW_LABEL } from "@/lib/copy";
-import { customizedItems } from "@/lib/customization";
 import {
   filterItems,
   groupItems,
@@ -27,7 +26,8 @@ import {
 } from "@/lib/derive";
 import { PAGE_GUTTER, WIDE_CONTENT_WIDTH } from "@/lib/layout";
 import { isNarrowed, UNFILTERED } from "@/lib/library-handoff";
-import { scopeKey } from "@/lib/scope";
+import { useLibraryStandings } from "@/lib/library-standings";
+import { libraryMark } from "@/lib/place-marks";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor";
 import {
@@ -72,7 +72,6 @@ export function InstalledView() {
   const scroller = useRef<HTMLDivElement | null>(null);
   // Every scope's manifest, so a row can say whether you have changed the
   // package wherever it is installed — not only in the scope last edited.
-  const saved = useEditorStore((s) => s.saved);
   const loadAll = useEditorStore((s) => s.loadAll);
   useEffect(() => {
     void loadAll();
@@ -84,19 +83,6 @@ export function InstalledView() {
     if (!result) return;
     void loadProvenance();
   }, [loadProvenance, result]);
-  const customizedKeys = useMemo(() => {
-    const keys = new Set<string>();
-    for (const [where, draft] of Object.entries(saved)) {
-      for (const item of customizedItems(draft)) {
-        keys.add(`${where}|${item.kind}:${item.name}`);
-      }
-    }
-    return keys;
-  }, [saved]);
-  const isCustomizedHere = (group: ReturnType<typeof groupItems>[number]) =>
-    groupScopes(group).some((scope) =>
-      customizedKeys.has(`${scopeKey(scope)}|${group.kind}:${group.name}`),
-    );
 
   const replaced = useFilterHandoff();
 
@@ -131,6 +117,7 @@ export function InstalledView() {
 
   // The count the filtered total is measured against: every row the table
   // could show, not the ones left after the current narrowing.
+  const standingsFor = useLibraryStandings(groups);
   const total = useMemo(
     () => (result ? groupItems(result.items).length : 0),
     [result],
@@ -179,7 +166,9 @@ export function InstalledView() {
             className="min-w-0 flex-1 overflow-y-auto pr-2 [scrollbar-gutter:stable]"
           >
             <NotManagedPanel />
-            {groups.some(isCustomizedHere) ? <LibraryLegend /> : null}
+            {groups.some((g) => libraryMark(standingsFor(g))) ? (
+              <LibraryLegend />
+            ) : null}
             <Table>
               <TableHeader>
                 <TableRow>
@@ -206,13 +195,17 @@ export function InstalledView() {
                         group.name,
                         groupScopes(group),
                       )}
-                      customized={isCustomizedHere(group)}
-                      onOpen={() => {
-                        if (!primary) return;
+                      mark={libraryMark(standingsFor(group))}
+                      forkedIn={standingsFor(group)
+                        .filter((s) => s.why === "forked")
+                        .map((s) => s.scope)}
+                      onOpen={(scope) => {
+                        const where = scope ?? primary?.scope;
+                        if (!where) return;
                         goToPackage({
                           kind: group.kind,
                           name: group.name,
-                          scope: primary.scope,
+                          scope: where,
                         });
                       }}
                     />
