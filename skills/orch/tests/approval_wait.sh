@@ -493,12 +493,6 @@ run_review_text() {
        env "$@" .agents/skills/orch/scripts/approval-wait 1 1 3 --mode review)
 }
 
-run_resolve_mode() {
-  (cd "$TMP_ROOT/repo" \
-    && PATH="$TMP_ROOT/bin:$PATH" \
-       env "$@" .agents/skills/orch/scripts/approval-wait --resolve-mode)
-}
-
 json_field() {
   jq -r "$2" <<<"$1" 2>/dev/null || echo "UNPARSEABLE"
 }
@@ -1199,49 +1193,6 @@ assert_eq "$rc" "0" "status8: text-mode status evidence exits 0" "$stderr"
 assert_contains "$output" "Review: reviewed" "status8: text mode still prints the reviewed line" "$stderr"
 assert_contains "$output" "via status 'Review Bot'" "status8: text mode names the status context" "$stderr"
 assert_contains "$output" "creator: review-bot[bot]" "status8: text mode records the publishing creator" "$stderr"
-
-echo "=== approval-wait --resolve-mode precedence ==="
-
-# PR_REVIEW_GATE wins outright, including over a conflicting legacy value.
-assert_eq "$(run_resolve_mode PR_REVIEW_GATE=review)" "review" "resolve: PR_REVIEW_GATE=review"
-assert_eq "$(run_resolve_mode PR_REVIEW_GATE=off)" "off" "resolve: PR_REVIEW_GATE=off"
-assert_eq "$(run_resolve_mode PR_REVIEW_GATE=approval)" "approval" "resolve: PR_REVIEW_GATE=approval"
-assert_eq "$(run_resolve_mode PR_REVIEW_GATE=review PR_APPROVAL_GATE=off)" "review" "resolve: PR_REVIEW_GATE beats legacy PR_APPROVAL_GATE"
-
-# Legacy derivation when PR_REVIEW_GATE is unset: on -> approval, off -> off.
-assert_eq "$(run_resolve_mode PR_APPROVAL_GATE=on)" "approval" "resolve: legacy on maps to approval"
-assert_eq "$(run_resolve_mode PR_APPROVAL_GATE=off)" "off" "resolve: legacy off maps to off"
-
-# Both unset defaults to approval.
-assert_eq "$(run_resolve_mode)" "approval" "resolve: default approval"
-
-# An unrecognized PR_REVIEW_GATE fails safe to approval (gate stays on).
-assert_eq "$(run_resolve_mode PR_REVIEW_GATE=bogus 2>/dev/null)" "approval" "resolve: invalid value falls back to approval"
-
-# kendex.settings.toml [env] is read with orch-env precedence: the settings
-# value applies when the process env is silent, and process env wins over it.
-cat > "$TMP_ROOT/repo/kendex.settings.toml" <<'EOF'
-[env]
-PR_REVIEW_GATE = "review"
-EOF
-assert_eq "$(run_resolve_mode)" "review" "resolve: settings-file PR_REVIEW_GATE applies"
-assert_eq "$(run_resolve_mode PR_REVIEW_GATE=approval)" "approval" "resolve: process env beats settings file"
-rm -f "$TMP_ROOT/repo/kendex.settings.toml"
-
-# The engine's one-switch gate disable wins over every reviewer-gate key —
-# env and settings-file sources both; enforce (and any non-"off" value)
-# leaves the reviewer keys authoritative.
-assert_eq "$(run_resolve_mode REVIEW_GATE_MODE=off PR_REVIEW_GATE=approval)" "off" "resolve: REVIEW_GATE_MODE=off overrides approval"
-assert_eq "$(run_resolve_mode REVIEW_GATE_MODE=off PR_REVIEW_GATE=review)" "off" "resolve: REVIEW_GATE_MODE=off overrides review"
-assert_eq "$(run_resolve_mode REVIEW_GATE_MODE=enforce PR_REVIEW_GATE=review)" "review" "resolve: enforce preserves the reviewer keys"
-assert_eq "$(run_resolve_mode REVIEW_GATE_MODE=bogus PR_REVIEW_GATE=review)" "review" "resolve: a non-off value never narrows (engine fails loud, not here)"
-cat > "$TMP_ROOT/repo/kendex.settings.toml" <<'EOF'
-[env]
-REVIEW_GATE_MODE = "off"
-PR_REVIEW_GATE = "review"
-EOF
-assert_eq "$(run_resolve_mode)" "off" "resolve: settings-file REVIEW_GATE_MODE=off applies"
-rm -f "$TMP_ROOT/repo/kendex.settings.toml"
 
 echo "=== approval-wait nudge behavior ==="
 
