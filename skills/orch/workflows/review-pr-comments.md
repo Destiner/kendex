@@ -234,10 +234,13 @@ git -C "[WORKTREE_PATH]" push origin HEAD
 
 | Outcome | Reply body |
 |---------|------------|
-| Applied | `Applied in [COMMIT_SHA]: [SHORT_FIX_SUMMARY]` |
-| Skipped | `Acknowledged — [REASON]` |
-| Blocked → issue | `Tracking in [CREATED_ISSUE_ID]` |
+| Applied | `Fixed in [COMMIT_SHA]: [SHORT_FIX_SUMMARY]` |
+| Skipped / declined | `Declined: [REASON]` |
+| Blocked → issue | `Tracked: [CREATED_ISSUE_ID]` — the issue exists BEFORE the reply; the gate rejects a tracking claim naming no issue |
 | Already fixed | The finding's `draft_response` |
+
+The word "tracked" (any form) in a reply without a `KEN-` or `#` issue id
+turns the gate red (`untracked-claim`). A decline is a decline — say so.
 
 ```bash
 .agents/skills/github/scripts/github.sh post-reply "[THREAD_ID]" "[REPLY_BODY]" --pr "[PR_NUMBER]"
@@ -284,10 +287,10 @@ A thread is new when its `threads[].id` is not in `known`. No new threads → §
 
 | Outcome | Response |
 |---------|----------|
-| Applied | `Applied in [SHA]` |
-| Skipped (decision) | `Acknowledged — contradicts [DECISION_ID]` |
-| Skipped (not actionable) | `Acknowledged — not actionable` |
-| Blocked or issue created | `Tracking in [ISSUE_ID]` |
+| Applied | `Fixed in [SHA]` |
+| Skipped (decision) | `Declined: contradicts [DECISION_ID]` |
+| Skipped (not actionable) | `Declined: not actionable` |
+| Blocked or issue created | `Tracked: [ISSUE_ID]` (issue exists first) |
 | Question | The finding's `draft_response` |
 
 Use inline `--body` only for plain strings; Markdown with backticks or fences goes to a file and `--body-file` (`post-reply` for threads, `post-comment` for PR-level). Number lists `1.` `2.` `3.`, never `#N`.
