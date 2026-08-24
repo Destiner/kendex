@@ -1,10 +1,11 @@
 //! What a record that cannot name the old entry is worth.
 //!
 //! A lock written before kendex kept a registration, or before it kept a
-//! matcher, says less than a later one. Read as "there was nothing", the
-//! entry that is really there stays behind and a second one goes in
-//! beside it; read honestly, the document is asked instead, and what it
-//! says is what comes out.
+//! matcher, says less than a later one — and retires no more than it can
+//! name. Only an entry the record identifies unambiguously comes out;
+//! anything less settles, registers under its own identity, and leaves
+//! the person's entries to them. Outside pi, a refresh never wedges on
+//! what the document holds.
 #![cfg(unix)]
 
 use std::fs;
@@ -24,7 +25,6 @@ struct Fixture {
     env: Env,
     scope: Scope,
     project: PathBuf,
-    catalog: PathBuf,
 }
 
 #[allow(clippy::unwrap_used)]
@@ -54,7 +54,6 @@ fn fixture(declarations: &str) -> Fixture {
             root: project.clone(),
         },
         project,
-        catalog,
         _tmp: tmp,
     }
 }
@@ -108,35 +107,54 @@ fn as_written_by(f: &Fixture, key: &str, keep: &[&str]) {
     fs::write(&path, serde_json::to_string_pretty(&lock).unwrap()).unwrap();
 }
 
-/// A lock from before kendex recorded what it registered, upgraded in the
-/// same refresh that moves the hook. Read as "nothing was registered",
-/// the entry that is really there stays and the new one goes in beside
-/// it: the hook fires twice, and no later pass can find the old one,
-/// because the record it writes describes only the new.
+/// A record that names no registration leaves the document alone. The
+/// command is all such a record could look an entry up by, and the
+/// person's own registration of the same command answers that search
+/// too: read as kendex's leftovers, their entry put the hook in conflict
+/// on every refresh, with nothing to settle it. Only pi's reserved-name
+/// move searches by command, because only it deletes what it finds.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn a_record_that_names_no_registration_still_retires_the_entry_it_left() {
+fn a_record_that_names_no_registration_leaves_their_duplicate_alone() {
     let f = fixture("[hooks.guard]\nsource = \"cat\"\n");
     apply_now(&f);
     assert_eq!(groups(&f), vec![("Bash".to_owned(), 1)]);
     as_written_by(&f, "hook:guard:claude", &[]);
 
+    // Theirs, running the same command under an event of their own.
+    let mut value = settings(&f);
+    let command = value["hooks"]["PreToolUse"][0]["hooks"][0]["command"].clone();
+    value["hooks"]["Stop"] = serde_json::json!([{
+        "matcher": "Edit",
+        "hooks": [{ "type": "command", "command": command }]
+    }]);
     fs::write(
-        f.catalog.join("hooks/guard.sh"),
-        GUARD.replace("# event: PreToolUse", "# event: Stop"),
+        f.project.join(".claude/settings.json"),
+        serde_json::to_string_pretty(&value).unwrap(),
     )
     .unwrap();
-    apply_now(&f);
 
+    let report = audit(&f.env, &f.scope).unwrap();
     assert!(
-        groups(&f).is_empty(),
-        "what it left under the old event comes out: {}",
+        report
+            .drift
+            .iter()
+            .all(|row| !row.detail.contains("more than once")),
+        "their duplicate is not kendex's to wonder about: {:?}",
+        report.drift
+    );
+    apply::execute(&f.env, &report.plan, None).unwrap();
+
+    assert_eq!(
+        groups(&f),
+        vec![("Bash".to_owned(), 1)],
+        "kendex's entry stands where it was: {}",
         settings(&f)
     );
     assert_eq!(
         settings(&f)["hooks"]["Stop"].as_array().unwrap().len(),
         1,
-        "and one entry stands where the catalog now asks"
+        "and theirs where they put it"
     );
     let settled = audit(&f.env, &f.scope).unwrap();
     assert!(settled.plan.ops.is_empty(), "{:?}", settled.plan.ops);
@@ -228,13 +246,111 @@ fn a_first_install_takes_nothing_that_was_already_there() {
     );
 }
 
-/// The other side of the same question: a record that names an entry is
-/// not proof the entry is still there. Moved by hand with its command
-/// unchanged, the record still matches what this pass means to render, so
-/// nothing is retired and the upsert puts a second one in beside theirs.
+/// The same record, and the one entry it could have matched by command
+/// has been moved to another event. A search by command alone would call
+/// the moved entry kendex's and take it; a record that names no
+/// registration takes nothing — the refresh registers under the identity
+/// it renders, the moved entry stays where the person put it, and the
+/// record written this pass settles every refresh after.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn a_recorded_entry_moved_by_hand_is_never_doubled() {
+fn a_record_that_names_no_registration_leaves_a_moved_entry_alone() {
+    let f = fixture("[hooks.guard]\nsource = \"cat\"\n");
+    apply_now(&f);
+    assert_eq!(groups(&f), vec![("Bash".to_owned(), 1)]);
+    as_written_by(&f, "hook:guard:claude", &[]);
+
+    let mut value = settings(&f);
+    let group = value["hooks"]["PreToolUse"][0].clone();
+    value["hooks"] = serde_json::json!({ "Stop": [group] });
+    fs::write(
+        f.project.join(".claude/settings.json"),
+        serde_json::to_string_pretty(&value).unwrap(),
+    )
+    .unwrap();
+
+    let report = audit(&f.env, &f.scope).unwrap();
+    assert!(
+        report
+            .drift
+            .iter()
+            .all(|row| !row.detail.contains("no longer runs")),
+        "the moved entry is not kendex's to wonder about: {:?}",
+        report.drift
+    );
+    apply::execute(&f.env, &report.plan, None).unwrap();
+
+    assert_eq!(
+        groups(&f),
+        vec![("Bash".to_owned(), 1)],
+        "kendex registers under the identity it renders: {}",
+        settings(&f)
+    );
+    assert_eq!(
+        settings(&f)["hooks"]["Stop"].as_array().unwrap().len(),
+        1,
+        "and the moved entry stays where they put it"
+    );
+    let settled = audit(&f.env, &f.scope).unwrap();
+    assert!(settled.plan.ops.is_empty(), "{:?}", settled.plan.ops);
+}
+
+/// A record that names its registration exactly, duplicated in place: two
+/// entries answer to every field the record kept, and neither can be told
+/// from the other. Retiring by guess would take both, and wedging is a
+/// conflict the person cannot see past — so the refresh settles without
+/// one, and the byte-identical handler converges back to a single entry
+/// through the idempotent upsert.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn an_exact_duplicate_of_the_recorded_entry_does_not_wedge_the_refresh() {
+    let f = fixture(MINE);
+    apply_now(&f);
+    assert_eq!(groups(&f), vec![("Bash".to_owned(), 1)]);
+
+    let mut value = settings(&f);
+    let handler = value["hooks"]["PreToolUse"][0]["hooks"][0].clone();
+    value["hooks"]["PreToolUse"][0]["hooks"]
+        .as_array_mut()
+        .unwrap()
+        .push(handler);
+    fs::write(
+        f.project.join(".claude/settings.json"),
+        serde_json::to_string_pretty(&value).unwrap(),
+    )
+    .unwrap();
+
+    let report = audit(&f.env, &f.scope).unwrap();
+    assert!(
+        report
+            .drift
+            .iter()
+            .all(|row| !row.detail.contains("more than once")),
+        "an exact duplicate is not a wedge: {:?}",
+        report.drift
+    );
+    apply::execute(&f.env, &report.plan, None).unwrap();
+    assert_eq!(
+        settings(&f)["hooks"]["PreToolUse"][0]["hooks"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1,
+        "the byte-identical handler converges to one entry"
+    );
+    let settled = audit(&f.env, &f.scope).unwrap();
+    assert!(settled.plan.ops.is_empty(), "{:?}", settled.plan.ops);
+}
+
+/// The other side of the same question: a record that names an entry is
+/// not proof the entry is still there. Moved by hand, the entry is the
+/// person's own registration of their own command — the refresh registers
+/// under the identity it renders and leaves the moved one to them. Held
+/// instead, the hook sat in conflict on every refresh, and nothing the
+/// refresh could do would ever settle it.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_recorded_entry_moved_by_hand_does_not_hold_the_hook() {
     let f = fixture(MINE);
     apply_now(&f);
     assert_eq!(groups(&f), vec![("Bash".to_owned(), 1)]);
@@ -242,23 +358,34 @@ fn a_recorded_entry_moved_by_hand_is_never_doubled() {
     let mut value = settings(&f);
     let group = value["hooks"]["PreToolUse"][0].clone();
     value["hooks"] = serde_json::json!({ "Stop": [group] });
-    let theirs = serde_json::to_string_pretty(&value).unwrap();
-    fs::write(f.project.join(".claude/settings.json"), &theirs).unwrap();
+    fs::write(
+        f.project.join(".claude/settings.json"),
+        serde_json::to_string_pretty(&value).unwrap(),
+    )
+    .unwrap();
 
     let report = audit(&f.env, &f.scope).unwrap();
     assert!(
         report
             .drift
             .iter()
-            .any(|row| row.name == "mine" && row.detail.contains("no longer runs")),
-        "the person is told what is in the way: {:?}",
+            .all(|row| !row.detail.contains("no longer runs")),
+        "what they moved is theirs, not a conflict: {:?}",
         report.drift
     );
     apply::execute(&f.env, &report.plan, None).unwrap();
 
     assert_eq!(
-        fs::read_to_string(f.project.join(".claude/settings.json")).unwrap(),
-        theirs,
-        "and nothing is registered beside what they moved"
+        groups(&f),
+        vec![("Bash".to_owned(), 1)],
+        "kendex's entry is back where the record names it: {}",
+        settings(&f)
     );
+    assert_eq!(
+        settings(&f)["hooks"]["Stop"].as_array().unwrap().len(),
+        1,
+        "and the one they moved stays where they put it"
+    );
+    let settled = audit(&f.env, &f.scope).unwrap();
+    assert!(settled.plan.ops.is_empty(), "{:?}", settled.plan.ops);
 }

@@ -16,13 +16,26 @@ use crate::model::{ItemKind, Scope};
 /// Automatic removals — refusals, sweeps, orphan cleanup nobody named —
 /// only take content they can prove is ours: every content path must hash
 /// to what apply last wrote. A record from before that hash existed cannot
-/// prove anything, so any content present holds. Explicitly asked-for
+/// prove anything, so any content present holds — except a hook's outside
+/// pi, where anchor-less records are the common stock and holding them
+/// would exempt those hooks from cleanup for good. Explicitly asked-for
 /// removals are not gated here: the trash keeps what they take.
 pub fn edit_holds(env: &Env, scope: &Scope, entry: &LockEntry) -> bool {
-    if !matches!(
-        entry.kind,
-        ItemKind::Skill | ItemKind::Agent | ItemKind::Command | ItemKind::Hook
-    ) {
+    // A hook's anchor still proves its bytes wherever the record kept
+    // one. What an anchor-less record licenses splits by harness: pi's
+    // reserved-name move derives a new path the record never wrote, so a
+    // file already sitting there has to be proven before anything of
+    // this entry's is taken; everywhere else reading "no anchor" as
+    // "hands off" would quietly exempt every older hook install from
+    // every sweep.
+    let holdable = match entry.kind {
+        ItemKind::Skill | ItemKind::Agent | ItemKind::Command => true,
+        ItemKind::Hook => {
+            entry.harness == crate::model::HarnessId::Pi || entry.rendered_hash.is_some()
+        }
+        _ => false,
+    };
+    if !holdable {
         return false;
     }
     let Owned { files, .. } = installed(env, scope, entry);
@@ -297,8 +310,10 @@ pub(super) fn orphans(
             continue;
         }
         // An automatic removal (a sweep, an unfiltered orphan cleanup)
-        // never takes edited or unprovable bytes; only naming the item —
-        // or asking for edits to be discarded — does.
+        // never takes bytes a record could vouch for and does not —
+        // `edit_holds`' doc draws that line, and names the anchor-less
+        // non-pi hook whose record vouches for nothing; only naming the
+        // item, or asking for edits to be discarded, takes what it holds.
         if !named && !options.overwrite_edited && edit_holds(env, scope, entry) {
             drift.push(DriftRow {
                 kind: entry.kind,
