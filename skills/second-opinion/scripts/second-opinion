@@ -24,8 +24,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Resolve project root for .env sourcing (works in worktrees and main repos)
-PROJECT_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"
 
 # Whether SECOND_OPINION_CURRENT_MODEL arrived from the CALLER'S OWN
 # environment rather than a project settings file. Captured here because this
@@ -61,6 +59,204 @@ CURRENT_MODEL_IS_SESSION_SCOPED=false
 # suppressed.
 CURRENT_MODEL_IN_CALLER_ENV=false
 [[ -z "${SECOND_OPINION_CURRENT_MODEL+x}" ]] || CURRENT_MODEL_IN_CALLER_ENV=true
+
+show_help() {
+  cat <<'HELP'
+Cross-model second opinion via external AI CLI.
+
+Usage:
+  second-opinion review    [--range <ref..ref>] [--cwd <path>] [--output <path>]
+  second-opinion challenge [--prompt <file> | "text"]  [--cwd <path>]
+  second-opinion audit     [--prompt <file> | "text"]  [--cwd <path>] [--output <path>]
+  second-opinion quick     [--prompt <file> | "text"]  [--cwd <path>]
+  second-opinion detect
+
+Modes:
+  review     Code review of pending changes — outputs review-finding JSON
+  challenge  Adversarial analysis — accepts prompt, returns text critique
+  audit      Deep code examination — accepts prompt, returns review-finding JSON
+  quick      Question to alternate model — accepts prompt, returns text
+  detect     Print the target(s) a review would run and exit
+
+Options:
+  --prompt <file>   Prompt file (or pass text as positional arg, or pipe stdin)
+  --output <path>   Write result to file (default: stdout)
+  --target <name>   Force one target (refused when it is this session's model)
+  --range <ref>     Git diff range for review (default: origin/BASE...HEAD)
+  --cwd <path>      Working directory for external CLI (default: .)
+  --timeout <secs>  CLI timeout (default: 1080, env: SECOND_OPINION_TIMEOUT)
+  -h, --help        Show this help
+
+Target selection: every mode walks SECOND_OPINION_MODELS in order and takes the
+first target that is available AND runs a different model from this session —
+the model this session runs is never dispatched to, in any mode, forced or not.
+When no eligible target remains the run refuses (exit 1) and says why.
+Review mode collects up to SECOND_OPINION_COUNT opinions (default 1; a
+shortfall is stated and stamped as degraded coverage); with 2 or more,
+the lanes run in parallel on the same derived scope and one union artifact is
+written — findings deduplicated by normalized location, per-lane provenance in
+each finding's `sources` and in qa_metadata.lanes, lane artifacts kept beside
+it as <output>.<target>.json. A failed lane is recorded in the artifact
+(qa_metadata.coverage="degraded"); when every lane fails there is no artifact
+and the run exits 4/5.
+
+Environment. Every key below belongs in kendex.settings.toml [env] (or
+.env.local) EXCEPT SECOND_OPINION_CURRENT_MODEL, which is session-scoped —
+export it in the environment of the session that needs it:
+  SECOND_OPINION_MODELS      Priority-ordered target roster, space/comma
+                             separated (default: "claude codex"); set empty and
+                             the run refuses rather than using the default
+  SECOND_OPINION_COUNT       Opinions to collect in review mode (default: 1)
+  SECOND_OPINION_CURRENT_MODEL
+                             Model identity of THIS session. A positively
+                             detected single-model harness (claude, codex)
+                             outranks it: an agreeing declaration is not used,
+                             a contradicting one is refused naming both values
+                             and where the declaration came from. Required in
+                             a multi-model front end (Pi, OpenCode, Cursor) or
+                             an undetected shell — refused until set; "none" =
+                             no session model. Model ids normalize, provider
+                             prefix included (opus, anthropic/claude-* ->
+                             claude; gpt-*, openai-codex/gpt-* -> codex);
+                             a DECLARED identity the roster does not spell is
+                             refused, while a DETECTED identity the roster
+                             does not name excludes nothing.
+                             EXPORT IT IN THE SESSION, do not commit it to a
+                             project settings file: those are read by every
+                             session in the repo, so a value from one is not a
+                             declaration for any of them and is refused
+  SECOND_OPINION_<NAME>_MODEL
+                             Model identity of target <NAME> (default: <NAME>)
+  SECOND_OPINION_<NAME>_CMD  Full command for target <NAME> (name uppercased,
+                             hyphens become underscores); claude and codex
+                             have defaults (below)
+  SECOND_OPINION_TARGET      Force one target; still subject to self-exclusion
+  SECOND_OPINION_TIMEOUT     Timeout in seconds (default: 1080), per
+                             invocation: review/audit's one retry on a
+                             malformed response gets a fresh window, so a lane
+                             can run up to twice this. The default exceeds the
+                             ~600s ceiling most agent harnesses put on a
+                             foreground shell call — run the script in the
+                             background, or pass --timeout at or below that
+                             ceiling
+  SECOND_OPINION_ARTIFACT_DIR
+                             Home for review/audit records written without
+                             --output (preserved raw, failed, and rejected
+                             responses), and for a multi-lane stdout run's
+                             per-lane review artifacts (default:
+                             tmp/second-opinion under --cwd; ~/... and
+                             absolute paths taken as given). Created
+                             owner-only when absent, seeded with a '*'
+                             .gitignore; a relative home that is a symlink or
+                             resolves outside --cwd, or one that cannot be
+                             created, falls back to a temp file, loudly,
+                             without changing the exit code. --output is the
+                             explicit override for the artifact itself
+  SECOND_OPINION_REVIEW_INSTRUCTIONS
+                             Repo instruction-file globs appended to the review
+                             prompt, resolved inside --cwd (default:
+                             "AGENTS.md review-bots.md
+                             .github/instructions/*.instructions.md
+                             .github/copilot-instructions.md"; set empty to
+                             disable). When the list carries the literal
+                             AGENTS.md entry, nested AGENTS.md files governing
+                             the changed paths are collected too
+                             (ancestor-directory walk, same containment and
+                             dedupe). Matches must be regular files physically
+                             inside the reviewed repo: a committed symlink
+                             (the file or a parent directory) pointing outside
+                             --cwd is skipped loudly, never followed
+
+Review scope (review mode only):
+  The wrapper derives the review scope from the worktree before invoking the
+  external CLI — current branch, diff range (--range or origin/BASE...HEAD),
+  diffstat, and the changed-file list are embedded in the prompt. audit
+  derives no scope: it reads only its supplied --prompt file and ignores
+  --range. review stamps qa_metadata.reviewed_head — the reviewed range's
+  endpoint commit, captured when the scope is derived (before the model
+  runs); a multi-lane union also stamps
+  qa_metadata.requested_count/selected_count.
+
+Response handling and stamping (review and audit modes):
+  A first response that is unparseable, or structurally incomplete, gets one
+  retry resending the full original request (scope block included for
+  review) alongside the captured response; unusable responses never become
+  the artifact. The wrapper overwrites the JSON timestamp field with its own
+  UTC wall clock (date -u) after the model responds, and overwrites agent
+  with external-<target> for a lane or external-union(...) for a union.
+
+Default commands:
+  claude: claude -p --no-session-persistence --model opus --effort max
+            --allowedTools Bash(read-only:true),Read,Glob,Grep
+  codex:  codex exec -m gpt-5.6-sol -s read-only -c model_reasoning_effort=xhigh
+            --ephemeral
+
+Output clearing and ownership:
+  No exit leaves a previous run's output behind. Every mode that writes
+  --output (review, audit, challenge, quick) clears that path as soon as the
+  arguments are read — ahead of a bad-flag error, the jq check, the mode
+  check, --timeout validation, target selection, or any CLI run — together
+  with the sidecar records that mode can produce: review and audit add
+  .raw.txt, .retry.txt, .failed.json, .noreview.json and .incomplete.json;
+  challenge and quick clear their output path alone. --help and detect clear
+  nothing.
+  One rule governs every deletion: a path is removed unconditionally only
+  when THIS run will write it (--output itself, and each <output>.<lane>.json
+  a multi-lane run is about to write); anything else must first prove the
+  skill wrote it — the review schema PLUS the external-... agent marker. That
+  applies to roster-named siblings too: at the default SECOND_OPINION_COUNT=1
+  a run writes no lane file, so an <output>.codex.json holding your data
+  survives. The ownership check requires jq: without it the designated output
+  is still cleared, but sibling lane artifacts are left alone and the run
+  says so on stderr before exiting on the missing dependency. A sibling
+  sharing only the name shape (<output>.notes.json), or sharing the schema
+  under another agent (an internal reviewer-* artifact), is never touched.
+
+Option syntax: options take their value in either form, --opt VALUE or
+--opt=VALUE; the split form refuses a value that begins with '-', so a
+dash-leading path is passed as --output=-report.json.
+
+Errors: runtime failures emit a JSON error object on stderr
+({"error": "...", "target": "..."}); pre-flight configuration errors —
+unknown flag, an option missing its value, missing mode, non-integer
+--timeout or SECOND_OPINION_COUNT, missing jq, a directory or an uncreatable
+parent at --output, a missing --cwd — are plain 'Error:' lines on stderr
+with exit 1.
+
+Exit codes:
+  0  success
+  1  config failure (bad target, missing jq), no eligible cross-model target
+     (refused — never a same-model review), any challenge/quick CLI failure
+     including timeout, or an unrecoverable non-JSON response that survived
+     the one-shot retry (review/audit)
+  3  review: derived diff scope is empty or invalid — nothing to review
+  4  review/audit: model self-reported no review was performed
+     (qa_metadata.review_performed=false) or omitted the required qa_metadata
+     object entirely (response kept as <output>.noreview.json); or the response
+     was still structurally incomplete after the one-shot retry — missing
+     verdict or the blockers/suggestions/questions arrays (response kept as
+     <output>.incomplete.json)
+  5  review/audit: the external CLI failed to produce any review — it exited
+     non-zero (quota/auth/network), timed out, or returned an empty response on
+     a zero exit. No external verdict; whatever partial output existed is kept
+     as <output>.failed.json and the CLI's own error text is echoed on stderr
+HELP
+}
+
+# Help is answered before project configuration is read: sourcing a repo's
+# .env under --help would execute repository-controlled shell code. The
+# option parser treats -h/--help at any position as help, so the same scan
+# decides here.
+for _arg in "$@"; do
+  case "$_arg" in
+    -h|--help) show_help; exit 0 ;;
+  esac
+done
+unset _arg
+
+# Resolved only after help is answered: help must not require a git
+# checkout around the installed script.
+PROJECT_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"
 
 # Source project config/secrets. .env.local overrides public settings; the
 # caller's own environment (set or set-but-empty) outranks every project file —
@@ -144,107 +340,6 @@ path_dir() {
 
 # --- Help ---------------------------------------------------------------------
 
-show_help() {
-  cat <<'HELP'
-Cross-model second opinion via external AI CLI.
-
-Usage:
-  second-opinion review    [--range <ref..ref>] [--cwd <path>] [--output <path>]
-  second-opinion challenge [--prompt <file> | "text"]  [--cwd <path>]
-  second-opinion audit     [--prompt <file> | "text"]  [--cwd <path>] [--output <path>]
-  second-opinion quick     [--prompt <file> | "text"]  [--cwd <path>]
-  second-opinion detect
-
-Modes:
-  review     Code review of pending changes — outputs review-finding JSON
-  challenge  Adversarial analysis — accepts prompt, returns text critique
-  audit      Deep code examination — accepts prompt, returns review-finding JSON
-  quick      Question to alternate model — accepts prompt, returns text
-  detect     Print the target(s) a review would run and exit
-
-Options:
-  --prompt <file>   Prompt file (or pass text as positional arg, or pipe stdin)
-  --output <path>   Write result to file (default: stdout)
-  --target <name>   Force one target (refused when it is this session's model)
-  --range <ref>     Git diff range for review (default: origin/BASE...HEAD)
-  --cwd <path>      Working directory for external CLI (default: .)
-  --timeout <secs>  CLI timeout (default: 1080, env: SECOND_OPINION_TIMEOUT)
-  -h, --help        Show this help
-
-Target selection: every mode walks SECOND_OPINION_MODELS in order and takes the
-first target that is available AND runs a different model from this session —
-the model this session runs is never dispatched to, in any mode, forced or not.
-When no eligible target remains the run refuses (exit 1) and says why.
-Review mode collects up to SECOND_OPINION_COUNT opinions (default 1; a
-shortfall is stated and stamped as degraded coverage); with 2 or more,
-the lanes run in parallel on the same derived scope and one union artifact is
-written — findings deduplicated by normalized location, per-lane provenance in
-each finding's `sources` and in qa_metadata.lanes, lane artifacts kept beside
-it as <output>.<target>.json. A failed lane is recorded in the artifact
-(qa_metadata.coverage="degraded"); when every lane fails there is no artifact
-and the run exits 4/5.
-
-Environment. Every key below belongs in kendex.settings.toml [env] (or
-.env.local) EXCEPT SECOND_OPINION_CURRENT_MODEL, which is session-scoped —
-export it in the environment of the session that needs it:
-  SECOND_OPINION_MODELS      Priority-ordered target roster, space/comma
-                             separated (default: "claude codex"); set empty and
-                             the run refuses rather than using the default
-  SECOND_OPINION_COUNT       Opinions to collect in review mode (default: 1)
-  SECOND_OPINION_CURRENT_MODEL
-                             Model identity of THIS session; overrides harness
-                             detection. Required in a multi-model front end
-                             (Pi, OpenCode, Cursor) or an undetected shell —
-                             refused until set; "none" = no session model.
-                             Model ids normalize, provider prefix included
-                             (opus, anthropic/claude-* -> claude; gpt-*,
-                             openai-codex/gpt-* -> codex).
-                             EXPORT IT IN THE SESSION, do not commit it to a
-                             project settings file: those are read by every
-                             session in the repo, so a value from one is not a
-                             declaration for any of them and is refused
-  SECOND_OPINION_<NAME>_MODEL
-                             Model identity of target <NAME> (default: <NAME>)
-  SECOND_OPINION_<NAME>_CMD  Full command for target <NAME> (name uppercased,
-                             hyphens become underscores); claude and codex
-                             have defaults (below)
-  SECOND_OPINION_TARGET      Force one target; still subject to self-exclusion
-  SECOND_OPINION_TIMEOUT     Timeout in seconds (default: 1080)
-  SECOND_OPINION_ARTIFACT_DIR
-                             Home for review/audit records written without
-                             --output, and for a multi-lane stdout run's lane
-                             artifacts (default: tmp/second-opinion under --cwd)
-  SECOND_OPINION_REVIEW_INSTRUCTIONS
-                             Repo instruction-file globs appended to the review
-                             prompt, resolved inside --cwd (default:
-                             "AGENTS.md review-bots.md
-                             .github/instructions/*.instructions.md
-                             .github/copilot-instructions.md"; set empty to disable)
-
-Default commands:
-  claude: claude -p --no-session-persistence --model opus --effort max
-            --allowedTools Bash(read-only:true),Read,Glob,Grep
-  codex:  codex exec -m gpt-5.6-sol -s read-only -c model_reasoning_effort=xhigh
-            --ephemeral
-
-Exit codes:
-  0  success
-  1  config failure (bad target, missing jq), no eligible cross-model target
-     (refused — never a same-model review), or an unrecoverable non-JSON
-     response that survived the one-shot retry (review/audit)
-  3  review: derived diff scope is empty or invalid — nothing to review
-  4  review/audit: model self-reported no review was performed
-     (qa_metadata.review_performed=false) or omitted the required qa_metadata
-     object entirely (response kept as <output>.noreview.json); or the response
-     was still structurally incomplete after the one-shot retry — missing
-     verdict or the blockers/suggestions/questions arrays (response kept as
-     <output>.incomplete.json)
-  5  review/audit: the external CLI failed to produce any review — it exited
-     non-zero (quota/auth/network), timed out, or returned an empty response on
-     a zero exit. No external verdict; whatever partial output existed is kept
-     as <output>.failed.json and the CLI's own error text is echoed on stderr
-HELP
-}
 
 # --- Argument parsing ---------------------------------------------------------
 # A malformed argument does not exit here: it records PARSE_ERROR and stops the
@@ -289,7 +384,6 @@ while [[ $# -gt 0 ]]; do
     # table names any variable it likes, and whether an output path belongs to
     # the caller is not something ambient configuration may decide.
     --scratch-output) SCRATCH_OUTPUT=true; shift ;;
-    -h|--help)   show_help; exit 0 ;;
     --*)
       PARSE_ERROR="unknown flag: $1"
       # Keep parsing: a later --output still names an artifact this run must not

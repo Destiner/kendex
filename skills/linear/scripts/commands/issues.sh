@@ -5,71 +5,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../lib/common.sh"
-source "$SCRIPT_DIR/../lib/cache.sh"
-source "$SCRIPT_DIR/../lib/attachments.sh"
-source "$SCRIPT_DIR/../lib/issue-validation.sh"
 
-# Shared issue fields for mutation responses — matches list query for cache parity
-ISSUE_RETURN_FIELDS='
-    id
-    identifier
-    title
-    description
-    state { name type }
-    assignee { name }
-    project { id name }
-    projectMilestone { id name }
-    cycle { id name number }
-    parent { id identifier title }
-    team { name }
-    labels { nodes { name } }
-    priority
-    estimate
-    sortOrder
-    url
-    createdAt
-    updatedAt
-    archivedAt
-    trashed
-    relations { nodes { id type relatedIssue { id identifier title state { name type } } } }
-    inverseRelations { nodes { id type issue { id identifier title state { name type } } } }
-'
-
-linear_mutation_success() {
-    local normalized="$1"
-    [ "$(echo "$normalized" | jq -r '.success // false' 2>/dev/null || echo false)" = "true" ]
-}
-
-emit_linear_issue_activity() { return 0; }
-
-emit_linear_relation_activity() { return 0; }
-
-read_description_file() {
-    local description_file="$1"
-    if [[ -z "$description_file" ]]; then
-        echo '{"error": "--description-file requires a non-empty path argument"}' >&2
-        return 1
-    fi
-    if [[ ! -r "$description_file" ]]; then
-        echo "{\"error\": \"--description-file path not readable: $description_file\"}" >&2
-        return 1
-    fi
-    description=$(<"$description_file")
-}
-
-linear_update_activity_type() {
-    local normalized="$1"
-    local state state_type
-    state=$(echo "$normalized" | jq -r '.data.issue.state.name // empty' 2>/dev/null || true)
-    state_type=$(echo "$normalized" | jq -r '.data.issue.state.type // empty' 2>/dev/null || true)
-    case "$(printf '%s' "$state_type:$state" | tr '[:upper:]' '[:lower:]')" in
-        completed:*|*:done|*:complete|*:completed) printf 'linear.issue_finished success\n' ;;
-        canceled:*|cancelled:*|*:canceled|*:cancelled|*:canceled*|*:cancelled*) printf 'linear.issue_cancelled warning\n' ;;
-        *) printf 'linear.issue_updated info\n' ;;
-    esac
-}
-
+# Help is answered before the libraries load: common.sh sources the repo's
+# .env files as shell code and resolves API auth, and help needs neither.
 show_help() {
     cat <<'EOF'
 Issue Operations
@@ -237,9 +175,9 @@ Validate-Completion:
   all_ok answers "may this container complete now?". The flag fails closed:
   it requires exactly one issue ID plus --include-children-of naming that
   same issue, and errors (exit 1) when the bundle has no non-canceled
-  children — a leaf cannot validate as a container. Use it only for
-  containers; explicit single-PR bundles keep the default children-Done-first
-  contract.
+  children — a leaf cannot validate as a container. A child of a container
+  validates alone as its own session root. Use it only for containers;
+  explicit single-PR bundles keep the default children-Done-first contract.
 
 Examples:
   # Basic operations
@@ -294,6 +232,111 @@ Examples:
   issues.sh list --state Todo --search "market_data|order_book"  # Title/description contains either term (server-side)
 EOF
 }
+
+case "${1:-help}" in
+    help|--help|-h) show_help; exit 0 ;;
+esac
+
+# The help scan covers every argv position — enumerating positions is how
+# this class leaks — but skips the value an option consumes, so a --title
+# or --summary of '--help' stays data.
+_help_takes_value() {
+    case "$1" in
+        --agent | --assignee | --attach | --blocked-by | --blocks | --by | \
+            --cycle | --description | --description-file | --duplicate | \
+            --estimate | --format | --include-children-of | --label | \
+            --labels | --limit | --milestone | --parent | --priority | \
+            --project | --reason | --related | --search | --sort-order | \
+            --state | --status | --summary | --summary-file | --team | \
+            --title) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+_want_help=""
+_skip_value=""
+for _arg in "$@"; do
+    if [ -n "$_skip_value" ]; then
+        _skip_value=""
+        continue
+    fi
+    case "$_arg" in
+        --help | -h) _want_help=1; break ;;
+        --*) if _help_takes_value "$_arg"; then _skip_value=1; fi ;;
+    esac
+done
+if [ -n "$_want_help" ]; then
+    show_help
+    exit 0
+fi
+unset _want_help _skip_value _arg
+
+source "$SCRIPT_DIR/../lib/common.sh"
+source "$SCRIPT_DIR/../lib/cache.sh"
+source "$SCRIPT_DIR/../lib/attachments.sh"
+source "$SCRIPT_DIR/../lib/issue-validation.sh"
+
+# Shared issue fields for mutation responses — matches list query for cache parity
+ISSUE_RETURN_FIELDS='
+    id
+    identifier
+    title
+    description
+    state { name type }
+    assignee { name }
+    project { id name }
+    projectMilestone { id name }
+    cycle { id name number }
+    parent { id identifier title }
+    team { name }
+    labels { nodes { name } }
+    priority
+    estimate
+    sortOrder
+    url
+    createdAt
+    updatedAt
+    archivedAt
+    trashed
+    relations { nodes { id type relatedIssue { id identifier title state { name type } } } }
+    inverseRelations { nodes { id type issue { id identifier title state { name type } } } }
+'
+
+linear_mutation_success() {
+    local normalized="$1"
+    [ "$(echo "$normalized" | jq -r '.success // false' 2>/dev/null || echo false)" = "true" ]
+}
+
+emit_linear_issue_activity() { return 0; }
+
+emit_linear_relation_activity() { return 0; }
+
+read_description_file() {
+    local description_file="$1"
+    if [[ -z "$description_file" ]]; then
+        echo '{"error": "--description-file requires a non-empty path argument"}' >&2
+        return 1
+    fi
+    if [[ ! -r "$description_file" ]]; then
+        echo "{\"error\": \"--description-file path not readable: $description_file\"}" >&2
+        return 1
+    fi
+    description=$(<"$description_file")
+}
+
+linear_update_activity_type() {
+    local normalized="$1"
+    local state state_type
+    # An unparseable response classifies as the generic update: the activity
+    # type is presentation, never a gate.
+    state=$(echo "$normalized" | jq -r '.data.issue.state.name // empty' 2>/dev/null) || state=""
+    state_type=$(echo "$normalized" | jq -r '.data.issue.state.type // empty' 2>/dev/null) || state_type=""
+    case "$(printf '%s' "$state_type:$state" | tr '[:upper:]' '[:lower:]')" in
+        completed:*|*:done|*:complete|*:completed) printf 'linear.issue_finished success\n' ;;
+        canceled:*|cancelled:*|*:canceled|*:cancelled|*:canceled*|*:cancelled*) printf 'linear.issue_cancelled warning\n' ;;
+        *) printf 'linear.issue_updated info\n' ;;
+    esac
+}
+
 
 list_issues() {
     local with_relations="false"
@@ -3237,11 +3280,6 @@ main() {
 
     case "$action" in
     list)
-        case "${1:-}" in --help | -h)
-            show_help
-            exit 0
-            ;;
-        esac
         list_issues "$@"
         ;;
     get)
@@ -3249,11 +3287,6 @@ main() {
         get_issue "$@"
         ;;
     bulk-get)
-        case "${1:-}" in --help | -h)
-            show_help
-            exit 0
-            ;;
-        esac
         bulk_get_issues "$@"
         ;;
     bulk-update)
@@ -3261,11 +3294,6 @@ main() {
         bulk_update_issues "$@"
         ;;
     create)
-        case "${1:-}" in --help | -h)
-            show_help
-            exit 0
-            ;;
-        esac
         create_issue "$@"
         ;;
     update)
@@ -3334,9 +3362,6 @@ main() {
         echo "  linear.sh issues bulk-get [ISSUE_ID_1] [ISSUE_ID_2]   # live state (post-mutation verification)" >&2
         echo "  linear.sh cache issues get [ISSUE_ID]                 # cache read" >&2
         exit 1
-        ;;
-    help | --help | -h)
-        show_help
         ;;
     *)
         echo "Error: Unknown action '$action'" >&2

@@ -19,42 +19,6 @@ if [ "${1:-}" = "-C" ]; then
     shift 2
 fi
 
-# Auto-source project config and export GH_TOKEN for all subcommands.
-# Handles the case where `gh auth login` is tied to a different account than
-# the repo grants permissions to — without GH_TOKEN, read commands fail with
-# "Could not resolve to a Repository". Only fills GH_TOKEN from GH_BOT_TOKEN
-# when GH_TOKEN is still unset after config load.
-_CALLER_GH_TOKEN_SET="${GH_TOKEN+x}"
-_CALLER_GH_TOKEN="${GH_TOKEN:-}"
-_CALLER_GITHUB_TOKEN_SET="${GITHUB_TOKEN+x}"
-_CALLER_GITHUB_TOKEN="${GITHUB_TOKEN:-}"
-_CALLER_GH_BOT_TOKEN_SET="${GH_BOT_TOKEN+x}"
-_CALLER_GH_BOT_TOKEN="${GH_BOT_TOKEN:-}"
-
-_env_root=""
-if [ -n "$WORK_DIR" ]; then
-    _env_root=$(cd "$WORK_DIR" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null || true)
-else
-    _env_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
-fi
-if [ -n "$_env_root" ]; then
-    # shellcheck source=lib/kendex-env.sh
-    source "$SCRIPT_DIR/lib/kendex-env.sh"
-    kendex_load_project_env "$_env_root"
-fi
-if [ -n "$_CALLER_GH_TOKEN_SET" ]; then
-    export GH_TOKEN="$_CALLER_GH_TOKEN"
-fi
-if [ -n "$_CALLER_GITHUB_TOKEN_SET" ]; then
-    export GITHUB_TOKEN="$_CALLER_GITHUB_TOKEN"
-fi
-if [ -n "$_CALLER_GH_BOT_TOKEN_SET" ]; then
-    export GH_BOT_TOKEN="$_CALLER_GH_BOT_TOKEN"
-fi
-kendex_github_apply_selected_auth_token router || true
-kendex_github_sanitize_gh_env
-unset _env_root _CALLER_GH_TOKEN_SET _CALLER_GH_TOKEN _CALLER_GITHUB_TOKEN_SET _CALLER_GITHUB_TOKEN _CALLER_GH_BOT_TOKEN_SET _CALLER_GH_BOT_TOKEN
-
 show_help() {
     cat << 'EOF'
 GitHub API CLI
@@ -101,7 +65,11 @@ Output Formats:
     bot-token        safe | text
   Commands not listed above (e.g. pr-view) do not accept --format; see
   './github.sh <command> --help'. For a normalized safe/raw PR view, use
-  pr-data.
+  pr-data. An unrecognized format value is an error, never a silent
+  fallback to safe. --json is accepted as an alias for --format=safe on
+  pr-list-ready, pr-list-failing, pr-issue, ci-logs, and bot-token;
+  pr-data and pr-threads take --format=safe|raw only and reject unknown
+  flags.
 
 Examples:
   # Get PR data with all threads and comments
@@ -123,9 +91,102 @@ For command-specific help:
 EOF
 }
 
-# Route to command script
 command="${1:-help}"
 shift || true
+
+# Help is answered before project configuration or auth is touched:
+# sourcing a repo's .env under --help would execute repository-controlled
+# shell code, and help must not fail on auth. A subcommand's --help routes
+# straight to its script, which prints help before any API work. The scan
+# covers every argv position — enumerating positions is how this class
+# leaks — but skips the value an option consumes, so '--pattern -h' stays
+# data. An option missing from the value list only re-enables help routing
+# on a help-shaped value; configuration is still never loaded on an
+# apparent help call.
+case "$command" in
+    help|--help|-h) show_help; exit 0 ;;
+esac
+
+# Does this option consume the following argument? Arity is a property of
+# one command's parser, never of an option name — --body selects a field in
+# sticky-comment but takes a body in post-comment — so every entry is
+# command-scoped. An option invalid for the routed command consumes
+# nothing, so a --help after it is still a help request.
+_takes_value() {
+    case "$command:$1" in
+        await-mergeable:--interval | await-mergeable:--max-iter) return 0 ;;
+        ci-logs:--lines) return 0 ;;
+        dismiss-review:--message | dismiss-review:--user) return 0 ;;
+        edit-comment:--body | edit-comment:--body-file) return 0 ;;
+        find-comment:--author | find-comment:--pattern) return 0 ;;
+        post-comment:--body | post-comment:--body-file) return 0 ;;
+        post-reply:--body | post-reply:--body-file | post-reply:--pr) return 0 ;;
+        pr-create:--title | pr-create:--body | pr-create:--body-file) return 0 ;;
+        pr-create:--base | pr-create:--head | pr-create:--label) return 0 ;;
+        pr-data:--format | pr-threads:--format) return 0 ;;
+        pr-edit-body:--body-file) return 0 ;;
+        pr-view:--json) return 0 ;;
+        sticky-comment:--bot) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+_help_route=""
+_skip_value=""
+for _arg in "$@"; do
+    if [ -n "$_skip_value" ]; then
+        _skip_value=""
+        continue
+    fi
+    case "$_arg" in
+        --help|-h) _help_route=1; break ;;
+        --*) if _takes_value "$_arg"; then _skip_value=1; fi ;;
+    esac
+done
+unset _arg _skip_value
+
+if [ -z "$_help_route" ]; then
+    # Auto-source project config and export GH_TOKEN for all subcommands.
+    # Handles the case where `gh auth login` is tied to a different account than
+    # the repo grants permissions to — without GH_TOKEN, read commands fail with
+    # "Could not resolve to a Repository". Only fills GH_TOKEN from GH_BOT_TOKEN
+    # when GH_TOKEN is still unset after config load.
+    _CALLER_GH_TOKEN_SET="${GH_TOKEN+x}"
+    _CALLER_GH_TOKEN="${GH_TOKEN:-}"
+    _CALLER_GITHUB_TOKEN_SET="${GITHUB_TOKEN+x}"
+    _CALLER_GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+    _CALLER_GH_BOT_TOKEN_SET="${GH_BOT_TOKEN+x}"
+    _CALLER_GH_BOT_TOKEN="${GH_BOT_TOKEN:-}"
+
+    # Any failure to resolve a repository root — not in a repo, unreadable
+    # WORK_DIR — means the same thing: no project env to load.
+    _env_root=""
+    if [ -n "$WORK_DIR" ]; then
+        _env_root=$(cd "$WORK_DIR" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null) || _env_root=""
+    else
+        _env_root=$(git rev-parse --show-toplevel 2>/dev/null) || _env_root=""
+    fi
+    if [ -n "$_env_root" ]; then
+        # shellcheck source=lib/kendex-env.sh
+        source "$SCRIPT_DIR/lib/kendex-env.sh"
+        kendex_load_project_env "$_env_root"
+    fi
+    if [ -n "$_CALLER_GH_TOKEN_SET" ]; then
+        export GH_TOKEN="$_CALLER_GH_TOKEN"
+    fi
+    if [ -n "$_CALLER_GITHUB_TOKEN_SET" ]; then
+        export GITHUB_TOKEN="$_CALLER_GITHUB_TOKEN"
+    fi
+    if [ -n "$_CALLER_GH_BOT_TOKEN_SET" ]; then
+        export GH_BOT_TOKEN="$_CALLER_GH_BOT_TOKEN"
+    fi
+    kendex_github_apply_selected_auth_token router || true
+    kendex_github_sanitize_gh_env
+    unset _env_root _CALLER_GH_TOKEN_SET _CALLER_GH_TOKEN _CALLER_GITHUB_TOKEN_SET _CALLER_GITHUB_TOKEN _CALLER_GH_BOT_TOKEN_SET _CALLER_GH_BOT_TOKEN
+fi
+unset _help_route
+
+
+
 
 case "$command" in
     pr-data|pr-view|pr-threads|pr-list-ready|pr-list-failing|pr-create|pr-edit-body|pr-merge|pr-cross-check|pr-issue|label-add|label-remove|await-mergeable|ci-logs|bot-token|dismiss-review|resolve-thread|unresolve-thread|post-reply|post-comment|find-comment|edit-comment|sticky-comment)
@@ -141,9 +202,6 @@ case "$command" in
             echo "Error: Command script not found: $script" >&2
             exit 1
         fi
-        ;;
-    help|--help|-h)
-        show_help
         ;;
     ci-wait|ciwait|ci_wait)
         echo "Error: Unknown command '$command' — CI waiting is the orch skill's script: .agents/skills/orch/scripts/ci-wait <PR_NUMBER> [interval] [max_wait] [--json]" >&2
