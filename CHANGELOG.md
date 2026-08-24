@@ -240,6 +240,18 @@ changes carry a **Breaking** call-out with their migration note inline.
   research deferred as standalone work.
 
 ### Fixed
+- `kendex apply --replace-unmanaged` no longer gives up on the whole scope
+  because one item cannot be settled. A repo arriving on kendex with one
+  odd corner — say, a shortcut somebody set up where a skill installs —
+  used to get "changed while you were deciding" and nothing replaced at
+  all. Now every item that can be replaced is, and each held-back item is
+  named with the place that holds it. The run fails only when nothing at
+  all could be replaced, and then names those items and places. A skill
+  installed through links whose every tool is blocked at its link is
+  listed as those conflicts instead, and the run ends with nothing
+  replaced. Per-item choices in the app are unchanged: they still act on
+  the one row you clicked, whole or not at all.
+
 - Codex now reads the same skill as every other tool. kendex used to cut any
   SKILL.md over 8 KB for Codex — a shortened body plus a
   `references/details.md` — on the strength of a limit Codex does not have,
