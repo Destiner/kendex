@@ -109,6 +109,49 @@ changes carry a **Breaking** call-out with their migration note inline.
   publishes is told so plainly, and settles nothing.
 ### Changed
 
+- The commit checks moved to where git runs them. `kendex guard run
+  pre-commit` — what a `kendex guard install` hook runs — now carries the
+  format and lint gate too: `rust-fmt` (cargo fmt over each staged Rust
+  file's owning crate), `rust-clippy` (cargo clippy, `-D warnings`, scoped
+  the same way), and `biome` (staged JS/TS/JSON in Biome projects, the
+  project's own pinned binary first). Each is a `[guards.<name>]` table
+  like every other check — `enabled = false` turns one off. The
+  `pre-commit-check` agent hook no longer re-implements those checks or
+  tries to parse which repository a command commits to. Its contract: it
+  defers to the armed git pre-commit hook of its own working directory —
+  one validation per commit — and runs the guard chain from that
+  directory only where no hook is armed there. Where one is armed, a
+  command that sidesteps it (`--no-verify`, `-n`) or injects git
+  configuration that could (any `-c`, `--config-env`, or `GIT_CONFIG_*`
+  word — `core.hooksPath` or an `include.path` that loads it) is refused
+  outright: git would skip the commit-msg hook too, and no fallback here
+  can check the message. It gates its working
+  directory only: a commit aimed at
+  another repository (`git -C`, `--git-dir`, `cd … && git commit`) is
+  gated by that repository's own armed hook — `kendex guard install`
+  there — and by nothing in this hook, which says so on stderr when it
+  sees such a command from an unarmed directory. In a repository with no
+  armed hook the chain is the gate, so its refusals block there too:
+  settings still carrying v1 `SIZE_RATCHET_*`/`GROWTH_GUARDS_*` values
+  with no `[guards]` tables refuse every commit until `kendex guard
+  import-v1` converts them once, and a Biome project whose pinned
+  `biome` launcher cannot start (no `node` on PATH) blocks naming the
+  launcher instead of skipping. Where this script is the harness hook
+  (every harness but Pi), commands the old parser refused — `$(…)`,
+  backticks, `cd "$dir"`, an unexpanded `$repo` — no longer block
+  commits, and forms it silently mischecked (`--git-dir`/`--work-tree`,
+  `(cd … && git commit)`) are no longer mischecked: git runs the target
+  repository's hook where one is armed. Pi's native pre-commit listener
+  (`pi-hooks`) still parses commit targets, still refuses shell
+  expansion, and runs only fmt and clippy (KEN-554). The agent hook no
+  longer runs `preflight --staged`; commit-time preflight is the
+  repository's own git pre-commit hook or the chain's machine-local
+  extension, per the preflight skill. **Breaking**: the hook's
+  `KENDEX_PRE_COMMIT_RUST_CLIPPY` setting is gone; disable the lane with
+  `[guards.rust-clippy] enabled = false` (or
+  `KENDEX_GUARDS_RUST_CLIPPY_ENABLED=false` machine-locally), and point a
+  custom command at the chain's machine-local extension
+  (`KENDEX_GUARD_PRE_COMMIT_LOCAL`) instead.
 - Keeping a folder several tools read through shortcuts now asks in the
   same words as the button that opened it, rather than renaming the action
   halfway through. It still names the folder, the tools reading it, and
