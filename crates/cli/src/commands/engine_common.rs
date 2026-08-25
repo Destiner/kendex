@@ -4,7 +4,7 @@ use std::io::{IsTerminal, Write};
 use kendex_core::engine::{DriftRow, DriftState, EngineReport};
 use kendex_core::env::Env;
 use kendex_core::error::CoreError;
-use kendex_core::model::HarnessId;
+use kendex_core::model::{HarnessId, ItemKind};
 
 use super::{CliResult, say};
 
@@ -96,53 +96,94 @@ const UNMANAGED_SHOWN: usize = 10;
 
 /// What the safety rules found in the content this plan would write —
 /// advisory, printed beside the plan.
-///
-/// Every written item's score line prints, a clean one included: the
-/// contract is the score beside every write, and a clean row going silent
-/// would make "scored 100" and "never scored" read the same. Findings and
-/// not-fully-checked lines ride under a row only when there are any.
 pub fn print_safety(report: &EngineReport) {
     let mut rows: Vec<&kendex_core::engine::ItemSafety> = report.safety.iter().collect();
     rows.sort_by_key(|row| row.advisory.safety.score);
     for row in rows {
-        print_safety_row(row);
+        print_advisory(
+            row.kind,
+            &row.name,
+            ScoredAt::Harness(row.harness),
+            &row.advisory,
+        );
     }
 }
 
-/// One installation's score, each finding with its severity and where it
-/// fired, and the checks that had nothing to read. Shared with `findings`,
-/// so a row reads the same beside a plan and in the listing. The name, the
-/// location and the message come off files kendex did not write, so each
-/// is printed as what it is, never as an escape sequence the terminal
-/// would act on.
-pub fn print_safety_row(row: &kendex_core::engine::ItemSafety) {
+/// Where a scored package sits, as its score line says so: an
+/// installation belongs to a tool, a catalog item to a path inside its
+/// catalog. Naming the two shapes is what keeps the caller from
+/// hand-building a subject string — the printer escapes what it prints,
+/// and a caller passing text it escaped itself would double-escape it,
+/// `shown` not being idempotent.
+pub enum ScoredAt<'a> {
+    /// The tool whose copy of the item was scored.
+    Harness(HarnessId),
+    /// The item's own path within the catalog. Empty for a repository
+    /// that is one skill: its path is the catalog, so there is no segment
+    /// to name and the score line leaves it out.
+    CatalogPath(&'a str),
+}
+
+/// One package's advisory result, in the one shape every verb that scores
+/// content prints it: the score, then each finding on a line of its own —
+/// severity in words, what the rule matched, and where it fired as
+/// subtext. No fix line and no prompt: the score is advisory, and a
+/// finding says what was matched, not what to do about it.
+///
+/// The score line prints for a clean package too. The contract is a score
+/// beside every package; a clean one going silent would make "scored 100"
+/// and "never scored" read alike.
+///
+/// Severity leads the finding as a word, never as a colour: the line has
+/// to carry it for a reader who has no colour, and this printer emits
+/// none.
+///
+/// Every part that came off a file kendex did not write is escaped here
+/// rather than by the caller — the name, the catalog path, the finding
+/// messages and their locations. A harness's display name is kendex's own
+/// string and is printed as it is.
+pub fn print_advisory(
+    kind: ItemKind,
+    name: &str,
+    at: ScoredAt<'_>,
+    advisory: &kendex_core::quality::AuditResult,
+) {
     use kendex_core::names::shown;
+    let at = match at {
+        ScoredAt::Harness(harness) => format!(" for {}", harness.display_name()),
+        ScoredAt::CatalogPath("") => String::new(),
+        ScoredAt::CatalogPath(path) => format!(" at {}", shown(path)),
+    };
     say(&format!(
-        "safety: {} {} for {} scores {}/100",
-        row.kind.name(),
-        shown(&row.name),
-        row.harness.display_name(),
-        row.advisory.safety.score
+        "safety: {} {}{at} scores {}/100",
+        kind.name(),
+        shown(name),
+        advisory.safety.score
     ));
-    for finding in &row.advisory.findings {
+    for finding in &advisory.findings {
+        // A finding whose rule reads a config entry rather than a file has
+        // no place to name; the claim still prints, without empty parens.
+        let at = match finding.location.is_empty() {
+            true => String::new(),
+            false => format!(" ({})", shown(&finding.location)),
+        };
         say(&format!(
-            "  [{}] {}: {}",
+            "  [{}] {}{at}",
             finding.severity.name(),
-            shown(&finding.location),
             shown(&finding.message)
         ));
     }
-    print_skipped(row);
+    print_skipped(advisory);
 }
 
 /// The rules that apply to this kind and had no bytes to read here.
-fn print_skipped(row: &kendex_core::engine::ItemSafety) {
-    let Some(first) = row.advisory.skipped.first() else {
+fn print_skipped(advisory: &kendex_core::quality::AuditResult) {
+    let Some(first) = advisory.skipped.first() else {
         return;
     };
     say(&format!(
         "  not fully checked: {} rule(s) had nothing to read — {}",
-        row.advisory.skipped.len(),
+        advisory.skipped.len(),
         kendex_core::names::shown(&first.reason)
     ));
 }
