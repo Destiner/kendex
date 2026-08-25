@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::env::Env;
 use crate::error::{CoreError, Result};
 use crate::manifest::{LOCAL_SOURCE_NAME, Manifest, SourceDecl};
-use crate::model::Scope;
+use crate::model::{ItemKind, Scope};
 mod about;
 pub mod browse;
 pub mod bundles;
@@ -31,6 +31,70 @@ pub fn repo_leaf(provenance: &str) -> &str {
         .rsplit(['/', '\\'])
         .next()
         .unwrap_or(provenance)
+}
+
+/// Why the local source cannot hold an item's bytes at `slot`, in words
+/// for the person who typed the name. A fork's capture and adoption's
+/// both land here, and both ask this before planning a byte.
+///
+/// Every render destination is one component under its directory — the
+/// separators fold a namespaced name into a single leaf — so the slot is
+/// the one destination whose name spells a path. `plugin/item` is stored
+/// at `<local>/skills/plugin/item`, and the leaf being free says nothing
+/// about what stands above it: the plugin half may be a package of its
+/// own, in which case the capture writes the fork inside that package's
+/// tree, where every later render of it carries the fork's files as its
+/// own content; or a component may be a symlink, which the sealed reader
+/// refuses to look through, so bytes written past one are bytes kendex
+/// can never read back. Both answers come from the reader the rest of the
+/// engine resolves this source with, not from a second spelling of the
+/// local source's layout here.
+pub(crate) fn slot_unreachable(
+    env: &Env,
+    scope: &Scope,
+    kind: ItemKind,
+    name: &str,
+    slot: &std::path::Path,
+) -> Result<Option<String>> {
+    let root = local_source_root(env, scope);
+    if !root.is_dir() {
+        return Ok(None);
+    }
+    let sealed = crate::source_read::SealedSource::open(&root)?;
+    if let Err(escape) = sealed.contained(slot) {
+        return Ok(Some(format!(
+            "the local source cannot be written there — {escape}"
+        )));
+    }
+    let config = source_config_for(&sealed, LOCAL_SOURCE_NAME)?;
+    let Some((plugin, _)) = crate::names::split(name) else {
+        return Ok(None);
+    };
+    // Nesting is a fact about the two paths, not about the plugin half
+    // naming something. A skill's package IS the directory `plugin`, so a
+    // `plugin/item` slot sits inside it. An agent's package is the file
+    // `plugin.md`, and `plugin/item.md` is its sibling — the layout lists
+    // both, so neither hides the other. Asked of the resolved path, a
+    // kind whose item is a file is never refused for a nesting that
+    // cannot happen.
+    //
+    // Both sides in one spelling first: `find_item` builds the package
+    // from the canonicalized root and the slot carries the caller's, so
+    // comparing them directly compares two names for one directory —
+    // false wherever an ancestor is a symlink, and the arm would stop
+    // guarding without a word.
+    if let Some(package) = find_item(&sealed, &config, kind, plugin)
+        && let Some(package) = sealed.relative(&package)
+        && sealed
+            .relative(slot)
+            .is_some_and(|slot| slot.starts_with(package))
+    {
+        return Ok(Some(format!(
+            "`{}` is a package of its own here, and this name would be stored inside it",
+            crate::names::shown(plugin)
+        )));
+    }
+    Ok(None)
 }
 
 /// A source the engine can read right now.

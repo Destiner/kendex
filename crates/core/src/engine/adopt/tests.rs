@@ -311,16 +311,434 @@ fn a_target_that_changed_after_planning_fails_the_apply() {
     assert!(project.join(".claude/skills/browser").is_symlink());
 }
 
-/// A folder bigger than any real skill is refused before anything is
-/// planned, naming the budget, instead of being captured wholesale.
+/// An absolute name is not a name. `PathBuf::join` throws away the root it
+/// is joined onto, so the position adoption reads becomes the absolute
+/// path itself — a directory outside every kendex root, captured into the
+/// local source and then trashed. Refused before a path is derived.
 #[test]
-fn an_oversized_target_is_refused_out_loud() {
+fn an_absolute_name_captures_and_trashes_nothing() {
     let tmp = tempfile::tempdir().unwrap();
-    let dir = tmp.path().join("huge");
-    fs::create_dir_all(&dir).unwrap();
-    for i in 0..(MAX_CAPTURE_FILES + 1) {
-        fs::write(dir.join(format!("f{i}")), "x").unwrap();
+    let env = Env::fake(tmp.path(), FakeOs::Linux);
+    let project = tmp.path().join("app");
+    let scope = Scope::Project {
+        root: project.clone(),
+    };
+    let outside = tmp.path().join("elsewhere/notes");
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(outside.join("SKILL.md"), "somebody else's files").unwrap();
+    fs::create_dir_all(project.join(".claude/skills")).unwrap();
+
+    let refused = adopt(
+        &env,
+        &scope,
+        ItemKind::Skill,
+        outside.to_str().unwrap(),
+        &[HarnessId::Claude],
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(refused, CoreError::AdoptNameUnusable { .. }),
+        "{refused:?}"
+    );
+    assert!(outside.join("SKILL.md").is_file());
+    assert!(!project.join(".kendex-local").exists());
+    assert!(trash_is_empty(&env));
+    // The offer a surface would draw says the same thing.
+    assert!(!can_keep_for(
+        &env,
+        &scope,
+        ItemKind::Skill,
+        outside.to_str().unwrap(),
+        HarnessId::Claude
+    ));
+}
+
+/// A `..`-shaped name climbs out of the tool's skills directory: the old
+/// join put the position at `.claude/notes`, one step above where skills
+/// live, and the capture would have moved and trashed it.
+#[test]
+fn a_traversal_name_captures_and_trashes_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let env = Env::fake(tmp.path(), FakeOs::Linux);
+    let project = tmp.path().join("app");
+    let scope = Scope::Project {
+        root: project.clone(),
+    };
+    let climbed = project.join(".claude/notes");
+    fs::create_dir_all(&climbed).unwrap();
+    fs::write(climbed.join("SKILL.md"), "not an item kendex was given").unwrap();
+    fs::create_dir_all(project.join(".claude/skills")).unwrap();
+
+    let refused = adopt(
+        &env,
+        &scope,
+        ItemKind::Skill,
+        "../notes",
+        &[HarnessId::Claude],
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(refused, CoreError::AdoptNameUnusable { .. }),
+        "{refused:?}"
+    );
+    assert!(climbed.join("SKILL.md").is_file());
+    assert!(!project.join(".kendex-local").exists());
+    assert!(trash_is_empty(&env));
+    assert!(!can_keep_for(
+        &env,
+        &scope,
+        ItemKind::Skill,
+        "../notes",
+        HarnessId::Claude
+    ));
+}
+
+/// A namespaced skill sits at the tool's rendered spelling — one directory
+/// called `plugin__item`, never nested directories — while the logical
+/// name stays the manifest's and the local source's. Looking under
+/// `.claude/skills/data-science/eda` would find nothing and report a skill
+/// that is plainly there as absent.
+#[test]
+fn a_namespaced_skill_is_adopted_at_its_rendered_position() {
+    let tmp = tempfile::tempdir().unwrap();
+    let env = Env::fake(tmp.path(), FakeOs::Linux);
+    let project = tmp.path().join("app");
+    let scope = Scope::Project {
+        root: project.clone(),
+    };
+    let rendered = project.join(".claude/skills/data-science__eda");
+    fs::create_dir_all(&rendered).unwrap();
+    fs::write(
+        rendered.join("SKILL.md"),
+        "---\nname: eda\ndescription: explore data\n---\nMy content.\n",
+    )
+    .unwrap();
+
+    assert!(can_keep_for(
+        &env,
+        &scope,
+        ItemKind::Skill,
+        "data-science/eda",
+        HarnessId::Claude
+    ));
+    let plan = adopt(
+        &env,
+        &scope,
+        ItemKind::Skill,
+        "data-science/eda",
+        &[HarnessId::Claude],
+    )
+    .unwrap();
+    crate::apply::execute(&env, &plan, None).unwrap();
+
+    // The namespace is a directory only in the local source.
+    assert!(
+        project
+            .join(".kendex-local/skills/data-science/eda/SKILL.md")
+            .is_file()
+    );
+    assert!(!rendered.exists());
+    let manifest = fs::read_to_string(project.join("kendex.toml")).unwrap();
+    assert!(manifest.contains("data-science/eda"), "{manifest}");
+
+    // The follow-up apply puts it back where the tool reads it, and the
+    // scope is drift-clean.
+    let report = audit(&env, &scope).unwrap();
+    crate::apply::execute(&env, &report.plan, None).unwrap();
+    assert!(rendered.exists(), "the tool reads it at its rendered name");
+    assert!(!project.join(".claude/skills/data-science").exists());
+    let after = audit(&env, &scope).unwrap();
+    assert_eq!(after.drift, vec![]);
+}
+
+/// Nothing has been moved into the trash. Its directory is created on
+/// demand, so an absent one counts.
+fn trash_is_empty(env: &Env) -> bool {
+    fs::read_dir(env.trash_dir()).is_ok_and(|mut d| d.next().is_none()) || !env.trash_dir().exists()
+}
+
+/// A skill's position is the tool's own spelling of the name, and the
+/// separator is the tool's, not one hard-coded here: Claude joins with
+/// `__`, Copilot's lower-kebab rule with `-`.
+#[test]
+fn a_skills_position_takes_each_tools_own_separator() {
+    let tmp = tempfile::tempdir().unwrap();
+    let env = Env::fake(tmp.path(), FakeOs::Linux);
+    let scope = Scope::Project {
+        root: tmp.path().join("app"),
+    };
+    let at =
+        |harness| position(&env, &scope, ItemKind::Skill, "data-science/eda", harness).unwrap();
+
+    assert!(at(HarnessId::Claude).ends_with("data-science__eda"));
+    assert!(at(HarnessId::Copilot).ends_with("data-science-eda"));
+}
+
+/// The guard on `position` itself, not on the verb above it. Without it
+/// the rendered join turns `../notes` into `..__notes` and hands back a
+/// position, so every surface reading this would offer a keep for a name
+/// adoption refuses.
+#[test]
+fn a_refused_name_has_no_position_to_offer() {
+    let tmp = tempfile::tempdir().unwrap();
+    let env = Env::fake(tmp.path(), FakeOs::Linux);
+    let scope = Scope::Project {
+        root: tmp.path().join("app"),
+    };
+
+    assert!(position(&env, &scope, ItemKind::Skill, "../notes", HarnessId::Claude).is_none());
+}
+
+/// A legal name still spells a path. With `.kendex-local/skills` a link
+/// at somebody else's folder, the destination sits outside the sealed
+/// source, and the capture's trash-then-write pair would land on a tree
+/// adoption was never pointed at.
+#[test]
+fn a_symlinked_local_source_directory_refuses_the_capture() {
+    let tmp = tempfile::tempdir().unwrap();
+    let env = Env::fake(tmp.path(), FakeOs::Linux);
+    let project = tmp.path().join("app");
+    let scope = Scope::Project {
+        root: project.clone(),
+    };
+    let outside = tmp.path().join("elsewhere");
+    fs::create_dir_all(outside.join("handmade")).unwrap();
+    fs::write(outside.join("handmade/keepsake.md"), "somebody else's").unwrap();
+    fs::create_dir_all(project.join(".kendex-local")).unwrap();
+    std::os::unix::fs::symlink(&outside, project.join(".kendex-local/skills")).unwrap();
+    fs::create_dir_all(project.join(".claude/skills/handmade")).unwrap();
+    fs::write(project.join(".claude/skills/handmade/SKILL.md"), "mine").unwrap();
+
+    let refused = adopt(
+        &env,
+        &scope,
+        ItemKind::Skill,
+        "handmade",
+        &[HarnessId::Claude],
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(refused, CoreError::AdoptNameUnusable { .. }),
+        "{refused:?}"
+    );
+    assert!(outside.join("handmade/keepsake.md").is_file());
+    assert!(project.join(".claude/skills/handmade/SKILL.md").is_file());
+    assert!(trash_is_empty(&env));
+}
+
+/// A namespaced name whose plugin half is already a package here would be
+/// stored inside that package, and every later render of it would carry
+/// the captured files as its own content.
+#[test]
+fn a_namespaced_name_under_an_existing_package_refuses() {
+    let tmp = tempfile::tempdir().unwrap();
+    let env = Env::fake(tmp.path(), FakeOs::Linux);
+    let project = tmp.path().join("app");
+    let scope = Scope::Project {
+        root: project.clone(),
+    };
+    let parent = project.join(".kendex-local/skills/data-science");
+    fs::create_dir_all(&parent).unwrap();
+    fs::write(parent.join("SKILL.md"), "a package of its own").unwrap();
+    fs::create_dir_all(project.join(".claude/skills/data-science__eda")).unwrap();
+    fs::write(
+        project.join(".claude/skills/data-science__eda/SKILL.md"),
+        "mine",
+    )
+    .unwrap();
+
+    let refused = adopt(
+        &env,
+        &scope,
+        ItemKind::Skill,
+        "data-science/eda",
+        &[HarnessId::Claude],
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(refused, CoreError::AdoptNameUnusable { .. }),
+        "{refused:?}"
+    );
+    assert_eq!(
+        fs::read_to_string(parent.join("SKILL.md")).unwrap(),
+        "a package of its own"
+    );
+    assert!(!parent.join("eda").exists());
+    assert!(trash_is_empty(&env));
+}
+
+/// A refused name is printed, not run. The name reaches stderr through
+/// the CLI's `Error: {e}`, so a control sequence inside it would clear
+/// the reader's screen while telling them the name was refused.
+#[test]
+fn a_refusal_prints_the_escape_sequences_it_refuses() {
+    let tmp = tempfile::tempdir().unwrap();
+    let env = Env::fake(tmp.path(), FakeOs::Linux);
+    let scope = Scope::Project {
+        root: tmp.path().join("app"),
+    };
+
+    let said = adopt(
+        &env,
+        &scope,
+        ItemKind::Skill,
+        "keep\u{1b}[2J",
+        &[HarnessId::Claude],
+    )
+    .unwrap_err()
+    .to_string();
+
+    assert!(!said.contains('\u{1b}'), "{said:?}");
+    assert!(said.contains("\\u{1b}"), "{said:?}");
+}
+
+/// An agent's item is a file, so a plain `plugin` and a namespaced
+/// `plugin/item` are siblings — `agents/plugin.md` beside
+/// `agents/plugin/item.md` — and the local source lists both. Neither
+/// nests inside the other, so neither refuses the other's adoption.
+#[test]
+fn a_plain_agent_and_a_namespaced_agent_both_adopt() {
+    let tmp = tempfile::tempdir().unwrap();
+    let env = Env::fake(tmp.path(), FakeOs::Linux);
+    let project = tmp.path().join("app");
+    let scope = Scope::Project {
+        root: project.clone(),
+    };
+    let agents = project.join(".claude/agents");
+    fs::create_dir_all(&agents).unwrap();
+    fs::write(agents.join("data-science.md"), "the plain one").unwrap();
+    fs::write(agents.join("data-science__eda.md"), "the namespaced one").unwrap();
+
+    for name in ["data-science", "data-science/eda"] {
+        assert!(
+            can_keep_for(&env, &scope, ItemKind::Agent, name, HarnessId::Claude),
+            "{name} should be offered"
+        );
+        let plan = adopt(&env, &scope, ItemKind::Agent, name, &[HarnessId::Claude]).unwrap();
+        crate::apply::execute(&env, &plan, None).unwrap();
     }
-    let error = read_tree(&dir).unwrap_err();
-    assert!(error.to_string().contains("bigger than adopt"), "{error}");
+
+    let local = project.join(".kendex-local/agents");
+    assert_eq!(
+        fs::read_to_string(local.join("data-science.md")).unwrap(),
+        "the plain one"
+    );
+    assert_eq!(
+        fs::read_to_string(local.join("data-science/eda.md")).unwrap(),
+        "the namespaced one"
+    );
+}
+
+/// The offer reads the destination rule the capture reads. A slot behind
+/// a symlink, and one nesting inside a package the local source already
+/// holds, both refuse the verb — so neither may be drawn as a Keep.
+#[test]
+fn a_destination_the_capture_refuses_is_never_offered() {
+    let tmp = tempfile::tempdir().unwrap();
+    let env = Env::fake(tmp.path(), FakeOs::Linux);
+    let project = tmp.path().join("app");
+    let scope = Scope::Project {
+        root: project.clone(),
+    };
+    let outside = tmp.path().join("elsewhere");
+    fs::create_dir_all(outside.join("handmade")).unwrap();
+    fs::create_dir_all(project.join(".kendex-local")).unwrap();
+    std::os::unix::fs::symlink(&outside, project.join(".kendex-local/skills")).unwrap();
+    fs::create_dir_all(project.join(".claude/skills/handmade")).unwrap();
+    fs::write(project.join(".claude/skills/handmade/SKILL.md"), "mine").unwrap();
+
+    assert!(!can_keep_for(
+        &env,
+        &scope,
+        ItemKind::Skill,
+        "handmade",
+        HarnessId::Claude
+    ));
+
+    // The shared-folder offer reads it too. A row for a hand-made
+    // sharing layout takes its Keep from `link_target`, not from
+    // `can_keep_for`, so the rule has to reach that answer as well.
+    let shared = tmp.path().join("shared/browser");
+    fs::create_dir_all(&shared).unwrap();
+    fs::write(shared.join("SKILL.md"), "shared content").unwrap();
+    let link = project.join(".claude/skills/browser");
+    std::os::unix::fs::symlink(&shared, &link).unwrap();
+    assert!(link_target(&env, &scope, ItemKind::Skill, "browser", &link).is_none());
+
+    // The package-nesting half, in a scope whose local source is a plain
+    // directory.
+    let other = tmp.path().join("app2");
+    let scope = Scope::Project {
+        root: other.clone(),
+    };
+    let parent = other.join(".kendex-local/skills/data-science");
+    fs::create_dir_all(&parent).unwrap();
+    fs::write(parent.join("SKILL.md"), "a package of its own").unwrap();
+    fs::create_dir_all(other.join(".claude/skills/data-science__eda")).unwrap();
+    fs::write(
+        other.join(".claude/skills/data-science__eda/SKILL.md"),
+        "mine",
+    )
+    .unwrap();
+
+    assert!(!can_keep_for(
+        &env,
+        &scope,
+        ItemKind::Skill,
+        "data-science/eda",
+        HarnessId::Claude
+    ));
+}
+
+/// The nesting refusal compares two paths, and the sealed reader hands
+/// back a canonicalized root while the slot carries the spelling the
+/// caller built it from. With a symlink anywhere above the local source —
+/// which is macOS by default, where a temporary directory sits under
+/// `/var` fronted by `/private/var` — comparing them raw is comparing two
+/// names for one directory, and the guard silently stops guarding.
+#[test]
+fn the_nesting_refusal_holds_under_a_symlinked_ancestor() {
+    let tmp = tempfile::tempdir().unwrap();
+    let env = Env::fake(tmp.path(), FakeOs::Linux);
+    fs::create_dir_all(tmp.path().join("real")).unwrap();
+    std::os::unix::fs::symlink(tmp.path().join("real"), tmp.path().join("front")).unwrap();
+    let project = tmp.path().join("front/app");
+    let scope = Scope::Project {
+        root: project.clone(),
+    };
+    let parent = project.join(".kendex-local/skills/data-science");
+    fs::create_dir_all(&parent).unwrap();
+    fs::write(parent.join("SKILL.md"), "a package of its own").unwrap();
+    fs::create_dir_all(project.join(".claude/skills/data-science__eda")).unwrap();
+    fs::write(
+        project.join(".claude/skills/data-science__eda/SKILL.md"),
+        "mine",
+    )
+    .unwrap();
+
+    let refused = adopt(
+        &env,
+        &scope,
+        ItemKind::Skill,
+        "data-science/eda",
+        &[HarnessId::Claude],
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(refused, CoreError::AdoptNameUnusable { .. }),
+        "{refused:?}"
+    );
+    assert!(!parent.join("eda").exists());
+    assert!(!can_keep_for(
+        &env,
+        &scope,
+        ItemKind::Skill,
+        "data-science/eda",
+        HarnessId::Claude
+    ));
 }

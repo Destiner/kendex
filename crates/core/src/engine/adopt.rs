@@ -43,8 +43,9 @@ pub fn adopt(
     name: &str,
     harnesses: &[HarnessId],
 ) -> Result<Plan> {
+    usable(name)?;
     let mut manifest = manifest_for_mutation(env, scope)?;
-    let local_item = local_item_path(env, scope, kind, name)?;
+    let local_item = destination(env, scope, kind, name)?;
 
     let mut positions: Vec<(HarnessId, PathBuf)> = Vec::new();
     for &harness in harnesses {
@@ -160,10 +161,55 @@ pub fn adopt(
     })
 }
 
-/// Where in the scope's local source the kept content lands. Read wherever
+/// A name adoption may derive a path from. Every place it reads or writes
+/// is this name joined onto a root, so an absolute or `..`-shaped one
+/// leaves both the tool's directory and the local source, and the capture
+/// moves — then trashes — a directory nobody named. It admits exactly the
+/// names the rest of kendex installs, so an offer and the capture cannot
+/// read different rules.
+///
+/// Three calls, three surfaces, not one guard thrice: `adopt` answers the
+/// verb, ahead of the manifest read so a bad name is named as one rather
+/// than as whatever else the scope is missing; `destination` answers
+/// every path derived from a name, the planner's included; `position`
+/// answers the exits a page draws.
+fn usable(name: &str) -> Result<()> {
+    match crate::names::item_problem(name) {
+        Some(problem) => Err(unusable(name, problem)),
+        None => Ok(()),
+    }
+}
+
+/// Where the capture would land, or why it may not land there. A legal
+/// name still spells a path, and the directories above the destination
+/// are not the name's to vouch for — `slot_unreachable` holds what that
+/// costs. One rule, asked by the verb before it plans a byte and by
+/// `can_keep_for` before a surface draws a Keep, so no offer names an
+/// action the capture would refuse.
+fn destination(env: &Env, scope: &Scope, kind: ItemKind, name: &str) -> Result<PathBuf> {
+    let slot = local_item_path(env, scope, kind, name)?;
+    match crate::source::slot_unreachable(env, scope, kind, name, &slot)? {
+        Some(problem) => Err(unusable(name, problem)),
+        None => Ok(slot),
+    }
+}
+
+/// A refusal naming the name, shown: a name reaches a terminal as text,
+/// so an escape sequence inside it is printed rather than run.
+fn unusable(name: &str, problem: String) -> CoreError {
+    CoreError::AdoptNameUnusable {
+        name: crate::names::shown(name),
+        problem,
+    }
+}
+
+/// Where in the scope's local source the kept content lands, and the only
+/// place the logical namespace survives: `plugin/item` is the nested
+/// layout the local source lists back under that same name. Read wherever
 /// a surface asks whether adoption could take a position, so the question
 /// and the answer are never two different rules.
 fn local_item_path(env: &Env, scope: &Scope, kind: ItemKind, name: &str) -> Result<PathBuf> {
+    usable(name)?;
     let local_root = local_source_root(env, scope);
     match kind {
         ItemKind::Skill => Ok(local_root.join("skills").join(name)),
@@ -278,7 +324,7 @@ fn capture_ops(
     let capture = match kind {
         ItemKind::Skill => Op::WriteTree {
             root: local_item.to_path_buf(),
-            files: read_tree(source)?,
+            files: crate::capture::read_tree(source)?,
             pre: Pre::Absent,
         },
         _ => Op::WriteFile {
@@ -433,7 +479,7 @@ fn shared_at(
     link: &Path,
 ) -> Option<SharedTarget> {
     let points_to = fs::read_link(link).ok()?;
-    let local_item = local_item_path(env, scope, kind, name).ok()?;
+    let local_item = destination(env, scope, kind, name).ok()?;
     shared_target(env, scope, kind, name, link, points_to, &local_item).ok()
 }
 
@@ -493,7 +539,7 @@ fn shared_capture_ops(
         description: format!("move the shared folder's content of {name} into the local source"),
         op: Op::WriteTree {
             root: local_item.to_path_buf(),
-            files: read_tree(&shared.target)?,
+            files: crate::capture::read_tree(&shared.target)?,
             pre: Pre::Absent,
         },
     });
@@ -521,90 +567,6 @@ fn shared_capture_ops(
         });
     }
     Ok(ops)
-}
-
-// What a capture may read: the walk that turns a folder on disk into the
-// bytes adoption writes into the local source, and the budget that stops a
-// link at somebody's home directory becoming a memory problem.
-
-/// Far beyond any real skill, but a hard stop before a link at a huge
-/// folder turns a capture into a memory problem. Fail-loud: the error
-/// names the file that broke the budget.
-const MAX_CAPTURE_FILES: usize = 2000;
-const MAX_CAPTURE_BYTES: u64 = 100 * 1024 * 1024;
-
-pub(crate) fn read_tree(root: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {
-    fn walk(
-        dir: &Path,
-        rel: &Path,
-        files: &mut Vec<(PathBuf, Vec<u8>)>,
-        bytes: &mut u64,
-    ) -> Result<()> {
-        for entry in fs::read_dir(dir).map_err(|e| CoreError::io(dir, e))? {
-            // A per-entry read error is not silently skipped: dropping it
-            // would capture an incomplete tree and then trash the
-            // original, losing content the caller asked to keep.
-            let entry = entry.map_err(|e| CoreError::io(dir, e))?;
-            let path = entry.path();
-            let Some(name) = path.file_name() else {
-                continue;
-            };
-            let rel = rel.join(name);
-            // A link is not plain content: following it would read whatever
-            // it points at into the capture under this tree's name. Rather
-            // than silently drop it (and then trash the original), refuse —
-            // nothing the user asked to keep is lost without a word.
-            if path.is_symlink() {
-                return Err(CoreError::ForeignSymlink {
-                    points_to: fs::read_link(&path).unwrap_or_default(),
-                    target: path,
-                });
-            }
-            if path.is_dir() {
-                walk(&path, &rel, files, bytes)?;
-                continue;
-            }
-            // A FIFO would block the read forever and a device is not
-            // content; capturing arbitrary user folders means saying so
-            // instead of hanging.
-            let shape = fs::symlink_metadata(&path).map_err(|e| CoreError::io(&path, e))?;
-            if !shape.is_file() {
-                return Err(CoreError::io(
-                    &path,
-                    std::io::Error::other("not a regular file — adopt captures plain files only"),
-                ));
-            }
-            // The budget is spent on what was read, never on what the
-            // metadata said: a file that grows between the two would leave
-            // every file after it a budget that no longer exists, and the
-            // bound would hold only for a tree that sat still. So the
-            // reader is capped and the total counts the bytes it returned.
-            let room = MAX_CAPTURE_BYTES.saturating_sub(*bytes);
-            let mut body = Vec::new();
-            fs::File::open(&path)
-                .and_then(|file| {
-                    use std::io::Read;
-                    file.take(room + 1).read_to_end(&mut body)
-                })
-                .map_err(|e| CoreError::io(&path, e))?;
-            *bytes += body.len() as u64;
-            if files.len() >= MAX_CAPTURE_FILES || body.len() as u64 > room {
-                return Err(CoreError::io(
-                    &path,
-                    std::io::Error::other(format!(
-                        "this folder is bigger than adopt will capture (over {MAX_CAPTURE_FILES} files or {} MB)",
-                        MAX_CAPTURE_BYTES / (1024 * 1024)
-                    )),
-                ));
-            }
-            files.push((rel, body));
-        }
-        Ok(())
-    }
-    let mut files = Vec::new();
-    let mut bytes = 0;
-    walk(root, Path::new(""), &mut files, &mut bytes)?;
-    Ok(files)
 }
 
 // Writing the kept item into the manifest: which tools it names, and
@@ -666,11 +628,12 @@ fn declare(
 // reads are answered here together, so an offer never names a position
 // the capture will not find.
 
-/// The place one tool reads this item from — the only place adoption looks
-/// for it. Read wherever a surface asks whether adoption could keep a
-/// tool's copy, so the question and the action are one rule: an offer
-/// naming a tool that has nothing here would error the moment it was
-/// followed.
+/// The place one tool reads an adoptable item from — the only place
+/// adoption looks for it. Answered for the kinds `supports` takes and no
+/// others, so the arms are the whole of what adoption can be asked. Read
+/// wherever a surface asks whether adoption could keep a tool's copy, so
+/// the question and the action are one rule: an offer naming a tool that
+/// has nothing here would error the moment it was followed.
 pub(super) fn position(
     env: &Env,
     scope: &Scope,
@@ -678,10 +641,23 @@ pub(super) fn position(
     name: &str,
     harness: HarnessId,
 ) -> Option<PathBuf> {
+    // No position for a name no path may be derived from: this answers
+    // "has this tool something to keep", and a name adoption refuses has
+    // nothing anywhere.
+    usable(name).ok()?;
     let dir = native_dir(env, scope, harness, kind)?;
     Some(match kind {
         ItemKind::Agent => dir.join(crate::render::agent::file_name(harness, name)),
-        _ => dir.join(name),
+        // A `/` never survives into an installed skill: the tool holds
+        // `plugin/item` as one directory, `plugin__item` or
+        // `plugin-item`. Reading nested directories instead would find
+        // nothing, and report a skill plainly there as absent.
+        ItemKind::Skill => dir.join(crate::harness::rendered_name(harness, name)),
+        // No other kind reaches here: `supports` gates `can_keep_for`,
+        // and a shared-link row exists only where `link_target` said yes,
+        // which is skills only. Nothing, rather than a guess that would
+        // read as a contract for a renderer this does not speak for.
+        _ => return None,
     })
 }
 
@@ -714,6 +690,10 @@ pub fn can_keep_for(
     harness: HarnessId,
 ) -> bool {
     supports(kind)
+        // Fail-closed: the destination the capture would use, so a Keep
+        // is never drawn for one the verb refuses, and a source that
+        // cannot be read is not one that said yes.
+        && destination(env, scope, kind, name).is_ok()
         && position(env, scope, kind, name, harness).is_some_and(|path| {
             !both_spellings(kind, &path)
                 && match kind {
