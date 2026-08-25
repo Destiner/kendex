@@ -3,9 +3,9 @@ use kendex_core::env::Env;
 use kendex_core::lock::{load as load_lock, lock_path};
 
 use super::engine_common::{
-    confirm_and_execute, conflict_detail, print_conflicts, print_exits, print_notes, print_safety,
-    refresh_failures,
+    confirm_and_apply, print_conflicts, print_drift, print_notes, print_safety, refresh_failures,
 };
+use super::ledger::say_ledger;
 use super::{CliResult, resolve_scopes, say};
 use crate::scope::ScopeFilter;
 
@@ -30,19 +30,6 @@ pub struct RefreshArgs {
     /// Overwrite installations you edited by hand
     #[arg(long)]
     discard_edits: bool,
-}
-
-fn print_drift(report: &kendex_core::engine::EngineReport) {
-    for row in &report.drift {
-        say(&format!(
-            "{} {} [{}]: {:?} — {}",
-            row.kind.name(),
-            row.name,
-            row.harness.name(),
-            row.state,
-            conflict_detail(row)
-        ));
-    }
 }
 
 /// What this refresh would add to or drop from the installed set — the part
@@ -114,41 +101,37 @@ pub fn run(
         // Refresh plans and writes like apply, so it says what the rules
         // found before the confirm, the way apply does.
         print_safety(&report);
-        match verbose {
-            // Every row, and the ways out under the ones that have them:
-            // asking for more detail must not cost the reader the way out.
-            true => {
-                print_drift(&report);
-                print_exits(env, &report);
-            }
-            false => {
-                print_conflicts(env, &report);
-            }
-        }
+        let blocked = match verbose {
+            true => print_drift(env, &report),
+            false => print_conflicts(env, &report),
+        };
         let lock = load_lock(&lock_path(env, &scope))?;
-        if lock.entries.is_empty() && report.plan.is_empty() {
+        // A run that refused every install is not "nothing installed": a
+        // scope carrying a refusal is never passed over.
+        if lock.entries.is_empty() && report.plan.is_empty() && blocked.is_empty() {
             continue;
         }
         refreshed_anything = true;
         failures.extend(refresh_failures(&report));
         if report.plan.is_empty() {
-            say(&format!("{}: up to date", scope.label()));
+            say_ledger(&scope, None, &blocked, &report);
             continue;
         }
-        if !report.set_changes.is_empty() {
-            print_set_changes(&scope, &report);
-            if let Err(error) = confirm_and_execute(env, &report, yes) {
-                failures.push(error.to_string());
+        // One closing line for both paths: a run that first asked about
+        // what it installs still ends on the same ledger, since the
+        // outcomes it has to report are the same either way.
+        let applied: Result<usize, String> = match report.set_changes.is_empty() {
+            true => kendex_core::apply::execute(env, &report.plan, None)
+                .map(|outcome| outcome.applied)
+                .map_err(|error| error.to_string()),
+            false => {
+                print_set_changes(&scope, &report);
+                confirm_and_apply(env, &report, yes).map_err(|error| error.to_string())
             }
-            continue;
-        }
-        match kendex_core::apply::execute(env, &report.plan, None) {
-            Ok(outcome) => say(&format!(
-                "{}: refreshed {} change(s)",
-                scope.label(),
-                outcome.applied
-            )),
-            Err(error) => failures.push(error.to_string()),
+        };
+        match applied {
+            Ok(applied) => say_ledger(&scope, Some(applied), &blocked, &report),
+            Err(error) => failures.push(error),
         }
     }
 
