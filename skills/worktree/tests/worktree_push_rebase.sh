@@ -246,6 +246,119 @@ assert_eq "$norebase_post_head" "$norebase_pre_head" "--no-rebase leaves HEAD un
 assert_path_absent "$NOREBASE_ROOT/trees/issue-norebase/main-advanced.txt" "--no-rebase does not pull in advanced main"
 assert_not_contains "$(cat "$NOREBASE_ROOT/push.out")" "rebase-map:" "--no-rebase emits no rebase-map lines"
 
+# --- KEN-570: push rejects unknown flags --------------------------------------
+# The argument loop used to end in a catch-all shift, so a typo'd flag was
+# dropped and the caller got a default-behavior push it never asked for. An
+# unrecognized flag must now be a usage error, which is what lets orch's
+# worktree-push wrapper pass flags through instead of keeping its own copy of
+# this vocabulary.
+run_push_args() {
+  local label="$1"
+  shift
+  set +e
+  (
+    cd "$NOREBASE_ROOT/main" && \
+      "$WORKTREE_SCRIPT" push "$@" \
+        >"$NOREBASE_ROOT/$label.out" 2>"$NOREBASE_ROOT/$label.err"
+  )
+  PUSH_ARGS_RC=$?
+  set -e
+}
+
+typo_pre_head="$(git -C "$NOREBASE_ROOT/trees/issue-norebase" rev-parse HEAD)"
+run_push_args typo "$NOREBASE_ROOT/trees/issue-norebase" --no-rebse
+assert_eq "$PUSH_ARGS_RC" "1" "a typo'd flag is a usage error, not a silent default push"
+assert_contains "$(cat "$NOREBASE_ROOT/typo.err")" "unknown option '--no-rebse' for push" "the rejected flag is named"
+assert_eq "$(git -C "$NOREBASE_ROOT/trees/issue-norebase" rev-parse HEAD)" "$typo_pre_head" "a rejected flag pushes and rebases nothing"
+
+# The known flags still parse ahead of the positional, so a flag-first call is
+# not mistaken for an issue ID. Exit 0 alone proves nothing here: dropping the
+# positional falls back to $PWD, the main checkout, whose push also succeeds.
+# The branch must arrive on the remote at the named tree's head, which only
+# happens if the trailing positional became the target.
+FLAGFIRST_ROOT="$TMP_ROOT/flag-first"
+make_repo "$FLAGFIRST_ROOT/main"
+git init -q --bare "$FLAGFIRST_ROOT/origin.git"
+git -C "$FLAGFIRST_ROOT/main" remote add origin "$FLAGFIRST_ROOT/origin.git"
+git -C "$FLAGFIRST_ROOT/main" push -q -u origin main
+git -C "$FLAGFIRST_ROOT/main" worktree add -q -b issue-flagfirst "$FLAGFIRST_ROOT/trees/issue-flagfirst" main
+printf 'advanced\n' > "$FLAGFIRST_ROOT/main/main-advanced.txt"
+git -C "$FLAGFIRST_ROOT/main" add main-advanced.txt
+git -C "$FLAGFIRST_ROOT/main" commit -q -m 'advance main'
+git -C "$FLAGFIRST_ROOT/main" push -q origin main
+printf 'fix\n' > "$FLAGFIRST_ROOT/trees/issue-flagfirst/fix.txt"
+git -C "$FLAGFIRST_ROOT/trees/issue-flagfirst" add fix.txt
+git -C "$FLAGFIRST_ROOT/trees/issue-flagfirst" commit -q -m 'flag-first fix'
+flagfirst_pre_head="$(git -C "$FLAGFIRST_ROOT/trees/issue-flagfirst" rev-parse HEAD)"
+set +e
+(
+  cd "$FLAGFIRST_ROOT/main" && \
+    "$WORKTREE_SCRIPT" push --no-rebase --set-upstream "$FLAGFIRST_ROOT/trees/issue-flagfirst" \
+      >"$FLAGFIRST_ROOT/push.out" 2>"$FLAGFIRST_ROOT/push.err"
+)
+flagfirst_code=$?
+set -e
+assert_eq "$flagfirst_code" "0" "flags may precede the ID or path"
+assert_eq "$(git --git-dir="$FLAGFIRST_ROOT/origin.git" rev-parse refs/heads/issue-flagfirst)" "$flagfirst_pre_head" "the trailing positional is the pushed target, not \$PWD"
+assert_eq "$(git -C "$FLAGFIRST_ROOT/trees/issue-flagfirst" rev-parse HEAD)" "$flagfirst_pre_head" "the flag-first --no-rebase left HEAD unchanged"
+assert_path_absent "$FLAGFIRST_ROOT/trees/issue-flagfirst/main-advanced.txt" "the flag-first --no-rebase did not pull in advanced main"
+
+# The rejection arm shares its loop with --help, and the error it prints
+# advertises `push --help` as the recovery. That the global pre-scan answers
+# --help before this case is what keeps the advice true; nothing else here
+# holds it.
+run_push_args help --help
+assert_eq "$PUSH_ARGS_RC" "0" "the advertised recovery command still exits 0"
+assert_contains "$(cat "$NOREBASE_ROOT/help.out")" "Usage: worktree push" "push --help prints the push usage"
+
+run_push_args twoargs "$NOREBASE_ROOT/trees/issue-norebase" issue-norebase
+assert_eq "$PUSH_ARGS_RC" "1" "a second positional is a usage error"
+assert_contains "$(cat "$NOREBASE_ROOT/twoargs.err")" "takes a single issue ID or path" "the duplicate positional is reported"
+
+# An EMPTY positional is not "no target": resolution would fall back to $PWD
+# and push the current checkout — the unintended default push this parser
+# exists to prevent, one unset caller variable away. Seen-ness is tracked
+# apart from the value, so an empty first argument still counts against the
+# single-target rule.
+empty_pre_head="$(git -C "$NOREBASE_ROOT/trees/issue-norebase" rev-parse HEAD)"
+run_push_args emptyarg ""
+assert_eq "$PUSH_ARGS_RC" "1" "an empty positional is a usage error, not a fallback to \$PWD"
+assert_contains "$(cat "$NOREBASE_ROOT/emptyarg.err")" "push target is empty" "the empty target is reported"
+
+run_push_args emptythenreal "" "$NOREBASE_ROOT/trees/issue-norebase"
+assert_eq "$PUSH_ARGS_RC" "1" "an empty positional followed by a real one is still refused"
+
+run_push_args realthenempty "$NOREBASE_ROOT/trees/issue-norebase" ""
+assert_eq "$PUSH_ARGS_RC" "1" "a real positional followed by an empty one is a duplicate, not a silent second target"
+assert_contains "$(cat "$NOREBASE_ROOT/realthenempty.err")" "takes a single issue ID or path" "the empty second positional is reported as a duplicate"
+assert_eq "$(git -C "$NOREBASE_ROOT/trees/issue-norebase" rev-parse HEAD)" "$empty_pre_head" "an empty-target refusal pushes and rebases nothing"
+
+# --- KEN-570: --check-args validates without acting ---------------------------
+# orch's worktree-push consumes a pending rebase-map sidecar before it pushes,
+# so it must learn push's verdict on the forwarded argument vector while
+# nothing is consumed yet. --check-args runs THIS loop — the same code path,
+# so a validation run and the real push cannot drift — and stops: no
+# resolution, no rebase, no push.
+check_pre_head="$(git -C "$NOREBASE_ROOT/trees/issue-norebase" rev-parse HEAD)"
+check_pre_remote="$(git --git-dir="$NOREBASE_ROOT/origin.git" rev-parse refs/heads/issue-norebase)"
+run_push_args checkok "$NOREBASE_ROOT/trees/issue-norebase" --no-rebase --check-args
+assert_eq "$PUSH_ARGS_RC" "0" "--check-args accepts a vector push accepts"
+assert_eq "$(cat "$NOREBASE_ROOT/checkok.out")" "" "--check-args prints nothing on acceptance"
+assert_eq "$(git -C "$NOREBASE_ROOT/trees/issue-norebase" rev-parse HEAD)" "$check_pre_head" "--check-args rebases nothing"
+assert_eq "$(git --git-dir="$NOREBASE_ROOT/origin.git" rev-parse refs/heads/issue-norebase)" "$check_pre_remote" "--check-args pushes nothing"
+
+# The transposition a prefix heuristic could never catch. push does not know
+# --sate-dir, so the real parser refuses it; the wrapper needs no guess of its
+# own about which typos of ITS flags exist.
+run_push_args checktransposed "$NOREBASE_ROOT/trees/issue-norebase" --check-args "--sate-dir=/nowhere"
+assert_eq "$PUSH_ARGS_RC" "1" "--check-args refuses a transposed flag push does not know"
+assert_contains "$(cat "$NOREBASE_ROOT/checktransposed.err")" "unknown option '--sate-dir=/nowhere' for push" "the check reports the same diagnostic the real push would"
+
+run_push_args checkempty --check-args ""
+assert_eq "$PUSH_ARGS_RC" "1" "--check-args refuses an empty positional too"
+assert_contains "$(cat "$NOREBASE_ROOT/checkempty.err")" "push target is empty" "the check reports the empty target"
+assert_eq "$(git --git-dir="$NOREBASE_ROOT/origin.git" rev-parse refs/heads/issue-norebase)" "$check_pre_remote" "a refused check pushes nothing"
+
 # --- kendex#728: a commit dropped by the rebase maps to "dropped" --------------
 # The branch carries a commit whose patch main already merged (different SHA,
 # same patch-id) plus its own fix. The rebase drops the duplicated commit, so

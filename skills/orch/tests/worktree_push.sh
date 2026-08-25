@@ -44,10 +44,20 @@ assert_contains() {
 }
 
 # Stub worktree script: prints STUB_PUSH_STDOUT, exits STUB_PUSH_EXIT, and
-# logs its argv so pass-through flags can be asserted.
+# logs its argv so pass-through flags can be asserted. `push --check-args` is
+# push's parse-only mode — it accepts what push accepts and does nothing — so
+# the stub answers it from STUB_CHECK_EXIT (0 unless a test says otherwise)
+# and logs it apart from the real push, letting a test reject an argument
+# vector without failing the push itself.
 stub="$TMP_ROOT/worktree-stub"
 cat >"$stub" <<'EOF'
 #!/usr/bin/env bash
+for _a in "$@"; do
+  if [[ "$_a" == "--check-args" ]]; then
+    printf '%s\n' "$*" >>"${STUB_CHECK_LOG:-/dev/null}"
+    exit "${STUB_CHECK_EXIT:-0}"
+  fi
+done
 printf '%s\n' "$*" >>"${STUB_ARGS_LOG:-/dev/null}"
 if [[ -n "${STUB_PUSH_STDOUT:-}" ]]; then
   printf '%s\n' "$STUB_PUSH_STDOUT"
@@ -121,9 +131,73 @@ assert_contains "$(cat "$args_log")" "push $wt --set-upstream" "worktree push re
 STUB_PUSH_STDOUT="" run_push "$work" "--worktree=$wt" --issue=KEN-1
 assert_eq "$RUN_RC" "0" "equals-form flags parse"
 
-run_push "$work" --worktree "$wt" --issue KEN-1 --force
-assert_eq "$RUN_RC" "1" "an unknown flag is a usage error, not a silent pass-through"
-assert_contains "$(cat "$run_err")" "unknown option: --force" "the unknown flag is named"
+# KEN-570: the wrapper keeps no copy of push's flag vocabulary. A flag it does
+# not own is forwarded verbatim, and `worktree push` — which fails closed on an
+# unknown flag — is the one that rejects it.
+: >"$args_log"
+STUB_ARGS_LOG="$args_log" STUB_PUSH_STDOUT="" run_push "$work" --worktree "$wt" --issue KEN-1 --no-rebase --future-flag
+assert_contains "$(cat "$args_log")" "push $wt --no-rebase --future-flag" "flags the wrapper does not own are forwarded verbatim, in order"
+
+: >"$args_log"
+STUB_ARGS_LOG="$args_log" STUB_PUSH_EXIT=1 run_push "$work" --worktree "$wt" --issue KEN-1 --force
+assert_eq "$RUN_RC" "1" "a flag push rejects fails the wrapper with push's own exit code"
+assert_contains "$(cat "$args_log")" "push $wt --force" "the rejected flag reached push rather than being screened here"
+
+# KEN-570: validate before acting. A mangled --state-dir (--sate-dir here, a
+# transposition no prefix guess catches) is push's to reject, but the wrapper
+# used to consume the pending sidecar into whatever state the fallback
+# resolved BEFORE push ever saw the flag. The vector now goes to push's own
+# parser first, so the run stops with the sidecar still on disk.
+check_log="$TMP_ROOT/check.log"
+work="$TMP_ROOT/work-owned-typo"
+reset_state "$work"
+owned_before="$(state_json "$work")"
+printf '{"%s":"%s"}\n' "$OLD_A" "$NEW_A" >"$SIDECAR"
+: >"$args_log"
+: >"$check_log"
+STUB_ARGS_LOG="$args_log" STUB_CHECK_LOG="$check_log" STUB_CHECK_EXIT=1 \
+  run_push "$work" --worktree "$wt" --issue KEN-1 "--sate-dir=$TMP_ROOT/elsewhere"
+assert_eq "$RUN_RC" "1" "arguments push rejects fail the wrapper"
+assert_contains "$(cat "$run_err")" "worktree push refused these arguments" "the refusal points at push's own diagnostic"
+assert_contains "$(cat "$check_log")" "push --check-args $wt --sate-dir=" "the whole forwarded vector is validated, positional included"
+assert_eq "$(cat "$args_log")" "" "the refused call never runs the real push"
+[[ -f "$SIDECAR" ]] && pass "the pending sidecar survives the refusal" || fail "the pending sidecar survives the refusal"
+assert_eq "$(state_json "$work")" "$owned_before" "the refused call reconciles nothing"
+rm -f "$SIDECAR"
+
+# The validation runs push's parser, so it must precede everything this
+# wrapper consumes — including a valid-looking run, where the check still
+# comes first.
+: >"$check_log"
+STUB_CHECK_LOG="$check_log" STUB_PUSH_STDOUT="" run_push "$work" --worktree "$wt" --issue KEN-1 --no-rebase
+assert_eq "$RUN_RC" "0" "an accepted vector pushes normally"
+assert_contains "$(cat "$check_log")" "push --check-args $wt --no-rebase" "the accepted vector was validated too"
+
+# The stub above stands in for push's verdict; this one case runs the REAL
+# worktree script, so the two scripts' wiring is held: the flag name the
+# wrapper sends, the argument order it sends it in, and push's own refusal.
+# --check-args returns before any git work, so an unregistered checkout is a
+# fine target here.
+reset_state "$work"
+real_before="$(state_json "$work")"
+printf '{"%s":"%s"}\n' "$OLD_A" "$NEW_A" >"$SIDECAR"
+RUN_RC=0
+(cd "$work" && ORCH_WORKTREE_BIN="$REPO_ROOT/skills/worktree/scripts/worktree" \
+  "$PUSH" --worktree "$wt" --issue KEN-1 "--sate-dir=$TMP_ROOT/elsewhere") \
+  >"$run_out" 2>"$run_err" || RUN_RC=$?
+assert_eq "$RUN_RC" "1" "the real push refuses a transposed owned flag through this wrapper"
+assert_contains "$(cat "$run_err")" "unknown option '--sate-dir=$TMP_ROOT/elsewhere' for push" "push's own diagnostic reaches the caller"
+[[ -f "$SIDECAR" ]] && pass "the real refusal leaves the pending sidecar in place" || fail "the real refusal leaves the pending sidecar in place"
+assert_eq "$(state_json "$work")" "$real_before" "the real refusal reconciles nothing"
+rm -f "$SIDECAR"
+
+# --check-args is push's parse-only mode; forwarding it would leave the push a
+# no-op while state was reconciled anyway, so the wrapper refuses it outright.
+: >"$args_log"
+STUB_ARGS_LOG="$args_log" run_push "$work" --worktree "$wt" --issue KEN-1 --check-args
+assert_eq "$RUN_RC" "1" "--check-args cannot be forwarded through the wrapper"
+assert_contains "$(cat "$run_err")" "parse-only mode" "the refusal explains why"
+assert_eq "$(cat "$args_log")" "" "the refused --check-args never runs a push"
 
 echo
 echo "=== a rebase map is recorded and recorded fix SHAs rewritten ==="

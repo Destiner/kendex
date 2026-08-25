@@ -37,9 +37,14 @@
 # Usage:
 #   worktree-push --worktree PATH --issue ID [--state-dir DIR] [push flags...]
 #
-# Push flags forwarded to `worktree push`: -u/--set-upstream and --no-rebase.
-# Any other flag is a usage error here — `worktree push` ignores flags it
-# does not know, so forwarding a typo would silently change nothing.
+# Every argument outside this wrapper's own namespace (--worktree, --issue,
+# --state-dir, --help) is forwarded verbatim to `worktree push`, which rejects
+# a flag it does not know. The push flag vocabulary lives there alone; see
+# `worktree push --help`. This wrapper validates before it acts: the exact
+# forwarded vector goes to `worktree push --check-args` — push's own parser,
+# doing no git work — before any state is consumed, so a mistyped flag is
+# refused with the pending sidecar still in place. A misspelling of an owned
+# flag needs no separate guess here: push does not know --sate-dir either.
 # The state file resolves exactly like any other workflow-state call:
 # --state-dir, then $ORCH_STATE_DIR, then tmp/ under the caller's working
 # directory.
@@ -116,15 +121,25 @@ while [[ $# -gt 0 ]]; do
 		state_dir="${1#--state-dir=}"
 		shift
 		;;
-	-u | --set-upstream | --no-rebase)
-		push_args+=("$1")
-		shift
-		;;
 	-h | --help)
 		usage
 		exit 0
 		;;
-	*) fail "unknown option: $1 (worktree push ignores unknown flags, so it is refused here)" ;;
+	# push's parse-only mode is this wrapper's own tool, not a mode it can
+	# forward: it would leave the real push a no-op while the sidecar was
+	# already consumed and state reconciled against a rebase that never ran.
+	--check-args | --check-args=*)
+		fail "--check-args is push's parse-only mode and cannot be forwarded through this wrapper: the push would do nothing while workflow state was reconciled anyway"
+		;;
+	# Everything outside this wrapper's own namespace is `worktree push`'s to
+	# accept or reject; push fails closed on a flag it does not know, so
+	# pass-through here keeps one copy of that vocabulary (KEN-570). The
+	# forwarded vector is put to push's parser below, before this run
+	# consumes anything.
+	*)
+		push_args+=("$1")
+		shift
+		;;
 	esac
 done
 
@@ -138,6 +153,23 @@ worktree_abs="$(cd -P -- "$worktree" 2>/dev/null && pwd -P)" \
 	|| fail "not a directory: $worktree"
 git_dir="$(git -C "$worktree_abs" rev-parse --absolute-git-dir 2>/dev/null)" \
 	|| fail "not a git worktree: $worktree_abs"
+
+# Validate before acting. A mistyped --state-dir is the dangerous case: it
+# falls back silently (ORCH_STATE_DIR, then tmp/ under the caller's
+# directory), so a typo would resolve some other issue's state, consume this
+# issue's pending sidecar into it, and only then let push reject the flag,
+# with the sidecar already gone. --check-args runs push's own argument loop —
+# the same code path the real push runs, so the two cannot drift — and does no
+# git work, so a rejection here costs nothing. The vector is the one the real
+# push gets, positional included. The check runs FROM the worktree, already
+# proven a git worktree above: the script resolves its project at startup and
+# exits before parsing anything when the caller's directory is not a
+# repository, which would make a startup failure read as an argument verdict.
+check_rc=0
+(cd "$worktree_abs" && "$WORKTREE_BIN" push --check-args "$worktree_abs" ${push_args[@]+"${push_args[@]}"}) \
+	|| check_rc=$?
+[[ "$check_rc" -eq 0 ]] \
+	|| fail "worktree push refused these arguments (its exit was $check_rc; any diagnostic is above); nothing was consumed and no state was reconciled"
 
 state_flags=()
 [[ -z "$state_dir" ]] || state_flags=(--state-dir "$state_dir")
