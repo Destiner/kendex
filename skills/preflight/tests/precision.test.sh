@@ -242,6 +242,206 @@ git -C "$R" add -A
 run_pf
 fires "a suite outside every manifest subtree is still unwired" "tests/far.test.sh:0: [unwired-suite]"
 
+echo "=== a bare vitest/jest invocation wires its default include glob ==="
+# A root manifest scripting `vitest run` names no path and carries no glob,
+# yet the runner's own default include executes every *.test.ts it matches.
+seed vitestdefault
+printf '{\n  "scripts": { "test": "vitest run" },\n  "devDependencies": { "vitest": "^3.0.0" }\n}\n' >"$R/package.json"
+git -C "$R" add -A
+git -C "$R" commit -qm "vitest runner with no explicit include"
+mkdir -p "$R/src/__tests__"
+printf 'export {}\n' >"$R/src/__tests__/session.test.ts"
+printf 'export {}\n' >"$R/src/__tests__/session.test.mjs"
+git -C "$R" add -A
+run_pf
+clean "a bare vitest run script wires the ts and mjs suites its default include matches"
+
+# The default include reaches no shell suite, so the lane still runs red
+# in the same fixture.
+printf '#!/usr/bin/env bash\nset -euo pipefail\necho orphan\n' >"$R/tests/orphan.test.sh"
+git -C "$R" add -A
+run_pf
+fires "the vitest default include does not reach a shell suite" "tests/orphan.test.sh:0: [unwired-suite]"
+
+# The same word as a dependency key is not an invocation: nothing runs.
+seed vitestdep
+printf '{\n  "scripts": { "test": "node run-tests.js" },\n  "devDependencies": { "vitest": "^3.0.0" }\n}\n' >"$R/package.json"
+git -C "$R" add -A
+git -C "$R" commit -qm "vitest as a dependency, never invoked"
+printf 'export {}\n' >"$R/orphan.test.ts"
+git -C "$R" add -A
+run_pf
+fires "vitest named only as a dependency wires nothing" "orphan.test.ts:0: [unwired-suite]"
+
+# Jest's default testMatch covers mc-prefixed extensions too, so a jest
+# script wires ts and mjs suites alike.
+seed jestdefault
+printf '{\n  "scripts": { "test": "jest --ci" }\n}\n' >"$R/package.json"
+git -C "$R" add -A
+git -C "$R" commit -qm "jest runner with no explicit testMatch"
+printf 'export {}\n' >"$R/a.test.ts"
+printf 'export {}\n' >"$R/b.test.mjs"
+git -C "$R" add -A
+run_pf
+clean "a jest script wires the ts and mjs suites its default testMatch covers"
+
+# A workflow invoking vitest runs from the repo root, so its default
+# include wires a suite far from .github/workflows.
+seed workflowbare
+mkdir -p "$R/.github/workflows"
+printf 'name: ci\non: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: vitest\n' >"$R/.github/workflows/ci.yml"
+git -C "$R" add -A
+git -C "$R" commit -qm "workflow invoking bare vitest"
+printf 'export {}\n' >"$R/w.test.ts"
+git -C "$R" add -A
+run_pf
+clean "a workflow invoking bare vitest wires a root-level suite"
+
+# The same invocation single-quoted is still an invocation.
+seed workflowsq
+mkdir -p "$R/.github/workflows"
+printf "name: ci\non: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: 'vitest'\n" >"$R/.github/workflows/ci.yml"
+git -C "$R" add -A
+git -C "$R" commit -qm "workflow invoking single-quoted vitest"
+printf 'export {}\n' >"$R/wq.test.ts"
+git -C "$R" add -A
+run_pf
+clean "a single-quoted vitest invocation wires the suite"
+
+# A validate script under sub/tools runs from the tree that owns tools/:
+# its default include wires that subtree and nothing outside it.
+seed validatescope
+mkdir -p "$R/sub/tools"
+printf '#!/usr/bin/env bash\nset -euo pipefail\nvitest run\n' >"$R/sub/tools/validate-js"
+git -C "$R" add -A
+git -C "$R" commit -qm "validate script invoking vitest below the root"
+printf 'export {}\n' >"$R/sub/app.test.ts"
+printf 'export {}\n' >"$R/far.test.ts"
+git -C "$R" add -A
+run_pf
+fires "a suite outside the validate script's tree still fires" "far.test.ts:0: [unwired-suite]"
+case "$OUT" in *"sub/app.test.ts"*) bad "the validate script wires the suite in its own tree" "$OUT" ;; *) ok "the validate script wires the suite in its own tree" ;; esac
+
+# A script value that is exactly the runner name, no arguments.
+seed barequote
+printf '{\n  "scripts": { "test": "vitest" }\n}\n' >"$R/package.json"
+git -C "$R" add -A
+git -C "$R" commit -qm "script value of bare vitest with no arguments"
+printf 'export {}\n' >"$R/q.test.ts"
+git -C "$R" add -A
+run_pf
+clean "a script value of exactly vitest wires the suite"
+
+# A Makefile recipe line that ends at the runner name.
+seed makeend
+printf 'test:\n\tvitest\n' >"$R/Makefile"
+git -C "$R" add -A
+git -C "$R" commit -qm "Makefile recipe ending in vitest"
+printf 'export {}\n' >"$R/m.test.ts"
+git -C "$R" add -A
+run_pf
+clean "a Makefile recipe line ending in vitest wires the suite"
+
+# A manager prefix is an invocation: the token directly before the
+# runner name decides.
+seed npxprefix
+printf '{\n  "scripts": { "test": "npx vitest" }\n}\n' >"$R/package.json"
+git -C "$R" add -A
+git -C "$R" commit -qm "vitest behind an npx prefix"
+printf 'export {}\n' >"$R/n.test.ts"
+git -C "$R" add -A
+run_pf
+clean "an npx-prefixed vitest invocation wires the suite"
+
+# So is an exec form.
+seed execform
+printf '{\n  "scripts": { "test": "pnpm exec vitest" }\n}\n' >"$R/package.json"
+git -C "$R" add -A
+git -C "$R" commit -qm "vitest behind pnpm exec"
+printf 'export {}\n' >"$R/e.test.ts"
+git -C "$R" add -A
+run_pf
+clean "a pnpm exec vitest invocation wires the suite"
+
+# Environment assignment words before the runner are part of the
+# invocation, not a different command.
+seed envassign
+printf '{\n  "scripts": { "test": "CI=1 vitest run" }\n}\n' >"$R/package.json"
+git -C "$R" add -A
+git -C "$R" commit -qm "vitest behind an environment assignment"
+printf 'export {}\n' >"$R/v.test.ts"
+git -C "$R" add -A
+run_pf
+clean "an env-assignment-prefixed vitest invocation wires the suite"
+
+# A quoted assignment value with embedded spaces is still one
+# assignment word.
+seed quotedassign
+printf '{\n  "scripts": { "test": "NODE_OPTIONS='"'"'--experimental-vm-modules --trace-warnings'"'"' jest" }\n}\n' >"$R/package.json"
+git -C "$R" add -A
+git -C "$R" commit -qm "jest behind a quoted multi-flag assignment"
+printf 'export {}\n' >"$R/qa.test.ts"
+git -C "$R" add -A
+run_pf
+clean "a quoted-value assignment before jest wires the suite"
+
+# And a chained invocation after a shell connector.
+seed chained
+printf '{\n  "scripts": { "test": "node setup.js && vitest run" }\n}\n' >"$R/package.json"
+git -C "$R" add -A
+git -C "$R" commit -qm "vitest chained after a setup command"
+printf 'export {}\n' >"$R/c.test.ts"
+git -C "$R" add -A
+run_pf
+clean "a vitest invocation chained after && wires the suite"
+
+# A comment is not an invocation: a workflow whose only vitest reference
+# is a comment wires nothing.
+seed prosecomment
+mkdir -p "$R/.github/workflows"
+printf 'name: ci\non: push\n# TODO(#1): migrate to vitest — run: vitest someday\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: bash tests/other.test.sh\n' >"$R/.github/workflows/ci.yml"
+git -C "$R" add -A
+git -C "$R" commit -qm "workflow mentioning vitest only in a comment"
+printf 'export {}\n' >"$R/p.test.ts"
+git -C "$R" add -A
+run_pf
+fires "a workflow comment naming vitest wires nothing" "p.test.ts:0: [unwired-suite]"
+
+# Neither is a trailing comment: a connector and invocation living after
+# a whitespace-opened # wire nothing.
+seed trailingcomment
+mkdir -p "$R/.github/workflows"
+printf 'name: ci\non: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok # ; vitest\n' >"$R/.github/workflows/ci.yml"
+git -C "$R" add -A
+git -C "$R" commit -qm "workflow naming vitest only in a trailing comment"
+printf 'export {}\n' >"$R/t.test.ts"
+git -C "$R" add -A
+run_pf
+fires "a trailing comment naming vitest wires nothing" "t.test.ts:0: [unwired-suite]"
+
+# Prose fields are not invocations either: a description and a keywords
+# array naming both runners wire nothing.
+seed prosejson
+printf '{\n  "description": "tested with vitest and jest",\n  "keywords": ["vitest", "jest"],\n  "scripts": { "test": "node run-tests.js" }\n}\n' >"$R/package.json"
+git -C "$R" add -A
+git -C "$R" commit -qm "manifest naming the runners only in prose"
+printf 'export {}\n' >"$R/k.test.ts"
+git -C "$R" add -A
+run_pf
+fires "manifest prose naming vitest and jest wires nothing" "k.test.ts:0: [unwired-suite]"
+
+# A vitest runner below the repo root runs from its own directory and says
+# nothing about a suite outside that subtree.
+seed vitestscope
+mkdir -p "$R/pkg"
+printf '{\n  "scripts": { "test": "vitest run" }\n}\n' >"$R/pkg/package.json"
+git -C "$R" add -A
+git -C "$R" commit -qm "vitest runner below the repo root"
+printf 'export {}\n' >"$R/far.test.ts"
+git -C "$R" add -A
+run_pf
+fires "a sub-package vitest runner wires nothing outside its subtree" "far.test.ts:0: [unwired-suite]"
+
 echo "=== inert trap text arms nothing; quoted command text swallows nothing; an untracked runner wires ==="
 seed inert
 mkdir -p "$R/.github/workflows"
