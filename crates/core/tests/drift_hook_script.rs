@@ -93,11 +93,61 @@ fn the_hook_script_honors_its_contract() {
     assert!(out.contains("skipped"), "{out}");
     assert_eq!(code, 0);
 
-    // A check that cannot run: exactly one "drift status unknown" line.
+    // Exit 2 and nothing said: exactly one "could not run" line.
     let (out, code) = run_hook(dir, "{}", &[], Some("#!/bin/sh\nexit 2\n"));
     assert_eq!(out.lines().count(), 1, "{out}");
-    assert!(out.contains("drift status unknown"), "{out}");
+    assert!(out.contains("could not run (exit 2)"), "{out}");
     assert_eq!(code, 0);
+
+    // Exit 2 with kendex's own Error: line (stderr): nothing was checked,
+    // so it is a failure to run, and the diagnostic reaches the agent.
+    let (out, code) = run_hook(
+        dir,
+        "{}",
+        &[],
+        Some("#!/bin/sh\necho 'Error: loading lock file' >&2\nexit 2\n"),
+    );
+    assert!(
+        out.starts_with("kendex check could not run (exit 2)"),
+        "{out}"
+    );
+    assert!(out.contains("Error: loading lock file"), "{out}");
+    assert!(!out.contains("incomplete"), "{out}");
+    assert_eq!(code, 0);
+
+    // Exit 2 with a report: the check ran and says what it could not
+    // check, so the report is relayed under an "incomplete" line.
+    let (out, code) = run_hook(
+        dir,
+        "{}",
+        &[],
+        Some("#!/bin/sh\nprintf 'stale:\\n  x\\ncould not check:\\n  lock: bad\\n'\nexit 2\n"),
+    );
+    assert!(out.starts_with("kendex check incomplete (exit 2)"), "{out}");
+    assert!(out.contains("stale:") && out.contains("lock: bad"), "{out}");
+    assert!(!out.contains("could not run"), "{out}");
+    assert_eq!(code, 0);
+
+    // Any other exit code is not a kendex verdict.
+    let (out, code) = run_hook(dir, "{}", &[], Some("#!/bin/sh\necho fatal\nexit 3\n"));
+    assert!(
+        out.starts_with("kendex check could not run (exit 3)"),
+        "{out}"
+    );
+    assert!(out.contains("fatal"), "{out}");
+    assert_eq!(code, 0);
+
+    // A signal or a timeout kills the check before it says anything. The
+    // empty-output arm belongs to exit 2 alone, so this keeps the colon
+    // over a blank line — the same text the shell and Pi hooks print.
+    let (out, code) = run_hook(dir, "{}", &[], Some("#!/bin/sh\nexit 3\n"));
+    assert_eq!(
+        (out.as_str(), code),
+        (
+            "kendex check could not run (exit 3); drift status unknown:\n\n",
+            0
+        )
+    );
 
     // Drift: the report passes through, exit stays 0.
     let (out, code) = run_hook(
@@ -108,7 +158,24 @@ fn the_hook_script_honors_its_contract() {
     );
     assert_eq!((out.as_str(), code), ("stale:\n", 0));
 
-    // Clean: silent.
+    // Clean: silent, whatever kendex said on stderr on the way.
     let (out, code) = run_hook(dir, "{}", &[], Some("#!/bin/sh\nexit 0\n"));
     assert_eq!((out.as_str(), code), ("", 0));
+    let (out, code) = run_hook(dir, "{}", &[], Some("#!/bin/sh\necho noise >&2\nexit 0\n"));
+    assert_eq!((out.as_str(), code), ("", 0));
+
+    // #3: an error: line inside a could-not-check line is part of a
+    // completed report, not the pre-check failure shape.
+    let (out, code) = run_hook(
+        dir,
+        "{}",
+        &[],
+        Some(
+            "#!/bin/sh\nprintf 'could not check:\\n  source github.com/x/y unreachable since 2026-08-01: error: cannot lock ref\\n'\nexit 2\n",
+        ),
+    );
+    assert!(out.starts_with("kendex check incomplete (exit 2)"), "{out}");
+    assert!(out.contains("error: cannot lock ref"), "{out}");
+    assert!(!out.contains("could not run"), "{out}");
+    assert_eq!(code, 0);
 }
