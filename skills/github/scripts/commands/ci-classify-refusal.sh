@@ -22,9 +22,12 @@
 #                          state, workflow, and run id
 #   superseded: ...        (ci_failed only) runs on the head whose checks
 #                          were NOT counted — workflow runs (`workflow=`)
-#                          and older same-name commit statuses (`status=`)
-#                          alike; a failure someone read from raw
-#                          `gh pr checks` output may belong here
+#                          and commit statuses (`status=`) alike. A status
+#                          lands here when a newer same-name status
+#                          replaced it, and also when it is the latest of
+#                          its name but the run it links was retired by the
+#                          stale-status rewrite. A failure someone read
+#                          from raw `gh pr checks` output may belong here
 #
 # Every line reads ONE checks snapshot: pr-merge --check embeds the rollup
 # it classified in its JSON (`checks`), and this script scopes that instead
@@ -161,9 +164,12 @@ echo "$scoped_json" | jq -r "$CI_RUN_JQ_DEFS$SANITIZE_JQ"'
 
 # Superseded covers both record kinds: workflow runs whose checks were
 # dropped by run selection, and commit-status records that lost the
-# per-name grouping to a newer same-name status.
+# per-name grouping to a newer same-name status. What was kept is head_runs
+# itself, not every run id the scoped records mention: a status the rewrite
+# held EXPECTED still links the run that rewrite retired, and reading that
+# link as kept would leave the retired run on neither list.
 jq -n --argjson raw "$ci_json" --argjson scoped "$scoped_json" "$CI_RUN_JQ_DEFS$SANITIZE_JQ"'
-    ([$scoped[] | runid | select(. != null)] | unique) as $kept
+    ($scoped | head_runs) as $kept
     | (($raw
         | map(select((.workflow // "") != "")
               | {id: ("workflow=" + (.workflow | clean)), run: runid}
