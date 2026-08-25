@@ -6,6 +6,12 @@ changes carry a **Breaking** call-out with their migration note inline.
 
 ## [Unreleased]
 
+### Removed
+
+- **Breaking:** the `trading-design` skill is no longer offered. Run
+  `kendex remove trading-design --scope all` wherever it is installed (or
+  drop its `[skills.trading-design]` entries and run `kendex apply --scope all`).
+
 ### Added
 
 - Asking for an item whose files are already on disk — the normal shape of
