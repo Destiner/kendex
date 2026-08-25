@@ -33,13 +33,18 @@ pub struct MineRow {
     /// offers surface reads this to know what to offer.
     pub declared: bool,
     pub breakage: u32,
-    pub held_back: u32,
-    pub warned: u32,
     pub advisory: u32,
+    /// Safety findings across every package — advisory, never a refusal.
+    pub safety_findings: u32,
     /// Every check finding, file-first, so the app can open each one.
     pub findings: Vec<StatusFinding>,
     pub git: GitReadiness,
 }
+
+/// The versioned envelope `marketplace mine --json` wraps its rows in.
+/// Schema 2 counts safety findings as `safetyFindings` per marketplace,
+/// with no verdict beside them.
+pub const MINE_SCHEMA: u32 = 2;
 
 /// One check finding shaped for a screen with an Open button.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -101,9 +106,8 @@ pub fn status(path: &Path) -> Result<MineRow> {
         declared: config.mode == crate::source::CatalogMode::Explicit
             || config.mode == crate::source::CatalogMode::PluginRegistry,
         breakage: tally.breakage as u32,
-        held_back: tally.held_back as u32,
-        warned: tally.warned as u32,
         advisory: tally.advisory as u32,
+        safety_findings: tally.findings as u32,
         findings: report.findings().map(shape).collect(),
         git: git_readiness(path),
     })

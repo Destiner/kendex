@@ -19,9 +19,8 @@ function row(overrides: Partial<MineRow>): MineRow {
     bundles: 1,
     declared: true,
     breakage: 0,
-    heldBack: 0,
-    warned: 0,
     advisory: 0,
+    safetyFindings: 0,
     findings: [],
     git: {
       repository: true,
@@ -46,8 +45,8 @@ let rows: MineListRow[] = [
       counts: { skill: 1 },
       bundles: 0,
       declared: false,
-      warned: 1,
       advisory: 1,
+      safetyFindings: 1,
       findings: [
         {
           file: "skills/gh/SKILL.md",
@@ -115,18 +114,19 @@ const candidates: ImportCandidate[] = [
   },
 ];
 
+const safetyLabel = ({ safetyFindings: n }: MineRow) =>
+  n ? `${n} safety finding(s), advisory` : "No safety findings";
+
 function preflightFor(path: string): SubmitPreflight {
-  const entry = rows.find(
-    (kept) => kept.state === "ready" && kept.row.path === path,
-  );
+  const entry = rows.find((k) => k.state === "ready" && k.row.path === path);
   const mine = entry && entry.state === "ready" ? entry.row : row({});
-  const ready = mine.git.candidate !== null;
   return {
     row: mine,
     candidate: mine.git.candidate,
-    ready,
+    ready: mine.git.candidate !== null,
     checks: [
       { ok: true, label: "Passes the check", fix: null },
+      { ok: true, label: safetyLabel(mine), fix: null },
       { ok: true, label: "Has a name and description", fix: null },
       {
         ok: mine.license !== null,

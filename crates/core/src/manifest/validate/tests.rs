@@ -87,7 +87,7 @@ harness = "copilot"
 fn only_the_kinds_a_catalog_offers_may_carry_a_plugin_segment() {
     let table = parse(
         r#"
-schema = 5
+schema = 6
 [sources.market]
 repo = "owner/market"
 [skills."tools/eda"]
@@ -104,7 +104,7 @@ source = "market"
 
     let table = parse(
         r#"
-schema = 5
+schema = 6
 [sources.market]
 repo = "owner/market"
 [hooks."tools/guard"]
@@ -136,7 +136,7 @@ source = "market"
 fn a_source_revision_is_a_string_on_a_repo_and_stray_keys_are_findings() {
     let table = parse(
         r#"
-schema = 5
+schema = 6
 [sources.pinned]
 repo = "owner/repo"
 rev = "v1.2.0"
@@ -146,7 +146,7 @@ rev = "v1.2.0"
 
     let table = parse(
         r#"
-schema = 5
+schema = 6
 [sources.local-path]
 path = "../catalog"
 rev = "v1.2.0"
@@ -273,4 +273,31 @@ agents = "all"
     .parse()
     .unwrap();
     assert_eq!(validate(&table), Vec::new());
+}
+
+/// The safety-decision tables schema 6 retired are read from an older file
+/// and dropped, and on a current file they are stray keys: a record put
+/// back by hand is named with the remove-it fix, never dropped in silence.
+#[test]
+fn retired_safety_tables_are_stray_keys_on_a_current_file() {
+    let body = r#"
+[sources.market]
+repo = "owner/market"
+[skills.deploy]
+source = "market"
+[safety-overrides."skill:deploy:claude"]
+review-hash = "abc"
+[safety-reviews."skill:deploy:claude"]
+review-hash = "abc"
+"#;
+    assert_eq!(validate(&parse(&format!("schema = 5\n{body}"))), Vec::new());
+
+    let findings = validate(&parse(&format!("schema = 6\n{body}")));
+    let located: Vec<&str> = findings.iter().map(|f| f.location.as_str()).collect();
+    assert_eq!(
+        located,
+        ["safety-overrides", "safety-reviews"],
+        "{findings:?}"
+    );
+    assert!(findings.iter().all(|f| f.fix.starts_with("remove it")));
 }

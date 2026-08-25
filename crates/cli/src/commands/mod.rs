@@ -5,7 +5,6 @@ pub mod apply_cmd;
 pub mod blocked;
 pub mod check;
 pub mod check_catalog;
-pub mod decisions_cmd;
 pub mod diff_cmd;
 pub mod drift_hook;
 pub mod engine_common;

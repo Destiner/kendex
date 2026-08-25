@@ -5,13 +5,15 @@ import { StatusDot } from "@/components/status-dot";
 import { SEVERITY_DOT_TONE, SEVERITY_LABELS, sentence } from "@/lib/labels";
 
 /**
- * One finding, read top to bottom as: what it is, what to do, where.
+ * One finding, read top to bottom as: what it is, where. No fix line: the
+ * score is advisory, and the finding says what was matched, not what to do.
  *
  * How bad it is rides on the dot — the same dot the rows above use — so the
- * claim starts at the same left edge every time, and the word itself is on
- * the dot for anyone who needs it in text. The engine writes its messages
- * with `code` in them, so they render as the author wrote them rather than
- * printing their own backticks.
+ * claim starts at the same left edge every time, and the word itself leads
+ * the message in visible text, so colour is never the only carrier for
+ * anyone: sighted, keyboard, or screen reader alike. The engine writes its
+ * messages with `code` in them, so they render as the author wrote them
+ * rather than printing their own backticks.
  *
  * Every place the rule fired is a file you can open. One is shown; the rest
  * are a click away in the same row, because a rule that fired in twenty
@@ -20,14 +22,9 @@ import { SEVERITY_DOT_TONE, SEVERITY_LABELS, sentence } from "@/lib/labels";
 export function FindingLine({
   finding,
   locations = [finding.location],
-  settledBy,
 }: {
   finding: Finding;
   locations?: string[];
-  /** Present where somebody has already ruled on this finding: their line
-   *  replaces the fix, because there is nothing here for the reader to do
-   *  and the sentence that matters is whose call it was. */
-  settledBy?: string;
 }) {
   return (
     <div className="flex items-start gap-2.5">
@@ -38,21 +35,14 @@ export function FindingLine({
       />
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <p className="text-sm break-words">
+          <span className="font-medium">
+            {SEVERITY_LABELS[finding.severity]}:{" "}
+          </span>
           <InlineMarkdown source={sentence(finding.message)} />
         </p>
-        {/* The fix and the places sit on the claim's own left edge, not
-            stepped in from it: an indent would read as a sub-list of the
-            sentence rather than the rest of the same thought. */}
-        {settledBy ? (
-          <p className="pt-0.5 text-[13px] break-words text-foreground/70">
-            {settledBy}
-          </p>
-        ) : (
-          <p className="pt-0.5 text-[13px] break-words text-foreground/70">
-            <span className="font-medium text-foreground">Fix: </span>
-            {finding.remediation}
-          </p>
-        )}
+        {/* The places sit on the claim's own left edge, not stepped in
+            from it: an indent would read as a sub-list of the sentence
+            rather than the rest of the same thought. */}
         <div className="flex flex-wrap items-center gap-1.5">
           <FoundAt locations={locations} />
         </div>

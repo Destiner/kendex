@@ -67,6 +67,9 @@ enum Command {
     },
     /// Regenerate every declared installation from its source
     Refresh(commands::refresh::RefreshArgs),
+    /// What the safety check found in installed content: a score and its
+    /// findings per item, advisory
+    Findings(commands::findings::FindingsArgs),
     /// Check installs against the lock; non-zero exit on drift
     Verify {
         names: Vec<String>,
@@ -78,14 +81,6 @@ enum Command {
     },
     /// Make disk match declaration, orphan cleanup included
     Apply(commands::apply_cmd::ApplyArgs),
-    /// What the safety check found in installed content, with the token
-    /// each finding is dismissed by
-    Findings(commands::findings::FindingsArgs),
-    /// Record that a finding is not a problem, by its token
-    Dismiss(commands::decisions_cmd::DismissArgs),
-    /// Every recorded safety decision — acceptances and dismissals — and
-    /// whether each still applies; take one back with --revoke
-    Decisions(commands::decisions_cmd::DecisionsArgs),
     /// Record an observed item into the manifest (content moves to the
     /// local source)
     Adopt {
@@ -179,7 +174,7 @@ enum Command {
     /// consumes (default: the current directory)
     Index {
         dir: Option<std::path::PathBuf>,
-        /// Machine-readable summary (schema 1)
+        /// Machine-readable summary (schema 2)
         #[arg(long)]
         json: bool,
     },
@@ -280,6 +275,7 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             no_sweep,
         } => remove(&env, names, global, scope, sweep, no_sweep)?,
         Command::Refresh(args) => commands::refresh::run_args(&env, args)?,
+        Command::Findings(args) => commands::findings::findings(&env, args)?,
         Command::Verify {
             names,
             global,
@@ -289,9 +285,6 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             return commands::verify::run(&env, names, filter);
         }
         Command::Apply(args) => commands::apply_cmd::run(&env, args)?,
-        Command::Findings(args) => commands::findings::findings(&env, args)?,
-        Command::Dismiss(args) => commands::decisions_cmd::dismiss_cmd(&env, args)?,
-        Command::Decisions(args) => commands::decisions_cmd::decisions(&env, args)?,
         Command::Adopt {
             kind,
             name,

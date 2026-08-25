@@ -13,7 +13,6 @@ an outside contributor.
 - `kendex check` exits 1, not 2, when packages await re-evaluation, so the
   session-start report no longer opens with "kendex check could not run" after
   a completed run. The drift hook script changed; `kendex drift-hook` reinstalls it.
-
 - A hook found in a settings file is safety-checked on its own entry, not
   the whole file: a `permissions.ask` guard naming `mkfs` no longer flags
   every hook beside it, and a hook whose own entry carries it still scores.
@@ -37,18 +36,18 @@ an outside contributor.
 - `KENDEX_DRIFT_HOOK_AVAILABLE` and the pi-hooks `sessionDriftAvailable` setting
   are gone: both passed `--no-available`, a flag `kendex check` never had, so
   turning them off broke every session start.
+- **Breaking:** safety is advisory: nothing holds an install or update back.
+  The app's Review & apply page, `kendex dismiss`/`decisions` and
+  `apply --allow-unsafe` are gone; kendex.toml drops recorded decisions.
 - **Breaking:** the `trading-design` skill is no longer offered. Run
   `kendex remove trading-design --scope all` wherever it is installed (or
   drop its `[skills.trading-design]` entries and run `kendex apply --scope all`).
 
 ### Added
 
-- Moving an existing repo onto kendex works now: files already on disk
-  offer **Replace them** (to the trash) or, where supported, **Keep these
-  files**; CLI: `kendex adopt` and `kendex apply --replace-unmanaged`.
-- Catalog authors settle a reviewed safety finding (hooks excluded) with
-  `kendex dismiss --catalog`, committed in `kendex-reviews.toml`; installs
-  inherit the decision, and any edit to the item brings the hold back.
+- Moving an existing repo onto kendex works now: `kendex adopt` keeps files
+  already on disk as they are, and `kendex apply --replace-unmanaged`
+  installs over them (the old copies go to the trash).
 - The app has its own icon — the `x` from the kendex wordmark, at every size
   the desktop, dock, and installer use.
 - Releases ship for Intel Macs and arm64 Linux alongside Apple silicon,
@@ -70,6 +69,9 @@ an outside contributor.
   `"class": "unevaluated"` where it had `"class": "unknown"`. A parser
   matching that field exhaustively has to accept the new value.
 - orch: the internal re-review loop stops at `REVIEW_MAX_CYCLES` (default 4) — `workflow-state set … rereview_panel` refuses once `cycles` is past it, so a review cannot run on for ten cycles before the PR is opened.
+- **Breaking:** `check --catalog --json`, `marketplace mine --json` and `index --json`
+  are schema 2: the held-back/warned counts, verdicts and per-finding dismissal tokens are
+  gone, replaced by `safety_findings` (check), `safetyFindings` (mine) and `checked.findings` (index); the check never fails on them.
 - **Breaking:** the install record's format moves to version 5. Older files
   upgrade in place on the first apply; if two kendex versions share a
   project, update both.
@@ -85,11 +87,9 @@ an outside contributor.
 - The safety check reads every file to its last byte (it used to stop at
   512 KB or 200 files), so large packages can show findings that were
   always there; unreadable ones report "Not fully checked", not a score.
-- Safety verdicts say what they are: automated checks, not reviews —
+- Safety scores say what they are: automated checks, not reviews —
   beside every score, dot, and the About tab's wording.
-- A safety finding's message names what it fired on, and findings are
-  identified by rule and sentence so decisions survive rendering. Decisions
-  recorded before this release need re-recording from `kendex findings`.
+- A safety finding's message names what it fired on, never where.
 - The Updates page is one row per package, expanding to a row per place;
   "Update automatically" is renamed **Follow source** — nothing applies on
   its own — and `kendex updates` names the place on every line.
@@ -157,9 +157,6 @@ an outside contributor.
 - Pi no longer halts every session start in a managed project: kendex's Pi
   hooks moved out of Pi's reserved `hooks/` directory, and refresh migrates
   an existing install — moving only what kendex provably wrote.
-- Accepting a held-back update actually installs it: `kendex findings`
-  prints the token `--allow-unsafe` takes, labels installed copy and
-  held-back update separately, and a stale acceptance stops the run out loud.
 - `kendex apply` and `kendex refresh` print what they cannot change and
   why, instead of "nothing to do".
 - The Linux app draws at the right size on HiDPI Wayland (native Wayland
@@ -171,9 +168,7 @@ an outside contributor.
   snapshot file half-written.
 - An agent renders only the skills it actually has; a removed reviewer
   skill no longer comes back on every apply.
-- A marketplace package's preview scores what installing would write, and
-  packages whose findings the publisher already reviewed install without
-  re-warning — the default catalog ships nothing unsettled.
+- A marketplace package's preview scores what installing would write.
 - An unreadable catalog's own bytes are shown escaped, never written to
   the terminal.
 - `kendex adopt` binds an adopted item to the tools that were actually

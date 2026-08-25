@@ -14,16 +14,16 @@ Four verbs over one model: **scan → declare → diff → apply**.
   Read-only with zero adoption; nothing copies into a shadow store.
 - **Declare** — a per-scope `kendex.toml` manifest is the only durable home
   of user intent.
-- **Diff** — drift = declared vs observed. The Review & apply page is this
-  diff.
+- **Diff** — drift = declared vs observed. `kendex apply --plan` and the
+  audit every app page reads are this diff.
 - **Apply** — make disk match declaration, plan shown first. Adopt is the
   reverse arrow: record an observed item into the manifest. It lives on the
-  Library's Installed tab beside the item; the Review page counts what it
-  does not manage as a footnote pointing there. Adopt also appears on
-  Review for one row only: a declared item whose files were already on
-  disk. Taking one over is scoped to the item the row names, revalidated
-  against a fresh read before anything is written, and the apply it runs
-  is the scope's whole plan — the confirm says so.
+  Library's Installed tab beside the item and behind `kendex adopt`. Taking
+  over files already sitting where a declared item goes is `kendex apply
+  --replace-unmanaged`, scope-wide; the app has no exit for that conflict
+  until KEN-582 attaches one, and `replace_unmanaged_item` (per item,
+  revalidated against a fresh read, running the scope's whole plan) is the
+  command it will wire.
 
 Every page and every CLI verb is a projection of these four; none owns
 logic.
@@ -87,17 +87,19 @@ lives in one capability table read by core and UI.
      at it) and never narrows an existing declaration. Adopt works only at
      a tool's own position, and only for kinds it can take — not a folder
      where one file goes or vice versa.
-   - **Take-over** (`replace_unmanaged` / `--replace-unmanaged`, or the
-     per-item `replace_unmanaged_names`) keeps the declaration and moves
-     the files to the trash first, bound to the bytes the plan read. A
-     link is never its target, nor is a position any install recorded
-     writing. Whole or not at all: named per item, a place nothing can
-     settle refuses the run; scope-wide it is held back (the files in its
-     way stay) and named in the notes with the place holding it; the sweep
-     fails, naming those, only when nothing settles. One refused at every
-     link is not held: its rows stand, nothing replaced.
+   - **Take-over** (`--replace-unmanaged` scope-wide, or the per-item
+     `replace_unmanaged_names` behind the app's `replace_unmanaged_item`)
+     keeps the declaration and moves the files to the trash first, bound
+     to the bytes the plan read. A link is never its target, nor is a
+     position any install recorded writing. Whole or not at all: named per
+     item, a place nothing can settle refuses the run; scope-wide it is
+     held back (the files in its way stay) and named in the notes with the
+     place holding it; the sweep fails, naming those, only when nothing
+     settles. One refused at every link is not held: its rows stand,
+     nothing replaced. The app offers adopt for unmanaged items, and a
+     declared item's conflict has no app exit until KEN-582 attaches one.
    The row states which files are in the way and which exits apply; the
-   app offers them as buttons, the CLI names the verb and flag. A foreign
+   CLI names the verb and flag under it. A foreign
    link pointing at a real skill folder several tools read offers keeping
    only. Exception: a link the user explicitly adopts that resolves to a
    real skill folder outside kendex's trees — adopt captures the folder's
@@ -204,12 +206,10 @@ lives in one capability table read by core and UI.
 - In a table, a harness is its mark (logo + hue), name on hover and for
   screen readers. Where a tool is stated once — a package's own details —
   the name is written out.
-- A status a colour can carry is a dot; words on hover and in a
-  screen-reader line.
+- A status a colour can carry is a dot; words on hover and in a screen-reader line.
 - Four type steps, no fifth: page title (24 semibold), section title (15
   semibold, full contrast), row label (14 medium), description (13 muted).
-  `components/section.tsx` owns all four. A heading outranks what it
-  introduces.
+  `components/section.tsx` owns all four. A heading outranks what it introduces.
 - Space groups things; boxes are for objects. A settings or detail surface
   is `Section` + `SettingRow`, never a stack of cards. A `Card` is a
   discrete thing a person acts on as a unit — a bundle, a problem, an error.
@@ -218,8 +218,6 @@ lives in one capability table read by core and UI.
   inside one, groups use dividers, a tinted band, and space.
 - `--muted-foreground` stays legible against card and page in both themes;
   no surface dims it further with an opacity suffix.
-- A finding is ruled on where it sits. The decision dialog restates what it
-  is deciding.
 - Three surface planes, back to front: sidebar, page, card. Every page
   draws width and gutters from `lib/layout.ts` — two widths only, a reading
   measure and full-width for data-dense tables.
@@ -259,8 +257,7 @@ lives in one capability table read by core and UI.
   pending says it is checking, failed that packages may be missing).
 - Hook events have one vocabulary — Claude Code's names, in
   `core/hook.rs::EVENTS`; every other harness's map is keyed by it. The
-  picker offers that list, the validator rejects anything outside it, the
-  renderers read it.
+  picker offers that list, the validator rejects anything outside it, the renderers read it.
 - **One hook model, two authors, delivery decided by capability.** A
   catalog hook and a manifest `[[custom-hooks]]` entry both become a
   `HookSpec` (`core/hook/spec.rs`) — script-bodied for the catalog,
@@ -277,8 +274,8 @@ lives in one capability table read by core and UI.
   `settings.json`. A custom hook's name is its identity (lock key
   `hook:<name>:<harness>`); the editor derives one from command + event on
   first save and writes it back; what it registered is recorded like any
-  other hook's. Custom hook commands pass the same safety gate as catalog
-  scripts.
+  other hook's. Custom hook commands are scored by the same safety rules as
+  catalog scripts.
 - A section with nothing in it is not rendered; an empty state appears only
   when the page would otherwise be blank, its read done. Skeletons draw
   mid-read; a failed read shows its error with a retry, kept figures headed
@@ -502,8 +499,7 @@ lives in one capability table read by core and UI.
   template earns it only when the on-disk comment is provably what v1
   seeded and matches the template word for word. When several skills ship
   one key, seeding writes the first declaration and refresh follows the
-  recorded owner; a bare key is never adopted; a skill the safety gate
-  holds back seeds nothing. Value lines are never touched; comment-block
+  recorded owner; a bare key is never adopted. Value lines are never touched; comment-block
   bytes (and an inserted seed block) are the only bytes that change.
 - **Schemas are versioned and migrations are applies.** Manifest and lock
   carry a format version; older files load, and the upgrade rides the
@@ -625,16 +621,15 @@ lives in one capability table read by core and UI.
   names that install. The walk stops at its skill cap. `source/about.rs`
   renders the one typed report the About tab and `kendex index` consume.
 - **Browsing is a read-side join; installed state is derived, never
-  stored.** Every `source/browse.rs` read takes a `Catalog`, `Subscription
-  { scope, source }` or `Repo { repo }`, so a listed marketplace opens
-  before anyone subscribes. Each row's state is joined from the scope's
-  manifest and lock on every call — installed is a lock entry from this
-  subscription, held-back-by-safety is content the gate refuses, "partly
-  installed (2 of 6)" is counted from a bundle's members; with no
-  subscription the join answers Available and judges name clashes against
-  the personal scope. A name another source holds is surfaced on the row
-  (`collision`); the refusal stays in the engine (invariant 4). A bare
-  repository is fetched by `remote::sync` into the store under the
+  stored.** Every `source/browse.rs` read takes a `Catalog`,
+  `Subscription { scope, source }` or `Repo { repo }`, so a listed
+  marketplace opens before anyone subscribes. Each row's state is joined
+  from the scope's manifest and lock on every call — installed is a lock
+  entry from this subscription, "partly installed (2 of 6)" is counted
+  from a bundle's members; with no subscription the join answers Available
+  and judges name clashes against the personal scope. A name another source holds is surfaced on
+  the row (`collision`); the refusal stays in the engine (invariant 4). A
+  bare repository is fetched by `remote::sync` into the store under the
   canonical `owner/repo` every GitHub spelling folds to — the key Subscribe
   is prefilled with; only GitHub opens blind (`NotBrowsable` otherwise); a
   root skill's file list and reads are confined to the skill tree.
@@ -642,16 +637,16 @@ lives in one capability table read by core and UI.
   copy) and names an enabled, readable subscription this machine holds;
   `useCatalog` moves the page onto it. Installing needs a subscription;
   `RepoAction` offers the one step: Subscribe when none declares the
-  repository, Turn on when a declared one is off, Refresh when declared but
-  unreadable, neutral until the live list has loaded. Pre-install safety
-  (`browse/safety.rs`) scores catalog bytes with the rules an install runs
-  and caches **findings and scores only** (`<key>/<commit>.safety/…`, never
-  inside the receipt-signed checkout), keyed by content hash plus rule-set,
-  discovery-table and record-format versions, each verified before reuse;
-  the warn/block verdict is derived from current thresholds at read time.
-  Browse is a preview of the verdict, never a second gate. `library.rs` is
-  the same join for the Library table: subscription, local content (with
-  what a fork replaced), or observed-and-unmanaged.
+  repository, Turn on when a declared one is off, Refresh when declared
+  but unreadable, neutral until the live list has loaded. Pre-install
+  safety (`browse/safety.rs`) scores catalog bytes with the rules an
+  install runs and caches **findings and scores only**
+  (`<key>/<commit>.safety/…`, never inside the receipt-signed checkout),
+  keyed by content hash plus rule-set, discovery-table and record-format
+  versions, each verified before reuse. Advisory like every reading of the
+  score — a preview, never a gate. `library.rs` is the same join for the
+  Library table: subscription, local content (with what a fork replaced),
+  or observed-and-unmanaged.
 - **A subscription's closure is derived by re-expansion; unsubscribing
   removes or keeps exactly it.** `engine/detach.rs` expands the installed
   set with the source present and again with its declarations gone, then
@@ -673,60 +668,22 @@ lives in one capability table read by core and UI.
   through.** `check_catalog.rs` (core) owns the two authoring passes —
   structural (would each harness's loader hold this item) and safety (the
   rules an install runs) — behind `kendex check --catalog [--json]`, the
-  indexer's per-package verdicts, and authoring preflight; the CLI prints
+  indexer's per-package scores, and authoring preflight; the CLI prints
   lines or a versioned envelope (`schema`, typed findings, counts, `ok`).
+  Structural breakage fails the check; safety findings are advisory
+  everywhere, `--strict` included, and never fail it.
   `source/index.rs` emits the per-marketplace summary the community
-  directory consumes (`kendex index [<dir>] --json`, schema 1, plain
+  directory consumes (`kendex index [<dir>] --json`, schema 2, plain
   directory, no network): metadata from the catalog's `[marketplace]` table
   (`source/meta.rs` — read-only, strings capped, control-char-safe),
   packages from `list_items` (pinned by test), safety scores from the check
   passes, bundles with members, About rows, findings. Field order in both
   JSON shapes is the schema — serde structs, no maps. `kendex marketplace
-  check` aliases `check --catalog --strict`, same exit codes. A
-  maintainer's reviewed findings live in a committed `kendex-reviews.toml`
-  at the catalog root (`check_catalog/dismissals.rs`): content-hash-bound
-  records keyed `kind:name`, written by `dismiss --catalog` from the tokens
-  `check --catalog` prints, for every kind but a hook. The check refuses
-  what an install refuses and reads an item's whole tree as an install
-  does. A dismissed finding stops counting and stays reported, marked, on
-  every machine installing from the catalog. `quality/author.rs` holds the
-  travelling shape (`AuthorReview`) and the one derivation
-  (`author::score`) the authoring check, gate, audit and browsing call. The
-  record binds to bytes — the item's own plus all its rendering reads
-  (`SourceConfig::rendering_inputs`); settles the publisher's own
-  occurrences only, at the weight the scored artifact gives each; and
-  carries only reasons an author can give — `trusted-source` and timestamps
-  refused on read and write. **The record never travels in a file this
-  project commits.** The lock carries none; the audit rebuilds
-  (`engine::desired::desired_as_installed`) the plan that produced what is
-  on disk, each installation at its lock entry's revision, and reads the
-  record out of *that* catalog. One item can sit at two revisions; an
-  installation answers for itself — one row, one entry, one revision, one
-  record. An item no rebuild covers carries no review; there is no signing
-  scheme. A hook records none: refused where read, and neither `dismiss
-  --catalog` nor `check --catalog` produces one. The audit matches an entry
-  to an observation by kind and name (or those of the artifact it emitted),
-  then by a review hash sealed by what is on disk. Every settled finding is
-  shown with publisher and reason — under the line in the CLI, in its own
-  row on a scope and in the held-back panel, and on a marketplace package's
-  page (via `browse/safety.rs`). Two decisions differing in reason or date
-  stay two rows. A record that settles nothing here is a note, never
-  silence. Finding identity is the rule and the sentence it fired with
-  (`Finding::fingerprint`): the message says what the rule fired *on*,
-  never where. A digest standing in for unprintable content is always
-  `DIGEST_CHARS` wide. Every location a decision covers is listed under it.
-  Line, file (Codex renders a command as a skill tree) and severity (one
-  step less in a supporting file) are out of the fingerprint. A fingerprint
-  is read only within one item's records, bound to the content hash and,
-  for a publisher's record, to which occurrences are theirs
-  (`quality::publishers`). **A boundary is carried from the code that drew
-  it, never found again in the finished text**: the renderer hands the tree
-  and its offsets down as one value, and every location is composed rather
-  than matched. For an artifact generated from inputs, a rendering from the
-  publisher's inputs alone is walked beside the real one, both in the one
-  deobfuscated space; prose the project supplied is skipped and asked of
-  the person; a finding naming a whole document is the publisher's only
-  where their own rendering produces it.
+  check` aliases `check --catalog --strict`, same exit codes.
+  A finding's message says what the rule fired *on*, never where: the
+  location is its own field, and rendering moves content between files
+  (Codex renders a command as a skill tree). A digest standing in for
+  unprintable content is always `DIGEST_CHARS` wide.
 - **The community directory is read like any remote: strictly, capped,
   honest about staleness.** `registry/` (core) consumes what
   `source/index.rs` producers feed kendex.ai: `index.rs` re-parses the
@@ -823,16 +780,20 @@ lives in one capability table read by core and UI.
   without a TTY: selection flags suppress prompts, and a verb needing input
   on a non-TTY fails before its first write, naming the flag. The CLI has
   no pickers.
-- **Two scores, never averaged; only one gates.** Safety answers "is this
-  dangerous" and can hold an install back; quality answers "is this well
-  made" and never does. Safety is `100 − Σ deductions` (Critical 25 / High
-  15 / Medium 8 / Low 3), first hit per rule at full weight and repeats at a
-  point each until they have cost as much again. Quality is wshobson's
-  weighted-dimension model, static layer only: no LLM judge, no simulation,
-  no letter grades.
-- **The aggregate warns; a Critical blocks by itself.** Block on any
-  Critical, or a score below the block threshold (default 60; warn 80).
-  Thresholds live in app settings, never in a manifest.
+- **Two scores, never averaged; both advisory.** Safety answers "is this
+  dangerous"; quality answers "is this well made". Neither holds anything
+  back: every surface shows the score and its findings — severity is
+  Critical / High / Medium / Low, never color-only — and install, update
+  and apply proceed regardless. Safety is `100 − Σ deductions` (Critical
+  25 / High 15 / Medium 8 / Low 3), first hit per rule at full weight and
+  repeats at a point each until they have cost as much again. Quality is
+  wshobson's weighted-dimension model, static layer only: no LLM judge, no
+  simulation, no letter grades. Planned and installed rows share
+  `engine::ItemSafety` — the plan preview scores what it would write
+  (`engine/scoring.rs`), the audit scores what is on disk
+  (`engine::observed_rows`); browse (`PackageSafety`, `browse/safety.rs`)
+  and the catalog check (`CheckedItem`) carry the same score and findings
+  for content not yet installed.
 - **Rules read typed per-kind inputs and say when they cannot read.** A
   skill carries its whole tree, a hook its registration and script, an MCP
   server its command, args, env and headers, a plugin its manifest and
@@ -845,64 +806,6 @@ lives in one capability table read by core and UI.
   for content that is plainly quoting: a blockquote, and every line of a
   skill's supporting files (`tests/`, `fixtures/`, `references/`). Secrets
   never weigh less anywhere.
-- **An override is permission for one decision, not for an item.** It
-  binds to the installation, the review hash, the rule set version and the
-  exact finding fingerprints reviewed; it is written into the manifest by
-  the transaction that installs what it unblocks; it goes stale when any of
-  the four move. The flag carries the review hash (`--allow-unsafe
-  name@hash`); a bare name grants nothing. The audit reports an accepted
-  item as accepted.
-- **A decision binds to the bytes, not to the reading of them.** The
-  *content hash* names what the rules read — reduced, symlinks stepped
-  over, binary assets counted not kept, text decoded lossily — and is for
-  scoring only. The *review hash* names every owned byte, or the exact
-  config entry, undecoded, and is what a decision binds to. Where bytes
-  cannot be reached there is no review hash and no decision reads as live.
-  Both cover every file to its last byte. The memory bound is asked of the
-  tree a surface is about to read; past it, or where part of a tree will
-  not open, there is no reading, and the reason says which.
-- **A dismissal settles one finding; whose it is decides what it buys.**
-  The person's own dismissal unblocks nothing and is never offered on a
-  held-back item. The publisher's committed review is read *before* the
-  verdict: a finding it settles stops counting and can move an item out of
-  Block. It lives only in the catalog's `kendex-reviews.toml`, never in the
-  person's manifest or the Recorded decisions registry; it is shown
-  wherever the finding is. A personal dismissal binds to review hash and
-  rule set and lives in the manifest of the item's scope (personal: this
-  machine; project: committed). Reason is from a closed vocabulary
-  (`wrong-call`, `intended`, `trusted-source`), never free text.
-  `trusted-source` names the provenance and goes stale when the same bytes
-  arrive from anywhere else, a fork included; it needs a source kendex
-  itself resolved and recorded in the lock — a remote url beside unmanaged
-  files is not one. One snapshot per installation holds the proof once with
-  each dismissal beneath it; a decision on newer content replaces it. A
-  held-back item is decided by accepting or removing it. The UI never
-  spells a decision key: the backend issues a token per finding
-  (`kind:name:harness#fingerprint@review-hash/scope-digest`), and a dismiss
-  re-audits before writing, refusing the whole batch if any token fails to
-  name what is installed or was minted for another scope. Every write is
-  one journaled manifest op for one scope. Removing an item reaps its
-  decisions; `kendex decisions` / Recorded decisions reads every record
-  against what is installed now — active, stale with the reason, or
-  obsolete. An app undo takes back exactly the record it was shown; the
-  CLI's revoke names the record by key. Composition: held-back item →
-  findings never offered for dismissal, shown in full; active acceptance →
-  every finding reads accepted, no dismissal on top; then the person's live
-  dismissal; then the publisher's record (a stale personal dismissal falls
-  through to it); else open. Warning→block by threshold change keeps
-  dismissals and shows the item held back; block→warning keeps the
-  acceptance until withdrawn; withdrawing uncovers the findings and prior
-  dismissals apply again. What still needs a person is one derivation
-  (`lib/reviewable.ts`): held-back items once each, plus open findings once
-  per distinct evidence (same bytes, same finding, several tools = one
-  decision). Every count — sidebar, Home, footer, scope summary, Review
-  page done — reads that number. A dismissal is about installed bytes,
-  never a plan; rows a plan would install with findings travel with the
-  view as `queued`, so the apply preview says how many decisions will be
-  waiting. A concern row collapses one rule across everything it touched; a
-  decision is per piece of evidence — one piece carries the verb on its
-  row, several each get their own, walked one at a time, worst first. No
-  rule-level mute, no time-based snooze, no cross-scope action.
 - **Rule severities are calibrated against real catalogs.** Deobfuscation
   reports only what has no typographic use — invisible and bidirectional
   characters, letters imitating other letters — while normalizing emoji
@@ -914,6 +817,6 @@ lives in one capability table read by core and UI.
   instructions present the verb and its parameters as data. The one
   exception is the session-start drift report: each line may carry a
   remedy built only from a fixed template set (refresh, remove, add, fork,
-  findings, apply --plan) with validated identifiers in argument positions;
+  apply --plan) with validated identifiers in argument positions;
   free text from sources or errors renders in quoted informational
   positions, never a command position.

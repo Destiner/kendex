@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
   commands,
   type MineRow as MineRowData,
+  type StatusFinding,
   type SubmissionRow,
 } from "@/bindings";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +15,28 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { worstSeverityLabel } from "@/lib/copy-safety";
+import { SEVERITY_LABELS } from "@/lib/labels";
 import { useMineStore } from "@/stores/mine";
+
+/** A finding's severity in words beside its message, never by
+ * implication: the app's own word for a safety severity, the check's own
+ * word (error, warning, note) for a structural one. */
+function severityWord(finding: StatusFinding): string {
+  return finding.pass === "safety" && finding.severity in SEVERITY_LABELS
+    ? SEVERITY_LABELS[finding.severity as keyof typeof SEVERITY_LABELS]
+    : finding.severity;
+}
+
+/** The badge's words for a row with safety findings: the worst one's
+ * severity, then the count. */
+function findingsBadge(row: MineRowData): string {
+  const count = `${row.safetyFindings} finding${row.safetyFindings === 1 ? "" : "s"}`;
+  const worst = worstSeverityLabel(
+    row.findings.filter((finding) => finding.pass === "safety"),
+  );
+  return worst ? `${worst} · ${count}` : count;
+}
 
 function countsLine(row: MineRowData): string {
   const parts = Object.entries(row.counts).map(
@@ -76,7 +98,7 @@ export function MineRowCard({
   const acceptWorkflow = useMineStore((s) => s.acceptWorkflow);
   const acceptManifest = useMineStore((s) => s.acceptManifest);
   const [showFindings, setShowFindings] = useState(false);
-  const problems = row.breakage + row.heldBack;
+  const problems = row.breakage;
 
   return (
     <div className="rounded-lg border border-border p-4">
@@ -88,8 +110,8 @@ export function MineRowCard({
               <Badge variant="destructive">
                 {problems} problem{problems === 1 ? "" : "s"}
               </Badge>
-            ) : row.warned > 0 ? (
-              <Badge variant="secondary">{row.warned} warned</Badge>
+            ) : row.safetyFindings > 0 ? (
+              <Badge variant="secondary">{findingsBadge(row)}</Badge>
             ) : (
               <Badge variant="secondary">check passes</Badge>
             )}
@@ -203,7 +225,12 @@ export function MineRowCard({
                       Open
                     </Button>
                   </div>
-                  <p>{finding.message}</p>
+                  <p>
+                    <span className="font-medium">
+                      {severityWord(finding)}:{" "}
+                    </span>
+                    {finding.message}
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     Fix: {finding.fix}
                   </p>
