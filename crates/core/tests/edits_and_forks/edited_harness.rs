@@ -92,25 +92,10 @@ fn discarding_edits_can_move_a_hold_in_the_same_apply() {
     let w = world();
     write_skill(&w.upstream, "gh", "One.");
     commit(&w.upstream, "one");
-    // Run from a commit hook, GIT_DIR and friends point at the repository
-    // being committed to; dropped, so HEAD is the fixture's.
-    let one = String::from_utf8(
-        std::process::Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(&w.upstream)
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env_remove("GIT_INDEX_FILE")
-            .env_remove("GIT_OBJECT_DIRECTORY")
-            .env_remove("GIT_PREFIX")
-            .output()
-            .unwrap()
-            .stdout,
-    )
-    .unwrap();
+    let one = head_commit(&w.upstream);
     declare(
         &w,
-        &format!("[skills.gh]\nsource = \"cat\"\nrev = \"{}\"\n", one.trim()),
+        &format!("[skills.gh]\nsource = \"cat\"\nrev = \"{one}\"\n"),
     );
     sync_and_apply(&w);
     write_skill(&w.upstream, "gh", "Two.");
@@ -183,26 +168,10 @@ fn a_held_bundle_member_with_newer_upstream_can_discard_but_not_move() {
     )
     .unwrap();
     commit(&w.upstream, "one");
-    let one = String::from_utf8(
-        std::process::Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(&w.upstream)
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env_remove("GIT_INDEX_FILE")
-            .env_remove("GIT_OBJECT_DIRECTORY")
-            .env_remove("GIT_PREFIX")
-            .output()
-            .unwrap()
-            .stdout,
-    )
-    .unwrap();
+    let one = head_commit(&w.upstream);
     declare(
         &w,
-        &format!(
-            "[bundles.starter]\nsource = \"cat\"\nrev = \"{}\"\n",
-            one.trim()
-        ),
+        &format!("[bundles.starter]\nsource = \"cat\"\nrev = \"{one}\"\n"),
     );
     sync_and_apply(&w);
     write_skill(&w.upstream, "gh", "Two.");
@@ -334,27 +303,13 @@ fn a_source_level_hold_names_the_source_as_owner() {
     let w = world();
     write_skill(&w.upstream, "gh", "Upstream.");
     commit(&w.upstream, "one");
-    let one = String::from_utf8(
-        std::process::Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(&w.upstream)
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env_remove("GIT_INDEX_FILE")
-            .env_remove("GIT_OBJECT_DIRECTORY")
-            .env_remove("GIT_PREFIX")
-            .output()
-            .unwrap()
-            .stdout,
-    )
-    .unwrap();
+    let one = head_commit(&w.upstream);
     let path = manifest::manifest_path(&w.env, &w.scope);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(
         &path,
         format!(
-            "schema = 5\n\n[sources.cat]\nrepo = \"{REPO}\"\nrev = \"{}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.gh]\nsource = \"cat\"\n",
-            one.trim()
+            "schema = 5\n\n[sources.cat]\nrepo = \"{REPO}\"\nrev = \"{one}\"\n\n[install]\nharnesses = [\"claude\"]\nmethod = \"symlink\"\n\n[skills.gh]\nsource = \"cat\"\n"
         ),
     )
     .unwrap();
@@ -377,9 +332,82 @@ fn a_source_level_hold_names_the_source_as_owner() {
     // A package's own hold is its own to release.
     declare(
         &w,
-        &format!("[skills.gh]\nsource = \"cat\"\nrev = \"{}\"\n", one.trim()),
+        &format!("[skills.gh]\nsource = \"cat\"\nrev = \"{one}\"\n"),
     );
     let report = kendex_core::package::updates::updates(&w.env, &w.scope).unwrap();
     let row = report.rows.iter().find(|row| row.name == "gh").unwrap();
     assert_eq!(row.hold_owner, Some(HoldOwner::Package));
+}
+
+/// The updates chain read through a symlinked home: the published checkout
+/// is reached under the link's spelling while the seal speaks the canonical
+/// one, and the package's subtree must still resolve against the mirror —
+/// a mixed spelling hands git an absolute pathspec it refuses, and the row
+/// silently loses its timeline. macOS runs every test this way (`/var` →
+/// `/private/var`); the link makes the same shape hold on every platform.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn updates_still_read_history_under_a_symlinked_home() {
+    let w = world_via_link();
+    write_skill(&w.upstream, "gh", "One.");
+    commit(&w.upstream, "one");
+    declare(&w, "[skills.gh]\nsource = \"cat\"\n");
+    sync_and_apply(&w);
+    write_skill(&w.upstream, "gh", "Two.");
+    commit(&w.upstream, "two");
+    let loaded = manifest::load_for_mutation(&manifest::manifest_path(&w.env, &w.scope))
+        .unwrap()
+        .unwrap();
+    remote::sync_sources(&w.env, &loaded).unwrap();
+
+    let report = kendex_core::package::updates::updates(&w.env, &w.scope).unwrap();
+    assert_eq!(report.warnings, Vec::new(), "history must read cleanly");
+    let row = report
+        .rows
+        .iter()
+        .find(|row| row.kind == ItemKind::Skill && row.name == "gh")
+        .unwrap();
+    assert!(row.update_available, "{row:?}");
+    assert!(row.can_take_latest, "{row:?}");
+    assert!(row.latest.is_some(), "{row:?}");
+}
+
+/// The fallback that binds a package the tip no longer offers: the pin's
+/// own revision still carries it, and the rel that revision yields must
+/// land under the tip seal's spelling — through a symlinked home the
+/// published roots and the seals disagree, and a strip against the wrong
+/// one silently reads the package as removed upstream, timeline and all.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_pinned_package_gone_at_tip_keeps_its_timeline_under_a_symlinked_home() {
+    let w = world_via_link();
+    write_skill(&w.upstream, "gh", "One.");
+    commit(&w.upstream, "one");
+    let one = head_commit(&w.upstream);
+    declare(
+        &w,
+        &format!("[skills.gh]\nsource = \"cat\"\nrev = \"{one}\"\n"),
+    );
+    sync_and_apply(&w);
+    fs::remove_dir_all(w.upstream.join("skills/gh")).unwrap();
+    commit(&w.upstream, "two");
+    let loaded = manifest::load_for_mutation(&manifest::manifest_path(&w.env, &w.scope))
+        .unwrap()
+        .unwrap();
+    remote::sync_sources(&w.env, &loaded).unwrap();
+
+    let report = kendex_core::package::updates::updates(&w.env, &w.scope).unwrap();
+    assert_eq!(
+        report.warnings,
+        Vec::new(),
+        "the fallback must bind cleanly"
+    );
+    let row = report
+        .rows
+        .iter()
+        .find(|row| row.kind == ItemKind::Skill && row.name == "gh")
+        .unwrap();
+    assert!(!row.removed_upstream, "{row:?}");
+    assert!(row.current.is_some(), "{row:?}");
+    assert!(row.latest.is_some(), "{row:?}");
 }

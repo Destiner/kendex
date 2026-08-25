@@ -36,6 +36,18 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(output.status.success(), "git {args:?}");
 }
 
+/// HEAD's commit id, through the same hardened runner every fixture git
+/// call uses — run from a commit hook, GIT_DIR and friends would point at
+/// the repository being committed to; scrubbed, HEAD is the fixture's.
+#[allow(clippy::unwrap_used)]
+fn head_commit(dir: &Path) -> String {
+    let output = Hardened::git(&["rev-parse", "HEAD"], Some(dir))
+        .run()
+        .unwrap();
+    assert!(output.status.success(), "git rev-parse HEAD");
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+}
+
 #[allow(clippy::unwrap_used)]
 fn commit(dir: &Path, message: &str) {
     git(dir, &["add", "-A"]);
@@ -69,6 +81,27 @@ fn write_skill(dir: &Path, name: &str, body: &str) {
 fn world() -> World {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().to_path_buf();
+    world_at(tmp, home)
+}
+
+/// [`world`], with every path reaching the home through a symlink — the
+/// spelling macOS hands every test anyway (`/var` → `/private/var` fronts
+/// its temp directories), reproduced here so the one-spelling rule stays
+/// covered on every platform.
+#[allow(clippy::unwrap_used)]
+fn world_via_link() -> World {
+    let tmp = tempfile::tempdir().unwrap();
+    let real = tmp.path().join("real");
+    fs::create_dir_all(&real).unwrap();
+    let home = tmp.path().join("via");
+    std::os::unix::fs::symlink(&real, &home).unwrap();
+    world_at(tmp, home)
+}
+
+/// The fixture body both worlds share; `home` is the spelling every path
+/// in the World speaks.
+#[allow(clippy::unwrap_used)]
+fn world_at(tmp: tempfile::TempDir, home: PathBuf) -> World {
     let upstream = home.join("git").join(REPO);
     fs::create_dir_all(&upstream).unwrap();
     git(&upstream, &["init", "--quiet", "-b", "main"]);
