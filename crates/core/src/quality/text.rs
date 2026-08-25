@@ -148,6 +148,7 @@ pub fn prepare(input: AuditInput) -> Prepared {
             let text = clean(input.location.clone(), &text);
             docs.push(Doc {
                 location: input.location.clone(),
+                role: super::DocRole::Text,
                 lines: lines(&text),
             });
             Content::Document { text }
@@ -159,16 +160,25 @@ pub fn prepare(input: AuditInput) -> Prepared {
             event,
             matcher,
             command,
+            values,
             script,
-        } => hook_content(
-            &input.location,
-            event,
-            matcher,
-            command,
-            script,
-            &mut clean,
-            &mut docs,
-        ),
+        } => {
+            let (command, values, script) = hook_docs(
+                &input.location,
+                command,
+                values,
+                script,
+                &mut clean,
+                &mut docs,
+            );
+            Content::Hook {
+                event,
+                matcher,
+                command,
+                values,
+                script,
+            }
+        }
         Content::Mcp(entry) => Content::Mcp(entry),
         Content::Unread { why } => Content::Unread { why },
         Content::Plugin(sources) => Content::Plugin(super::PluginSources {
@@ -203,6 +213,7 @@ fn tree_docs(
                     true => lines(&text).into_iter().map(Line::as_description).collect(),
                     false => lines(&text),
                 },
+                role: super::DocRole::Text,
                 location,
             });
             TreeFile {
@@ -245,34 +256,44 @@ fn is_supporting(path: &std::path::Path) -> bool {
     })
 }
 
-fn hook_content(
+/// A hook's documents — its command, the values it stores, and its script
+/// — each cleaned and pushed under its own label, handed back in that
+/// order.
+fn hook_docs(
     root: &str,
-    event: String,
-    matcher: Option<String>,
     command: String,
+    values: Option<String>,
     script: Option<String>,
     clean: &mut impl FnMut(String, &str) -> String,
     docs: &mut Vec<Doc>,
-) -> Content {
+) -> (String, Option<String>, Option<String>) {
     let command = clean(format!("{root} (command)"), &command);
     docs.push(Doc {
         location: format!("{root} (command)"),
+        role: super::DocRole::Text,
         lines: lines(&command),
+    });
+    // What the harness stores beside the command, not what it runs: one
+    // value per line, one document, for the rules about values.
+    let values = values.map(|values| {
+        let values = clean(format!("{root} (entry)"), &values);
+        docs.push(Doc {
+            location: format!("{root} (entry)"),
+            role: super::DocRole::Values,
+            lines: lines(&values),
+        });
+        values
     });
     let script = script.map(|body| {
         let body = clean(root.to_owned(), &body);
         docs.push(Doc {
             location: root.to_owned(),
+            role: super::DocRole::Text,
             lines: lines(&body),
         });
         body
     });
-    Content::Hook {
-        event,
-        matcher,
-        command,
-        script,
-    }
+    (command, values, script)
 }
 
 /// Split into lines, marking the ones that are quoting somebody else.

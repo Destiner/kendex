@@ -11,7 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::model::{ItemKind, ObservedItem};
+use crate::model::{HarnessId, ItemKind, ObservedItem};
 use crate::source_read::{TREE_BOUND, TreeBound};
 
 use super::{
@@ -56,7 +56,7 @@ pub fn input_for(item: &ObservedItem) -> AuditInput {
     let content = match item.kind {
         ItemKind::Skill => read_tree(&item.path),
         ItemKind::Agent | ItemKind::Command | ItemKind::PiExtension => read_document(&item.path),
-        ItemKind::Hook => read_hook(&item.path),
+        ItemKind::Hook => read_hook(item),
         ItemKind::McpServer => read_mcp(&item.path, &item.name),
         ItemKind::Plugin => read_plugin(&item.path),
     };
@@ -76,10 +76,14 @@ pub fn input_for(item: &ObservedItem) -> AuditInput {
 /// directory, and a scope with eighty of them would spend most of an audit
 /// scoring each tree twice. No rule reads the harness — every one of them
 /// judges the bytes — so the key is everything that decides the outcome:
-/// kind, path and name. Two observations that agree here score the same by
+/// kind, path and name. A hook inside a shared config file is the one
+/// exception: [`read_hook`] parses the file with the reader the scan chose
+/// for the hook's harness, so the harness decides the bytes there and is
+/// part of the key. Two observations that agree here score the same by
 /// construction, never by guess.
-pub fn same_reading(item: &ObservedItem) -> (ItemKind, PathBuf, String) {
-    (item.kind, item.path.clone(), item.name.clone())
+pub fn same_reading(item: &ObservedItem) -> (ItemKind, PathBuf, String, Option<HarnessId>) {
+    let parser = (item.kind == ItemKind::Hook).then_some(item.harness);
+    (item.kind, item.path.clone(), item.name.clone(), parser)
 }
 
 /// One observation's two hashes and what the rules made of it. The hashes
@@ -132,20 +136,6 @@ fn read_document(path: &Path) -> Content {
         Err(_) => Content::Unread {
             why: UNREADABLE_FILE,
         },
-    }
-}
-
-fn read_hook(path: &Path) -> Content {
-    let Content::Document { text } = read_document(path) else {
-        return Content::Unread {
-            why: UNREADABLE_FILE,
-        };
-    };
-    Content::Hook {
-        event: String::new(),
-        matcher: None,
-        command: path.display().to_string(),
-        script: Some(text),
     }
 }
 
@@ -319,5 +309,8 @@ fn is_source(path: &Path) -> bool {
     )
 }
 
+mod hook;
 #[cfg(test)]
 mod tests;
+
+use hook::read_hook;

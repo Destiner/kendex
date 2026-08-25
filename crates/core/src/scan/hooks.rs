@@ -20,12 +20,40 @@ pub(crate) struct Registration {
     pub(crate) event: String,
     pub(crate) matcher: String,
     pub(crate) command: String,
+    /// The entry object itself, every field of it — timeout, env, cwd,
+    /// headers, whatever the harness lets an entry carry. The audit reads
+    /// the env and header values out of it: a credential in an `env` block
+    /// is content the harness will use whether or not the command spells
+    /// it, and dropping the entry here would hide it from the rules.
+    pub(crate) entry: serde_json::Value,
 }
 
 impl Registration {
+    /// Every executable this entry carries, in a stable order. Copilot lets
+    /// one command entry hold a `bash`, a `powershell` and a `command`
+    /// implementation for cross-platform execution and runs whichever fits
+    /// the platform, so each is what the hook runs; the shared shape holds
+    /// one `command`. An entry with none of them — an http or prompt entry
+    /// — hands back its action text, which is what it does instead. Two
+    /// spellings with the same text are one.
+    pub(crate) fn executables(&self) -> Vec<&str> {
+        let mut found: Vec<&str> = Vec::new();
+        for key in ["bash", "powershell", "command"] {
+            if let Some(text) = self.entry.get(key).and_then(serde_json::Value::as_str)
+                && !found.contains(&text)
+            {
+                found.push(text);
+            }
+        }
+        if found.is_empty() {
+            found.push(&self.command);
+        }
+        found
+    }
+
     /// How a scan names this entry. One rendering, in one place, from the
     /// parts — so nothing downstream has to take it apart again.
-    fn name(&self) -> String {
+    pub(crate) fn name(&self) -> String {
         format!(
             "{}:{}:{}",
             self.event,
@@ -93,6 +121,7 @@ fn registrations(value: serde_json::Value) -> Vec<Registration> {
                     event: event.clone(),
                     matcher: matcher.to_owned(),
                     command: command.to_owned(),
+                    entry: handler.clone(),
                 });
             }
         }
