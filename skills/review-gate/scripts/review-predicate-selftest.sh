@@ -952,6 +952,27 @@ CFG_TRUSTED_LOGINS=""; CFG_MIN_STATE="any"; CFG_ERROR_PATTERNS=""
 reviews_set "$(review "auto-reviewer" COMMENTED "2026-08-02T18:00:00Z" "$HEAD" "$ERRORED_BODY")"
 run "empty error-pattern list disables the filter (explicit opt-out)" approved
 
+# Start-of-body scoping (KEN-456): a pattern is an attestation only on the
+# FIRST line of the body, after trimming leading whitespace and markdown
+# quote markers. Whole-body substring matching dropped any genuine review
+# that QUOTED a pattern in later text — e.g. the review of a PR editing
+# REVIEW_GATE_REVIEW_OBJECT_ERROR_PATTERNS itself — so that PR could never
+# pass the gate.
+reset
+CFG_TRUSTED_LOGINS=""; CFG_MIN_STATE="any"; CFG_ERROR_PATTERNS="$ERRORED_MARK"
+reviews_set "$(review "auto-reviewer" COMMENTED "2026-08-02T18:00:00Z" "$HEAD" "encountered an error and was unable to review this pull request.")"
+run "a body BEGINNING with a pattern is NOT evidence" awaiting
+
+reset
+CFG_TRUSTED_LOGINS=""; CFG_MIN_STATE="any"; CFG_ERROR_PATTERNS="$ERRORED_MARK"
+reviews_set "$(review "reviewer" COMMENTED "2026-08-02T18:00:00Z" "$HEAD" "$(printf 'Reviewed 2 of 2 changed files.\n\nThe doc edit quotes the marker "encountered an error and was unable to review" verbatim; the wording matches the shipped default.')")"
+run "a body QUOTING a pattern in later text IS evidence" approved
+
+reset
+CFG_TRUSTED_LOGINS=""; CFG_MIN_STATE="any"; CFG_ERROR_PATTERNS="$ERRORED_MARK"
+reviews_set "$(review "auto-reviewer" COMMENTED "2026-08-02T18:00:00Z" "$HEAD" "$(printf '\n> Copilot encountered an error and was unable to review this pull request.')")"
+run "leading blank line and quote marker are trimmed before matching" awaiting
+
 # NON-SUPERSESSION: a trailing COMMENTED from the same reviewer at the same
 # head must not mask its earlier APPROVED (observed live: APPROVED at
 # :47, COMMENTED at :50 on the same commit — a latest-review-per-reviewer
@@ -1859,6 +1880,16 @@ CFG_CARRY="docs"; CFG_TRUSTED_LOGINS=""; CFG_ERROR_PATTERNS="$ERRORED_MARK"
 reviews_set "$(review "auto-reviewer" COMMENTED "2026-01-01T00:00:00Z" "$OTHER" "$ERRORED_BODY")"
 compare_fix ahead "[$DOCS_DELTA]"
 run "carry: an errored ancestor auto-review is not a carry candidate" awaiting
+
+# The carry-candidate filter shares the head path's first-line scoping
+# (KEN-456): an ancestor review that QUOTES a marker in later text is a
+# genuine review and stays a carry seed. Whole-body matching at this site
+# would reproduce the KEN-456 symptom on the carry route alone.
+reset
+CFG_CARRY="docs"; CFG_TRUSTED_LOGINS=""; CFG_MIN_STATE="any"; CFG_ERROR_PATTERNS="$ERRORED_MARK"
+reviews_set "$(review "reviewer" COMMENTED "2026-01-01T00:00:00Z" "$OTHER" "$(printf 'Reviewed 2 of 2 changed files.\n\nThe doc edit quotes the marker "encountered an error and was unable to review" verbatim; the wording matches the shipped default.')")"
+compare_fix ahead "[$DOCS_DELTA]"
+run "carry: an ancestor review QUOTING a pattern in later text is a candidate" approved
 
 reset
 carry_candidate
