@@ -1,6 +1,7 @@
 import { MoreHorizontal } from "lucide-react";
+import { useState } from "react";
 import type { Scope, UpdateRow } from "@/bindings";
-import { CustomizedActions } from "@/components/customized-actions";
+import { InstallAsNewDialog } from "@/components/install-as-new-dialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -17,21 +18,27 @@ import {
   UPDATE_LABEL,
 } from "@/lib/copy";
 import {
+  EDITED_CANT_UPDATE_NOTE,
   followSourceLabel,
   HELD_BY_OWNER_NOTE,
   heldBySourceNote,
+  INSTALL_AS_NEW_LABEL,
+  OPEN_PACKAGE_LABEL,
   UPDATE_NEEDS_CHECK_NOTE,
 } from "@/lib/copy-updates";
 import { packageDisplayName } from "@/lib/labels";
 import { heldByOwner, placeName, switchLockedBy } from "@/lib/update-groups";
+import { unsettled } from "@/lib/updates-read-state";
 import { versionLabel } from "@/lib/versions";
 import { useNavStore } from "@/stores/nav";
 import { useUpdatesStore } from "@/stores/updates";
+import { useUpdatesView } from "@/stores/updates-view";
 
-/** The cells that belong to one place: where it is, its versions, whether
- *  it follows its source, and what can be done about it here. A package
- *  installed in one place shows these on its own row; one installed in
- *  several shows them once per place under the package. */
+/** The cells that belong to one place: where it is, its versions when the
+ *  table shows them, whether it follows its source, and what can be done
+ *  about it here. A package installed in one place shows these on its own
+ *  row; one installed in several shows them once per place under the
+ *  package. */
 export function PlaceCells({
   row,
   among,
@@ -42,30 +49,25 @@ export function PlaceCells({
   among: Scope[];
   onIgnore?: (row: UpdateRow) => void;
 }) {
-  const {
-    busy,
-    loaded,
-    checking,
-    overviewInFlight,
-    updateOne,
-    setAutoUpdate,
-    setIgnored,
-  } = useUpdatesStore();
+  const { busy, updateOne, setAutoUpdate, setIgnored } = useUpdatesStore();
   // Anything overview-producing in flight is about to replace these rows;
   // the store actions refuse regardless, and the controls say so instead
   // of inviting the click.
-  const held = !loaded || checking || overviewInFlight;
+  const held = useUpdatesStore(unsettled);
+  const showVersion = useUpdatesView((s) => s.showVersion);
   const goToPackage = useNavStore((s) => s.goToPackage);
   const name = packageDisplayName(row);
   const place = placeName(row.scope, among);
   const locked = switchLockedBy(row);
+  const ref = { kind: row.kind, name: row.name, scope: row.scope };
 
   const preview = () => {
     if (!row.current || !row.latest) return;
-    goToPackage(
-      { kind: row.kind, name: row.name, scope: row.scope },
-      { mode: "diff", from: row.current.commit, to: row.latest.commit },
-    );
+    goToPackage(ref, {
+      mode: "diff",
+      from: row.current.commit,
+      to: row.latest.commit,
+    });
   };
 
   return (
@@ -76,10 +78,12 @@ export function PlaceCells({
       >
         {place}
       </TableCell>
-      <TableCell className="font-mono text-xs text-muted-foreground">
-        {row.current ? versionLabel(row.current) : "?"} →{" "}
-        {row.latest ? versionLabel(row.latest) : "?"}
-      </TableCell>
+      {showVersion ? (
+        <TableCell className="font-mono text-xs text-muted-foreground">
+          {row.current ? versionLabel(row.current) : "?"} →{" "}
+          {row.latest ? versionLabel(row.latest) : "?"}
+        </TableCell>
+      ) : null}
       {row.ignored ? (
         <TableCell colSpan={2} className="text-right">
           <Button
@@ -113,61 +117,133 @@ export function PlaceCells({
             />
           </TableCell>
           <TableCell>
-            <div className="flex items-center justify-end gap-1.5">
+            {/* The edited note sits above the controls: beside them, the
+                row would not fit the app's default window. */}
+            <div className="flex flex-col items-end gap-1">
               {row.blockedByLocalEdit ? (
-                <CustomizedActions row={row} busy={busy} />
+                <span className="text-xs text-muted-foreground">
+                  {EDITED_CANT_UPDATE_NOTE}
+                </span>
               ) : null}
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-muted-foreground"
-                onClick={preview}
-              >
-                {PREVIEW_CHANGES_LABEL}
-              </Button>
-              {row.blockedByLocalEdit ? null : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={
-                    busy || held || !row.updateAvailable || heldByOwner(row)
-                  }
-                  title={
-                    heldByOwner(row)
-                      ? HELD_BY_OWNER_NOTE
-                      : held
-                        ? UPDATE_NEEDS_CHECK_NOTE
-                        : undefined
-                  }
-                  onClick={() => void updateOne(row)}
-                >
-                  {UPDATE_LABEL}
-                </Button>
-              )}
-              {onIgnore ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        aria-label="More actions"
-                      >
-                        <MoreHorizontal className="size-4" />
-                      </Button>
+              <div className="flex items-center justify-end gap-1.5">
+                {row.current && row.latest ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-muted-foreground"
+                    onClick={preview}
+                  >
+                    {PREVIEW_CHANGES_LABEL}
+                  </Button>
+                ) : row.blockedByLocalEdit ? (
+                  // No versions to compare, nothing to install beside: the
+                  // fork-or-discard choice on the package page is what is
+                  // left, and this is the way there.
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-muted-foreground"
+                    onClick={() => goToPackage(ref)}
+                  >
+                    {OPEN_PACKAGE_LABEL}
+                  </Button>
+                ) : null}
+                {row.blockedByLocalEdit ? (
+                  installableBeside(row) ? (
+                    <InstallAsNew row={row} busy={busy} held={held} />
+                  ) : null
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      busy || held || !row.updateAvailable || heldByOwner(row)
                     }
-                  />
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => onIgnore(row)}>
-                      {IGNORE_UPDATES_LABEL}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : null}
+                    title={
+                      heldByOwner(row)
+                        ? HELD_BY_OWNER_NOTE
+                        : held
+                          ? UPDATE_NEEDS_CHECK_NOTE
+                          : undefined
+                    }
+                    onClick={() => void updateOne(row)}
+                  >
+                    {UPDATE_LABEL}
+                  </Button>
+                )}
+                {onIgnore ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          size="icon-xs"
+                          variant="ghost"
+                          aria-label="More actions"
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </Button>
+                      }
+                    />
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => onIgnore(row)}>
+                        {IGNORE_UPDATES_LABEL}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
+              </div>
             </div>
           </TableCell>
         </>
       )}
+    </>
+  );
+}
+
+/** Whether an edited place has something to install beside its edits: a
+ *  newer version the source still carries, and a rendering the engine can
+ *  keep. A package gone from its source, one already at the newest, a
+ *  bundle member, an edit spread over several tools, or a tool whose
+ *  format cannot be read back settles on the package page instead. */
+const installableBeside = (row: UpdateRow): boolean =>
+  row.forkableHarness !== null &&
+  row.updateAvailable &&
+  !row.removedUpstream &&
+  row.canDiscard;
+
+/** The edited place's one way to a newer version: beside the edits, never
+ *  over them. The install may move a hold to the row's `latest`, so it
+ *  waits for a check the same as Update. */
+function InstallAsNew({
+  row,
+  busy,
+  held,
+}: {
+  row: UpdateRow;
+  busy: boolean;
+  held: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const harness = row.forkableHarness;
+  if (!harness) return null;
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={busy || held}
+        title={held ? UPDATE_NEEDS_CHECK_NOTE : undefined}
+        onClick={() => setOpen(true)}
+      >
+        {INSTALL_AS_NEW_LABEL}
+      </Button>
+      {open ? (
+        <InstallAsNewDialog
+          row={row}
+          harness={harness}
+          onOpenChange={setOpen}
+        />
+      ) : null}
     </>
   );
 }

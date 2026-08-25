@@ -3,8 +3,10 @@
 //! the two ways out are explicit: keep it as a fork, or discard the edits.
 #![cfg(unix)]
 
+mod beside;
 mod disabled;
 mod edited_harness;
+mod vacant;
 
 mod forks;
 
@@ -78,6 +80,22 @@ fn write_skill(dir: &Path, name: &str, body: &str) {
 }
 
 #[allow(clippy::unwrap_used)]
+fn write_agent(dir: &Path, name: &str, body: &str) {
+    let agents = dir.join("agents");
+    fs::create_dir_all(&agents).unwrap();
+    fs::write(
+        agents.join(format!("{name}.md")),
+        format!("---\nname: {name}\ndescription: agent {name}\n---\n{body}\n"),
+    )
+    .unwrap();
+}
+
+#[allow(clippy::unwrap_used)]
+fn manifest_text(w: &World) -> String {
+    fs::read_to_string(manifest::manifest_path(&w.env, &w.scope)).unwrap()
+}
+
+#[allow(clippy::unwrap_used)]
 fn world() -> World {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().to_path_buf();
@@ -144,6 +162,31 @@ fn sync_and_apply(w: &World) {
 
 fn skill_file(w: &World) -> PathBuf {
     w.home.join("app/.agents/skills/gh/SKILL.md")
+}
+
+/// A world with `gh` edited on disk and a newer upstream the mirror knows,
+/// returned with the commit the edits were made on and the newer one.
+#[allow(clippy::unwrap_used)]
+fn edited_world() -> (World, String, String) {
+    let w = world();
+    write_skill(&w.upstream, "gh", "Upstream.");
+    commit(&w.upstream, "one");
+    let one = head_commit(&w.upstream);
+    declare(
+        &w,
+        &format!("[skills.gh]\nsource = \"cat\"\nrev = \"{one}\"\n"),
+    );
+    sync_and_apply(&w);
+    fs::write(
+        skill_file(&w),
+        "---\nname: gh\ndescription: mine\n---\nMy fork.\n",
+    )
+    .unwrap();
+    write_skill(&w.upstream, "gh", "Upstream v2.");
+    commit(&w.upstream, "two");
+    let two = head_commit(&w.upstream);
+    sync_and_apply(&w);
+    (w, one, two)
 }
 
 #[test]

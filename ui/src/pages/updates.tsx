@@ -25,7 +25,6 @@ import {
   UPDATES_UNCHECKED_TITLE,
 } from "@/lib/copy";
 import {
-  FOLLOW_SOURCE_HELP,
   UPDATE_NEEDS_CHECK_NOTE,
   UPDATES_UNCONFIRMED_TITLE,
   updatesSubtitle,
@@ -37,8 +36,10 @@ import {
   updatablePlaces,
   visibleUpdates,
 } from "@/lib/update-groups";
+import { unsettled } from "@/lib/updates-read-state";
 import { cn } from "@/lib/utils";
 import { useUpdatesStore } from "@/stores/updates";
+import { useUpdatesView } from "@/stores/updates-view";
 
 /** Which packages have newer versions, what changed, and per-package
  *  control over how loudly to hear about it. */
@@ -49,10 +50,11 @@ export function UpdatesPage() {
   const error = useUpdatesStore((s) => s.error);
   // Anything overview-producing in flight holds Update all, same as the
   // per-row controls: these rows are about to be replaced.
-  const unconfirmed = useUpdatesStore(
-    (s) => !s.loaded || s.checking || s.overviewInFlight,
-  );
+  const unconfirmed = useUpdatesStore(unsettled);
   const load = useUpdatesStore((s) => s.load);
+  // One choice for every table on the page; the `…` menu lives on the
+  // main table, or on the muted one when it is the only table drawn.
+  const setShowVersion = useUpdatesView((s) => s.setShowVersion);
   const [showHidden, setShowHidden] = useState(false);
   const [confirmIgnore, setConfirmIgnore] = useState<UpdateRow | null>(null);
 
@@ -81,16 +83,9 @@ export function UpdatesPage() {
         title="Updates"
         wide
         subtitle={
-          visible.length > 0 ? (
-            <>
-              {updatesSubtitle(packageCount(visible), visible.length)}
-              <span className="block text-muted-foreground">
-                {FOLLOW_SOURCE_HELP}
-              </span>
-            </>
-          ) : (
-            FOLLOW_SOURCE_HELP
-          )
+          visible.length > 0
+            ? updatesSubtitle(packageCount(visible), visible.length)
+            : undefined
         }
         action={
           <div className="flex gap-2">
@@ -146,7 +141,11 @@ export function UpdatesPage() {
               </EmptyState>
             ) : null
           ) : (
-            <UpdatesTable rows={visible} onIgnore={setConfirmIgnore} />
+            <UpdatesTable
+              rows={visible}
+              onIgnore={setConfirmIgnore}
+              onShowVersion={setShowVersion}
+            />
           )}
           {warnings.length > 0 ? (
             <div className="mt-8">
@@ -176,7 +175,12 @@ export function UpdatesPage() {
               </button>
               {showHidden ? (
                 <div className="mt-2 opacity-80">
-                  <UpdatesTable rows={hidden} />
+                  <UpdatesTable
+                    rows={hidden}
+                    onShowVersion={
+                      visible.length === 0 ? setShowVersion : undefined
+                    }
+                  />
                 </div>
               ) : null}
             </div>

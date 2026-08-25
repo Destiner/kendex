@@ -288,36 +288,9 @@ pub fn set_rev_with(
     options: &crate::engine::PlanOptions,
 ) -> Result<EngineReport> {
     let mut manifest = crate::engine::ops::manifest_for_mutation(env, scope)?;
-    let Some(decl) = manifest.declared(kind).get(name).cloned() else {
-        return Err(CoreError::NotDeclared {
-            kind,
-            name: name.to_owned(),
-        });
-    };
-    let normalized = match rev {
-        None => None,
-        Some(selector) => {
-            let source_decl = manifest.sources.get(&decl.source);
-            let Some(repo) = source_decl.and_then(|s| s.repo.clone()) else {
-                return Err(CoreError::ItemRevUnsupported {
-                    source_name: decl.source.clone(),
-                });
-            };
-            let resolution = resolve_selector(env, &repo, selector)?;
-            // A commit the repository holds is not yet a version of this
-            // item — the item has to exist in that tree.
-            let sealed = SealedSource::open(&resolution.root)?;
-            let config = crate::source::source_config(&sealed, crate::source::repo_leaf(&repo))?;
-            if crate::source::find_item(&sealed, &config, kind, name).is_none() {
-                return Err(CoreError::ItemMissingAtRev {
-                    name: name.to_owned(),
-                    repo,
-                    commit: resolution.commit,
-                });
-            }
-            Some(resolution.commit)
-        }
-    };
+    let normalized = rev
+        .map(|selector| resolve_hold(env, &manifest, kind, name, selector))
+        .transpose()?;
     let Some(entry) = manifest.declared_mut(kind).get_mut(name) else {
         return Err(CoreError::NotDeclared {
             kind,
@@ -326,6 +299,93 @@ pub fn set_rev_with(
     };
     entry.rev = normalized;
     crate::source_ops::persist_and_plan_with(env, scope, manifest, options)
+}
+
+/// Where an item's hold would move, proven before anything is written
+/// (invariant 11). The selector — tag, branch, commit — resolves against
+/// the item's source to the full commit id the manifest records, and the
+/// item has to exist in that tree: a commit the repository holds is not
+/// yet a version of this item.
+pub fn resolve_hold(
+    env: &Env,
+    manifest: &Manifest,
+    kind: ItemKind,
+    name: &str,
+    selector: &str,
+) -> Result<String> {
+    let Some(decl) = manifest.declared(kind).get(name) else {
+        return Err(CoreError::NotDeclared {
+            kind,
+            name: name.to_owned(),
+        });
+    };
+    let Some(repo) = manifest
+        .sources
+        .get(&decl.source)
+        .and_then(|s| s.repo.clone())
+    else {
+        return Err(CoreError::ItemRevUnsupported {
+            source_name: decl.source.clone(),
+        });
+    };
+    let resolution = resolve_selector(env, &repo, selector)?;
+    if !item_in_tree(
+        &resolution.root,
+        crate::source::repo_leaf(&repo),
+        kind,
+        name,
+    )? {
+        return Err(CoreError::ItemMissingAtRev {
+            name: name.to_owned(),
+            repo,
+            commit: resolution.commit,
+        });
+    }
+    Ok(resolution.commit)
+}
+
+/// Prove the item exists in the tree any apply would read — the item's own
+/// hold, else the source's revision — before anything durable is written
+/// (invariant 11). Nothing moves: the hold stays exactly as it is.
+pub fn prove_present(
+    env: &Env,
+    scope: &Scope,
+    manifest: &Manifest,
+    kind: ItemKind,
+    name: &str,
+) -> Result<()> {
+    let Some(decl) = manifest.declared(kind).get(name) else {
+        return Err(CoreError::NotDeclared {
+            kind,
+            name: name.to_owned(),
+        });
+    };
+    let state = crate::source::resolve_at(env, scope, &decl.source, manifest, decl.rev.as_deref())?;
+    let crate::source::SourceState::Ready(ready) = state else {
+        return Err(CoreError::SourcePending {
+            name: decl.source.clone(),
+        });
+    };
+    if !item_in_tree(
+        &ready.root,
+        crate::source::repo_leaf(&ready.provenance),
+        kind,
+        name,
+    )? {
+        return Err(CoreError::ItemNotInSource {
+            name: name.to_owned(),
+            source_name: decl.source.clone(),
+        });
+    }
+    Ok(())
+}
+
+/// Whether one source tree offers the item — the shared reading behind
+/// both proofs above.
+fn item_in_tree(root: &Path, repo_leaf: &str, kind: ItemKind, name: &str) -> Result<bool> {
+    let sealed = SealedSource::open(root)?;
+    let config = crate::source::source_config(&sealed, repo_leaf)?;
+    Ok(crate::source::find_item(&sealed, &config, kind, name).is_some())
 }
 
 /// The cache answers first — a version the mirror already holds needs no

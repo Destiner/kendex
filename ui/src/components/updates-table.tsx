@@ -3,30 +3,25 @@ import { useId, useState } from "react";
 import type { UpdateRow } from "@/bindings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { PlaceCells } from "@/components/update-place-cells";
+import { UpdatesTableHeader } from "@/components/updates-table-header";
 import {
   EDITED_UPDATE_TAG,
   PINNED_UPDATE_TAG,
   REMOVED_UPSTREAM_TAG,
 } from "@/lib/copy";
 import {
-  FOLLOW_SOURCE_COLUMN,
+  EDITED_TAG_HELP,
   heldInLabel,
   placesLabel,
   UPDATE_NEEDS_CHECK_NOTE,
   UPDATE_PACKAGE_EVERYWHERE_LABEL,
-  UPDATES_NAME_COLUMN,
-  UPDATES_PLACE_COLUMN,
-  UPDATES_TYPE_COLUMN,
-  UPDATES_VERSION_COLUMN,
 } from "@/lib/copy-updates";
 import { kindIcon } from "@/lib/kind-icon";
 import { kindLabel, packageDisplayName } from "@/lib/labels";
@@ -37,7 +32,9 @@ import {
   type UpdateGroup,
   updatablePlaces,
 } from "@/lib/update-groups";
+import { unsettled } from "@/lib/updates-read-state";
 import { useUpdatesStore } from "@/stores/updates";
+import { useUpdatesView } from "@/stores/updates-view";
 
 /** Pending updates, one row per package. A package out of date in one
  *  place carries that place's controls on its row; one out of date in
@@ -47,27 +44,18 @@ import { useUpdatesStore } from "@/stores/updates";
 export function UpdatesTable({
   rows,
   onIgnore,
+  onShowVersion,
 }: {
   rows: UpdateRow[];
   /** Absent for muted rows: their only extra action is "notify again". */
   onIgnore?: (row: UpdateRow) => void;
+  /** Present on the table that carries the `…` menu showing the Version
+   *  column; the column itself follows the page-wide choice. */
+  onShowVersion?: (show: boolean) => void;
 }) {
   return (
     <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>{UPDATES_NAME_COLUMN}</TableHead>
-          <TableHead className="w-24">{UPDATES_TYPE_COLUMN}</TableHead>
-          <TableHead className="w-36">{UPDATES_PLACE_COLUMN}</TableHead>
-          <TableHead className="w-36">{UPDATES_VERSION_COLUMN}</TableHead>
-          <TableHead className="w-28 text-center">
-            {FOLLOW_SOURCE_COLUMN}
-          </TableHead>
-          <TableHead>
-            <span className="sr-only">Actions</span>
-          </TableHead>
-        </TableRow>
-      </TableHeader>
+      <UpdatesTableHeader onShowVersion={onShowVersion} />
       <TableBody>
         {groupUpdates(rows).map((group) => (
           <PackageRows
@@ -96,9 +84,8 @@ export function PackageRows({
   const busy = useUpdatesStore((s) => s.busy);
   // Not loaded, mid-check, and mid-load hold Update alike: either way
   // these rows are not the rows an update would act on.
-  const unconfirmed = useUpdatesStore(
-    (s) => !s.loaded || s.checking || s.overviewInFlight,
-  );
+  const unconfirmed = useUpdatesStore(unsettled);
+  const showVersion = useUpdatesView((s) => s.showVersion);
   const updateRows = useUpdatesStore((s) => s.updateRows);
   const Icon = kindIcon(group.kind);
   const name = packageDisplayName(group);
@@ -124,11 +111,29 @@ export function PackageRows({
           <div className="flex min-w-0 items-center gap-2.5">
             <Icon className="size-4 shrink-0 text-muted-foreground" />
             <span className="truncate font-medium">{name}</span>
-            {tags.map((tag) => (
-              <Badge key={tag} variant="outline">
-                {tag}
-              </Badge>
-            ))}
+            {tags.map((tag) =>
+              tag === EDITED_UPDATE_TAG ? (
+                // What editing means for updates, where a keyboard and a
+                // screen reader reach it, and on hover for a pointer.
+                <Tooltip key={tag}>
+                  <TooltipTrigger
+                    render={
+                      <Badge variant="outline" tabIndex={0}>
+                        {tag}
+                        <span className="sr-only">{EDITED_TAG_HELP}</span>
+                      </Badge>
+                    }
+                  />
+                  <TooltipContent className="max-w-72">
+                    {EDITED_TAG_HELP}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <Badge key={tag} variant="outline">
+                  {tag}
+                </Badge>
+              ),
+            )}
           </div>
         </TableCell>
         <TableCell className="text-muted-foreground">
@@ -151,7 +156,7 @@ export function PackageRows({
                 {placesLabel(places.length)}
               </Button>
             </TableCell>
-            <TableCell />
+            {showVersion ? <TableCell /> : null}
             <TableCell />
             <TableCell className="text-right">
               {/* Muted places only offer "notify again", so there is

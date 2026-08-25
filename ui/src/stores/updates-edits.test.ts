@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UpdateRow } from "@/bindings";
 import { commands } from "@/bindings";
@@ -5,7 +6,7 @@ import { ADOPTABLE } from "@/lib/adoptable";
 import { UPDATE_NEEDS_CHECK_NOTE } from "@/lib/copy-updates";
 import { useProblemsStore } from "./problems";
 import { useUpdatesStore } from "./updates";
-import { keepAsOwn, takeNewVersion } from "./updates-edits";
+import { installAsNew, keepAsOwn, takeNewVersion } from "./updates-edits";
 
 vi.mock("@/bindings", () => ({
   commands: {
@@ -16,6 +17,7 @@ vi.mock("@/bindings", () => ({
     applyPlan: vi.fn(),
     applyDiscardEdits: vi.fn(),
     packageFork: vi.fn(),
+    packageForkBeside: vi.fn(),
     scanMachine: vi.fn(),
     auditAll: vi.fn(),
   },
@@ -216,5 +218,157 @@ describe("updates store: edited places", () => {
     );
     expect(busyDuring).toBe(true);
     expect(useUpdatesStore.getState().busy).toBe(false);
+  });
+});
+
+describe("updates store: installing beside an edited place", () => {
+  const edited = {
+    blockedByLocalEdit: true,
+    editedHarnesses: ["claude" as const],
+    forkableHarness: "claude" as const,
+  };
+
+  beforeEach(() => {
+    useUpdatesStore.setState({ rows: [], busy: false, loaded: true });
+    useProblemsStore.setState({
+      dialog: { open: false, title: "", steps: [], actions: [] },
+    });
+    vi.clearAllMocks();
+    vi.mocked(commands.updatesOverview).mockResolvedValue({
+      status: "ok",
+      data: { rows: [], warnings: [] },
+    });
+    vi.mocked(commands.scanMachine).mockResolvedValue({
+      status: "ok",
+      data: { harnesses: [], items: [], missingProjects: [], warnings: [] },
+    });
+    vi.mocked(commands.auditAll).mockResolvedValue({ status: "ok", data: [] });
+  });
+
+  it("forks the edited rendering under the chosen name, moving a hold to latest", async () => {
+    vi.mocked(commands.packageForkBeside).mockResolvedValue({
+      status: "ok",
+      data: {
+        scope: { scope: "global" },
+        drift: [],
+        plan: [],
+        notes: [],
+        warnings: [],
+        safety: [],
+        adoptable: ADOPTABLE,
+        exits: [],
+      },
+    });
+
+    expect(
+      await installAsNew(row({ ...edited, pinned: true }), "claude", "gh-mine"),
+    ).toBeNull();
+    expect(commands.packageForkBeside).toHaveBeenLastCalledWith(
+      { scope: "global" },
+      "skill",
+      "gh",
+      "claude",
+      "gh-mine",
+      "b".repeat(40),
+    );
+
+    expect(await installAsNew(row(edited), "claude", "gh-mine")).toBeNull();
+    expect(commands.packageForkBeside).toHaveBeenLastCalledWith(
+      { scope: "global" },
+      "skill",
+      "gh",
+      "claude",
+      "gh-mine",
+      null,
+    );
+    expect(toast.success).toHaveBeenCalledWith(
+      "Installed gh — your edited copy is now gh-mine",
+    );
+    expect(commands.auditAll).toHaveBeenCalled();
+    expect(useUpdatesStore.getState().busy).toBe(false);
+  });
+
+  // The refusal belongs to the dialog that asked for the name, not to a
+  // problems dialog over it.
+  it("hands the engine's refusal back instead of raising a dialog", async () => {
+    vi.mocked(commands.packageForkBeside).mockResolvedValue({
+      status: "error",
+      error: { phase: "refused", message: "'docs' already installed" },
+    });
+
+    expect(await installAsNew(row(edited), "claude", "docs")).toBe(
+      "'docs' already installed",
+    );
+    expect(useProblemsStore.getState().dialog.open).toBe(false);
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.info).not.toHaveBeenCalled();
+    expect(commands.auditAll).not.toHaveBeenCalled();
+  });
+
+  // An error in neither phase — Tauri rejecting an unknown command or bad
+  // args hands back a plain string — must never read as "your fork was
+  // recorded": it presents as a refusal, claiming nothing happened.
+  it("fails closed on an error shape that names no phase", async () => {
+    vi.mocked(commands.packageForkBeside).mockResolvedValue({
+      status: "error",
+      error: "invalid args `newName`" as never,
+    });
+
+    expect(await installAsNew(row(edited), "claude", "gh-mine")).toBe(
+      "invalid args `newName`",
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.info).not.toHaveBeenCalled();
+    expect(commands.auditAll).not.toHaveBeenCalled();
+    expect(useUpdatesStore.getState().busy).toBe(false);
+  });
+
+  // A fork the scope recorded but could not render is not a refusal:
+  // another name would not help, and the rows now carry the drift. The
+  // dialog gets null and closes; the toast says what landed.
+  it("treats a failure after the fork was recorded as a partial result, not a refusal", async () => {
+    vi.mocked(commands.packageForkBeside).mockResolvedValue({
+      status: "error",
+      error: { phase: "recorded", message: "render refused: disk full" },
+    });
+
+    expect(await installAsNew(row(edited), "claude", "gh-mine")).toBeNull();
+    expect(toast.info).toHaveBeenCalledWith(
+      "Your edited copy is now gh-mine, but gh didn't install: render refused: disk full. Review & apply finishes it.",
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(useProblemsStore.getState().dialog.open).toBe(false);
+    // The refreshes run: what landed is on disk and the rows must say so.
+    expect(commands.updatesOverview).toHaveBeenCalled();
+    expect(commands.auditAll).toHaveBeenCalled();
+  });
+
+  // The hold moves only when it is this declaration's to move.
+  it("leaves the hold alone when the newest is not this place's to take", async () => {
+    vi.mocked(commands.packageForkBeside).mockResolvedValue({
+      status: "error",
+      error: { phase: "refused", message: "nope" },
+    });
+    await installAsNew(
+      row({ ...edited, pinned: true, canTakeLatest: false }),
+      "claude",
+      "gh-mine",
+    );
+    expect(commands.packageForkBeside).toHaveBeenLastCalledWith(
+      { scope: "global" },
+      "skill",
+      "gh",
+      "claude",
+      "gh-mine",
+      null,
+    );
+  });
+
+  it("refuses rows a failed check left behind, before any call", async () => {
+    useUpdatesStore.setState({ loaded: false });
+    expect(await installAsNew(row(edited), "claude", "gh-mine")).toBe(
+      UPDATE_NEEDS_CHECK_NOTE,
+    );
+    expect(commands.packageForkBeside).not.toHaveBeenCalled();
   });
 });
