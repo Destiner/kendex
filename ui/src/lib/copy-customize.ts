@@ -1,5 +1,7 @@
 import type { HookDelivery } from "@/bindings";
+import { EDITED_UPDATE_TAG, FORKED_BADGE_LABEL } from "@/lib/copy";
 import type { ItemCustomization } from "@/lib/customization";
+import type { CustomizedHere } from "@/lib/customized-places";
 import type { GroupStatus } from "@/lib/derive";
 import { harnessName } from "@/lib/labels";
 
@@ -99,6 +101,9 @@ export const CUSTOMIZED_SECTION_HELP =
 export const NOTHING_CUSTOMIZED =
   "Nothing yet — open a package from the Library to customize it.";
 export const NOT_INSTALLED_HERE = "Not installed here";
+export const CUSTOMIZED_CHECKING = "Checking for hand edits and forks…";
+export const CUSTOMIZED_UPDATES_UNCHECKED =
+  "Hand-edited and forked packages may be missing: the check for updates failed. Try it again from Updates.";
 export const REMOVE_CUSTOMIZATION = "Remove";
 
 // What a package's row is marked with, in the Library's legend and on it.
@@ -124,5 +129,20 @@ export function customizationSummary(one: ItemCustomization): string {
   for (const [harness] of one.frontmatter) {
     parts.push(`${harnessName(harness)} settings`);
   }
+  return parts.join(" · ");
+}
+
+/** The line under an index row: how this place made the package its own.
+ *  A fork and a hand edit are each named when they hold, then whatever
+ *  settings sit on top; a settings-only row lists just those. */
+export function customizedLine(
+  facts: Pick<CustomizedHere, "edited" | "forked">,
+  one: ItemCustomization,
+): string {
+  const parts: string[] = [];
+  if (facts.forked) parts.push(FORKED_BADGE_LABEL);
+  if (facts.edited) parts.push(EDITED_UPDATE_TAG);
+  const settings = customizationSummary(one);
+  if (settings) parts.push(settings);
   return parts.join(" · ");
 }
