@@ -6,8 +6,19 @@ use super::pin::parse_kind;
 use super::{CliResult, resolve_scopes, say};
 use crate::scope::ScopeFilter;
 
+mod apply_one;
+use apply_one::apply_one;
+
 #[derive(Subcommand)]
 pub enum UpdatesCommand {
+    /// Bring one package current, leaving the scope's other followers at
+    /// their installed versions (`--apply` brings the whole scope current)
+    Apply {
+        /// agent | skill | hook | command | mcp-server (Pi extensions come
+        /// current through `kendex update-pi`)
+        kind: String,
+        name: String,
+    },
     /// Stop notifying about one package's updates
     Ignore {
         /// agent | skill | hook | command | mcp-server | pi-extension
@@ -38,7 +49,7 @@ pub struct UpdatesArgs {
     #[arg(long)]
     scope: Option<String>,
     /// Skip confirmation prompts
-    #[arg(short = 'y', long)]
+    #[arg(short = 'y', long, global = true)]
     yes: bool,
 }
 
@@ -53,7 +64,21 @@ pub fn run(env: &Env, args: UpdatesArgs) -> CliResult {
     } = args;
     let filter = ScopeFilter::resolve(scope.as_deref(), global, ScopeFilter::Project)?;
     let scope = resolve_scopes(env, filter)?.remove(0);
+    // Whatever this run turns out to be, it starts the way the parent
+    // command starts: a `--refresh` the person typed is a fetch they asked
+    // for before anything reads a catalog, and a targeted apply reads one.
+    if refresh && reads_sources(&command) {
+        fetch_sources(env, &scope);
+    }
+    // `--apply` is the whole scope and a subcommand is one package: doing
+    // either silently over the other answers a question nobody asked.
+    if apply && command.is_some() {
+        return Err("--apply brings the whole place current; drop it to act on one package".into());
+    }
     match command {
+        Some(UpdatesCommand::Apply { kind, name }) => {
+            return apply_one(env, &scope, kind, name, yes);
+        }
         Some(UpdatesCommand::Ignore { kind, name }) => {
             return set_ignored(env, &scope, kind, name, true);
         }
@@ -61,16 +86,6 @@ pub fn run(env: &Env, args: UpdatesArgs) -> CliResult {
             return set_ignored(env, &scope, kind, name, false);
         }
         None => {}
-    }
-    if refresh {
-        let path = kendex_core::manifest::manifest_path(env, &scope);
-        if let Ok(kendex_core::manifest::ManifestFile::Current(manifest)) =
-            kendex_core::manifest::load(&path)
-        {
-            for warning in kendex_core::remote::fetch_all(env, &manifest) {
-                say(&format!("warning: {warning}"));
-            }
-        }
     }
     if apply {
         return super::refresh::run(env, filter, false, yes, false);
@@ -137,6 +152,31 @@ pub fn run(env: &Env, args: UpdatesArgs) -> CliResult {
         say(&format!("warning: snapshot not derived ({error})"));
     }
     Ok(())
+}
+
+/// Whether what this run is about to do reads catalog content, and so
+/// whether the fetch `--refresh` asks for has anything to be ahead of.
+/// Muting and unmuting write one settings entry and read no source, so
+/// fetching every one of them would spend the network on nothing.
+fn reads_sources(command: &Option<UpdatesCommand>) -> bool {
+    !matches!(
+        command,
+        Some(UpdatesCommand::Ignore { .. } | UpdatesCommand::Unignore { .. })
+    )
+}
+
+/// Bring every source's mirror up to date, pinned ones included. A source
+/// that cannot be fetched is said and skipped: the run continues against
+/// what is cached, which is what it would have had anyway.
+fn fetch_sources(env: &Env, scope: &kendex_core::model::Scope) {
+    let path = kendex_core::manifest::manifest_path(env, scope);
+    if let Ok(kendex_core::manifest::ManifestFile::Current(manifest)) =
+        kendex_core::manifest::load(&path)
+    {
+        for warning in kendex_core::remote::fetch_all(env, &manifest) {
+            say(&format!("warning: {warning}"));
+        }
+    }
 }
 
 fn show_version(version: &kendex_core::package::updates::VersionRef) -> String {

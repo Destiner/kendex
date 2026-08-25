@@ -5,20 +5,22 @@ import { UPDATE_ERROR_TITLE, updatedToastLabel } from "@/lib/copy";
 import {
   nothingToUpdateToastLabel,
   UPDATE_NEEDS_CHECK_NOTE,
-  updatedWithPlaceToastLabel,
 } from "@/lib/copy-updates";
 import {
-  placeName,
   skippedPlaces,
   updatablePlaces,
   visibleUpdates,
 } from "@/lib/update-groups";
-import { bulkUpdateToast } from "@/lib/update-toasts";
+import {
+  showBulkOutcome,
+  showUpdateOutcome,
+  startBulk,
+} from "@/lib/update-outcome";
 import { unsettled } from "@/lib/updates-read-state";
 import { useAuditStore } from "./audit";
 import { useProblemsStore } from "./problems";
 import { useScanStore } from "./scan";
-import { applyRow, applyRows } from "./updates-apply";
+import { type ApplyOutcome, applyRow, applyRows } from "./updates-apply";
 import { overviewApplier } from "./updates-overview";
 
 interface UpdatesState {
@@ -136,22 +138,19 @@ export const useUpdatesStore = create<UpdatesState>((set, get) => {
       try {
         // The commit and its follow-up overview ride the side-effect
         // chain, so nothing older can land on top of them.
-        let applied = false;
+        let outcome: ApplyOutcome = { ok: false, update: null };
         const error = await get().mutate(async () => {
-          applied = await applyRow(row, reportUpdate);
+          outcome = await applyRow(row, reportUpdate);
           return null;
         });
         if (error !== null) {
           showError(UPDATE_ERROR_TITLE, error);
-        } else if (applied) {
-          // A follower comes current by applying its scope, which brings
-          // that scope's other followers along — the toast says so rather
-          // than letting the extra changes look like a surprise.
-          toast.success(
-            row.pinned
-              ? updatedToastLabel(row.name)
-              : updatedWithPlaceToastLabel(row.name, placeName(row.scope)),
-          );
+        } else if (outcome.ok) {
+          // A following package can come back held: the plan refuses to
+          // write over a copy somebody changed, and saying "Updated" over
+          // that is the whole point of asking the command what it did.
+          if (outcome.update) showUpdateOutcome(row.name, outcome.update);
+          else toast.success(updatedToastLabel(row.name));
           await useScanStore.getState().refresh();
           await useAuditStore.getState().refresh({ force: true });
         }
@@ -179,21 +178,24 @@ export const useUpdatesStore = create<UpdatesState>((set, get) => {
         }
         // The whole sequence and its follow-up overview ride the
         // side-effect chain, so nothing older can land on top of them.
-        let ok = true;
+        const outcome = startBulk(skipped);
         const error = await get().mutate(async () => {
-          ok = await applyRows(rows, reportUpdate);
+          await applyRows(rows, reportUpdate, outcome);
           return null;
         });
-        // A rejection escapes the sequence without touching ok — only the
-        // applier saw it, and success must not be claimed over it.
+        // A rejection escapes the sequence without touching the outcome —
+        // only the applier saw it, and success must not be claimed over it.
         if (error !== null) {
           showError(UPDATE_ERROR_TITLE, error);
-          ok = false;
+          outcome.ok = false;
         }
-        if (ok)
-          toast.success(
-            bulkUpdateToast(rows, skipped, visibleUpdates(get().rows)),
-          );
+        // Counted off what the applies reported, never off the rows the
+        // click covered: a place the plan held back needs attention on its
+        // own row, it is not one more updated.
+        // Said whether or not a place failed: the error is its own toast,
+        // and what the rest of the run did to the person's packages is not
+        // the error's to swallow.
+        showBulkOutcome(outcome, visibleUpdates(get().rows));
         await useScanStore.getState().refresh();
         await useAuditStore.getState().refresh({ force: true });
       } finally {

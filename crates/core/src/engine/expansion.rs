@@ -28,6 +28,30 @@ pub(super) const PLANNED_KINDS: [ItemKind; 5] = [
     ItemKind::McpServer,
 ];
 
+/// The kinds a scope plan derives and writes, and so the kinds one package
+/// of can be brought current on its own. A Pi extension installs through
+/// its own path and a plugin is declared whole; a plan asked for either
+/// comes back empty, and an empty plan reads as "already current" on every
+/// surface that shows it.
+///
+/// [`PLANNED_KINDS`] under the name the product uses for it. Exported to
+/// the app so no surface keeps a second list: a button offered for a kind
+/// this list rejects is one the planner refuses, and the offer and the
+/// refusal must never come from two different accounts of the same rule.
+pub const PER_PACKAGE_UPDATE_KINDS: [ItemKind; PLANNED_KINDS.len()] = PLANNED_KINDS;
+
+/// Whether [`PER_PACKAGE_UPDATE_KINDS`] admits this kind. Every caller of
+/// the single-package update refuses the rest first, saying
+/// [`NO_PER_PACKAGE_UPDATE`].
+pub fn plans_per_package(kind: ItemKind) -> bool {
+    PER_PACKAGE_UPDATE_KINDS.contains(&kind)
+}
+
+/// Why a kind [`plans_per_package`] rejects is refused, and where the work
+/// that does move it lives. One sentence, said the same way by the CLI and
+/// the app, so neither invents its own account of the same rule.
+pub const NO_PER_PACKAGE_UPDATE: &str = "has no per-package update — Pi extensions come current through `kendex update-pi`, and plugins through the scope's own apply";
+
 /// One item a plan installs: the declaration to plan it under, and the tools
 /// it lands on. A declared item keeps the declaration the user wrote; a
 /// derived one gets its source from whatever brought it in.
@@ -312,4 +336,27 @@ pub(super) fn expand(
     super::deps::expand(scope, manifest, &mut expansion, &mut catalogs, state);
     expansion.report_rev_disagreements(state);
     expansion
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ItemKind, plans_per_package};
+
+    #[test]
+    fn only_the_kinds_a_plan_derives_have_a_per_package_update() {
+        for kind in [
+            ItemKind::Skill,
+            ItemKind::Agent,
+            ItemKind::Hook,
+            ItemKind::Command,
+            ItemKind::McpServer,
+        ] {
+            assert!(plans_per_package(kind), "{kind:?}");
+        }
+        // A Pi extension installs through its own path and a plugin is
+        // declared whole: a single-package plan for either is empty, which
+        // every surface reads as already current.
+        assert!(!plans_per_package(ItemKind::PiExtension));
+        assert!(!plans_per_package(ItemKind::Plugin));
+    }
 }

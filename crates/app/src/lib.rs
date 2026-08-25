@@ -28,6 +28,13 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
     // two copies of three numbers is two places for them to drift.
     Builder::<tauri::Wry>::new()
         .constant("ZOOM", kendex_core::settings::ZOOM)
+        // The kinds a single package can be brought current on its own.
+        // The app refuses the rest, so the surfaces that offer Update read
+        // the same list rather than keeping their own.
+        .constant(
+            "PER_PACKAGE_UPDATE_KINDS",
+            kendex_core::engine::PER_PACKAGE_UPDATE_KINDS,
+        )
         .commands(collect_commands![
             commands::app_version,
             app_update::app_update_check,
@@ -98,6 +105,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             account::mine_submit,
             account::mine_submissions,
             packages::package_versions,
+            packages::package_update,
             packages::updates_overview,
             packages::updates_refresh,
             packages::update_set_ignored,

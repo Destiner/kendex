@@ -3,7 +3,7 @@
 // reviewed in one place.
 export const FOLLOW_SOURCE_COLUMN = "Follow source";
 export const FOLLOW_SOURCE_HELP =
-  "On, this place takes new versions whenever it refreshes or you press Update; off, it stays on this version until you choose one.";
+  "On, this package takes the newest version when you press Update, and moves with everything else here when the place refreshes; off, it stays on this version until you choose one.";
 export const heldInLabel = (held: number, total: number): string =>
   `Held in ${held} of ${total}`;
 export const followSourceLabel = (name: string, place: string): string =>
@@ -22,6 +22,8 @@ export const updatesSubtitle = (packages: number, places: number): string =>
 export const UPDATE_PACKAGE_EVERYWHERE_LABEL = "Update all";
 export const heldBySourceNote = (source: string): string =>
   `Held by the source "${source}" as a whole — release it where that source is declared`;
+export const NO_PER_PACKAGE_UPDATE_NOTE =
+  "Not updated one package at a time — Pi extensions come current with the update-pi command, plugins with their place's own apply";
 export const HELD_BY_OWNER_NOTE =
   "Held by the bundle or package it came with — update or release it from there";
 
@@ -60,6 +62,38 @@ export const updatedSomeToastLabel = (
   `Updated ${updated === 1 ? "1 package" : `${updated} packages`} — ${skipped === 1 ? "1 place needs" : `${skipped} places need`} attention on its own row`;
 export const updatedCountToastLabel = (updated: number): string =>
   `Updated ${updated === 1 ? "1 package" : `${updated} packages`}`;
+// What a single-package Update did when a conflict stopped part of it —
+// a copy changed by hand, files kendex never put there. The tool is named
+// because that is where the person goes to settle it.
+const toolList = (tools: string[]): string =>
+  tools.length > 1
+    ? `${tools.slice(0, -1).join(", ")} and ${tools[tools.length - 1]}`
+    : (tools[0] ?? "");
+export const updatedExceptToastLabel = (
+  name: string,
+  tools: string[],
+): string =>
+  `Updated ${name} — the copy in ${toolList(tools)} needs attention on the package page`;
+// A refusal with nothing of the person's in the files does not leave the
+// old copy alone: it goes to the trash and nothing is written back. Said
+// plainly, because it is the one outcome that took something away.
+export const removedNotReplacedToastLabel = (
+  name: string,
+  tools: string[],
+): string =>
+  `${name} could not be installed — the copy in ${toolList(tools)} went to the trash and nothing replaced it`;
+export const removedNotReplacedCountToastLabel = (removed: number): string =>
+  removed === 1
+    ? "1 package could not be installed — its copy went to the trash and nothing replaced it"
+    : `${removed} packages could not be installed — their copies went to the trash and nothing replaced them`;
+export const notUpdatedToastLabel = (name: string, tools: string[]): string =>
+  `${name} was not updated — the copy in ${toolList(tools)} needs attention on the package page`;
+// A run where one place failed: the error is already on screen, so this
+// says what the rest of it came to — as a fact, never as a success.
+export const movedDespiteErrorToastLabel = (packages: number): string =>
+  `${packages === 1 ? "1 package" : `${packages} packages`} came current in this run — what did not is in the error above`;
+export const nothingMovedToastLabel = (held: number): string =>
+  `Nothing was updated — ${held === 1 ? "1 place needs" : `${held} places need`} attention on its own row`;
 export const nothingToUpdateToastLabel = (skipped: number): string =>
   `Nothing to update — ${skipped === 1 ? "1 place needs" : `${skipped} places need`} attention on its own row`;
 

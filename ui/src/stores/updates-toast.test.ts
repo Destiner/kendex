@@ -5,13 +5,16 @@ import { commands } from "@/bindings";
 import { ADOPTABLE } from "@/lib/adoptable";
 import { useUpdatesStore } from "./updates";
 
-vi.mock("@/bindings", () => ({
+vi.mock("@/bindings", async (importOriginal) => ({
+  // The generated constants stay real — the update rules read core's own
+  // kind list through them, and a copy kept here could go stale unseen.
+  ...(await importOriginal<typeof import("@/bindings")>()),
   commands: {
     updatesOverview: vi.fn(),
     updatesRefresh: vi.fn(),
     updateSetIgnored: vi.fn(),
     packageSetRev: vi.fn(),
-    applyPlan: vi.fn(),
+    packageUpdate: vi.fn(),
     applyDiscardEdits: vi.fn(),
     packageFork: vi.fn(),
     scanMachine: vi.fn(),
@@ -62,7 +65,10 @@ const view = {
 };
 
 const ready = (remaining: UpdateRow[]) => {
-  vi.mocked(commands.applyPlan).mockResolvedValue({ status: "ok", data: view });
+  vi.mocked(commands.packageUpdate).mockResolvedValue({
+    status: "ok",
+    data: { view: view, heldBack: [], removed: [], moved: [] },
+  });
   vi.mocked(commands.updatesOverview).mockResolvedValue({
     status: "ok",
     data: { rows: remaining, warnings: [] },
@@ -104,5 +110,97 @@ describe("updates store: what the success toast claims", () => {
       .getState()
       .updateRows([row({ name: "gh" }), row({ name: "review" }), gone]);
     expect(toast.success).toHaveBeenCalledWith("Updated 2 packages");
+  });
+});
+
+describe("updates store: a package the plan held back", () => {
+  const conflict = (harness: "claude" | "codex") => ({
+    kind: "skill" as const,
+    name: "gh",
+    harness,
+    scope: { scope: "global" } as const,
+    state: "conflict" as const,
+    detail: "you changed this copy",
+    cause: "local-edit" as const,
+  });
+  const stale = (harness: "claude" | "codex") => ({
+    ...conflict(harness),
+    state: "stale" as const,
+    cause: "upstream-changed" as const,
+  });
+
+  const held = (update: {
+    heldBack: ReturnType<typeof conflict>[];
+    removed?: ReturnType<typeof conflict>[];
+    moved: ReturnType<typeof stale>[];
+  }) => {
+    ready([]);
+    vi.mocked(commands.packageUpdate).mockResolvedValue({
+      status: "ok",
+      data: { view, removed: [], ...update },
+    });
+  };
+
+  beforeEach(() => {
+    useUpdatesStore.setState({ rows: [], busy: false, loaded: true });
+    vi.clearAllMocks();
+  });
+
+  it("never claims a package was updated when nothing moved for it", async () => {
+    held({ heldBack: [conflict("claude")], moved: [] });
+    await useUpdatesStore.getState().updateOne(row({ name: "gh" }));
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.info).toHaveBeenCalledWith(
+      "gh was not updated — the copy in Claude Code needs attention on the package page",
+    );
+  });
+
+  it("names the tool still holding it when the other copies moved", async () => {
+    held({ heldBack: [conflict("codex")], moved: [stale("claude")] });
+    await useUpdatesStore.getState().updateOne(row({ name: "gh" }));
+    expect(toast.success).toHaveBeenCalledWith(
+      "Updated gh — the copy in Codex needs attention on the package page",
+    );
+  });
+
+  it("says the plain line when the package moved everywhere", async () => {
+    held({ heldBack: [], moved: [stale("claude")] });
+    await useUpdatesStore.getState().updateOne(row({ name: "gh" }));
+    expect(toast.success).toHaveBeenCalledWith("Updated gh");
+  });
+});
+
+describe("updates store: a copy the run took away", () => {
+  const conflict = (harness: "claude" | "codex") => ({
+    kind: "skill" as const,
+    name: "gh",
+    harness,
+    scope: { scope: "global" } as const,
+    state: "conflict" as const,
+    // The refusal's own words: nothing of the person's was in the files,
+    // so the old copy goes and nothing is written back.
+    detail: "the previous installation will be moved to the trash",
+    cause: null,
+  });
+
+  beforeEach(() => {
+    useUpdatesStore.setState({ rows: [], busy: false, loaded: true });
+    vi.clearAllMocks();
+  });
+
+  it("says the copy went to the trash instead of calling it held", async () => {
+    ready([]);
+    vi.mocked(commands.packageUpdate).mockResolvedValue({
+      status: "ok",
+      data: { view, heldBack: [], removed: [conflict("claude")], moved: [] },
+    });
+
+    await useUpdatesStore.getState().updateOne(row({ name: "gh" }));
+
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.info).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith(
+      "gh could not be installed — the copy in Claude Code went to the trash and nothing replaced it",
+    );
   });
 });
