@@ -174,6 +174,10 @@ pub fn rename_ops(env: &Env, scope: &Scope) -> Result<Vec<PlannedOp>> {
                 "{RENAME_PREFIX}: {LEGACY_LOCAL_SOURCE_DIR} becomes {LOCAL_SOURCE_DIR}"
             ),
             op: Op::Rename {
+                // The dir moves whole, whatever sits in it: a dangling
+                // link kendex never wrote is carried along, not a reason
+                // to leave the scope unplannable.
+                from_pre: Pre::tree_as_is(&old_local)?,
                 from: old_local,
                 to: root.join(LOCAL_SOURCE_DIR),
                 to_pre: Pre::Absent,
@@ -202,6 +206,9 @@ fn file_rename_op(
     ops.push(PlannedOp {
         description: format!("{RENAME_PREFIX}: {old_name} becomes {new_name}"),
         op: Op::Rename {
+            // As it sits, not as it reads: a link to the same bytes put
+            // where the file was is not the file the plan looked at.
+            from_pre: Pre::tree_as_is(&old)?,
             from: old,
             to: new,
             to_pre: Pre::Absent,
@@ -323,32 +330,4 @@ pub(crate) fn insert_manifest_save(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::env::{Env, FakeOs};
-
-    #[test]
-    fn source_catalog_migration_renames_both_definition_and_install_state() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::write(root.join("vstack.toml"), "is_source_catalog = true\n").unwrap();
-        std::fs::write(root.join("vstack-local.toml"), "schema = 5\n").unwrap();
-        let env = Env::fake(root, FakeOs::Linux);
-        let scope = Scope::Project {
-            root: root.to_path_buf(),
-        };
-
-        let ops = rename_ops(&env, &scope).unwrap();
-        let said: Vec<&str> = ops.iter().map(|o| o.description.as_str()).collect();
-        assert!(
-            said.iter()
-                .any(|d| d.contains("vstack-local.toml becomes kendex-local.toml")),
-            "install state must move: {said:?}",
-        );
-        assert!(
-            said.iter()
-                .any(|d| d.contains("vstack.toml becomes kendex.toml")),
-            "the catalog definition must move too: {said:?}",
-        );
-    }
-}
+mod tests;

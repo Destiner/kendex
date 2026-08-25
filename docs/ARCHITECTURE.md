@@ -302,11 +302,21 @@ lives in one capability table read by core and UI.
   the window has taken (on the window's reply), what the settings object
   holds (when the file does); the first two stay out of the settings
   object. The size reaches the file through its own command carrying only
-  a percent; `update_settings` leaves the stored size as found. At most one
+  a percent; a copy read before a resize is refused as stale. At most one
   save in flight; asks during it collapse into one follow-up writing
   whatever is on screen. A write waits for the resize before reading what
   to write; a size the file refuses stays on screen. The close is not held
   for an in-flight write.
+- **A whole-file write carries the base of the file its copy came from.**
+  The Customize tab's `kendex.toml` and the Settings page's app
+  `settings.toml` are read as content plus a `Base` (`kendex_core::base`,
+  the hash of the bytes read) and written back with it; different bytes on
+  disk refuse the write as `stale` (`WriteRefused`), which the page renders
+  as a choice, never a silent overwrite. The manifest write binds the base
+  into its plan op's precondition (`PlanOptions::manifest_base`); every
+  settings write, whole-file or targeted, runs under one OS file lock
+  shared by the app's threads and the CLI, so the check and the write
+  cannot be split.
 - **Every atomic write gets its own temp file.** `write_then_rename` names
   its temp file per write, not per process.
 - GUI + CLI are equal thin shells over `crates/core`; every core operation

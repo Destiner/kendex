@@ -140,9 +140,145 @@ pub fn read_if_exists(path: &Path) -> Result<Option<String>> {
     }
 }
 
+pub(crate) fn sync_file(path: &Path) -> Result<()> {
+    fs::File::open(path)
+        .and_then(|f| f.sync_all())
+        .map_err(|e| CoreError::io(path, e))
+}
+
+/// Directory fsync is a no-op on platforms where directories cannot be
+/// opened (Windows); rename durability there rides on the volume flush.
+pub(crate) fn sync_dir(path: &Path) {
+    #[cfg(unix)]
+    if let Ok(dir) = fs::File::open(path) {
+        let _ = dir.sync_all();
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+}
+
+/// `sync_dir` with the outcome kept: for a transition that must be on
+/// disk before the next step may run. Unix only; elsewhere the volume
+/// flush is all there is, and the call reports nothing.
+pub(crate) fn sync_dir_durable(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        fs::File::open(path)
+            .and_then(|dir| dir.sync_all())
+            .map_err(|e| CoreError::io(path, e))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        Ok(())
+    }
+}
+
+/// Sync a tree's files and directories, a link treated as a leaf: the
+/// parent's sync persists the entry itself, and what it points at is not
+/// this tree's — following it would sync files outside the tree, or the
+/// same tree again through a link back into it until the kernel refuses
+/// the path. The same reading of a link as `hash_tree_as_is`.
+pub(crate) fn sync_tree(root: &Path) -> Result<()> {
+    let Ok(kind) = fs::symlink_metadata(root).map(|meta| meta.file_type()) else {
+        return Ok(());
+    };
+    if kind.is_symlink() {
+        return Ok(());
+    }
+    if kind.is_file() {
+        return sync_file(root);
+    }
+    if let Ok(entries) = fs::read_dir(root) {
+        for entry in entries.flatten() {
+            sync_tree(&entry.path())?;
+        }
+        sync_dir(root);
+    }
+    Ok(())
+}
+
+pub(crate) fn remove_any(path: &Path) -> Result<()> {
+    if path.is_symlink() || path.is_file() {
+        fs::remove_file(path).map_err(|e| CoreError::io(path, e))?;
+    } else if path.is_dir() {
+        fs::remove_dir_all(path).map_err(|e| CoreError::io(path, e))?;
+    }
+    Ok(())
+}
+
+pub(crate) fn copy_tree(from: &Path, to: &Path) -> Result<()> {
+    fs::create_dir_all(to).map_err(|e| CoreError::io(to, e))?;
+    for entry in fs::read_dir(from)
+        .map_err(|e| CoreError::io(from, e))?
+        .flatten()
+    {
+        let source = entry.path();
+        let Some(name) = source.file_name() else {
+            continue;
+        };
+        let dest = to.join(name);
+        if source.is_symlink() {
+            let target = fs::read_link(&source).map_err(|e| CoreError::io(&source, e))?;
+            make_symlink(&target, &dest)?;
+        } else if source.is_dir() {
+            copy_tree(&source, &dest)?;
+        } else {
+            fs::copy(&source, &dest).map_err(|e| CoreError::io(&source, e))?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+pub(crate) fn make_symlink(target: &Path, link: &Path) -> Result<()> {
+    std::os::unix::fs::symlink(target, link).map_err(|e| CoreError::io(link, e))
+}
+
+#[cfg(windows)]
+pub(crate) fn make_symlink(target: &Path, link: &Path) -> Result<()> {
+    if target.is_dir() {
+        std::os::windows::fs::symlink_dir(target, link).map_err(|e| CoreError::io(link, e))
+    } else {
+        std::os::windows::fs::symlink_file(target, link).map_err(|e| CoreError::io(link, e))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A link is a leaf of the tree it sits in: its parent's sync persists
+    /// the entry, and nothing on the far side is this tree's to touch.
+    /// Pinned with a link to a directory outside the tree holding a file
+    /// nobody may open — followed, the sync would fail on it.
+    #[cfg(unix)]
+    #[test]
+    fn sync_tree_never_follows_a_link() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        let sealed = outside.join("sealed");
+        fs::write(&sealed, "x").unwrap();
+        fs::set_permissions(&sealed, fs::Permissions::from_mode(0o000)).unwrap();
+        let unlock = || fs::set_permissions(&sealed, fs::Permissions::from_mode(0o600)).unwrap();
+        if fs::File::open(&sealed).is_ok() {
+            // Permissions do not bind this user (root): following the link
+            // cannot be made to fail here.
+            unlock();
+            return;
+        }
+        let tree = tmp.path().join("tree");
+        fs::create_dir_all(&tree).unwrap();
+        fs::write(tree.join("a"), "a").unwrap();
+        std::os::unix::fs::symlink(&outside, tree.join("out")).unwrap();
+        std::os::unix::fs::symlink(".", tree.join("loop")).unwrap();
+
+        let result = sync_tree(&tree);
+        unlock();
+        result.unwrap();
+    }
 
     /// The app saves settings from a Tokio thread pool, so a slider drag can
     /// put several writes of one file in flight at once. Sharing a temp name

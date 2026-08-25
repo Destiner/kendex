@@ -1,5 +1,4 @@
 use std::fs;
-use std::path::PathBuf;
 
 use crate::env::Env;
 use crate::error::{CoreError, Result};
@@ -9,9 +8,11 @@ mod common;
 pub mod journal;
 mod op;
 mod pre;
+mod transaction;
 
 pub use common::{common_key, execute_common, recover_common_journals};
 pub use op::{Op, Plan, PlannedOp, Pre, read_git_config};
+use transaction::run_journaled;
 
 /// Filesystem-safe key naming a scope's journal dir and lock file. Keys off
 /// the canonical scope so two spellings of one root can never hold two
@@ -108,74 +109,11 @@ pub fn execute(env: &Env, plan: &Plan, fail_after: Option<usize>) -> Result<Appl
     })
 }
 
-/// The one transaction engine, under a lock the caller already holds for
-/// `key` and after it recovered: journal every pre-image, run the ops in
-/// order, roll back on the first failure. Returns how many ops ran.
-fn run_journaled(
-    env: &Env,
-    ops: &[PlannedOp],
-    key: &str,
-    fail_after: Option<usize>,
-) -> Result<usize> {
-    // Nothing to do leaves nothing behind: an empty journal would read as
-    // an interrupted apply to the next recovery pass.
-    if ops.is_empty() {
-        return Ok(0);
-    }
-    let journal_dir = journal::journal_dir_for(&env.journal_dir(), key);
-    let mut touched: Vec<PathBuf> = ops.iter().flat_map(|p| p.op.touched()).collect();
-    touched.extend(created_dir_roots(&touched));
-    journal::write(&journal_dir, &touched)?;
-
-    for (index, planned) in ops.iter().enumerate() {
-        if fail_after == Some(index) {
-            journal::rollback(&journal_dir)?;
-            return Err(CoreError::RolledBack {
-                reason: format!("injected fault before '{}'", planned.description),
-            });
-        }
-        if let Err(error) = planned.op.run(env) {
-            journal::rollback(&journal_dir)?;
-            return Err(CoreError::RolledBack {
-                reason: format!("'{}' failed: {error}", planned.description),
-            });
-        }
-    }
-    journal::clear(&journal_dir)?;
-    Ok(ops.len())
-}
-
-/// The top of every directory chain the plan's `create_dir_all` calls will
-/// bring into being. Journaled as absent, so rollback deletes the whole
-/// chain — an empty `.codex/` left behind is not cosmetic, it is what
-/// harness and project detection read as "installed here".
-fn created_dir_roots(touched: &[PathBuf]) -> Vec<PathBuf> {
-    let mut roots: Vec<PathBuf> = Vec::new();
-    for path in touched {
-        let mut topmost_missing = None;
-        let mut ancestor = path.parent();
-        while let Some(dir) = ancestor {
-            if dir.as_os_str().is_empty() || dir.exists() {
-                break;
-            }
-            topmost_missing = Some(dir.to_path_buf());
-            ancestor = dir.parent();
-        }
-        if let Some(root) = topmost_missing
-            && !touched.contains(&root)
-            && !roots.contains(&root)
-        {
-            roots.push(root);
-        }
-    }
-    roots
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::env::FakeOs;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     fn env_in(dir: &Path) -> Env {
         Env::fake(dir, FakeOs::Linux)
