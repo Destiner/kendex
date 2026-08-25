@@ -25,6 +25,8 @@ mod homoglyph;
 pub mod observe;
 mod phrase;
 pub mod rules;
+#[cfg(test)]
+pub(crate) mod sample;
 mod score;
 mod secret;
 mod text;
@@ -330,7 +332,18 @@ pub struct SkippedRule {
     pub reason: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+/// The advisory payload, exactly as one audit produced it. Every surface
+/// that shows a score embeds this whole — `engine::ItemSafety` and
+/// `browse::PackageSafety` flatten it into their serialized rows,
+/// `check_catalog::CheckedItem` carries it beside the structural pass — so
+/// a field added here reaches all of them without another hand-copy.
+///
+/// A flattened field lands in its embedder's own key space and nothing
+/// catches a clash at compile time, so a new field here must avoid the
+/// keys those embedders already occupy: `kind`, `name`, `harness`,
+/// `scope`, `location`, `notes`, `contentHash`, `fromCache`, `format` and
+/// `discovery`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AuditResult {
     pub findings: Vec<Finding>,
