@@ -63,6 +63,17 @@ pub trait Fetch {
 /// caller's URL asks for it explicitly (a local override), never chosen.
 pub struct CurlFetch;
 
+/// Release-feed transport. GitHub's stable latest-download URL redirects to
+/// an asset URL, so this follows at most three redirects and accepts only
+/// HTTPS after the first request.
+pub struct ReleaseFeedFetch;
+
+#[derive(Clone, Copy)]
+enum Redirects {
+    None,
+    Https,
+}
+
 impl Fetch for CurlFetch {
     fn get_auth(
         &self,
@@ -86,41 +97,7 @@ impl Fetch for CurlFetch {
             }
             return run_with_config(url, &config);
         }
-        let proto = if url.starts_with("http://") {
-            "=http"
-        } else {
-            "=https"
-        };
-        let mut args: Vec<String> = vec![
-            "-sS".into(),
-            "-i".into(),
-            "--max-time".into(),
-            "20".into(),
-            "--proto".into(),
-            proto.into(),
-            "--max-filesize".into(),
-            "16000000".into(),
-        ];
-        if let Some(etag) = if_none_match {
-            args.push("-H".into());
-            args.push(format!("If-None-Match: {etag}"));
-        }
-        args.push("--".into());
-        args.push(url.into());
-        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        // --max-filesize only bounds a body whose length the server
-        // declares; the process-level cap holds whatever arrives, headers
-        // and chunked bodies included.
-        let output = Hardened::curl(&arg_refs)
-            .timeout(Duration::from_secs(25))
-            .max_output(MAX_RESPONSE_BYTES)
-            .run()?;
-        if !output.status.success() {
-            return Err(CoreError::RegistryUnavailable {
-                why: String::from_utf8_lossy(&output.stderr).trim().to_string(),
-            });
-        }
-        parse_http_response(&output.stdout)
+        run_get(url, if_none_match, Redirects::None)
     }
 
     fn post_json_auth(&self, url: &str, body: &str, bearer: Option<&str>) -> Result<FetchResponse> {
@@ -140,6 +117,121 @@ impl Fetch for CurlFetch {
         }
         run_with_config(url, &config)
     }
+}
+
+impl Fetch for ReleaseFeedFetch {
+    fn get_auth(
+        &self,
+        url: &str,
+        if_none_match: Option<&str>,
+        bearer: Option<&str>,
+    ) -> Result<FetchResponse> {
+        if bearer.is_some() {
+            return Err(CoreError::RegistryUnavailable {
+                why: "the release feed never accepts credentials".to_owned(),
+            });
+        }
+        if url.starts_with("file://") {
+            return run_file(url);
+        }
+        run_get_args(Self::request_args(url, if_none_match))
+    }
+
+    fn post_json_auth(
+        &self,
+        _url: &str,
+        _body: &str,
+        _bearer: Option<&str>,
+    ) -> Result<FetchResponse> {
+        Err(CoreError::RegistryUnavailable {
+            why: "the release feed is read-only".to_owned(),
+        })
+    }
+}
+
+fn run_file(url: &str) -> Result<FetchResponse> {
+    let output = Hardened::curl(&[
+        "-sS",
+        "--proto",
+        "=file",
+        "--max-filesize",
+        "16000000",
+        "--",
+        url,
+    ])
+    .timeout(Duration::from_secs(25))
+    .max_output(MAX_RESPONSE_BYTES)
+    .run()?;
+    if !output.status.success() {
+        return Err(CoreError::RegistryUnavailable {
+            why: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        });
+    }
+    Ok(FetchResponse {
+        status: 200,
+        etag: None,
+        body: output.stdout,
+    })
+}
+
+impl ReleaseFeedFetch {
+    fn request_args(url: &str, if_none_match: Option<&str>) -> Vec<String> {
+        get_args(url, if_none_match, Redirects::Https)
+    }
+}
+
+fn run_get(url: &str, if_none_match: Option<&str>, redirects: Redirects) -> Result<FetchResponse> {
+    run_get_args(get_args(url, if_none_match, redirects))
+}
+
+fn run_get_args(args: Vec<String>) -> Result<FetchResponse> {
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    // --max-filesize only bounds a body whose length the server declares;
+    // the process-level cap holds headers and chunked bodies too.
+    let output = Hardened::curl(&arg_refs)
+        .timeout(Duration::from_secs(25))
+        .max_output(MAX_RESPONSE_BYTES)
+        .run()?;
+    if !output.status.success() {
+        return Err(CoreError::RegistryUnavailable {
+            why: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        });
+    }
+    parse_http_response(&output.stdout)
+}
+
+fn get_args(url: &str, if_none_match: Option<&str>, redirects: Redirects) -> Vec<String> {
+    let proto = match (url.starts_with("http://"), redirects) {
+        (true, Redirects::None) => "=http",
+        (true, Redirects::Https) => "=http,https",
+        (false, _) => "=https",
+    };
+    let mut args = vec![
+        "-sS".into(),
+        "-i".into(),
+        "--max-time".into(),
+        "20".into(),
+        "--proto".into(),
+        proto.into(),
+        "--max-filesize".into(),
+        "16000000".into(),
+    ];
+    if matches!(redirects, Redirects::Https) {
+        args.extend([
+            "--location".into(),
+            "--max-redirs".into(),
+            "3".into(),
+            "--proto-redir".into(),
+            "=https".into(),
+        ]);
+    }
+    if let Some(etag) = if_none_match {
+        args.push("-H".into());
+        args.push(format!("If-None-Match: {etag}"));
+    }
+    args.push("--".into());
+    args.push(url.into());
+    args
 }
 
 /// One curl run whose request details live in a 0600 config file.
@@ -271,3 +363,6 @@ fn find_blank_line(raw: &[u8]) -> Option<usize> {
                 .map(|at| at + 1)
         })
 }
+
+#[cfg(test)]
+mod tests;

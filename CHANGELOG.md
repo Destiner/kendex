@@ -48,6 +48,8 @@ an outside contributor.
 
 ### Added
 
+- The app backend checks for new kendex releases at most once every six hours
+  and stores the last result plus preferences for the upcoming notice controls.
 - Moving an existing repo onto kendex works now: `kendex adopt` keeps files
   already on disk as they are, and `kendex apply --replace-unmanaged`
   installs over them (the old copies go to the trash).
@@ -68,6 +70,8 @@ an outside contributor.
 
 ### Changed
 
+- `kendex update` reads schema 1 feeds (including legacy feeds with no schema). Current stays a no-op; older refuses unless `--force`.
+  A newer feed, or a forced current/older feed, with no target binary exits 0 with release notes and changes nothing.
 - **Breaking:** in `kendex check --json`, a not-yet-evaluated line now has
   `"class": "unevaluated"` where it had `"class": "unknown"`. A parser
   matching that field exhaustively has to accept the new value.

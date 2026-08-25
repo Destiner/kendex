@@ -2,16 +2,15 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use kendex_core::process::Hardened;
+use kendex_core::update_feed::{RELEASE_FEED_URL, ReleaseFeed, VersionRelation, release_notes_url};
 
 use super::{CliResult, out, say};
 
-/// The release feed: `{"version": "1.2.3", "assets": {"<target>": "<url>"}}`.
+/// The release feed is parsed by core so the CLI and app accept one schema.
 /// `KENDEX_UPDATE_FEED` overrides the URL so compat tests run against a
 /// local fixture instead of the network.
 fn feed_url() -> String {
-    std::env::var("KENDEX_UPDATE_FEED").unwrap_or_else(|_| {
-        "https://github.com/vanillagreencom/kendex/releases/latest/download/feed.json".to_owned()
-    })
+    std::env::var("KENDEX_UPDATE_FEED").unwrap_or_else(|_| RELEASE_FEED_URL.to_owned())
 }
 
 /// The feed keys its assets by the build target, one per lane in
@@ -23,7 +22,7 @@ fn target_triple() -> &'static str {
 fn fetch(url: &str) -> Result<Vec<u8>, String> {
     // This fetches release binaries as well as the small feed, so it needs
     // room for a slow download.
-    let output = Hardened::curl(&["-fsSL", url])
+    let output = Hardened::curl(&curl_args(url))
         .timeout(Duration::from_secs(600))
         .run()
         .map_err(|e| format!("curl unavailable: {e}"))?;
@@ -36,25 +35,45 @@ fn fetch(url: &str) -> Result<Vec<u8>, String> {
     Ok(output.stdout)
 }
 
+fn curl_args(url: &str) -> [&str; 10] {
+    [
+        "-fsS",
+        "--location",
+        "--max-redirs",
+        "3",
+        "--proto",
+        "=https,file",
+        "--proto-redir",
+        "=https",
+        "--",
+        url,
+    ]
+}
+
 pub fn run(force: bool) -> CliResult {
     let feed_bytes = fetch(&feed_url())?;
-    let feed: serde_json::Value =
-        serde_json::from_slice(&feed_bytes).map_err(|e| format!("invalid release feed: {e}"))?;
-    let latest = feed
-        .get("version")
-        .and_then(|v| v.as_str())
-        .ok_or("release feed has no version")?;
+    let feed = ReleaseFeed::parse(&feed_bytes)?;
+    let latest = feed.version.as_str();
     let current = env!("CARGO_PKG_VERSION");
-    if latest == current && !force {
-        out(&format!("already up to date ({current})"));
-        return Ok(());
+    let relation = feed.relation_to(current)?;
+    match relation {
+        VersionRelation::Current if !force => {
+            out(&format!("already up to date ({current})"));
+            return Ok(());
+        }
+        VersionRelation::Older if !force => {
+            return Err(format!(
+                "release feed offers {latest}, older than installed {current}; use --force to downgrade"
+            )
+            .into());
+        }
+        VersionRelation::Older | VersionRelation::Current | VersionRelation::Newer => {}
     }
     let target = target_triple();
-    let asset = feed
-        .get("assets")
-        .and_then(|a| a.get(target))
-        .and_then(|u| u.as_str())
-        .ok_or_else(|| format!("release {latest} has no asset for {target}"))?;
+    let Some(asset) = feed.asset_for(target) else {
+        out(&missing_asset_message(relation, latest, current, target)?);
+        return Ok(());
+    };
 
     say(&format!("updating {current} → {latest}"));
     let binary = fetch(asset)?;
@@ -72,6 +91,28 @@ pub fn run(force: bool) -> CliResult {
     Ok(())
 }
 
+fn missing_asset_message(
+    relation: VersionRelation,
+    latest: &str,
+    current: &str,
+    target: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let notes = release_notes_url(latest)?;
+    Ok(match relation {
+        VersionRelation::Newer => {
+            format!(
+                "release {latest} is available with no asset for {target}; release notes: {notes}"
+            )
+        }
+        VersionRelation::Current => format!(
+            "release {latest} has no asset for {target}; installed version is unchanged; release notes: {notes}"
+        ),
+        VersionRelation::Older => format!(
+            "release {latest} has no asset for {target}; installed {current} is newer; release notes: {notes}"
+        ),
+    })
+}
+
 fn staged_path(current: &std::path::Path) -> PathBuf {
     let mut name = current
         .file_name()
@@ -79,4 +120,39 @@ fn staged_path(current: &std::path::Path) -> PathBuf {
         .unwrap_or_else(|| "kendex".to_owned());
     name.push_str(".update");
     current.with_file_name(name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fetched_urls_are_always_positional_arguments() {
+        assert_eq!(
+            curl_args("--output=/tmp/owned"),
+            [
+                "-fsS",
+                "--location",
+                "--max-redirs",
+                "3",
+                "--proto",
+                "=https,file",
+                "--proto-redir",
+                "=https",
+                "--",
+                "--output=/tmp/owned",
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_asset_message_never_calls_current_or_older_available() {
+        let current =
+            missing_asset_message(VersionRelation::Current, "5.0.1", "5.0.1", "x").unwrap();
+        let older = missing_asset_message(VersionRelation::Older, "5.0.0", "5.0.1", "x").unwrap();
+        let newer = missing_asset_message(VersionRelation::Newer, "5.1.0", "5.0.1", "x").unwrap();
+        assert!(current.contains("unchanged") && !current.contains("is available"));
+        assert!(older.contains("is newer") && !older.contains("is available"));
+        assert!(newer.contains("is available"));
+    }
 }

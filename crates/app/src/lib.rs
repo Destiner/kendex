@@ -1,5 +1,6 @@
 mod account;
 mod app_settings;
+mod app_update;
 pub mod audit;
 mod commands;
 mod community;
@@ -29,6 +30,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         .constant("ZOOM", kendex_core::settings::ZOOM)
         .commands(collect_commands![
             commands::app_version,
+            app_update::app_update_check,
             commands::scan_machine,
             app_settings::get_settings,
             app_settings::update_settings,
@@ -131,6 +133,40 @@ pub fn prepare_launch(
     Ok(messages)
 }
 
+trait StartupCoordinator {
+    type Error;
+
+    fn show_window(&self) -> Result<(), Self::Error>;
+    fn schedule_update_check(&self);
+}
+
+fn complete_startup<C: StartupCoordinator>(coordinator: &C) -> Result<(), C::Error> {
+    coordinator.show_window()?;
+    coordinator.schedule_update_check();
+    Ok(())
+}
+
+struct AppStartup<Show, Schedule> {
+    show_window: Show,
+    schedule_update_check: Schedule,
+}
+
+impl<Show, Schedule, Error> StartupCoordinator for AppStartup<Show, Schedule>
+where
+    Show: Fn() -> Result<(), Error>,
+    Schedule: Fn(),
+{
+    type Error = Error;
+
+    fn show_window(&self) -> Result<(), Self::Error> {
+        (self.show_window)()
+    }
+
+    fn schedule_update_check(&self) {
+        (self.schedule_update_check)();
+    }
+}
+
 pub fn run() -> tauri::Result<()> {
     #[cfg(target_os = "linux")]
     launch_env::apply();
@@ -178,6 +214,37 @@ pub fn run() -> tauri::Result<()> {
         // wired up here is not, because tauri's mock runtime answers for a
         // window it never draws. Deleting the line leaves `zoom` with no
         // reader, which fails `clippy -D warnings`.
-        .setup(move |app| window::show_at_zoom(app, zoom))
+        .setup(move |app| {
+            complete_startup(&AppStartup {
+                show_window: || window::show_at_zoom(app, zoom),
+                schedule_update_check: app_update::schedule_startup_check,
+            })
+        })
         .run(tauri::generate_context!())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    #[test]
+    fn real_startup_adapter_schedules_once_only_after_the_window_is_ready() {
+        let scheduled = Cell::new(0);
+        let ready = AppStartup {
+            show_window: || Ok::<(), &'static str>(()),
+            schedule_update_check: || scheduled.set(scheduled.get() + 1),
+        };
+        complete_startup(&ready).unwrap();
+        assert_eq!(scheduled.get(), 1);
+
+        let failed_scheduled = Cell::new(0);
+        let failed = AppStartup {
+            show_window: || Err::<(), _>("window failed"),
+            schedule_update_check: || failed_scheduled.set(failed_scheduled.get() + 1),
+        };
+        assert_eq!(complete_startup(&failed), Err("window failed"));
+        assert_eq!(failed_scheduled.get(), 0);
+    }
 }

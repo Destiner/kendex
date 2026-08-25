@@ -129,6 +129,9 @@ pub enum CoreError {
     #[error("settings are busy: another kendex process holds {lock}")]
     SettingsBusy { lock: PathBuf },
 
+    #[error("app update check is busy: another kendex process holds {lock}")]
+    AppUpdateBusy { lock: PathBuf },
+
     #[error("source cache is busy: another download holds {lock}")]
     CacheBusy { lock: PathBuf },
 
@@ -378,6 +381,11 @@ pub enum CoreError {
     /// refused whole — never partially believed.
     #[error("the community directory answered something this build does not read: {why}")]
     RegistryMalformed { why: String },
+
+    /// A release feed that exceeds its bounds or does not match the pinned
+    /// schema is never partly trusted.
+    #[error("the release feed is not valid for this build: {why}")]
+    UpdateFeedMalformed { why: String },
 
     /// A guard's configuration is wrong or a measurement could not be
     /// taken — the loud exit-2 state, never a silent pass.

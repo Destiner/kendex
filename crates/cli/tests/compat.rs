@@ -192,7 +192,7 @@ fn update_replaces_the_binary_from_a_local_feed() {
     fs::write(
         home.join("feed.json"),
         format!(
-            r#"{{"version": "9.9.9", "assets": {{"{target}": "file://{}/new-binary"}}}}"#,
+            r#"{{"schema": 1, "version": "9.9.9", "assets": {{"{target}": "file://{}/new-binary"}}}}"#,
             home.display()
         ),
     )
@@ -233,6 +233,107 @@ fn update_replaces_the_binary_from_a_local_feed() {
     );
     assert!(output.status.success());
     assert!(String::from_utf8_lossy(&output.stdout).contains("already up to date"));
+
+    let older = fs::read_to_string(home.join("feed.json"))
+        .unwrap()
+        .replace(env!("CARGO_PKG_VERSION"), "0.1.0");
+    fs::write(home.join("feed.json"), older).unwrap();
+    let output = kendex_in(
+        home,
+        home,
+        &["update"],
+        &[(
+            "KENDEX_UPDATE_FEED",
+            format!("file://{}/feed.json", home.display()),
+        )],
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("older than installed"));
+
+    fs::write(
+        home.join("feed.json"),
+        r#"{"schema":1,"version":"99.0.0","assets":{}}"#,
+    )
+    .unwrap();
+    let output = kendex_in(
+        home,
+        home,
+        &["update"],
+        &[(
+            "KENDEX_UPDATE_FEED",
+            format!("file://{}/feed.json", home.display()),
+        )],
+    );
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("releases/tag/v99.0.0"));
+
+    fs::write(
+        home.join("feed.json"),
+        format!(
+            r#"{{"version":"{}","assets":{{}}}}"#,
+            env!("CARGO_PKG_VERSION")
+        ),
+    )
+    .unwrap();
+    let output = kendex_in(
+        home,
+        home,
+        &["update", "--force"],
+        &[(
+            "KENDEX_UPDATE_FEED",
+            format!("file://{}/feed.json", home.display()),
+        )],
+    );
+    let current = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    assert!(current.contains("unchanged") && !current.contains("is available"));
+
+    fs::write(
+        home.join("feed.json"),
+        r#"{"schema":1,"version":"0.1.0","assets":{}}"#,
+    )
+    .unwrap();
+    let output = kendex_in(
+        home,
+        home,
+        &["update", "--force"],
+        &[(
+            "KENDEX_UPDATE_FEED",
+            format!("file://{}/feed.json", home.display()),
+        )],
+    );
+    let older = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    assert!(older.contains("is newer") && !older.contains("is available"));
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn update_refuses_an_asset_value_that_is_not_a_url() {
+    let tmp = sandbox_with_catalog();
+    let home = tmp.path();
+    let target = env!("KENDEX_TARGET");
+    fs::write(
+        home.join("feed.json"),
+        format!(
+            r#"{{"schema":1,"version":"99.0.0","assets":{{"{target}":"--output={}/owned"}}}}"#,
+            home.display()
+        ),
+    )
+    .unwrap();
+
+    let output = kendex_in(
+        home,
+        home,
+        &["update"],
+        &[(
+            "KENDEX_UPDATE_FEED",
+            format!("file://{}/feed.json", home.display()),
+        )],
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("URL must start"));
+    assert!(!home.join("owned").exists());
 }
 
 #[test]
