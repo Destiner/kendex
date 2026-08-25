@@ -2,7 +2,7 @@
 import userEvent from "@testing-library/user-event";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { harnessName } from "@/lib/labels";
 import { showEverythingLabel } from "@/lib/show-everything-label";
 import { useNavStore } from "@/stores/nav";
@@ -20,6 +20,7 @@ afterEach(() => {
   });
   mounted.length = 0;
   document.body.replaceChildren();
+  vi.restoreAllMocks();
 });
 
 const mount = (detectedRoot: string | null) => {
@@ -61,6 +62,36 @@ describe("the harness row's name", () => {
     expect(nav.libraryFilter?.harness).toBe("claude");
     expect(nav.libraryFilter?.kind).toBeUndefined();
     expect(nav.libraryFilter?.scope).toBeUndefined();
+  });
+
+  it("opens on a click while a selection stands elsewhere", async () => {
+    const host = mount("/home/u/.claude");
+    const name = host.querySelector<HTMLButtonElement>(
+      `button[aria-label="${label}"]`,
+    );
+    if (!name) throw new Error("no show-everything button rendered");
+    // A completed click on the button is intent to open even while text
+    // stands selected somewhere — on WebKit a button click leaves the
+    // selection be, and a guard here made this a dead click.
+    vi.spyOn(window, "getSelection").mockReturnValue({
+      isCollapsed: false,
+    } as Selection);
+    await userEvent.click(name);
+    expect(useNavStore.getState().page).toBe("library");
+  });
+
+  it("still opens from the keyboard while a selection stands", async () => {
+    const host = mount("/home/u/.claude");
+    const name = host.querySelector<HTMLButtonElement>(
+      `button[aria-label="${label}"]`,
+    );
+    if (!name) throw new Error("no show-everything button rendered");
+    vi.spyOn(window, "getSelection").mockReturnValue({
+      isCollapsed: false,
+    } as Selection);
+    name.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(useNavStore.getState().page).toBe("library");
   });
 
   // One phrase for one affordance: the project card announces its name
