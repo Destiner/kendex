@@ -286,6 +286,50 @@ changes carry a **Breaking** call-out with their migration note inline.
   research deferred as standalone work.
 
 ### Fixed
+- Home no longer shows its loading skeletons forever when the first scan of
+  the machine fails: the page says the scan failed, shows why, and offers
+  Scan again. When a later scan fails, Home still draws what it had, headed
+  by a note that these are the last figures kendex could check, with the
+  retry beside it. A failed update check now appears in Needs attention and
+  turns the sidebar's Updates badge into a warning instead of contributing
+  silence, a failed safety check appears there too with its own Try again,
+  and the Marketplaces tile shows a dash rather than a definite zero when
+  its read did not answer. The Updates page makes the same distinctions:
+  it says it is checking until the first read answers, says so with a retry
+  when a check fails, and heads versions kept from an earlier check as the
+  last kendex could check instead of presenting them as current. These
+  states now also cover a call that fails in transport, not only one the
+  engine refuses. Update buttons wait for a check that succeeded — updating
+  from versions nobody confirmed could move a held package to a stale
+  commit — and a failed check always leaves its retry reachable, even when
+  everything noteworthy is muted, with the Follow source switch and an
+  edited package's "Use new version" waiting alongside the Update buttons
+  — acting from a stale row would pin a package to an old commit. The
+  Marketplaces page's Subscribed tab says its read failed and offers Try
+  again instead of claiming "No marketplaces yet", subscriptions kept from
+  a failed read are drawn under the same last-checked note with their
+  toggle and unsubscribe held — on the tab and on each marketplace's own
+  page — a failed subscribe can no longer rewrite the reason that note
+  shows. These holds are enforced where the action runs, not only on the
+  buttons: a confirmation dialog already open when a check fails can no
+  longer commit from the stale rows it was opened over. And overlapping
+  reads of updates and marketplaces can
+  no longer land out of order — a slow early read cannot overwrite a
+  fresher answer or take back a change that just succeeded, a check that
+  fetched the sources outranks any quicker re-read of old mirrors whether
+  it succeeded or failed, and back-to-back changes — updates, mutes,
+  follow switches, and fork decisions alike — land in the order they were
+  made. A change that fails midway re-reads the standing rather than
+  presenting the old rows as current, a change whose call never reached
+  the engine reports the failure instead of staying silent or toasting
+  success, a change that landed but whose first re-read failed reports
+  the success once that re-read catches up — with its toast and refreshed
+  tables — instead of calling the change failed, and updating waits out
+  anything already re-reading the standing
+  — a running check, a focus-triggered re-read, another change landing —
+  rather than applying versions it is about to replace. The status footer stops saying "Up
+  to date" beside a failed scan: a failed first scan reads "Couldn't
+  scan", and a kept result is labeled last-scanned instead of current.
 - `kendex apply --replace-unmanaged` no longer gives up on the whole scope
   because one item cannot be settled. A repo arriving on kendex with one
   odd corner — say, a shortcut somebody set up where a skill installs —
