@@ -43,9 +43,15 @@ impl HarnessAdapter for Cursor {
         let dot = project.join(".cursor");
         match kind {
             ItemKind::Agent => vec![Surface::files(dot.join("rules"), &["mdc"])],
-            // Skills share the rules dir and cannot be told apart from agents,
-            // so they are unsupported rather than misreported.
-            ItemKind::Skill | ItemKind::Plugin | ItemKind::PiExtension => vec![],
+            // Cursor reads the project's shared tree, so that is where an
+            // install goes — shared physical target with codex and pi, which
+            // scan dedupe couples. `.cursor/skills` is the directory only
+            // Cursor reads, which is where a copy delivery writes; the rules
+            // dir is not a skills dir and stays out of this.
+            ItemKind::Skill => {
+                super::shared_first(Some(&project.join(".agents/skills")), dot.join("skills"))
+            }
+            ItemKind::Plugin | ItemKind::PiExtension => vec![],
             ItemKind::Hook => vec![Surface::Structured {
                 path: dot.join("hooks.json"),
                 reader: Reader::HooksObject,

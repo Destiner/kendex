@@ -5,6 +5,11 @@ import {
   memberKey,
 } from "@/components/marketplaces/bundle-member-row";
 import { DestinationSelect } from "@/components/marketplaces/destination-select";
+import {
+  type Choice,
+  HarnessSelect,
+  isInstallable,
+} from "@/components/marketplaces/harness-select";
 import { RepoAction } from "@/components/marketplaces/repo-action";
 import { useCatalog } from "@/components/marketplaces/use-catalog";
 import { PageHeader } from "@/components/page-header";
@@ -44,6 +49,10 @@ function BundleDetail({ bundleRef }: { bundleRef: BundleRef }) {
   const busy = useMarketplacesStore((s) => s.busy);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [destination, setDestination] = useState<Scope | null>(null);
+  const [choice, setChoice] = useState<Choice>({
+    harnesses: null,
+    method: null,
+  });
 
   useEffect(() => {
     if (ready) void loadBundle(catalog, bundle);
@@ -78,6 +87,7 @@ function BundleDetail({ bundleRef }: { bundleRef: BundleRef }) {
       items: items.map((m) => ({ kind: m.kind, name: m.name })),
       bundle: items.length === 0 ? bundle : null,
       destination: redirected,
+      delivery: choice,
     }).then((ok) => {
       if (ok) {
         setSelected(new Set());
@@ -92,6 +102,16 @@ function BundleDetail({ bundleRef }: { bundleRef: BundleRef }) {
     );
     if (items.length > 0) installItems(items);
   };
+  // Which tools the picker may offer follows what is actually ticked; with
+  // nothing ticked the set is every kind, which is what the whole bundle
+  // would carry.
+  const selectedKinds = [
+    ...new Set(
+      (detail?.members ?? [])
+        .filter((m) => selected.has(memberKey(m.kind, m.name)))
+        .map((m) => m.kind),
+    ),
+  ];
 
   return (
     <div className="flex h-full flex-col">
@@ -162,11 +182,25 @@ function BundleDetail({ bundleRef }: { bundleRef: BundleRef }) {
                     <DestinationSelect
                       browsing={scope}
                       value={target}
-                      onChange={setDestination}
+                      onChange={(next) => {
+                        // Which tools can take this is a fact about the
+                        // destination, so a choice made against another one
+                        // is not an answer here.
+                        setChoice({ harnesses: null, method: null });
+                        setDestination(next);
+                      }}
+                    />
+                    <HarnessSelect
+                      scope={target}
+                      kinds={selectedKinds}
+                      value={choice}
+                      onChange={setChoice}
                     />
                     <Button
                       variant="outline"
-                      disabled={busy || selected.size === 0}
+                      disabled={
+                        busy || selected.size === 0 || !isInstallable(choice)
+                      }
                       onClick={installSelected}
                     >
                       Install {selected.size} selected

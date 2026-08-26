@@ -32,6 +32,18 @@ pub(crate) fn event(fleet: &str) -> Option<&'static str> {
     }
 }
 
+/// The fleet event a name read out of Gemini's own registry answers to — the
+/// inverse of [`event`], for reading a registration back. Where two fleet
+/// names map onto one of Gemini's, the first is the one that comes back;
+/// they mean the same event, and a hook declared under either registers the
+/// same entry.
+pub(crate) fn fleet_event(native: &str) -> Option<&'static str> {
+    crate::hook::EVENTS
+        .iter()
+        .map(|held| held.name)
+        .find(|fleet| event(fleet) == Some(native))
+}
+
 /// The same hook said in Gemini's words: its own event name, its matcher in
 /// its own tool names, and the timeout in the milliseconds its loader reads
 /// rather than the seconds the source declares (hooks reference — `timeout`
@@ -45,13 +57,13 @@ pub fn hook_for(hook: &HookSpec) -> Option<Registration> {
 
 /// Both scopes hold the same layout under their own root, which is why the
 /// surface lists below differ only in where they start (matrix §1).
-fn surfaces(kind: ItemKind, root: &Path) -> Vec<Surface> {
+fn surfaces(kind: ItemKind, root: &Path, shared: Option<&Path>) -> Vec<Surface> {
     match kind {
         ItemKind::Agent => vec![Surface::files(root.join("agents"), &["md"])],
-        ItemKind::Skill => vec![Surface::SubdirPerItem {
-            dir: root.join("skills"),
-            marker: "SKILL.md",
-        }],
+        // Gemini reads the project's shared tree as well as its own
+        // directory, so a project install is the shared one and its own
+        // directory is what a per-tool copy writes (matrix §2).
+        ItemKind::Skill => super::shared_first(shared, root.join("skills")),
         // Only `.toml` loads; a subdirectory becomes a `:` namespace.
         ItemKind::Command => vec![Surface::files(root.join("commands"), &["toml"])],
         // Gemini's hook entries carry the same matcher-plus-handlers shape
@@ -95,12 +107,13 @@ impl HarnessAdapter for Gemini {
                 dir: root.join("extensions"),
                 marker: "gemini-extension.json",
             }],
-            other => surfaces(other, root),
+            other => surfaces(other, root, None),
         }
     }
 
     fn project_surfaces(&self, kind: ItemKind, project: &Path, _env: &Env) -> Vec<Surface> {
-        surfaces(kind, &project.join(".gemini"))
+        let shared = project.join(".agents/skills");
+        surfaces(kind, &project.join(".gemini"), Some(&shared))
     }
 }
 

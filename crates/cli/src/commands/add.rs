@@ -3,14 +3,17 @@ use kendex_core::env::Env;
 use kendex_core::lock::{load as load_lock, lock_path};
 use kendex_core::model::Scope;
 
+use kendex_core::manifest::Method;
+
 use super::engine_common::{confirm_and_execute, parse_harnesses, print_report};
-use super::{CliResult, resolve_scopes, say};
+use super::{CliResult, harness_picker, resolve_scopes, say};
 use crate::scope::ScopeFilter;
 
 pub struct AddArgs {
     pub source: Option<String>,
     pub global: bool,
     pub harness: Vec<String>,
+    pub all_harnesses: bool,
     pub agent: Vec<String>,
     pub skill: Vec<String>,
     pub bundle: Vec<String>,
@@ -20,6 +23,7 @@ pub struct AddArgs {
     pub mcp_server: Vec<String>,
     pub pi_extension: Vec<String>,
     pub copy: bool,
+    pub method: Option<String>,
     pub yes: bool,
     pub all: bool,
     pub clobber: bool,
@@ -89,7 +93,7 @@ pub fn run(env: &Env, args: AddArgs) -> CliResult {
         }
     }
 
-    let request = AddRequest {
+    let mut request = AddRequest {
         source: args.source,
         agents,
         skills,
@@ -98,17 +102,38 @@ pub fn run(env: &Env, args: AddArgs) -> CliResult {
         mcp_servers,
         pi_extensions,
         all: args.all,
-        harnesses: if args.harness.is_empty() {
-            None
-        } else {
-            Some(parse_harnesses(&args.harness)?)
-        },
-        copy: args.copy,
+        harnesses: None,
+        method: None,
         no_auto_skills: args.no_auto_skills,
         optional: split(&args.optional),
         bundles,
         hold: args.hold,
     };
+    // Flags settle the targets where they were given; otherwise a terminal
+    // is asked and a session without one keeps the scope's own defaults.
+    // What the request would declare decides which tools can take it, so
+    // the picker and `--all-harnesses` offer only those.
+    let kinds = ops::requested_kinds(&request);
+    request.harnesses = match (args.all_harnesses, args.harness.is_empty()) {
+        (true, _) => Some(harness_picker::installable_at(&scope, &kinds)),
+        (false, false) => Some(parse_harnesses(&args.harness)?),
+        (false, true) => None,
+    };
+    request.method = match (args.copy, args.method.as_deref()) {
+        (true, _) | (_, Some("copy")) => Some(Method::Copy),
+        (_, Some("symlink")) => Some(Method::Symlink),
+        _ => None,
+    };
+    let chosen = harness_picker::ask(
+        env,
+        &scope,
+        &kinds,
+        request.harnesses.is_some(),
+        request.method,
+        args.yes,
+    )?;
+    request.harnesses = request.harnesses.or(chosen.harnesses);
+    request.method = chosen.method;
     let report = match ops::add(env, &scope, &request) {
         Err(kendex_core::error::CoreError::SourcePending { .. }) => {
             let manifest = ops::manifest_for_mutation(env, &scope)?;

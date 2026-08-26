@@ -1,12 +1,34 @@
 // Installing from a subscription: a bundle or loose items, optionally
 // redirected into a project that gains the subscription on the way.
-import type { InstallItem, ItemKind, Scope } from "@/bindings";
+import type { HarnessId, InstallItem, ItemKind, Scope } from "@/bindings";
 import { BUNDLE_SPECS } from "./fixture-catalog";
 import { packagesKey } from "./fixture-marketplaces";
 import { marketplaceRow, offeredHere } from "./mock-catalog";
 import { type Handler, same, store } from "./mock-state";
 
+/// Every tool the picker can offer, all of them present on the mock
+/// machine — the dev app is a machine with everything installed.
+const INSTALL_TARGETS = [
+  "claude",
+  "codex",
+  "opencode",
+  "cursor",
+  "pi",
+  "gemini",
+  "copilot",
+] as const;
+
 export const installHandlers: Record<string, Handler> = {
+  install_targets: ({ kinds }: { kinds: ItemKind[] }) =>
+    INSTALL_TARGETS.filter(
+      // Cursor takes only skills; the mock machine mirrors that so the
+      // picker's own filtering is visible in the dev app.
+      (harness) => harness !== "cursor" || kinds.includes("skill"),
+    ).map((harness) => ({
+      harness,
+      detected: true,
+      sharesTheUniversalTree: harness !== "claude",
+    })),
   marketplace_install: ({
     scope,
     source,
@@ -20,6 +42,8 @@ export const installHandlers: Record<string, Handler> = {
     bundle: string | null;
     destination: Scope | null;
     hold: boolean;
+    harnesses: HarnessId[] | null;
+    method: "symlink" | "copy" | null;
   }) => {
     if (items.length === 0 && !bundle) {
       return Promise.reject("nothing selected to install");
