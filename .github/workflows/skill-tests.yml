@@ -90,13 +90,16 @@ jobs:
         run: |
           set -u
           fail=0
+          # A pathspec '*' crosses '/', so both skills patterns reach into a
+          # lib/ directory. A lib is SOURCED, never an entry point, and
+          # carries no mode bit — under either parent.
           while IFS= read -r f; do
             mode="$(git ls-files -s -- "$f" | cut -d' ' -f1)"
             if [ "$mode" = "100644" ]; then
               echo "not executable in git: $f"
               fail=1
             fi
-          done < <(git ls-files -- 'skills/*/tests/*.sh' 'skills/*/scripts/*' 'hooks/tests/*.sh' | grep -v '/scripts/lib/')
+          done < <(git ls-files -- 'skills/*/tests/*.sh' 'skills/*/scripts/*' 'hooks/tests/*.sh' | grep -vE '/(scripts|tests)/lib/')
           exit "$fail"
 
       # The queue-side half of the size gate: the preflight job runs only on
@@ -324,6 +327,9 @@ jobs:
           persist-credentials: false
       - name: review-gate selftest against this repo's settings
         run: skills/review-gate/scripts/review-predicate-selftest.sh
+      # kendex adopts its own gate, so it takes the consumer's check too.
+      - name: review-gate validate against this repo's installation
+        run: skills/review-gate/scripts/validate.sh
 
   preflight:
     # Dogfoods the preflight skill on this repo's own PR diffs. PR-time on

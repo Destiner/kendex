@@ -15,13 +15,13 @@
 # .github/workflows/review-gate-writer.yml found by walking up to the
 # enclosing repo. That copy is what actually gates PRs and is hand-maintained,
 # so template-only assertions would prove the behavior of a file CI never
-# runs. In a CONSUMER the adopted copy is normally PRESENT and legitimately
-# differs from the template (its own default branch in the ADAPT markers, an
-# optional check_run guard) — so the pins and the relay battery run against it
-# there too, and every ADAPT-bearing pin asserts the SHAPE the ADAPT preserves
-# rather than the catalog's own value; only the catalog additionally pins the
-# literal. The whole-file drift check is a self-adoption-only invariant. Only
-# the template is asserted when no adopted copy is found at all.
+# runs. The template is copied VERBATIM — it carries no per-repo values — so
+# the pins below assert the same literals in both copies. Two divergence
+# classes remain, and neither is a value anyone types: this repo's
+# self-adoption swaps the vendored script path for the tracked one, and a
+# consumer that opted into check_run has uncommented two trigger lines. The
+# whole-file drift check is scoped to self-adoption for the second of those.
+# Only the template is asserted when no adopted copy is found at all.
 #
 # THE RELAY NEVER REDS is the invariant every relay case asserts, over both
 # the runner's shells AND over its own environment (each env: binding dropped
@@ -90,10 +90,10 @@ while [[ "$_dir" != "/" ]]; do
   _dir="$(dirname "$_dir")"
 done
 
-# CATALOG or CONSUMER. Which one this is decides two things: whether the
-# adopted copy is this repo's own artifact or a consumer's ADAPTed one (its
-# label, and whether the whole-file drift check is meaningful), and whether
-# the ADAPT'd literals may be pinned as literals at all.
+# CATALOG or CONSUMER. It decides the adopted copy's label, and whether the
+# whole-file drift check is meaningful: in the catalog the two files are one
+# artifact modulo the vendored path, and in a consumer the check_run opt-in
+# is a legitimate difference the diff cannot tell from drift.
 IS_CATALOG=0
 [[ "$SKILL_ROOT" == */skills/review-gate && "$SKILL_ROOT" != */.agents/* ]] && IS_CATALOG=1
 ADOPTED_LABEL="adopted copy"
@@ -112,15 +112,21 @@ else
   printf '  note  %s\n' "no adopted workflow found at ${SELF_ADOPTION:-<no enclosing repo root>} — asserting the template only"
 fi
 
+# The relay's `if:` has ONE correct spelling — the template carries no
+# per-repo values — so the pin is the string itself.
+RELAY_IF_EXPECTED="    if: github.event_name != 'merge_group' && github.event_name != 'workflow_dispatch' && github.event_name != 'schedule' && (github.event_name != 'check_run' || github.event.check_run.name == vars.REVIEW_GATE_CHECK_RUN_NAME)"
+
+# Its own must-fail control: an equality pin is only worth its verdict if it
+# rejects the edit it was written for.
+[[ "$RELAY_IF_EXPECTED || true" != "$RELAY_IF_EXPECTED" ]] &&
+  { PASS=$((PASS + 1)); printf '  ok    %s\n' "control: the relay if: pin rejects an appended '|| true'"; } ||
+  { FAIL=$((FAIL + 1)); printf '  FAIL  %s\n' "control: the relay if: pin would accept an appended '|| true'"; }
+
 # ------------------------------------------------------------------ pins ----
 
 pin_workflows() { # file, label
   local wf="$1" tag="$2"
   local write_block relay_block rc count
-  # The ADAPT-shape regexes below match a quoted branch name; a literal
-  # apostrophe inside a single-quoted pattern is unwritable, so hold one here.
-  local q="'"
-
 
   pin() { # needle, name
     if grep -qF -- "$1" "$wf"; then
@@ -144,22 +150,12 @@ pin_workflows() { # file, label
   else
     FAIL=$((FAIL + 1)); printf '  FAIL  [%s] %s\n' "$tag" "tpl: the write job's if: is exactly the two converge legs (VST-210: no PR-attached leg holds the evictable group)"
   fi
-  # TERM-WISE, not full-line: adoption.md invites a consumer to hand-add a
-  # check_run name guard to this very expression, so a byte-equality pin fails
-  # the repos that followed the documented instruction. What must survive any
-  # such edit are the three exclusions — without them a converge leg relays and
-  # the self-dispatch loop has no throttle.
-  local if_line if_missing term
+  # BYTE-EQUAL, not term-wise: an appended `|| true` leaves all four tokens
+  # in place and makes the expression always true, so the relay runs on the
+  # converge legs it exists to exclude.
+  local if_line
   if_line="$(grep -m 1 -E '^    if: ' <<<"$relay_block" || true)"
-  if_missing=""
-  for term in "github.event_name != 'merge_group'" "github.event_name != 'workflow_dispatch'" "github.event_name != 'schedule'"; do
-    grep -qF -- "$term" <<<"$if_line" || if_missing="${if_missing:+$if_missing }[$term]"
-  done
-  if [[ -n "$if_line" && -z "$if_missing" ]]; then
-    PASS=$((PASS + 1)); printf '  ok    [%s] %s\n' "$tag" "tpl: the relay's if: keeps all three NEGATIVE terms (a newly added PR-attached trigger relays by default, and both dispatch targets are excluded so no loop exists)"
-  else
-    FAIL=$((FAIL + 1)); printf '  FAIL  [%s] %s\n        missing from the relay if: %s\n' "$tag" "tpl: the relay's if: keeps all three NEGATIVE terms (a newly added PR-attached trigger relays by default, and both dispatch targets are excluded so no loop exists)" "${if_missing:-<no if: line at all>}"
-  fi
+  assert_eq "$if_line" "$RELAY_IF_EXPECTED" "[$tag] tpl: the relay's if: is EXACTLY the expected expression (a term-wise check passes an appended '|| true', which makes it always true and relays every converge leg)"
 
   # EVERY status STATE converges (no state filter of ANY spelling): under
   # newest-row evidence semantics a success→pending/failure transition is a
@@ -246,11 +242,14 @@ pin_workflows() { # file, label
   # dispatch whatever engine lives on a non-default branch — silently
   # breaking the default-branch-defined-writer guarantee the design rests
   # on. Two teeth: the exact literal is present on the relay, and no OTHER
-  # DISPATCH_REF value can exist anywhere.
-  if grep -qE -- "DISPATCH_REF: \\\$\{\{ github\.event\.repository\.default_branch \|\| ${q}[^${q}]+${q} \}\}" <<<"$relay_block"; then
-    PASS=$((PASS + 1)); printf '  ok    [%s] %s\n' "$tag" "tpl: the relay dispatches onto the DEFAULT branch with the empty-expression fallback"
+  # DISPATCH_REF value can exist anywhere. BARE, with no `|| 'branch'`
+  # fallback: the fallback was a per-repo value in a file that must carry
+  # none, and an empty resolution now lands on the step's missing-env guard,
+  # which warns and exits 0 rather than reddening a PR-attached leg.
+  if grep -qF -- 'DISPATCH_REF: ${{ github.event.repository.default_branch }}' <<<"$relay_block"; then
+    PASS=$((PASS + 1)); printf '  ok    [%s] %s\n' "$tag" "tpl: the relay dispatches onto the DEFAULT branch, with no per-repo fallback to keep in sync"
   else
-    FAIL=$((FAIL + 1)); printf '  FAIL  [%s] %s\n' "$tag" "tpl: the relay's DISPATCH_REF is not the default-branch expression — the converge pass would run a non-default-branch engine"
+    FAIL=$((FAIL + 1)); printf '  FAIL  [%s] %s\n' "$tag" "tpl: the relay's DISPATCH_REF is not the bare default-branch expression — either the converge pass runs a non-default-branch engine, or a hardcoded fallback branch is back in a file that must carry no per-repo values"
   fi
   # The env: BINDING, at its own indentation — the step reads the same name
   # into a defaulted local, and counting that as a second binding would make
@@ -338,7 +337,7 @@ pin_workflows() { # file, label
   esac
   assert_contains "$relay_block" "workflow_dispatch|schedule)" "[$tag] tpl: the relay step refuses to dispatch when it ran on a converge leg"
   # WORKFLOW_REF reads like a convenience — it exists so a renamed copy needs
-  # no ADAPT — which is exactly why it is the binding a consumer hand-edit is
+  # no edit at all — which is exactly why it is the binding a consumer is
   # most likely to drop. Its absence now degrades to the warn-and-defer path
   # rather than a red, but a dropped line still means no converge pass is
   # ever requested, so it is pinned as well as defaulted.
@@ -377,13 +376,34 @@ pin_workflows() { # file, label
   fi
   pin "github.event.pull_request.head.repo.full_name != github.repository" "tpl: fork pull_request_review read-only flag"
   # BOTH engine checkouts are counted: a one-match pin would stay green if
-  # either job regressed to the bare expression.
-  count="$(grep -cE -- "ref: \\\$\{\{ github\.event\.repository\.default_branch \|\| ${q}[^${q}]+${q} \}\}" "$wf" || true)"
-  assert_eq "$count" "2" "[$tag] tpl: BOTH checkouts pin the default branch with the empty-expression fallback"
-  rc=0; grep -qF -- 'ref: ${{ github.event.repository.default_branch }}' "$wf" || rc=$?
+  # either job regressed.
+  count="$(grep -cF -- 'ref: ${{ github.event.repository.default_branch }}' "$wf" || true)"
+  assert_eq "$count" "2" "[$tag] tpl: BOTH checkouts pin the bare default-branch expression"
+  # An empty resolution is REFUSED, not papered over with a branch name: the
+  # guard step runs before each checkout and reds the job. Counted, for the
+  # same reason the checkouts are.
+  # ORDER, not ingredients: counting both says nothing about which runs
+  # first, and a guard AFTER its checkout has already let the unpinned ref
+  # onto disk. G for a guard's binding, C for a checkout, in file order.
+  assert_eq "$(awk '/^          DEFAULT_BRANCH: / { printf "G" } /^      - uses: actions\/checkout/ { printf "C" } END { printf "\n" }' "$wf")" \
+    "GCGC" "[$tag] tpl: each engine job's default-branch guard PRECEDES its checkout (counting the two ingredients passes a guard that runs after the ref is already on disk)"
+  # The REFUSAL is the point, not the diagnostic beside it: a guard whose
+  # exit went to 0 prints the same line and checks the unpinned ref out
+  # anyway. Bound to the guard's OWN diagnostic, not counted file-wide: the
+  # two missing-engine guards also exit 1, and counting those would pass a
+  # default-branch guard whose refusal was removed.
+  count="$(awk '
+    /default_branch resolved empty/ { w = 3; next }
+    w > 0 {
+      if ($0 ~ /^[[:space:]]*exit[[:space:]]+[1-9]/) { n++; w = 0 } else w--
+    }
+    END { print n + 0 }
+  ' "$wf")"
+  assert_eq "$count" "2" "[$tag] tpl: BOTH guard steps exit NONZERO on an empty resolution (the diagnostic without the refusal checks out the event's ref regardless)"
+  rc=0; grep -qE -- "default_branch \|\|" "$wf" || rc=$?
   case "$rc" in
-    1) PASS=$((PASS + 1)); printf '  ok    [%s] %s\n' "$tag" "tpl: no checkout uses the bare default_branch expression" ;;
-    0) FAIL=$((FAIL + 1)); printf '  FAIL  [%s] %s\n' "$tag" "tpl: a checkout regressed to the bare default_branch expression (empty resolution would reach actions/checkout's own fallback)" ;;
+    1) PASS=$((PASS + 1)); printf '  ok    [%s] %s\n' "$tag" "tpl: no ref falls back to a hardcoded branch name — the copy carries no per-repo values" ;;
+    0) FAIL=$((FAIL + 1)); printf '  FAIL  [%s] %s\n' "$tag" "tpl: a hardcoded default-branch fallback is back — the copy would need a per-repo edit again, and a wrong value dispatches a branch that does not exist" ;;
     *) FAIL=$((FAIL + 1)); printf '  FAIL  [%s] %s\n' "$tag" "tpl: the workflow could not be read (grep error)" ;;
   esac
 }
@@ -393,23 +413,6 @@ for i in "${!WORKFLOWS[@]}"; do
   pin_workflows "${WORKFLOWS[$i]}" "${WORKFLOW_LABELS[$i]}"
 done
 
-# The ADAPT'd literal itself — CATALOG ONLY. The three pins above accept any
-# quoted fallback branch because adoption.md instructs consumers to change it,
-# and a literal pin there fails exactly the repos that followed the
-# instruction. In this repo the value is not config to be discovered, so it is
-# pinned here: two checkouts and the relay's DISPATCH_REF, all on 'main'.
-_bad=""
-if [[ "$IS_CATALOG" -eq 1 ]]; then
-  for i in "${!WORKFLOWS[@]}"; do
-    _count="$(grep -cF -- "github.event.repository.default_branch || 'main'" "${WORKFLOWS[$i]}" || true)"
-    [[ "$_count" == "3" ]] || _bad="${_bad:+$_bad, }${WORKFLOW_LABELS[$i]}=$_count"
-  done
-  if [[ -z "$_bad" ]]; then
-    PASS=$((PASS + 1)); printf '  ok    %s\n' "tpl: this repo's own ADAPT value is 'main' at all three sites (both checkouts and the relay's DISPATCH_REF)"
-  else
-    FAIL=$((FAIL + 1)); printf '  FAIL  %s\n        expected 3 per copy, got: %s\n' "tpl: this repo's ADAPT value must be 'main' at all three sites — a wrong fallback dispatches a branch that does not exist, and every dispatch 422s into the cron floor" "$_bad"
-  fi
-fi
 
 # ---------------------------------------------------- relay step behavior ---
 
@@ -623,7 +626,7 @@ relay_battery() { # file, label
   relay_run "$step" 0 "o/r/.github/workflows/gate.yml@refs/heads/trunk" "0"
   assert_eq "$RELAY_CALLS" \
     "gh api -i -X POST repos/o/r/actions/workflows/gate.yml/dispatches -f ref=main" \
-    "[$tag] relay2: a RENAMED consumer copy dispatches its own file (github.workflow_ref is read, not a hardcoded name — no ADAPT line)"
+    "[$tag] relay2: a RENAMED consumer copy dispatches its own file (github.workflow_ref is read, not a hardcoded name — nothing to edit on rename)"
 
   relay_run "$step" 1 "$ref" "0"
   assert_eq "$RELAY_RC" "0" "[$tag] relay3: fork pull_request_review (read-only token) is a GREEN no-op, never a red run"
@@ -813,9 +816,9 @@ $rl_ok"
 
   # --- the invariant over the step's ENVIRONMENT ------------------------
   # The step runs under `set -u`, so its never-reds guarantee is only as good
-  # as its env: block. Every binding sits in repo-owned YAML that adoption.md
-  # tells consumers to hand-edit — the check_run guard goes on this job's
-  # if:, and the ADAPT'd dispatch ref is three lines from WORKFLOW_REF — so a
+  # as its env: block. Every binding sits in repo-owned YAML a consumer may
+  # touch — the check_run opt-in uncomments trigger lines a few lines above
+  # this job, and nothing stops a hand-edit reaching the block itself — so a
   # dropped line is a live class, not a hypothetical. Unbound, each of these
   # kills the step before it prints anything, on every PR-attached run,
   # permanently. relay_run asserts rc 0 under both shells for each.
@@ -868,25 +871,25 @@ done
 # weaker than byte-identity for a script that exists in two hand-maintained
 # places — a divergence the cases do not happen to probe would otherwise ship.
 # The step is pure logic with no vendored paths in it, so unlike the rest of
-# the file it has no legitimate ADAPT reason to differ.
+# the file it has no legitimate reason to differ in any copy.
 # WHOLE-FILE drift, not just the relay step: a cross-copy tooth covering only
 # the extracted step leaves a stale claim anywhere else in the adopted copy
-# unchecked. Comments are compared out because ADAPT deliberately rewords
-# them (vendored paths, default-branch notes) — prose drift between the copies
-# is therefore NOT machine-checkable here and stays a review concern; what IS
-# checked is that every line of CODE matches once the vendored script path is
+# unchecked. Comments are compared out because the self-adoption header
+# rewords them (vendored paths) — prose drift between the copies is therefore
+# NOT machine-checkable here and stays a review concern; what IS checked is
+# that every line of CODE matches once the vendored script path is
 # normalized, which is the class that changes behavior.
 # Scoped to SELF-adoption (IS_CATALOG, decided above). In the catalog the two
 # files are the same artifact modulo the vendored script path, so any other
-# code difference is drift. In a CONSUMER they are legitimately different: the
-# adopted copy carries the repo's own ADAPTs (its default branch in the
-# `|| 'main'` fallbacks, possibly a check_run guard on the relay's if:), so
-# diffing them there would report intended configuration as drift. The
+# code difference is drift. In a CONSUMER one difference is legitimate and
+# indistinguishable from drift by diff: the check_run opt-in uncomments two
+# trigger lines, which a code diff reads as added code. A consumer's copy is
+# checked by the pins above and by validate-workflow.sh instead. The
 # relay-step byte-identity check below stays unconditional — that script
-# carries no branch name and no vendored path, so it is ADAPT-free even for a
-# consumer.
+# carries no vendored path and no opt-in, so it is the same bytes in every
+# copy.
 if [[ "${#WORKFLOWS[@]}" -eq 2 && "$IS_CATALOG" -eq 0 ]]; then
-  printf '  note  %s\n' "adopted copy carries this repo's own ADAPTs (not the catalog) — whole-file drift not checked; the relay step's byte-identity still is"
+  printf '  note  %s\n' "adopted copy may carry the check_run opt-in, which a code diff cannot tell from drift — whole-file drift not checked; the relay step's byte-identity still is"
 fi
 if [[ "${#WORKFLOWS[@]}" -eq 2 && "$IS_CATALOG" -eq 1 ]]; then
   _norm() { # strip comments and blank lines, normalize the vendored path
@@ -908,7 +911,7 @@ if [[ "${#RELAY_STEPS[@]}" -eq 2 ]]; then
   # real drift would then look like a silent early finish rather than a FAIL.
   rc=0; diff -q "${RELAY_STEPS[0]}" "${RELAY_STEPS[1]}" >/dev/null 2>&1 || rc=$?
   case "$rc" in
-    0) PASS=$((PASS + 1)); printf '  ok    %s\n' "relay: the template's and the adopted copy's relay steps are byte-identical (the step carries no ADAPT, so any drift is unintended)" ;;
+    0) PASS=$((PASS + 1)); printf '  ok    %s\n' "relay: the template's and the adopted copy's relay steps are byte-identical (the step is the same bytes in every copy, so any drift is unintended)" ;;
     1) FAIL=$((FAIL + 1)); printf '  FAIL  %s\n' "relay: the two copies' relay steps DIVERGED — a template edit was not mirrored into the adopted workflow"
        diff "${RELAY_STEPS[0]}" "${RELAY_STEPS[1]}" | head -20 ;;
     *) FAIL=$((FAIL + 1)); printf '  FAIL  %s\n' "relay: the extracted relay steps could not be compared (diff read error) — drift is unproven, not disproven" ;;

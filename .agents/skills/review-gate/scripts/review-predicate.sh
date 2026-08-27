@@ -9,7 +9,8 @@ set -u
 
 print_usage() {
   cat <<'USAGE'
-Usage: review-predicate.sh [--help]   (env-driven; no positional arguments)
+Usage: review-predicate.sh [--help | --check-config]   (otherwise env-driven,
+                                                        no positional arguments)
 
 The single source of truth for "is this PR head reviewed?". Callers:
 review-writer.sh (the single writer, which converges the merge-blocking
@@ -30,6 +31,13 @@ Exit codes:
   2  an evidence read failed or the configuration is invalid; NO verdict was
      reached. Callers must treat this as "take no action", never as awaiting:
      acting on a transient API failure could flip a healthy PR's merge state.
+
+--check-config resolves and validates every setting below, prints one line,
+and exits WITHOUT reading any evidence or requiring GH_REPO / PR_NUMBER /
+HEAD_SHA: 0 = every value is legal, 2 = a value is not (the ::error names
+it). It is the settings half of validate.sh, which adds the repository-tree
+and workflow-wiring checks around it. Gate mode is validated, never applied
+— "off" reports a valid configuration, it does not short-circuit this flag.
 
 Predicate: review evidence present for the CURRENT head — any of
   (a) a review OBJECT at the exact head from a non-author, non-dismissed,
@@ -177,7 +185,13 @@ Carry-forward engine:
       carry (AGENTS.md and other agent/reviewer instruction markdown —
       kendex#1115). Empty = no exclusions. Identical-tree carries are
       unaffected (no delta, nothing to exclude). Inert while
-      REVIEW_GATE_CARRY_FORWARD is empty.
+      REVIEW_GATE_CARRY_FORWARD is empty. The pattern GRAMMAR is closed:
+      path characters plus '*', matched against repository-relative names.
+      Anything else is a configuration error (exit 2), here and under
+      --check-config — the '[', ']', '\' and '?' metacharacters, and a
+      leading '/', a trailing '/', or a '.', '..' or empty path component,
+      which no such name carries. The refusal runs before any evaluation, so
+      a rejected spelling never reaches the matcher.
 
 Per-invocation env seams (never settings keys):
   REVIEW_GATE_SETTINGS_FILE         Overrides the settings-file path (tests,
@@ -206,13 +220,19 @@ USAGE
 }
 
 # The predicate is env-driven: zero arguments evaluate, exactly one
-# -h/--help prints usage, and every other argument list — an explicitly
-# empty argument included — is a configuration error with no verdict. A
-# misspelled or stale wrapper flag must never fall through to a normal
-# gate evaluation, so validation is by argument count, not by position.
+# -h/--help prints usage, exactly one --check-config validates settings and
+# stops, and every other argument list — an explicitly empty argument
+# included — is a configuration error with no verdict. A misspelled or stale
+# wrapper flag must never fall through to a normal gate evaluation, so
+# validation is by argument count, not by position.
+CHECK_CONFIG_ONLY=0
 if [ "$#" -eq 1 ] && { [ "$1" = "--help" ] || [ "$1" = "-h" ]; }; then
   print_usage
   exit 0
+fi
+if [ "$#" -eq 1 ] && [ "$1" = "--check-config" ]; then
+  CHECK_CONFIG_ONLY=1
+  shift
 fi
 if [ "$#" -gt 0 ]; then
   echo "review-predicate.sh: unknown argument list ($# argument(s), first: '${1}') — env-driven, no positional arguments (run --help)" >&2
@@ -363,6 +383,90 @@ while IFS= read -r ctx; do
 done <<EOF_GATE_CTX
 $(printf '%s' "$TRUSTED_CONTEXTS" | tr ';' '\n')
 EOF_GATE_CTX
+
+# The exclusion pattern GRAMMAR, and the one judge of it. Callers that need
+# the verdict ask for it (`--check-config`) rather than keeping a second
+# grammar that drifts from this one.
+#
+# CLOSED, not a list of refusals: a pattern is path characters plus '*', and
+# every other spelling is unsupported. That is what ends the equivalence
+# hunt. `case` offers three more metacharacters — '[', ']', '\' and '?' —
+# and each can respell a component this refuses: '[.]' and '\.' are the '.'
+# component written differently, and the next equivalence would be the next
+# round. Refusing the spelling outright means there is no equivalence to
+# analyse.
+#
+# The refusal runs in the configuration phase, ahead of every evaluation, so
+# the matcher below never sees a spelling this rejected — the grammar and
+# what actually matches cannot diverge.
+rg_unsupported_pattern() { # PATTERN — the reason on stdout when it is refused
+  local rest="$1" comp
+  case "$1" in
+    *'['* | *']'* | *'\'* | *'?'*)
+      printf '%s' "a character outside the grammar (path characters and '*')"
+      return 0
+      ;;
+    /*) printf '%s' "a leading '/'"; return 0 ;;
+    */) printf '%s' "a trailing '/'"; return 0 ;;
+  esac
+  while [ -n "$rest" ]; do
+    comp="${rest%%/*}"
+    case "$comp" in
+      "") printf '%s' "an empty path component"; return 0 ;;
+      . | ..) printf '%s' "a '$comp' path component"; return 0 ;;
+    esac
+    case "$rest" in
+      */*) rest="${rest#*/}" ;;
+      *) rest="" ;;
+    esac
+  done
+  return 1
+}
+
+rg_check_patterns() { # KEY PACKED — exit 2 on the first refused pattern
+  local pat why
+  while IFS= read -r pat; do
+    pat="$(printf '%s' "$pat" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [ -z "$pat" ] && continue
+    why="$(rg_unsupported_pattern "$pat")" || continue
+    echo "::error::review-predicate: $1 pattern '$pat' is not supported — the grammar is path characters plus '*' matched against repository-relative names, and this carries $why" >&2
+    exit 2
+  done <<EOF_PATTERNS
+$(printf '%s' "$2" | tr ';' '\n')
+EOF_PATTERNS
+}
+
+# The prophylactic ledger is acted on by no evidence path here; it is read so
+# its patterns face the same one judge as the live exclusions.
+CARRY_EXCLUDE_PROPHYLACTIC="$(rg_setting REVIEW_GATE_CARRY_FORWARD_EXCLUDE_PROPHYLACTIC "")" || exit 2
+rg_check_patterns REVIEW_GATE_CARRY_FORWARD_EXCLUDE "$CARRY_EXCLUDE"
+rg_check_patterns REVIEW_GATE_CARRY_FORWARD_EXCLUDE_PROPHYLACTIC "$CARRY_EXCLUDE_PROPHYLACTIC"
+
+# Comment-reviewer GRAMMAR, validated with every other setting rather than at
+# the moment the evidence loop first reads a pair. A malformed entry is a
+# configuration error, and a configuration error has to be answerable without
+# a PR to evaluate — otherwise --check-config reports a legal configuration
+# that the next live run exits 2 on.
+while IFS= read -r cfg_pair; do
+  cfg_pair="$(printf '%s' "$cfg_pair" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  [ -z "$cfg_pair" ] && continue
+  cfg_login="${cfg_pair%%:*}"
+  cfg_pattern="${cfg_pair#*:}"
+  if [ -z "$cfg_login" ] || [ -z "$cfg_pattern" ] || [ "$cfg_login" = "$cfg_pair" ]; then
+    echo "::error::review-predicate: malformed REVIEW_GATE_COMMENT_REVIEWERS entry '$cfg_pair' (need 'login:binding-pattern')" >&2
+    exit 2
+  fi
+done <<EOF_COMMENT_CFG
+$(printf '%s' "$COMMENT_REVIEWERS" | tr ';' '\n')
+EOF_COMMENT_CFG
+
+# Every configuration rule above has now run, and --check-config stops HERE:
+# the last point before the predicate needs a PR. A rule moved below this
+# statement is a visible edit, not a silent hole in what the flag covers.
+if [ "$CHECK_CONFIG_ONLY" = "1" ]; then
+  echo "review-predicate: configuration is valid"
+  exit 0
+fi
 
 for required in GH_REPO PR_NUMBER HEAD_SHA; do
   if [ -z "$(eval "echo \${$required:-}")" ]; then
@@ -819,12 +923,10 @@ if [ -n "$COMMENT_REVIEWERS" ]; then
   while IFS= read -r pair; do
     pair="$(printf '%s' "$pair" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     [ -z "$pair" ] && continue
+    # Grammar was proved in the configuration phase above, which is the one
+    # site for it; this loop only splits what that pass accepted.
     login="${pair%%:*}"
     pattern="${pair#*:}"
-    if [ -z "$login" ] || [ -z "$pattern" ] || [ "$login" = "$pair" ]; then
-      echo "::error::review-predicate: malformed REVIEW_GATE_COMMENT_REVIEWERS entry '$pair' (need 'login:binding-pattern')" >&2
-      exit 2
-    fi
     # The binding pattern is a LITERAL prefix (regex-quoted here), not a
     # regex: trust config must not be able to smuggle in a permissive match.
     hits="$(jq --arg sha "$HEAD_SHA" --arg bot "$login" --arg author "$PR_AUTHOR" \
