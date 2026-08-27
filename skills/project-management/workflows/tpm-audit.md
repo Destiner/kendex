@@ -206,6 +206,8 @@ Never add to `obsolete[]` without code verification.
 
 With `DECISION_REF` present, also detect issues the decision made unnecessary by changing the approach (not the scope): read the decision (`.agents/skills/decider/scripts/decisions get [DECISION_REF]`), extract the patterns it explicitly replaced, search the comparison set for issues implementing them, exclude anything already in `supersedes[]`, and record confidence 100 with evidence `{decision_eliminated: true, decision_ref, eliminated_pattern}`.
 
+**Below the bar.** Every active issue in the comparison set as § 1.5 fetched it is re-read against the creation bar's first and third tests as they stand today (the second, coverage by other work, is not reapplied: an issue always covers itself). One that fails (the bar's own list, not restated here) is a cancellation with confidence 100 and evidence `{below_bar: true, test, who_hits_it}`: `test` names the failed test, `who_hits_it` is the one-line user story and how often a user meets it, written after reading the issue's body (on GitHub, `gh issue view <n>`; the § 1.5 list carries no body). In project mode it is an `obsolete[]` entry; in issue mode it is the issue's own `issues[]` entry with `action: "cancel"` and that evidence in its `obsolete` field. The bar's two exceptions (a shipped-path security or data-loss defect; a critical-harm or financial-loss edge case) never go here on likelihood; the third test still applies to them. The code-verification rule above is for implementation-obsolete entries; a `below_bar` entry is verified by reading the body and, where it names a path, producer, or regression, checking that claim in the repository before the entry is written.
+
 ### 6.3 Project Fit
 
 Compare each input issue against every project definition. A scope matching another project better, or a child sitting in a different project from its parent, goes to `wrong_project[]`. A dependency on work in another project is recorded as a relation, not a move. The current assignment is not evidence.
@@ -304,7 +306,7 @@ Hierarchy-contract items (§ 7.0) are never `skip`: keep `action: "create"` and 
 
 **Hierarchy contract override (MUST)**: an item whose `index` is in `HIERARCHY_CONTRACT.child_indexes` is assigned `create` with `hierarchy: {"action": "make_child", "parent": [HIERARCHY_CONTRACT.parent_issue]}` per § 7.0, skipping the order below — it never resolves to `skip`, `expand`, `update`, `combine`, or `cancel`, regardless of duplicate/overlap findings.
 
-Otherwise, first match wins: creation bar failed → `skip`; in `obsolete[]` → `cancel`; the `remove` side of a `duplicates[]` pair → `skip` with the kept issue as target; in a `combine[]` `absorb[]` → `combine`; overlaps an existing issue → `expand` or `update` by scope delta; else `create` (proposed) or `valid` (existing).
+Otherwise, first match wins: creation bar failed → `skip` for a proposed item, `cancel` for an existing issue (§ 6.2 below the bar); in `obsolete[]` → `cancel`; the `remove` side of a `duplicates[]` pair → `skip` with the kept issue as target; in a `combine[]` `absorb[]` → `combine`; overlaps an existing issue → `expand` or `update` by scope delta; else `create` (proposed) or `valid` (existing).
 
 **Completed-issue guard**: `combine`, `expand`, and `update` never target a Done or Cancelled issue; new scope goes in a new issue with a `related` relation to the completed one.
 
