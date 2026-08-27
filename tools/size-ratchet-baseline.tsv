@@ -1,5 +1,5 @@
 .github/workflows/review-gate-writer.yml	662
-.github/workflows/skill-tests.yml	406
+.github/workflows/skill-tests.yml	402
 crates/core/src/engine/desired_agent.rs	458
 crates/core/src/engine/detach.rs	603
 crates/core/src/engine/pi_hooks_move/migrated.rs	540
@@ -132,7 +132,7 @@ skills/second-opinion/scripts/second-opinion	2602
 skills/second-opinion/tests/cli-failure-gate.test.sh	1211
 skills/second-opinion/tests/lane-scratch-durability.test.sh	999
 skills/second-opinion/tests/review-dual-model.test.sh	1516
-skills/size-ratchet/scripts/size-ratchet	1026
+skills/size-ratchet/scripts/size-ratchet	1092
 skills/worktree/scripts/worktree	4788
 skills/worktree/scripts/worktree-session-guard	1197
 skills/worktree/tests/worktree_session_guard.sh	1282
