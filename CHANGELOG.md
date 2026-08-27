@@ -43,6 +43,10 @@ an outside contributor.
   `worktree fix-links` passes in repos that do not use Cursor; a repo that
   does adds it back in its own `kendex.settings.toml`.
 
+- A later `Fixed in <sha>`, `Declined:`, or `Tracked: <issue>` reply clears
+  a review thread's tracking claim at the gate, and a `Fixed in <sha>` reply
+  is never a claim, whatever its prose says.
+
 - On macOS the commit hooks were written but never made executable, so git
   ignored both and an armed repository gated nothing. `guard install` reports
   armed only when the bit is really there.
