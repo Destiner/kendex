@@ -255,3 +255,83 @@ fn an_optional_dependency_is_taken_only_when_it_is_asked_for() {
     assert!(output.status.success());
     assert!(project.join(".claude/skills/linear").exists());
 }
+
+/// `--keep-declaration` takes the files and leaves kendex.toml alone, so a
+/// refresh puts them back — the remedy for an install gone wrong. A
+/// dependency named this way comes off too, and comes back the same way,
+/// with nothing written down to hold it back.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn keeping_the_declaration_lets_a_refresh_install_it_again() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let project = project(&tmp);
+    let before = fs::read_to_string(project.join("kendex.toml")).unwrap();
+    assert!(before.contains("[skills.dev]"), "{before}");
+
+    let output = kendex(home, &project, &["remove", "dev", "--keep-declaration"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let said = String::from_utf8_lossy(&output.stderr).into_owned();
+    assert!(
+        said.contains("refresh installs what it declares again"),
+        "{said}"
+    );
+    assert!(!project.join(".claude/skills/dev").exists());
+    assert!(
+        project.join(".claude/skills/github").exists(),
+        "nothing is swept when the declaration stays"
+    );
+    assert_eq!(
+        fs::read_to_string(project.join("kendex.toml")).unwrap(),
+        before,
+        "the manifest was written"
+    );
+    let lock = fs::read_to_string(project.join(".kendex-lock.json")).unwrap();
+    assert!(
+        !lock.contains("skill:dev:"),
+        "the record still holds dev: {lock}"
+    );
+
+    let output = kendex(home, &project, &["refresh", "--yes"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(project.join(".claude/skills/dev").exists());
+
+    let output = kendex(home, &project, &["remove", "github", "--keep-declaration"]);
+    let said = String::from_utf8_lossy(&output.stderr).into_owned();
+    assert!(output.status.success(), "{said}");
+    assert!(said.contains("dev requires github"), "{said}");
+    assert!(!project.join(".claude/skills/github").exists());
+    assert_eq!(
+        fs::read_to_string(project.join("kendex.toml")).unwrap(),
+        before,
+        "a dependency taken this way is not held back"
+    );
+    let lock = fs::read_to_string(project.join(".kendex-lock.json")).unwrap();
+    assert!(!lock.contains("skill:github:"), "{lock}");
+    let output = kendex(home, &project, &["refresh", "--yes"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(project.join(".claude/skills/github").exists());
+
+    for flag in ["--sweep", "--no-sweep"] {
+        let output = kendex(
+            home,
+            &project,
+            &["remove", "dev", "--keep-declaration", flag],
+        );
+        let said = String::from_utf8_lossy(&output.stderr).into_owned();
+        assert!(!output.status.success(), "{flag} contradicts keeping");
+        assert!(said.contains("cannot be used with"), "{said}");
+    }
+}

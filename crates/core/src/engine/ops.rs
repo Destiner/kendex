@@ -94,6 +94,32 @@ pub fn remove(
     kind: Option<ItemKind>,
     sweep: bool,
 ) -> Result<EngineReport> {
+    removal(env, scope, names, kind, sweep, true)
+}
+
+/// Take these items' installations away and keep their declarations. The
+/// files come off disk and the record forgets them, exactly as `remove`
+/// would, but kendex.toml is not touched — the next refresh installs them
+/// again from their source. This is the remedy for an install that went
+/// wrong, and what the manifest says is what makes it a remedy rather than
+/// a removal. Never a sweep: what these items pull in is wanted again the
+/// moment they are.
+pub fn uninstall(env: &Env, scope: &Scope, names: &[String]) -> Result<EngineReport> {
+    removal(env, scope, names, None, false, false)
+}
+
+/// The removal both verbs share. The plan is made against a manifest
+/// without the declarations either way; `disown` is whether that manifest
+/// becomes the file. Kept declared, the planner is given no reason of its
+/// own to write one: the upstream skill merge waits for the refresh.
+fn removal(
+    env: &Env,
+    scope: &Scope,
+    names: &[String],
+    kind: Option<ItemKind>,
+    sweep: bool,
+    disown: bool,
+) -> Result<EngineReport> {
     let mut manifest = manifest_for_mutation(env, scope)?;
     let lock = crate::lock::load(&lock_path(env, scope))?;
     let bundles: Vec<String> = names
@@ -129,7 +155,10 @@ pub fn remove(
         if kinds.contains(&ItemKind::Plugin) {
             manifest.plugins.remove(name);
         }
-        if kinds.contains(&ItemKind::Agent) {
+        // A reviewer agent reads its base agent's skill list by prefix, so
+        // the entry outlives the agent while the declaration is kept:
+        // surviving agents render from the file that stays.
+        if disown && kinds.contains(&ItemKind::Agent) {
             manifest.agent_skills.remove(name);
         }
         if kinds.contains(&ItemKind::Skill) {
@@ -157,13 +186,16 @@ pub fn remove(
             removal_filter: Some(removing),
             sweep_unneeded: sweep,
             uninstalled_bundles: bundles,
+            hold_upstream_skills: !disown,
             ..PlanOptions::default()
         },
     )?;
-    report
-        .notes
-        .extend(unreadable_origins(env, scope, &manifest, &lock, names));
-    ensure_manifest_persisted(env, scope, &manifest, &mut report)?;
+    if disown {
+        report
+            .notes
+            .extend(unreadable_origins(env, scope, &manifest, &lock, names));
+        ensure_manifest_persisted(env, scope, &manifest, &mut report)?;
+    }
     Ok(report)
 }
 
