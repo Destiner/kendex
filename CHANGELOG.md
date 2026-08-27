@@ -42,6 +42,10 @@ an outside contributor.
 
 ### Fixed
 
+- The `task-completed-check` hook counts untracked files as changes, and blocks
+  on any nonzero clippy exit or a git that cannot say what changed. It passed
+  all three before: a new-file-only task, a killed clippy, an unreadable repo.
+
 - The `block-bare-cd` hook refuses a bare `cd` with no path. It changes to
   `$HOME` for every later tool call, the move the hook exists to stop, and
   only `cd <path>` was caught before.
