@@ -3,20 +3,24 @@
 # name: pre-commit-check
 # event: PreToolUse
 # matcher: Bash
-# description: On a git commit, defer to the working directory's armed git pre-commit hook (kendex guard install arms one); where none is armed there, run the kendex guard pre-commit chain — format, lint, and commit guards — from the working directory as the fallback gate. Where one is armed, a command that sidesteps it with git's no-verify flag, -n, or a core.hooksPath override is refused: git would skip the commit-msg hook too, and no fallback here can check the message. Gates the working directory only: a commit aimed at another repository is gated by that repository's own armed hook, and by nothing here.
-# safety: Prevents committing unchecked code from the working directory when it has no armed git pre-commit hook, and refuses a command that bypasses an armed hook (no-verify, -n) or injects git configuration that could (any -c, --config-env, or GIT_CONFIG_* word — core.hooksPath and include.path among them) rather than half-checking it; a commit aimed at another repository is that repository's armed hook's to gate.
-# timeout: 1800
+# description: On a git commit, defer to the working directory's armed git hooks — both pre-commit and commit-msg, marked and executable (kendex guard install arms them). Otherwise the commit is refused naming that command: arming is the local act that says a person wants this repository's committed scripts run on their commits, and this hook never runs them on their behalf. Where one is armed, a command that sidesteps it with git's no-verify flag, -n, or a core.hooksPath override is refused: git would skip the commit-msg hook too, and nothing here can check the message. Gates the working directory only: a commit aimed at another repository is gated by that repository's own armed hook, and by nothing here.
+# safety: Refuses a commit from a working directory with no armed git pre-commit hook rather than running that repository's own scripts to check it, and refuses a command that bypasses an armed hook (no-verify, -n) or injects git configuration that could (any -c, --config-env, or GIT_CONFIG_* word — core.hooksPath and include.path among them); a commit aimed at another repository is that repository's armed hook's to gate.
+# timeout: 60
 # ---
 
 set -euo pipefail
+
+# The one thing this hook reads out of a hook file: the marker the
+# growth-guards installer ends every line it writes with.
+MARKER="# kendex-guards-hook"
 
 INPUT=$(cat)
 
 # Word-order detection, no shell parsing: the authoritative check is the
 # repository's own git pre-commit hook, which git runs in the right repo
 # whatever the command's quoting, substitutions, or directory hops. This
-# lane only decides whether to consult the fallback, so a miss here skips
-# feedback, never a check — and `git log --grep=commit` merely pays for a
+# lane only decides whether the commit is deferred or refused, so a miss
+# here skips a refusal, never a check — and `git log --grep=commit` merely pays for a
 # guard run it did not need.
 #
 # The payload is JSON, where a string never spans lines: joining the
@@ -52,7 +56,7 @@ elsewhere_notice() {
 # is refused, not covered: git's no-verify flag — spelled out or cut to
 # any unique prefix, as git allows, or `-n` alone or inside a short-flag
 # cluster — tells git to skip the commit-msg hook as well, and the
-# message is not knowable here, so no fallback could stand in; and any
+# message is not knowable here, so nothing could stand in; and any
 # configuration injected on the command line — a `-c` word, a
 # `--config-env` word, a `GIT_CONFIG_*` assignment — can point git at
 # hooks this lane did not inspect, by `core.hooksPath` directly or by an
@@ -67,7 +71,39 @@ HOOKS_DIR=$(git rev-parse --git-path hooks 2>/dev/null) || {
   elsewhere_notice
   exit 0
 }
-if [ -x "$HOOKS_DIR/pre-commit" ]; then
+# Armed is our marker in both hook files, in the directory git reads with
+# nothing redirecting it, in files git will actually run. That is the whole
+# test.
+#
+# The execute bit is git's rule about hook files, not this package's about
+# their contents: git skips a hook without one, silently, so deferring to a
+# marker in a file git ignores stands this lane aside for nothing at all.
+#
+# It used to be a taxonomy: is the value empty, does it name this
+# repository's own directory under another spelling, does the file look
+# executable, does its content parse as something that reaches our scripts.
+# Every one of those questions was another way to answer "armed" about a
+# repository that was not, and several of them did. So: the marker, or not
+# armed. A `core.hooksPath` set to anything at all is not armed, because
+# deciding otherwise is the taxonomy that kept being wrong — and this lane
+# would rather check a commit twice than wave one through.
+# Exit 1 is git for "not set", and it is the only answer that means
+# unredirected. A git that failed for any other reason — a broken config
+# exits 128 — prints nothing either, so testing the OUTPUT read a
+# repository nobody could measure as one with hooks where this lane
+# expects them. Status decides, and anything unmeasured is not armed,
+# which refuses the commit rather than standing aside for a gate that was
+# never established.
+HOOKS_PATH_STATUS=0
+git config --get core.hooksPath >/dev/null 2>&1 || HOOKS_PATH_STATUS=$?
+ARMED=""
+if [ "$HOOKS_PATH_STATUS" -eq 1 ] \
+  && [ -x "$HOOKS_DIR/pre-commit" ] && [ -x "$HOOKS_DIR/commit-msg" ] \
+  && grep -qF -- "$MARKER" "$HOOKS_DIR/pre-commit" 2>/dev/null \
+  && grep -qF -- "$MARKER" "$HOOKS_DIR/commit-msg" 2>/dev/null; then
+  ARMED=1
+fi
+if [ -n "$ARMED" ]; then
   BYPASS=$(printf '%s' "$WORDS" | grep -oE ' (--no-veri[a-z]*|-[a-zA-Z]*n[a-zA-Z]*|-c|--config-env[^ ]*|GIT_CONFIG_[^ ]*) ' | head -1) \
     || BYPASS=$(printf '%s' "$WORDS" | grep -oiE ' config .* hookspath ' | head -1) \
     || exit 0
@@ -76,25 +112,18 @@ if [ -x "$HOOKS_DIR/pre-commit" ]; then
 fi
 elsewhere_notice
 
-if ! command -v kendex >/dev/null 2>&1; then
-  echo "pre-commit-check: no git pre-commit hook will run for this commit and the kendex binary is not on PATH, so nothing can check it — install kendex, or remove this hook" >&2
-  exit 2
-fi
-# The frontmatter timeout budgets a cold clippy build on top of the other
-# lanes; the harness cancelling this hook at that budget is the one way
-# left past the gate, so the budget stays above what the chain can take.
-CHAIN=$(kendex guard run pre-commit 2>&1) || {
-  printf '%s\n' "$CHAIN" >&2
-  echo "pre-commit-check: commit blocked by the failures above (no git pre-commit hook runs for this commit; kendex guard install arms one, which git runs unless the command bypasses it)" >&2
-  exit 2
-}
-# A lane that skipped itself said so for a reason; a clean verdict must
-# not swallow it. grep's 1 is "nothing skipped"; anything else is grep
-# itself failing, which no clean verdict may paper over.
-status=0
-printf '%s\n' "$CHAIN" | grep -F 'skipped' >&2 || status=$?
-[ "$status" -le 1 ] || {
-  echo "pre-commit-check: could not scan the chain report for skipped lanes (grep exited $status)" >&2
-  exit 2
-}
-exit 0
+# Nothing here carries our marker, and this lane does not stand in.
+#
+# Arming is the one act that says a person wants this repository's committed
+# scripts to run on their commits, and it is local: git clones no hooks, so
+# a fresh checkout of anything has no execution behind it. A fallback that
+# ran the repository's own script would put that execution back — on the
+# first commit an agent attempts, out of a checkout nobody armed. So the
+# commit is refused, and the refusal names the command that fixes it.
+#
+# One message, because the flat rule has one failure: not armed. Working out
+# WHY — an empty core.hooksPath, a redirect, a foreign hook, half a pair —
+# is the taxonomy that kept answering "armed" about repositories that were
+# not. `kendex guard check` asks the package, which does know.
+echo "pre-commit-check: this repository's git hooks are not armed by kendex in $PWD, so nothing checks this commit — run 'kendex guard install' (this hook does not run a repository's own scripts on its behalf), 'kendex guard check' says what the package makes of it, or remove this hook" >&2
+exit 2

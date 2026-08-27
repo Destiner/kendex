@@ -65,7 +65,10 @@ the command; get the app with the cask below.
 - macOS: `brew install vanillagreencom/kendex/kendex`
 - Arch: `yay -S kendex-bin`
 - Windows: download the installer from
-  [kendex.ai/download](https://kendex.ai/download).
+  [kendex.ai/download](https://kendex.ai/download). The commit guards are
+  shell scripts that kendex runs through `sh`, so `guard install`, `guard
+  run` and `guard check` need the `sh` that Git for Windows ships — the
+  same one git uses to run a hook there.
 
 For the CLI on its own: `brew install vanillagreencom/kendex/kendex-cli`,
 `yay -S kendex`, or the curl
@@ -146,9 +149,15 @@ kendex adopt skill handmade                             # manage an existing ite
 kendex apply --plan                                     # preview the full reconcile
 ```
 
-Coming from v1: `kendex import` migrates manifests and locks in place
-(originals go to the trash first), then `kendex refresh` regenerates
-everything.
+Coming from v1: nothing is migrated, and no importer arrives — install
+kendex fresh and retire the old artifacts by hand. A v1 `vstack.toml` (no
+`schema` key) or `.vstack-lock.json` left in a scope is found and refused
+by every command that would write there, so those two go first: rename them
+aside to keep them, or delete them. Then remove the `vstack-hooks`
+directory and v1 guard settings. A `kendex-hooks` directory is from an
+earlier kendex 5.x, not from v1 — remove it the same way. Either leaves a
+`core.hooksPath` pointing at it, which has to be unset before the new hooks
+can arm: `git config --unset core.hooksPath`, then `kendex guard install`.
 
 ## Engine rules
 
@@ -171,7 +180,7 @@ everything.
 | `source add/remove/enable/disable/refresh` | manage catalogs per scope |
 | `project add/remove/list/discover` | the app's project registry |
 | `report` | file an issue, routed to the asset's owner |
-| `update`, `update-pi`, `import`, `init` | self-update, Pi packages, v1 migration, catalog scaffolding |
+| `update`, `update-pi`, `init` | self-update, Pi packages, catalog scaffolding |
 
 Scopes: `--scope project|global|all` (v1 aliases `p/local`, `g/user`,
 `both/*`), `-g` as a shortcut for global.

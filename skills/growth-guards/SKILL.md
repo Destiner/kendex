@@ -57,8 +57,14 @@ any other failure blocks); the batch over staged content; then the
 repo-root-relative executable named by `GROWTH_GUARDS_PRE_COMMIT_LOCAL`.
 `commit-msg` runs the message gate. Both BLOCK on the exit contract, fail
 closed on a guard that could not run; `git commit --no-verify` is the bypass.
-`kendex add` and `kendex refresh` run the installer, `kendex remove
-growth-guards` runs `--uninstall` first, and `kendex check` folds in `--check`
+The `kendex guard` verbs invoke this installer: `install`, `uninstall`
+(`--uninstall`) and `check` (`--check`). Arming and disarming are
+repository-level: every work tree and nested project shares one hooks
+directory, so an uninstall from any of them disarms the repository. Disarm
+before removing this skill: shims whose scripts are gone block every commit. `kendex check` invokes
+nothing — it reads the hook files for this package's marker and the execute
+bit git needs, and says armed or not armed. The `--check` verdicts below are
+the fuller vocabulary, for a person or a verb that asks for it:
 (0 armed — in `.git/hooks` or a `core.hooksPath` directory hand-wired to this
 skill's `pre-commit` and `commit-msg`; 1 drifted, absent, or dormant behind a
 `core.hooksPath` that redirects away from the shims; 2 could not determine —
@@ -66,6 +72,13 @@ unreadable hooks directory or an unrecognized hand-wired hook). Repeat runs
 are no-ops and repairs; `core.hooksPath` is never set; existing hooks keep
 their content and exit status. Full install and refusal behaviour:
 [DEVELOPMENT.md](DEVELOPMENT.md).
+
+The git hooks are the authoritative gate: they run for every committer, and
+they need no kendex binary — the shim execs this skill's committed scripts.
+kendex arms and reports, and implements no check of its own. The
+`pre-commit-check` harness hook stands aside where BOTH git hooks are armed,
+refuses commands that would sidestep them, and refuses the commit otherwise — it never runs these scripts on a repository's behalf.
+Layering and reasoning: [README](README.md).
 
 ## Configuration
 
@@ -93,6 +106,6 @@ full repo-relative path; `*` crosses `/`); a pattern without a reason is a
 config error. **Baseline format** — `path<TAB>count`, `LC_ALL=C` sorted,
 unique paths, positive counts.
 
-Per-check consumer detail, seeding a first baseline, and CI wiring:
-[README.md](README.md). Marker shapes, per-language suppression patterns,
+What each check bans and how it is scoped: [CHECKS.md](CHECKS.md). Seeding
+a first baseline and CI wiring: [README.md](README.md). Marker shapes, per-language suppression patterns,
 and the hook install and removal contract: [DEVELOPMENT.md](DEVELOPMENT.md).

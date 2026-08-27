@@ -13,10 +13,21 @@ docs live in README.md.
 - `scripts/install-git-hooks` — hook installer, remover, and `--check` verdict
 - `scripts/lib/common.sh`, `scripts/lib/settings.sh` — shared helpers and
   layered settings resolution
+- `scripts/lib/hook-check.sh`, `scripts/lib/hook-entrypoint.sh` — the two
+  read-only halves of `install-git-hooks --check`: the verdict over the
+  shims this installer writes, and the whole-file grammar for a hook
+  someone hand-wired under `core.hooksPath`
+- `scripts/lib/hooks-path.sh` — where git reads hooks from, and whether
+  that is the directory this installer writes
+- `scripts/lib/skill-roots.sh` — the one definition of the skills roots
+  every search here uses, including the copy baked into the helper
 - `kendex.settings.toml.example` — settings template for consumers
 - `SKILL.md` — agent-facing skill definition
 - `README.md` — consumer documentation
+- `CHECKS.md` — what each check bans, and how it is scoped
 - `tests/` — run any file directly; every suite sources the harness first
+- `tests/lib/install-hooks.bash` — the consumer-shaped fixture repository
+  and installer invocations the four `install-git-hooks` suites share
 - `tests/lib/harness.bash` — the scratch root a suite owns, a `TMPDIR`
   inside it, and git-config isolation; sourced, so the name stays outside
   the `tests/*.sh` glob runners execute
@@ -39,8 +50,9 @@ cannot hide a tracked file from it.
 
 The installer writes three files into the repository's `.git/hooks` (never
 `core.hooksPath`, which redirects the whole directory and would disable the
-repository's existing hooks; where a repo already sets it, the install is a
-reported skip and only removal still runs):
+repository's existing hooks; where a repo already sets it — to any value,
+its own hooks directory included — the install is a reported skip, while
+removal and `--check` still run):
 
 | File | Content |
 |---|---|
@@ -66,12 +78,13 @@ this installer did not write is never overwritten. A bare repository is
 refused — there is no work tree to guard.
 
 Linked worktrees share the install, since git resolves their hooks to the
-main checkout's hooks directory. The same sharing governs removal: while any
-work tree on that hooks directory still has a SEPARATE install of the skill,
-`--uninstall` keeps the shims, retargets the helper at that surviving
-install, and says so. Separate is decided by physical path — a worktree
-whose skills directory links back into the checkout being uninstalled from
-is the same install, and it is going away.
+main checkout's hooks directory. The same sharing governs removal, and it
+makes arming repository-level: one hooks directory, one set of shims, shared
+by every work tree and every nested project. `--uninstall` disarms the
+repository. It does not ask whether another work tree or another project
+still wants the shims — that question was five rounds of wrong answers, the
+last of them a repository two projects could never disarm at all. Re-arming
+is one `install-git-hooks` run from whichever project still wants it.
 
 `--uninstall` drops the helper and our marked line from each hook, deleting
 a hook file this installer created outright and leaving every other line of
@@ -79,8 +92,14 @@ a consumer's own hook untouched. It runs even where `core.hooksPath` is set
 — shims left in `.git/hooks` come back to life the moment that setting goes
 away. A delegating line it may not edit (a symlinked hook) keeps the helper
 in place and fails the removal rather than stranding a hook with no guard to
-reach. `kendex remove growth-guards` refuses the removal if that cleanup
-fails, so removing the skill never leaves hooks that block every commit.
+reach.
+
+Nothing runs this installer on a package lifecycle event today: `kendex guard
+install`, `kendex guard uninstall` and `kendex guard check` are the verbs
+that invoke it, and
+disarming before removing the skill is the caller's to do — shims whose
+scripts are gone block every commit. Wiring `kendex add` / `refresh` /
+`remove` to it arrives with the repo-effects declaration (KEN-663 part 2).
 
 `--check` is the read-only counterpart: it writes nothing — not even the
 hooks directory — and answers whether the shims are armed. `0`: the helper
@@ -89,8 +108,7 @@ marker or exact line at its position, POSIX-sh shebang, executable). `1`:
 some shim is drifted or absent. `2`: the question could not be answered (an
 unreadable hooks directory, a hook file that cannot be read); failure to
 measure is never a pass, and definitive drift outranks an unmeasured
-component. The one stdout line carries every component finding, and `kendex
-check` folds it in for projects with the skill installed.
+component. The one stdout line carries every component finding, and `kendex check` reads the hook files natively instead of running this.
 
 Under `core.hooksPath` the redirected directory is what `--check` probes,
 because it is the only one git reads. The target is resolved with `git

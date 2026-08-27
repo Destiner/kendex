@@ -13,7 +13,7 @@
 //! line outranks config, so operations inside a cache pin `--git-dir` and
 //! `--work-tree` explicitly and the hostile setting is ignored.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::io::{self, Read};
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
@@ -51,6 +51,8 @@ const GIT_REDIRECTS: &[&str] = &[
     "GIT_NAMESPACE",
 ];
 
+mod programs;
+
 pub struct Hardened {
     command: Command,
     /// What the caller asked for, for error messages. Plumbing arguments
@@ -64,93 +66,11 @@ pub struct Hardened {
 }
 
 impl Hardened {
-    pub fn git(args: &[&str], cwd: Option<&Path>) -> Hardened {
-        let mut hardened = Hardened::git_command(owned(args), cwd);
-        hardened.label = format!("git {}", args.join(" "));
-        hardened
-    }
-
-    /// git against a downloaded repository. The working tree is pinned on
-    /// the command line, where it outranks a `core.worktree` the repository
-    /// ships, so the call cannot reach outside `repo`.
-    pub fn git_in(repo: &Path, args: &[&str]) -> Hardened {
-        let mut pinned = vec![
-            OsString::from("--git-dir"),
-            repo.join(".git").into_os_string(),
-            OsString::from("--work-tree"),
-            repo.as_os_str().to_owned(),
-        ];
-        pinned.extend(owned(args));
-        let mut hardened = Hardened::git_command(pinned, Some(repo));
-        hardened.label = format!("git {}", args.join(" "));
-        hardened
-    }
-
-    /// git against a bare mirror in the cache. No working tree is attached,
-    /// so no operation on it can write a file anywhere: a mirror only ever
-    /// gains objects and refs.
-    pub fn git_bare(git_dir: &Path, args: &[&str]) -> Hardened {
-        let mut pinned = vec![OsString::from("--git-dir"), git_dir.as_os_str().to_owned()];
-        pinned.extend(owned(args));
-        let mut hardened = Hardened::git_command(pinned, Some(git_dir));
-        hardened.label = format!("git {}", args.join(" "));
-        hardened
-    }
-
-    /// git materializing a commit out of a bare mirror into `work_tree`.
-    /// Both ends are pinned on the command line, where they outrank any
-    /// `core.worktree` in the mirror, so the write lands in the directory
-    /// named here and nowhere else.
-    pub fn git_into(git_dir: &Path, work_tree: &Path, args: &[&str]) -> Hardened {
-        let mut pinned = vec![
-            OsString::from("--git-dir"),
-            git_dir.as_os_str().to_owned(),
-            OsString::from("--work-tree"),
-            work_tree.as_os_str().to_owned(),
-        ];
-        pinned.extend(owned(args));
-        let mut hardened = Hardened::git_command(pinned, Some(work_tree));
-        hardened.label = format!("git {}", args.join(" "));
-        hardened
-    }
-
-    pub fn npm(args: &[&str], cwd: Option<&Path>) -> Hardened {
-        let mut hardened = Hardened::new("npm", owned(args));
-        if let Some(cwd) = cwd {
-            hardened.command.current_dir(cwd);
-        }
-        hardened
-    }
-
-    pub fn gh(args: &[&str]) -> Hardened {
-        Hardened::new("gh", owned(args))
-    }
-
-    pub fn curl(args: &[&str]) -> Hardened {
-        Hardened::new("curl", owned(args))
-    }
-
-    /// The machine-locally configured guard extension: an executable the
-    /// user pointed the pre-commit chain at, run from the repository root
-    /// under the standard hardening (no stdin, captured output, a
-    /// timeout). Never configured from a committed file.
-    pub fn local_guard(program: &Path, cwd: &Path) -> Hardened {
-        Hardened::lint_tool(program, &[], cwd)
-    }
-
-    /// A lint tool the commit-time guards invoke — cargo, biome — run from
-    /// the repository root under the standard hardening. The program is
-    /// either a bare well-known name resolved on PATH or a path the guard
-    /// itself derived; never a command a committed file named. Under a git
-    /// hook the parent carries git's redirect exports (a temporary index
-    /// among them); a build script or formatter reading those would judge
-    /// the wrong repository, so the child sees none of them — the one
-    /// sanctioned redirect is threaded through `index_file` explicitly.
-    pub fn lint_tool(program: &Path, args: &[&str], cwd: &Path) -> Hardened {
-        let mut hardened = Hardened::new(&program.to_string_lossy(), owned(args));
-        hardened.scrub_git_redirects();
-        hardened.command.current_dir(cwd);
-        hardened
+    /// One environment variable on the child, for a caller that reads its
+    /// output rather than merely relaying it.
+    pub fn env(mut self, key: &str, value: &str) -> Hardened {
+        self.command.env(key, value);
+        self
     }
 
     pub fn timeout(mut self, timeout: Duration) -> Hardened {
@@ -160,17 +80,6 @@ impl Hardened {
 
     pub fn max_output(mut self, bytes: usize) -> Hardened {
         self.max_output = Some(bytes);
-        self
-    }
-
-    /// The one sanctioned redirect: a commit-time guard must judge the
-    /// index git actually named in `GIT_INDEX_FILE` — during `git commit`
-    /// that is a temporary index, and scrubbing it would silently judge
-    /// the wrong one. The value never arrives straight from the process
-    /// environment: the guard context captured and canonicalized it once,
-    /// and threads it here explicitly.
-    pub fn index_file(mut self, path: &Path) -> Hardened {
-        self.command.env("GIT_INDEX_FILE", path);
         self
     }
 
@@ -257,7 +166,19 @@ impl Hardened {
     }
 
     fn new(program: &str, args: Vec<OsString>) -> Hardened {
-        let label = std::iter::once(program.to_owned())
+        Hardened::spawning(OsStr::new(program), args)
+    }
+
+    /// The same, for a program that is a path rather than a name.
+    ///
+    /// A path is bytes on Unix, not text: `to_string_lossy` on the way to
+    /// `Command` substitutes U+FFFD for anything not UTF-8, and the child
+    /// is then spawned against a filename that does not exist. It failed
+    /// closed, but with a diagnostic naming a path nobody has — the label
+    /// still goes through `to_string_lossy`, because a label is for reading
+    /// and only the program has to survive intact.
+    fn spawning(program: &OsStr, args: Vec<OsString>) -> Hardened {
+        let label = std::iter::once(program.to_string_lossy().into_owned())
             .chain(args.iter().map(|arg| arg.to_string_lossy().into_owned()))
             .collect::<Vec<_>>()
             .join(" ");

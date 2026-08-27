@@ -50,7 +50,7 @@ impl ScopeCheck<'_> {
                 Ok(crate::manifest::ManifestFile::Absent) => None,
                 Ok(crate::manifest::ManifestFile::Legacy { .. }) => {
                     sections.unknown.push(unknown(format!(
-                        "{prefix}v1 manifest — not checked until it is imported"
+                        "{prefix}v1 manifest — not checked; move it aside or delete it"
                     )));
                     None
                 }
@@ -132,7 +132,7 @@ impl ScopeCheck<'_> {
                 }
             }
             Ok(crate::lock::LockFile::Legacy { .. }) => sections.unknown.push(unknown(format!(
-                "{prefix}v1 lock — install history not checked until it is imported"
+                "{prefix}v1 lock — install history not checked; move it aside or delete it"
             ))),
             Ok(crate::lock::LockFile::Absent) => {}
             Err(error) => sections.unknown.push(unknown(format!(

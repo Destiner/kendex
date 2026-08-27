@@ -1,14 +1,12 @@
-//! Black-box compatibility tests for the binding v1 surface: bare-form
-//! add, report routing (dry-run + stubbed gh), self-update against a local
-//! release feed, v1 import fixtures, and init scaffolding.
+//! Black-box tests for the binding surface: bare-form add, report routing
+//! (dry-run + stubbed gh), self-update against a local release feed, and
+//! init scaffolding.
 #![cfg(unix)]
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Command, Output};
-
-use kendex_core::manifest::MANIFEST_SCHEMA;
 
 #[allow(clippy::expect_used)]
 fn kendex_in(home: &Path, cwd: &Path, args: &[&str], envs: &[(&str, String)]) -> Output {
@@ -334,42 +332,6 @@ fn update_refuses_an_asset_value_that_is_not_a_url() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("URL must start"));
     assert!(!home.join("owned").exists());
-}
-
-#[test]
-#[allow(clippy::unwrap_used)]
-fn import_migrates_v1_files_and_is_idempotent() {
-    let tmp = sandbox_with_catalog();
-    let home = tmp.path();
-    let proj = home.join("proj");
-    fs::write(
-        proj.join("vstack.toml"),
-        "[agent-skills]\nrust = [\"gh\"]\n\n[agent-colors]\nrust = \"orange\"\n",
-    )
-    .unwrap();
-    fs::write(
-        proj.join(".vstack-lock.json"),
-        r#"{"version":1,"entries":{"gh":{"name":"gh","kind":"skill","source":"vanillagreencom/vstack","source_repo":"vanillagreencom/vstack","harnesses":["claude-code"],"method":"symlink","installed_at":"2026-01-01T00:00:00Z","source_hash":"aa"}}}"#,
-    )
-    .unwrap();
-
-    let output = kendex_in(home, &proj, &["import", "--scope", "project"], &[]);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let manifest = fs::read_to_string(proj.join("vstack.toml")).unwrap();
-    assert!(manifest.contains(&format!("schema = {MANIFEST_SCHEMA}")));
-    assert!(manifest.contains("[skills.gh]"));
-    assert!(!manifest.contains("agent-colors"));
-    let lock = fs::read_to_string(proj.join(".vstack-lock.json")).unwrap();
-    assert!(lock.contains("skill:gh:claude"));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("agent-colors"));
-
-    let again = kendex_in(home, &proj, &["import", "--scope", "project"], &[]);
-    assert!(again.status.success());
-    assert!(String::from_utf8_lossy(&again.stderr).contains("nothing to migrate"));
 }
 
 #[test]

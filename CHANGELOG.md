@@ -8,11 +8,85 @@ an outside contributor.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** hooks read as armed only when the package's marker is in
+  both hook files, both are executable, and `core.hooksPath` is unset;
+  `guard install` stands down under any value. New: `kendex guard check`.
+- **Breaking:** `guard uninstall` disarms the repository. Every work tree and
+  nested project shares one set of commit hooks, so an uninstall from any of
+  them takes the hooks; they no longer stay behind for another project.
+
 ### Fixed
+
+- `guard` verbs run from a linked worktree find the package under the same
+  project path in the main checkout, not only at its top level.
+
+- `kendex guard` relays the package's summary line on stdout and its warnings
+  on stderr, instead of putting both on stdout.
+
+- A `growth-guards` package inside the work tree, beside a git directory kept
+  there, is no longer resolved as the main checkout's copy and run as the
+  repository's commit gate.
+
+- A `core.hooksPath` whose value ends in a newline no longer makes `--check`
+  inspect a different directory and report the repository as armed.
+- Under `--separate-git-dir`, the generated git-hook helper no longer runs a
+  `growth-guards` package sitting beside the external git directory.
+
+- A directory name containing a single quote can no longer inject shell into
+  the generated git-hook helper, which could make every commit pass unchecked.
+- Under `--separate-git-dir`, a `growth-guards` package sitting beside the
+  external git directory is no longer run as the repository's commit gate.
+
+- The commit chain finds its gates in a project whose directory name ends in
+  a newline; the path was truncated, so a gate that would have failed the
+  commit was reported as not installed and the commit passed.
+
+- The commit chain finds its sibling gates in a kendex project that sits
+  below the git top level; they were skipped as not installed, so a gate
+  that would have failed the commit reported nothing.
+- `kendex check` no longer reports commit-hook drift at a project whose only
+  `growth-guards` item is an agent of that name rather than the skill.
+
+- The guard verbs work in a checkout whose path is not valid UTF-8 or
+  contains a newline; they used to report a path that does not exist.
 
 - The `harness-ci` wiring guide covers a lane that reads a path family beside
   the render verdict; the single-gate condition it shipped skipped that lane
   whenever the classifying job died.
+- `kendex check` reads a repository's hook files itself instead of running
+  its guard scripts, so reading a clone's status executes none of its code.
+  It answers armed, not armed, or cannot tell, and never guesses.
+- A commit hook that lost its execute bit no longer reads as armed. Git
+  skips such a hook silently, so the harness gate stood aside for a gate
+  that ran nothing and the commit went through unchecked.
+
+- The growth-guards `--check` reads an install whose `pre-commit` or
+  `commit-msg` script is missing or not executable as not armed — that state
+  blocks every commit.
+- The `pre-commit-check` hook stands aside only when both git hooks are
+  armed; with `commit-msg` missing it no longer waives the message gate.
+- The guard verbs run the package's scripts through `sh` on Windows, where
+  `#!` lines are not honoured, instead of failing to start.
+
+- The growth-guards `--check` reads an empty `core.hooksPath` as hooks
+  switched off, rather than measuring the repository root in its place.
+
+- The `pre-commit-check` hook no longer stands aside for a repository-root
+  file git never runs when `core.hooksPath` is set: any value at all reads
+  as not armed.
+- A hook of your own that mentions a guard marker mid-line is left alone: it
+  is no longer refused, rewritten, or reported as a stale shim. A line that
+  ENDS with the marker is still treated as the installer's own.
+- A blocked commit is told to run `kendex guard install`, which restores the
+  helper, instead of `kendex refresh`, which does not.
+
+- The guard verbs find the package under the project's own root, so a kendex
+  project below the git top level is no longer reported as having none.
+- **Breaking:** the `pre-commit-check` hook refuses a commit where no git
+  hook is armed, naming `kendex guard install`, instead of running the
+  repository's own guard scripts — arm the hooks to keep commits gated.
 - Agents no longer promise a `{{KENDEX_FAILURE_REF}}` that nothing defines:
   the failure-routing line now points at `kendex report --help`.
 - OpenCode, Gemini, and Copilot agent renders list required skills at
@@ -57,6 +131,15 @@ an outside contributor.
 
 ### Removed
 
+- **Breaking:** vstack-era installs are not migrated — install fresh and
+  remove the old artifacts by hand: the `vstack-hooks` directory (or
+  `kendex-hooks`, from an earlier 5.x), its `core.hooksPath`, v1 settings.
+- **Breaking:** the growth-guards package's scripts are the only check
+  engine: `kendex guard` keeps `run`, `install` and `uninstall`, and drops
+  the per-check verbs, `repair`, and `import-v1`.
+- **Breaking:** `[guards]` tables in `kendex.settings.toml` are gone —
+  delete them and keep the `GROWTH_GUARDS_*` / `SIZE_RATCHET_*` keys the
+  package reads. Repos that never converted need no change.
 - `KENDEX_DRIFT_HOOK_AVAILABLE` and the pi-hooks `sessionDriftAvailable` setting
   are gone: both passed `--no-available`, a flag `kendex check` never had, so
   turning them off broke every session start.
@@ -97,6 +180,10 @@ an outside contributor.
 - Marketplaces › Community: browse a listed marketplace's packages, READMEs,
   files, and safety findings before subscribing; subscribing continues from
   the same page.
+- `kendex guard install` arms the growth-guards shims in `.git/hooks` instead
+  of setting `core.hooksPath`, so an armed repository gates commits with no
+  kendex binary present.
+- `kendex check` reports whether a project's commit hooks are armed.
 - New install channels: `curl -fsSL https://kendex.ai/install.sh | sh`,
   Homebrew (`kendex`, `kendex-cli`), and the AUR (`kendex-bin`, `kendex`,
   `kendex-git`).

@@ -20,7 +20,8 @@ pub fn run(
     quiet: bool,
 ) -> Result<ExitCode, Box<dyn std::error::Error>> {
     let scopes = resolve_scopes(env, filter)?;
-    let checked = report::check(env, &scopes);
+    let mut checked = report::check(env, &scopes);
+    fold_commit_hooks(env, &mut checked, &scopes);
 
     // Freshness is earned in the background, never waited on. The spawn is
     // detached with no stdio; a busy or failing refresh writes stamps and
@@ -38,6 +39,72 @@ pub fn run(
         render_text(&checked, quiet);
     }
     Ok(ExitCode::from(checked.status.exit_code()))
+}
+
+/// Whether commits here are actually gated. The one thing this report
+/// cannot read off a stat: the shims live in `.git/hooks`, which no lock
+/// tracks, and a repository whose shims drifted looks identical on disk to
+/// one that never armed any.
+///
+/// Read natively, never executed. A checkout is other people's data, and
+/// this is a read: cloning a repository and asking after its status must
+/// not run code its author chose. The package's own checker speaks a richer
+/// vocabulary and a person can still run it — but running it is an
+/// invocation, and this is not one.
+///
+/// Only project scopes have a work tree to ask about. A verdict that could
+/// not be taken is `could not check`, never a silent pass.
+fn fold_commit_hooks(env: &Env, checked: &mut CheckReport, scopes: &[kendex_core::model::Scope]) {
+    use kendex_core::drift::report::Class;
+    use kendex_core::model::Scope;
+    for scope in scopes {
+        let Scope::Project { root } = scope.canonical() else {
+            continue;
+        };
+        // A checkout that merely carries the files is not missing an
+        // arming nobody asked for, so only a project whose own install
+        // record declares the package hears about this at all.
+        if !installed_here(env, scope) {
+            continue;
+        }
+        let (class, text) = match kendex_core::guard::armed(&root) {
+            // Armed, or no repository at all: neither is something a
+            // reader can act on, and the second has no remedy to offer.
+            Ok(None | Some(true)) => continue,
+            Ok(Some(false)) => (
+                Class::Drift,
+                format!(
+                    "commit hooks are not armed in {} — `kendex guard install` arms them, and `kendex guard check` says more",
+                    root.display()
+                ),
+            ),
+            Err(error) => (Class::Unknown, error.to_string()),
+        };
+        report::fold(checked, "commit hooks", class, text);
+    }
+}
+
+/// Whether this project's install record carries the guard package — the
+/// difference between "your hooks are not armed" and a clone that simply
+/// ships the files. Wording only: nothing here decides what may run.
+fn installed_here(env: &Env, scope: &kendex_core::model::Scope) -> bool {
+    kendex_core::lock::load(&kendex_core::lock::lock_path(env, scope)).is_ok_and(|lock| {
+        // Enabled, not merely recorded: a declaration switched off is
+        // someone saying they do not want this gate here, and reporting it
+        // as unarmed drift every session start argues with them about a
+        // choice they already made.
+        //
+        // And the SKILL of that name, not anything of that name. A name is
+        // not unique across kinds — an agent called growth-guards is a
+        // legal thing to install — and reading one as consent to a commit
+        // gate reports hook drift, every session, at a project that never
+        // asked for hooks and has no way to make the report stop.
+        lock.entries.values().any(|entry| {
+            entry.name == kendex_core::guard::SKILL
+                && entry.kind == kendex_core::model::ItemKind::Skill
+                && entry.enabled
+        })
+    })
 }
 
 fn render_text(checked: &CheckReport, quiet: bool) {

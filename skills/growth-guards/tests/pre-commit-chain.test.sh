@@ -140,8 +140,13 @@ case "$OUT" in
     ok "the size-ratchet skip names the work-tree probe" ;;
   *) bad "size-ratchet skip names the tree probe" "out=$OUT" ;;
 esac
+# Derived, not restated: this used to carry its own copy of the list and so
+# pinned the shape of a message rather than the roots actually probed —
+# which is how it went on passing while the list it named was stale.
+# shellcheck source=../scripts/lib/skill-roots.sh
+. "$SKILL_DIR/scripts/lib/skill-roots.sh"
 case "$OUT" in
-  *"(.agents/skills .claude/skills .cursor/rules .opencode/skills skills)"*)
+  *"($GG_SKILL_ROOTS)"*)
     ok "the skip names every probed skills root" ;;
   *) bad "skip names the probed roots" "out=$OUT" ;;
 esac
@@ -206,6 +211,138 @@ case "$OUT" in
   *"repo-local entry: none configured"*)
     bad "the none-configured line must not appear beside a configured entry" "out=$OUT" ;;
   *) ok "the none-configured line stays out of the configured lane" ;;
+esac
+
+echo "=== a project below the git top level finds its own siblings ==="
+# kendex renders into the PROJECT's root, and a repository can hold several.
+# git runs a hook from the WORK TREE root, so every search anchored there
+# looked past a nested project entirely: the sibling gates were beside the
+# installed copy and nowhere near $PWD. A gate that is not found is a gate
+# that reports nothing, and the chain exited 0 while preflight failed.
+R80="$TMP/nested"
+mkdir -p "$R80/apps/web/.agents/skills" "$R80/apps/web/.github/skills"
+git -C "$R80" init -q
+git -C "$R80" config user.email t@t
+git -C "$R80" config user.name t
+cp -R "$SKILL_DIR" "$R80/apps/web/.agents/skills/growth-guards"
+
+# Under a DIFFERENT root of the same project, so the pin needs the project
+# anchor and the full root list at once.
+mkdir -p "$R80/apps/web/.github/skills/preflight/scripts"
+cat >"$R80/apps/web/.github/skills/preflight/scripts/preflight" <<'PREFLIGHT'
+#!/bin/sh
+echo "preflight: refusing this commit"
+exit 1
+PREFLIGHT
+chmod +x "$R80/apps/web/.github/skills/preflight/scripts/preflight"
+
+# A base commit before arming: preflight compares against one and announces
+# a skip without it, which would pass this pin for the wrong reason.
+printf 'hello\n' >"$R80/a.txt"
+git -C "$R80" add -A
+git -C "$R80" commit -q -m "feat: base"
+"$R80/apps/web/.agents/skills/growth-guards/scripts/install-git-hooks" \
+  --repo "$R80" >/dev/null 2>&1
+
+printf 'more\n' >"$R80/b.txt"
+git -C "$R80" add -A
+OUT=""; RC=0
+OUT="$(cd "$R80" && git commit -m "feat: nested" 2>&1)" || RC=$?
+case "$OUT" in
+  *"preflight: refusing this commit"*)
+    ok "the chain ran the nested project's preflight" ;;
+  *"preflight not installed"*)
+    bad "the nested preflight was never found" "$OUT" ;;
+  *) bad "preflight neither ran nor announced a skip" "$OUT" ;;
+esac
+[ "$RC" -ne 0 ] && ok "and its failure fails the commit" \
+  || bad "nested sibling failed and the commit passed" "rc=$RC out=$OUT"
+
+echo "=== a project directory whose name ends in a newline ==="
+# `$(...)` strips trailing newlines, and a directory name may end in one. The
+# PROJECT root is the path that matters: it is derived from where this script
+# lives, handed back to a caller, made relative, baked into the helper and
+# read again by the chain. Every one of those was a capture, and a capture
+# lost the last byte — so the sibling search looked under a directory that is
+# not there, announced the gate as not installed, and the commit passed while
+# the gate would have failed it.
+NL="$TMP/nlrepo"
+mkdir -p "$NL"
+git -C "$NL" init -q
+git -C "$NL" config user.email t@t
+git -C "$NL" config user.name t
+# The project directory itself ends in a newline.
+PROJ="$NL/web
+"
+mkdir -p "$PROJ/.agents/skills" "$PROJ/.github/skills"
+cp -R "$SKILL_DIR" "$PROJ/.agents/skills/growth-guards"
+mkdir -p "$PROJ/.github/skills/preflight/scripts"
+cat >"$PROJ/.github/skills/preflight/scripts/preflight" <<'PREFLIGHT'
+#!/bin/sh
+echo "preflight: refusing this commit"
+exit 1
+PREFLIGHT
+chmod +x "$PROJ/.github/skills/preflight/scripts/preflight"
+
+printf 'hello\n' >"$NL/a.txt"
+git -C "$NL" add -A
+git -C "$NL" commit -q -m "feat: base"
+OUT=""; RC=0
+OUT="$("$PROJ/.agents/skills/growth-guards/scripts/install-git-hooks" --repo "$NL" 2>&1)" || RC=$?
+[ "$RC" -eq 0 ] && ok "the install resolves a newline-terminated project" \
+  || bad "install under a newline-named project" "rc=$RC out=$OUT"
+
+printf 'more\n' >"$NL/b.txt"
+git -C "$NL" add -A
+OUT=""; RC=0
+OUT="$(cd "$NL" && git commit -m "feat: nl" 2>&1)" || RC=$?
+case "$OUT" in
+  *"preflight: refusing this commit"*) ok "and the chain still finds the project's siblings" ;;
+  *"preflight not installed"*) bad "the sibling was lost with the newline" "$OUT" ;;
+  *) bad "preflight neither ran nor announced a skip" "$OUT" ;;
+esac
+[ "$RC" -ne 0 ] && ok "so the failing gate still fails the commit" \
+  || bad "commit passed with a failing sibling" "rc=$RC out=$OUT"
+
+echo "=== a project name carrying a quote does not become helper script ==="
+# Everything baked into the helper is a shell assignment inside single
+# quotes, and a value carrying a quote of its own ENDS that quote — the rest
+# of the directory name is then script, in a file git executes before every
+# commit. A name like `kid'; exit 0; #` baked a helper that exited 0 before
+# running anything, so both hooks passed everything: this package writing
+# the exact fail-open it exists to refuse.
+Q="'"
+NASTY="kid${Q}; exit 0; #"
+QR="$TMP/quoted"
+mkdir -p "$QR"
+git -C "$QR" init -q
+git -C "$QR" config user.email t@t
+git -C "$QR" config user.name t
+QP="$QR/$NASTY"
+mkdir -p "$QP/.agents/skills"
+cp -R "$SKILL_DIR" "$QP/.agents/skills/growth-guards"
+
+printf 'hello\n' >"$QR/a.txt"
+git -C "$QR" add -A
+git -C "$QR" commit -q -m "feat: base"
+OUT=""; RC=0
+OUT="$("$QP/.agents/skills/growth-guards/scripts/install-git-hooks" --repo "$QR" 2>&1)" || RC=$?
+[ "$RC" -eq 0 ] && ok "the install survives a quote in the project name" \
+  || bad "install under a quoted project name" "rc=$RC out=$OUT"
+
+# The helper still parses, and still runs the gate: a banned marker blocks.
+# Split so this file carries no marker of its own — the repo runs todo-ban
+# over its own tree.
+MARK="TO""DO"
+printf '# %s: nope\n' "$MARK" >"$QR/b.py"
+git -C "$QR" add -A
+OUT=""; RC=0
+OUT="$(cd "$QR" && git commit -m "feat: quoted" 2>&1)" || RC=$?
+[ "$RC" -ne 0 ] && ok "and the baked helper still gates the commit" \
+  || bad "the quoted name disarmed the helper" "rc=$RC out=$OUT"
+case "$OUT" in
+  *todo-ban*) ok "with the package's own verdict, not an early exit" ;;
+  *) bad "the chain did not reach todo-ban" "$OUT" ;;
 esac
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
