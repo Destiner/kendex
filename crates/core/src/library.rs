@@ -2,9 +2,10 @@
 //! table reads for its From column.
 //!
 //! The lock is the durable provenance record (invariant 4), so it decides:
-//! an entry from the reserved `local` source is the user's own content —
-//! forked, when `[forks]` says what it replaced — and any other entry names
-//! the subscription it installed from. What the scanner observes and the
+//! an entry from a reserved source — `local`, or `in-place` for a project
+//! skill adopted where it sits — is the user's own content, forked when
+//! `[forks]` says what it replaced, and any other entry names the
+//! subscription it installed from. What the scanner observes and the
 //! lock cannot account for is unmanaged, reported and never touched.
 
 use std::collections::BTreeMap;
@@ -15,7 +16,7 @@ use specta::Type;
 use crate::env::Env;
 use crate::error::Result;
 use crate::lock::LockFile;
-use crate::manifest::{LOCAL_SOURCE_NAME, Manifest, ManifestFile};
+use crate::manifest::{INPLACE_SOURCE_NAME, LOCAL_SOURCE_NAME, Manifest, ManifestFile};
 use crate::model::{HarnessId, ItemKind, Scope};
 
 /// Where one installation came from.
@@ -29,9 +30,13 @@ pub enum Origin {
     /// Installed from a subscription: its declared alias and its repository
     /// (or path) as the lock recorded them.
     Marketplace { source: String, repo: String },
-    /// The user's own content in the local source — adopted, or forked off
-    /// a marketplace item, in which case this names what it replaced.
-    Own { forked_from: Option<String> },
+    /// The user's own content — adopted or forked (`forked_from` names what
+    /// a fork replaced), with `source` naming the reserved source that holds
+    /// it: `local` for a capture, `in-place` for a tree read where it sits.
+    Own {
+        forked_from: Option<String>,
+        source: String,
+    },
     /// On disk and observed, managed by nothing.
     Unmanaged,
 }
@@ -95,8 +100,9 @@ pub fn provenance(env: &Env, scopes: &[Scope]) -> Result<Vec<ProvenanceRow>> {
 }
 
 fn origin_of(manifest: &Manifest, entry: &crate::lock::LockEntry) -> Origin {
-    if entry.source == LOCAL_SOURCE_NAME {
+    if entry.source == LOCAL_SOURCE_NAME || entry.source == INPLACE_SOURCE_NAME {
         return Origin::Own {
+            source: entry.source.clone(),
             forked_from: manifest
                 .forks
                 .get(&entry.kind)
