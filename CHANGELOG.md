@@ -76,6 +76,10 @@ an outside contributor.
   as it already did for `.gitignore`, from any linked worktree too. That
   rule hides the tree from git status on one machine, so nothing commits it.
 
+- The lock records each skill's tree and links. **Breaking:** an install an
+  older kendex made is redone by hand: refresh, then remove that scope's lock
+  file and the skill trees and links kendex wrote, nothing else; then apply.
+
 - On macOS the commit hooks were written but never made executable, so git
   ignored both and an armed repository gated nothing. `guard install` reports
   armed only when the bit is really there.
