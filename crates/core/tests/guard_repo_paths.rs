@@ -53,12 +53,39 @@ fn repo_named(parent: &Path, name: OsString) -> PathBuf {
 /// `from_utf8_lossy` turns those bytes into U+FFFD, which is a different
 /// filename — so `canonicalize` failed and every verb reported a path
 /// nobody has, for a repository that is perfectly fine.
+///
+/// Only where the filesystem will hold such a name. APFS enforces UTF-8 in
+/// filenames and refuses the byte outright (`EILSEQ`), so on macOS the
+/// fixture cannot be built at all — and a test that cannot build its
+/// subject has nothing to say about it. Skipped there rather than asserted
+/// around: the property still holds on every filesystem that has the case.
 #[test]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 fn a_checkout_whose_name_is_not_utf8_is_found() {
     let tmp = tempfile::tempdir().unwrap();
     // 0xFF is not valid UTF-8 in any position.
-    let root = repo_named(tmp.path(), OsString::from_vec(b"caf\xffe".to_vec()));
+    let name = OsString::from_vec(b"caf\xffe".to_vec());
+    // One error means "this filesystem does not have the case at all", and
+    // only that one is a skip. A permission error, a full disk, a missing
+    // parent — those are the fixture failing to be built, and skipping on
+    // them would turn a broken run green instead of red.
+    //
+    // APFS enforces UTF-8 in filenames and answers EILSEQ. Rust has no
+    // ErrorKind for it on every platform (macOS reports it uncategorized),
+    // so the errno is what it is matched on, with InvalidInput taken too for
+    // a platform that does map it.
+    if let Err(error) = std::fs::create_dir(tmp.path().join(&name)) {
+        let unsupported = error.kind() == std::io::ErrorKind::InvalidInput
+            || error.raw_os_error() == rustix::io::Errno::ILSEQ.raw_os_error().into();
+        assert!(
+            unsupported,
+            "the fixture directory is creatable, or the filesystem refuses the name: {error:?}"
+        );
+        eprintln!("skipped: this filesystem will not hold a non-UTF-8 filename");
+        return;
+    }
+    std::fs::remove_dir(tmp.path().join(&name)).unwrap();
+    let root = repo_named(tmp.path(), name);
 
     let repo = Repo::at(&root).expect("the repository is found by its bytes");
     assert_eq!(repo.worktree, root.canonicalize().unwrap());
