@@ -10,6 +10,9 @@ an outside contributor.
 
 ### Changed
 
+- **Breaking:** a `core.hooksPath` naming a directory answers "could not
+  determine" from `kendex guard check`; the stand-down prints git's own
+  report of where it is set, then says to clear it at its source and arm.
 - **Breaking:** hooks read as armed only when the package's marker is in
   both hook files, both are executable, and `core.hooksPath` is unset;
   `guard install` stands down under any value. New: `kendex guard check`.
