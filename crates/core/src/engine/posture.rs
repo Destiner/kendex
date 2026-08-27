@@ -11,6 +11,7 @@
 
 use crate::apply::{Op, PlannedOp, Pre};
 use crate::error::Result;
+use crate::guard::Repo;
 use crate::model::Scope;
 
 /// The line kendex owns, anchored to the project root so a same-named file
@@ -49,6 +50,29 @@ pub(super) fn plan_posture(
         notes.push(format!(
             ".gitignore ignores {ignored} — a teammate who clones this repository gets no skills until that line goes"
         ));
+    }
+    // The exclude file lives in this clone's git dir, shared by its linked
+    // worktrees and nobody else: a line there hides the tree from git
+    // status on this machine, so what kendex changes in it never reaches a
+    // commit, and no pull can put that right. git says where that dir is:
+    // guessing `<root>/.git` misses a linked worktree, whose `.git` is a
+    // file, and a `--separate-git-dir` layout, whose `.git` is one
+    // everywhere. Where git cannot answer, the file goes unchecked and the
+    // note says so; the lock line below is still owed.
+    match Repo::at(root) {
+        Ok(repo) => {
+            let exclude = repo.common_dir.join("info/exclude");
+            let rules = crate::fs::read_if_exists(&exclude)?.unwrap_or_default();
+            for ignored in ignores_committed(&rules) {
+                notes.push(format!(
+                    "{} ignores {ignored} — git status on this machine never shows what kendex changes there, and no commit or pull carries that rule; remove it from this clone's git dir",
+                    exclude.display()
+                ));
+            }
+        }
+        Err(e) => notes.push(format!(
+            "git could not open this repository, so its info/exclude was not checked: {e}"
+        )),
     }
     let Some(updated) = with_lock_ignored(&text) else {
         return Ok(());
@@ -180,6 +204,62 @@ mod tests {
             with_lock_ignored("!.kendex-lock.json\n").is_some(),
             "a negation on its own leaves it tracked"
         );
+    }
+
+    /// git in a fixture: a HOME of its own so no real global config reaches
+    /// it, and an identity so it can commit.
+    fn git(dir: &std::path::Path, args: &[&str]) {
+        let home = dir.to_str().expect("fixture paths are text");
+        let out = crate::process::Hardened::git(args, Some(dir))
+            .env("HOME", home)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .run()
+            .expect("git runs");
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    fn posture_notes(root: &std::path::Path) -> Vec<String> {
+        let scope = Scope::Project {
+            root: root.to_path_buf(),
+        };
+        let mut notes = Vec::new();
+        plan_posture(&scope, &mut Vec::new(), &mut notes).unwrap();
+        notes
+    }
+
+    /// The exclude file is read where git keeps it. A linked worktree has
+    /// `.git` as a file and shares the main checkout's exclude, so the same
+    /// rule is reported from both, naming the one file to edit.
+    #[test]
+    fn an_exclude_rule_on_the_shared_tree_is_reported_from_every_checkout() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("main");
+        std::fs::create_dir_all(&main).unwrap();
+        git(&main, &["init", "-q", "-b", "main"]);
+        git(&main, &["commit", "-q", "--allow-empty", "-m", "start"]);
+        git(&main, &["worktree", "add", "-q", "../linked"]);
+        let linked = dir.path().join("linked");
+        assert!(linked.join(".git").is_file());
+        assert!(posture_notes(&main).is_empty());
+        assert!(posture_notes(&linked).is_empty());
+
+        std::fs::write(main.join(".git/info/exclude"), ".agents/\n").unwrap();
+        for root in [&main, &linked] {
+            let notes = posture_notes(root);
+            assert_eq!(notes.len(), 1, "{notes:?}");
+            assert!(
+                notes[0].contains("info/exclude ignores .agents —"),
+                "{notes:?}"
+            );
+            assert!(!notes[0].contains("linked"), "{notes:?}");
+        }
     }
 
     #[test]
