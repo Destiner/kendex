@@ -66,17 +66,29 @@ pub fn source_toggle(scope: Scope, name: String, enabled: bool) -> Result<Vec<So
     run_and_list(&env, report)
 }
 
-/// Every curated set every catalog offers, across every scope — what the
-/// Catalogs page lists under each source.
+/// Every curated set every catalog offers, across every scope.
+fn list_all_bundles(env: &Env) -> Result<Vec<BundleRow>, String> {
+    let mut rows = Vec::new();
+    for scope in all_scopes(env)? {
+        rows.extend(source_ops::list_bundles(env, &scope).map_err(|e| e.to_string())?);
+    }
+    Ok(rows)
+}
+
+/// What the Catalogs page lists under each source — one query.
 #[tauri::command(async)]
 #[specta::specta]
 pub fn bundles_overview() -> Result<Vec<BundleRow>, String> {
-    let env = env()?;
-    let mut rows = Vec::new();
-    for scope in all_scopes(&env)? {
-        rows.extend(source_ops::list_bundles(&env, &scope).map_err(|e| e.to_string())?);
-    }
-    Ok(rows)
+    list_all_bundles(&env()?)
+}
+
+/// What a bundle install hands back: every set as it stands now, and the
+/// repository effects its members brought for the window to ask about.
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BundleInstalled {
+    pub bundles: Vec<BundleRow>,
+    pub repo_effects: kendex_core::repo_effects::Offers,
 }
 
 /// Install a set whole. Its members derive from the catalog, so this declares
@@ -88,8 +100,19 @@ pub fn bundle_install(
     source: String,
     name: String,
     hold: bool,
-) -> Result<Vec<BundleRow>, String> {
+) -> Result<BundleInstalled, String> {
     let env = env()?;
+    install_bundle(&env, &scope, source, name, hold)
+}
+
+/// The bundle install itself, against the environment it is given.
+pub fn install_bundle(
+    env: &Env,
+    scope: &Scope,
+    source: String,
+    name: String,
+    hold: bool,
+) -> Result<BundleInstalled, String> {
     let request = AddRequest {
         source: Some(source),
         bundles: vec![name],
@@ -97,9 +120,14 @@ pub fn bundle_install(
         hold,
         ..AddRequest::default()
     };
-    let report = engine_ops::add(&env, &scope, &request).map_err(|e| e.to_string())?;
-    apply::execute(&env, &report.plan, None).map_err(|e| e.to_string())?;
-    bundles_overview()
+    let report = engine_ops::add(env, scope, &request).map_err(|e| e.to_string())?;
+    apply::execute(env, &report.plan, None).map_err(|e| e.to_string())?;
+    let repo_effects = kendex_core::repo_effects::offers_for(env, scope, &report.repo_effects)
+        .map_err(|e| e.to_string())?;
+    Ok(BundleInstalled {
+        bundles: list_all_bundles(env)?,
+        repo_effects,
+    })
 }
 
 /// Re-resolve every enabled remote across every scope. Returns warnings

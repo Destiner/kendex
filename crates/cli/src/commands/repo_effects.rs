@@ -25,32 +25,13 @@
 
 use std::io::{IsTerminal, Write};
 
-use kendex_core::engine::EngineReport;
 use kendex_core::model::Scope;
-use kendex_core::names::shown;
-use kendex_core::repo_effects::DeclaredEffects;
+use kendex_core::repo_effects::{DeclaredEffects, Disclosure};
 
 use super::{CliResult, out, say};
 
 mod disclose;
 pub use disclose::disclose;
-
-/// The repository effects this plan brings — the ones this run has to
-/// disclose and ask about, because no earlier run's answer carries.
-///
-/// Empty outside a project. A repository effect is a change to a
-/// repository, and the global scope is not one: `run_script` refuses it, so
-/// an effect offered there is a question whose yes cannot be honoured.
-/// Filtered here, at the one place the list is built, rather than in the
-/// disclosure — that skipped the block and left the same list to be asked
-/// about, so a global install prompted for an effect it had not named and
-/// `--allow-repo-effects` wrote the files before the refusal landed.
-pub fn pending<'a>(scope: &Scope, report: &'a EngineReport) -> Vec<&'a DeclaredEffects> {
-    match scope {
-        Scope::Project { .. } => report.repo_effects.iter().collect(),
-        _ => Vec::new(),
-    }
-}
 
 /// Ask about the disclosed effects and apply the ones that get a yes.
 ///
@@ -62,17 +43,17 @@ pub fn pending<'a>(scope: &Scope, report: &'a EngineReport) -> Vec<&'a DeclaredE
 /// Only that. A second `add` of an installed package adds nothing to what
 /// the scope carries, so it brings no effect to offer — naming `add` here
 /// sent people to a command that would do nothing and say nothing.
-pub fn walkthrough(scope: &Scope, pending: &[&DeclaredEffects], allowed: bool) -> CliResult {
-    if confirm(pending, allowed)? {
-        for declared in pending {
-            apply(scope, declared)?;
+pub fn walkthrough(scope: &Scope, shown_to_them: &[Disclosure], allowed: bool) -> CliResult {
+    if confirm(shown_to_them, allowed)? {
+        for disclosure in shown_to_them {
+            apply(scope, &disclosure.declared)?;
         }
         return Ok(());
     }
-    for declared in pending {
+    for disclosure in shown_to_them {
         say(&format!(
             "{}: installed; its repository changes were not applied",
-            shown(&declared.name)
+            disclosure.name
         ));
     }
     Ok(())
@@ -82,7 +63,7 @@ pub fn walkthrough(scope: &Scope, pending: &[&DeclaredEffects], allowed: bool) -
 /// needs `--allow-repo-effects` said out loud: a scripted install or a CI
 /// run must never arm a repository's hooks because nobody was there to
 /// decline.
-pub fn confirm(pending: &[&DeclaredEffects], allowed: bool) -> Result<bool, String> {
+pub fn confirm(pending: &[Disclosure], allowed: bool) -> Result<bool, String> {
     if pending.is_empty() {
         return Ok(false);
     }
@@ -94,10 +75,7 @@ pub fn confirm(pending: &[&DeclaredEffects], allowed: bool) -> Result<bool, Stri
         return Ok(false);
     }
     let question = match pending.len() {
-        1 => format!(
-            "apply {}'s repository changes? [y/N] ",
-            shown(&pending[0].name)
-        ),
+        1 => format!("apply {}'s repository changes? [y/N] ", pending[0].name),
         n => format!("apply the repository changes of {n} packages? [y/N] "),
     };
     let _ = write!(std::io::stderr(), "{question}");
@@ -108,47 +86,35 @@ pub fn confirm(pending: &[&DeclaredEffects], allowed: bool) -> Result<bool, Stri
     Ok(matches!(answer.trim(), "y" | "Y" | "yes"))
 }
 
-/// Run one package's installer, here and now. The run is the whole of it:
-/// what it wrote is on disk for anyone to look at, and nothing kendex
-/// stores decides what a later run does.
+/// Run one package's installer, here and now, and relay what it said.
+///
+/// Each of the package's streams goes out on its own channel, the way the
+/// package wrote them: its summary is what a caller pipes for. A package
+/// with nothing to run is a state to name, not a failure.
 pub fn apply(scope: &Scope, declared: &DeclaredEffects) -> CliResult {
-    let Some(installer) = &declared.effects.installer else {
-        say(&format!(
-            "{}: no installer to run — arm it yourself when you are ready",
-            shown(&declared.name)
-        ));
-        return Ok(());
-    };
-    let report = kendex_core::repo_effects::run_script(scope, &declared.root, installer)?;
-    // Each of the package's streams on its own channel, the way the package
-    // wrote them: its summary is what a caller pipes for.
+    match kendex_core::repo_effects::arm(scope, declared) {
+        Ok(report) => {
+            relay(&report);
+            Ok(())
+        }
+        Err(error @ kendex_core::repo_effects::ArmError::NothingToRun { .. }) => {
+            say(&error.to_string());
+            Ok(())
+        }
+        Err(error) => {
+            if let kendex_core::repo_effects::ArmError::Failed { report, .. } = &error {
+                relay(report);
+            }
+            Err(error.to_string().into())
+        }
+    }
+}
+
+fn relay(report: &kendex_core::guard::GuardReport) {
     for line in &report.stderr {
         say(line);
     }
     for line in &report.stdout {
         out(line);
     }
-    if report.code != 0 {
-        // Not "the repository is unchanged". kendex takes no pre-image and
-        // rolls nothing back, so an installer that wrote three files and
-        // failed on the fourth leaves three files — and a message promising
-        // otherwise is the one thing that would stop somebody looking. The
-        // declaration names what the package writes, which is where to look.
-        return Err(format!(
-            "{}: {} exited {} — anything it wrote before that is still \
-             there; `{}` is what the package says undoes it",
-            shown(&declared.name),
-            shown(installer),
-            report.code,
-            shown(
-                declared
-                    .effects
-                    .uninstaller
-                    .as_deref()
-                    .unwrap_or("its uninstaller")
-            )
-        )
-        .into());
-    }
-    Ok(())
 }

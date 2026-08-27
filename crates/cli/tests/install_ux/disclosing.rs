@@ -24,6 +24,18 @@ fn the_repository_effect_is_disclosed_and_not_applied_without_a_yes() {
     let world = World::new(&["claude"]);
     world.declare_catalog();
     offer(&world, "growth-guards");
+    // One declared write outside `.git`, so the block carries both kinds.
+    // The shared claim is about the repository's own directory, and a file
+    // that lives in this checkout must not be swept into it.
+    let declaration = world.catalog.join("skills/growth-guards/SKILL.md");
+    let text = fs::read_to_string(&declaration).unwrap();
+    let anchor = "    - \".git/hooks/commit-msg\"\n";
+    assert!(text.contains(anchor), "the declaration moved");
+    fs::write(
+        &declaration,
+        text.replace(anchor, &format!("{anchor}    - \".github/x\"\n")),
+    )
+    .unwrap();
     let spoken = world.try_run(&["add", "cat", "--skill", "growth-guards", "-y"]);
     assert!(spoken.status.success(), "{}", spoke(&spoken));
     let asked = String::from_utf8_lossy(&spoken.stderr).into_owned();
@@ -46,8 +58,24 @@ fn the_repository_effect_is_disclosed_and_not_applied_without_a_yes() {
     assert!(out.contains("every commit in this repository"), "{out}");
     assert!(out.contains(".git/hooks/pre-commit"), "{out}");
     assert!(out.contains(".git/hooks/commit-msg"), "{out}");
-    assert!(out.contains("size-ratchet"), "no companion line:\n{out}");
+    assert!(
+        out.contains("size-ratchet (not installed)"),
+        "no companion line:\n{out}"
+    );
     assert!(out.contains("to undo:"), "{out}");
+
+    // Marked path by path. A sentence under the whole list said the
+    // repository shares every file in it, including the checkout-local one.
+    assert!(out.contains(".git/hooks/pre-commit  (shared)"), "{out}");
+    assert!(
+        out.lines()
+            .any(|line| line.trim_end().ends_with(".github/x")),
+        "the checkout-local path was marked shared:\n{out}"
+    );
+    assert!(
+        out.contains("the paths marked shared are the repository's"),
+        "{out}"
+    );
 
     // The refusal names the flag rather than leaving the reader to find it.
     assert!(
@@ -139,4 +167,68 @@ fn the_yes_to_a_repository_effect_is_spent_where_it_is_given() {
         "a disarmed repository still gated:\n{}",
         spoke(&passes)
     );
+}
+
+/// What a person writes into `kendex.toml` to declare the package without
+/// an `add`: where it installs to, and the package itself.
+const DECLARED_BY_HAND: &str =
+    "\n[install]\nharnesses = [\"claude\"]\n\n[skills.growth-guards]\nsource = \"cat\"\n";
+
+/// A declaration written by hand installs through `kendex apply`, and the
+/// package it installs gets the same account and the same separate yes an
+/// `add` would have given it — the walkthrough belongs to the install, not
+/// to the verb that started it.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn apply_discloses_a_hand_declared_package_and_waits_for_its_own_yes() {
+    let world = World::new(&["claude"]);
+    world.declare_catalog();
+    offer(&world, "growth-guards");
+    fs::write(world.at("kendex.toml"), world.manifest() + DECLARED_BY_HAND).unwrap();
+
+    let spoken = world.try_run(&["apply", "-y"]);
+    assert!(spoken.status.success(), "{}", spoke(&spoken));
+    let out = spoke(&spoken);
+    assert!(
+        out.contains("changes how this repository works"),
+        "apply installed the package without its account:\n{out}"
+    );
+    assert!(out.contains("--allow-repo-effects"), "{out}");
+    assert!(
+        world
+            .at(".agents/skills/growth-guards/scripts/install-git-hooks")
+            .is_file(),
+        "the package did not install:\n{out}"
+    );
+    assert!(
+        !world.at(".git/hooks/kendex-guards").exists(),
+        "apply armed the hooks with nobody there to say yes:\n{out}"
+    );
+
+    // The same flag means yes here too, in a repository that never said it.
+    let armed = World::new(&["claude"]);
+    armed.declare_catalog();
+    offer(&armed, "growth-guards");
+    fs::write(armed.at("kendex.toml"), armed.manifest() + DECLARED_BY_HAND).unwrap();
+    let out = armed.run(&["apply", "-y", "--allow-repo-effects"]);
+    assert!(
+        armed.at(".git/hooks/kendex-guards").is_file(),
+        "the yes did not arm the hooks:\n{out}"
+    );
+}
+
+/// Which companions are here is kendex's answer, not the package's: one
+/// installed before the declaring package reads as installed in its block.
+#[test]
+fn a_companion_already_here_reads_as_installed() {
+    let world = World::new(&["claude"]);
+    world.declare_catalog();
+    offer(&world, "size-ratchet");
+    offer(&world, "growth-guards");
+    world.run(&["add", "cat", "--skill", "size-ratchet", "-y"]);
+    let spoken = world.try_run(&["add", "cat", "--skill", "growth-guards", "-y"]);
+    let out = spoke(&spoken);
+    assert!(spoken.status.success(), "{out}");
+    assert!(out.contains("size-ratchet (installed)"), "{out}");
+    assert!(out.contains("preflight (not installed)"), "{out}");
 }
