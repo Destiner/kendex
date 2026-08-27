@@ -9,8 +9,28 @@
 
 set -euo pipefail
 
+# jq is the only reader of the payload, and grep and sed make every decision
+# after it. Without them the command cannot be read, and a command this hook
+# has not read cannot be shown to scope its directory change.
+if ! command -v jq >/dev/null 2>&1 || ! command -v cat >/dev/null 2>&1 \
+  || ! command -v grep >/dev/null 2>&1 || ! command -v sed >/dev/null 2>&1; then
+  echo "block-bare-cd: jq, cat, grep and sed are required to read the hook payload; refusing rather than skipping the guard" >&2
+  exit 2
+fi
+
 INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"command"[[:space:]]*:[[:space:]]*"//;s/"$//' 2>/dev/null || true)
+
+# A payload that does not parse, or that names a command which is not a
+# string, is refused rather than skipped. An absent command is the empty
+# string and passes. The null tests are spelled out because jq's `//` reads
+# `false` as absent, and `false` is not a command either.
+if ! COMMAND=$(printf '%s' "$INPUT" \
+  | jq -r 'if .tool_input.command == null then (if .command == null then "" else .command end)
+           else .tool_input.command end
+           | if type == "string" then . else error end' 2>/dev/null); then
+  echo "block-bare-cd: hook payload is not valid JSON, or names a command that is not a string; refusing rather than skipping the guard" >&2
+  exit 2
+fi
 
 # Fast exit if no cd in command. A bare `cd` goes to $HOME, the change this
 # hook exists to stop, so end of line counts the same as a following space.

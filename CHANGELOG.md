@@ -53,6 +53,10 @@ an outside contributor.
   on any nonzero clippy exit or a git that cannot say what changed. It passed
   all three before: a new-file-only task, a killed clippy, an unreadable repo.
 
+- **Breaking:** the `block-bare-cd` hook reads the command with `jq` and refuses
+  every Bash call it matches on a host without it — install jq wherever the hook
+  runs. Its own parser stopped at the first quote, mis-refusing `cd "$d" && ls`.
+
 - The `block-bare-cd` hook refuses a bare `cd` with no path. It changes to
   `$HOME` for every later tool call, the move the hook exists to stop, and
   only `cd <path>` was caught before.
