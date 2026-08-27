@@ -52,6 +52,10 @@ an outside contributor.
 
 ### Fixed
 
+- A refresh cuts opencode.json's `kendex-hook-` `instructions` rows down to
+  what it renders now, so a row kendex wrote leaves with its render. Every
+  other row is untouched; rows a pre-rename tool wrote are removed by hand once.
+
 - The `task-completed-check` hook counts untracked files as changes, and blocks
   on any nonzero clippy exit or a git that cannot say what changed. It passed
   all three before: a new-file-only task, a killed clippy, an unreadable repo.
