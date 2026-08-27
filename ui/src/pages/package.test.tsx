@@ -2,17 +2,26 @@
 import userEvent from "@testing-library/user-event";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Manifest_Serialize, ObservedItem, Scope } from "@/bindings";
+import type {
+  AuditView,
+  Manifest_Serialize,
+  ObservedItem,
+  Scope,
+} from "@/bindings";
 import { commands } from "@/bindings";
+import { ADOPTABLE } from "@/lib/adoptable";
 import {
   OPEN_IN_EDITOR_LABEL,
   OPEN_IN_FILE_BROWSER_LABEL,
   OPEN_IN_LABEL,
 } from "@/lib/copy";
 import { editorOpenPath } from "@/lib/editor-path";
+import { SEVERITY_LABELS } from "@/lib/labels";
 import { scopeKey } from "@/lib/scope";
+import { useAuditStore } from "@/stores/audit";
 import { useEditorStore } from "@/stores/editor";
 import { useNavStore } from "@/stores/nav";
+import type { PackageView } from "@/stores/nav-types";
 import { useScanStore } from "@/stores/scan";
 import { useUpdatesStore } from "@/stores/updates";
 import { mount, settle } from "@/test/dom";
@@ -33,6 +42,9 @@ vi.mock("@/bindings", async (importOriginal) => ({
     revealPath: vi.fn(),
     openInEditor: vi.fn(),
     libraryProvenance: vi.fn(),
+    packageDiff: vi.fn(),
+    // The page's safety block asks for a fresh audit as it mounts.
+    auditAll: vi.fn(),
   },
 }));
 
@@ -70,6 +82,9 @@ const openPage = async (
   here: Project,
   installed: Project[],
   manifests: Record<string, Manifest_Serialize>,
+  /** What the page opens showing. An Updates-row Preview hands it a
+   *  comparison, so the page starts on a diff rather than on its files. */
+  packageView: PackageView | null = null,
 ) => {
   vi.mocked(commands.getManifest).mockImplementation((scope) =>
     Promise.resolve({
@@ -88,7 +103,7 @@ const openPage = async (
   useNavStore.setState({
     page: "package",
     packageRef: { kind: "skill", name: "gh", scope: here },
-    packageView: null,
+    packageView,
   });
   const host = mount(<PackagePage />);
   // The page points the editor at its own place on mount, and that read
@@ -112,6 +127,7 @@ beforeEach(() => {
   vi.mocked(commands.packageReadme).mockResolvedValue(nothing);
   vi.mocked(commands.editorInventory).mockResolvedValue(nothing);
   vi.mocked(commands.libraryProvenance).mockResolvedValue(nothing);
+  vi.mocked(commands.packageDiff).mockResolvedValue(nothing);
   vi.mocked(commands.revealPath).mockResolvedValue({
     status: "ok",
     data: null,
@@ -128,6 +144,122 @@ beforeEach(() => {
     dirty: false,
   });
   useUpdatesStore.setState({ rows: [], loaded: true });
+  useAuditStore.setState({
+    views: [],
+    auditedAt: null,
+    checkError: null,
+    scopeCheckedAt: {},
+  });
+});
+
+/** One place's audit view with gh scored 58, one finding to show under it. */
+const scoredView: AuditView = {
+  scope: VG,
+  drift: [],
+  plan: [],
+  notes: [],
+  warnings: [],
+  adoptable: ADOPTABLE,
+  exits: [],
+  safety: [
+    {
+      kind: "skill",
+      name: "gh",
+      harness: "claude",
+      scope: VG,
+      location: "",
+      findings: [
+        {
+          rule: "dangerous-commands",
+          severity: "high",
+          location: "SKILL.md:20",
+          message: "runs a shell command that deletes files",
+          remediation: "scope the command to a specific path",
+        },
+      ],
+      skipped: [],
+      safety: { score: 58, deductions: [] },
+      quality: null,
+      ruleset: 3,
+    },
+  ],
+};
+
+// The score the audit gave this package's bytes, and what produced it.
+// Nothing else in the app renders a scope's `safety` rows, so a page that
+// dropped this block would leave every installed reading unread.
+describe("the package page's safety block", () => {
+  it("shows the score for this place, with the findings behind it", async () => {
+    useAuditStore.setState({
+      auditedAt: 1,
+      views: [scoredView],
+    });
+
+    const host = await openPage(VG, [VG], { [scopeKey(VG)]: PLAIN });
+
+    expect(host.textContent).toContain("58/100");
+    expect(host.textContent).toContain(SEVERITY_LABELS.high);
+    expect(host.textContent).toContain("SKILL.md:20");
+  });
+
+  // A Preview from an Updates row opens this page straight into a diff. The
+  // score answers for the whole package, not for whichever two versions are
+  // side by side, so closing the comparison cannot be what makes it appear.
+  it("stands above a comparison, not only beside the files", async () => {
+    useAuditStore.setState({
+      auditedAt: 1,
+      views: [scoredView],
+    });
+
+    const host = await openPage(
+      VG,
+      [VG],
+      { [scopeKey(VG)]: PLAIN },
+      {
+        mode: "diff",
+        from: "1111111111",
+        to: "2222222222",
+      },
+    );
+
+    expect(host.textContent).toContain("58/100");
+    expect(host.textContent).toContain("SKILL.md:20");
+  });
+
+  it("scores the place the page is about, not another place's copy", async () => {
+    useAuditStore.setState({
+      auditedAt: 1,
+      views: [
+        {
+          scope: HYPR,
+          drift: [],
+          plan: [],
+          notes: [],
+          warnings: [],
+          adoptable: ADOPTABLE,
+          exits: [],
+          safety: [
+            {
+              kind: "skill",
+              name: "gh",
+              harness: "claude",
+              scope: HYPR,
+              location: "",
+              findings: [],
+              skipped: [],
+              safety: { score: 12, deductions: [] },
+              quality: null,
+              ruleset: 3,
+            },
+          ],
+        },
+      ],
+    });
+
+    const host = await openPage(VG, [VG, HYPR], { [scopeKey(VG)]: PLAIN });
+
+    expect(host.textContent).not.toContain("12/100");
+  });
 });
 
 // The header names a place, and the editor is pointed wherever the

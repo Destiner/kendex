@@ -21,8 +21,9 @@ import { MARKETPLACES_UNCHECKED_DETAIL } from "@/lib/copy-marketplaces";
 import { groupItems, installedCount, recentItems } from "@/lib/derive";
 import { harnessName } from "@/lib/labels";
 import { CONTENT_WIDTH, PAGE_BODY } from "@/lib/layout";
+import { rescanEverything } from "@/lib/rescan";
 import { cn } from "@/lib/utils";
-import { useAuditStore } from "@/stores/audit";
+import { useAuditOnMount, useAuditStore } from "@/stores/audit";
 import { useMarketplacesStore } from "@/stores/marketplaces";
 import { useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
@@ -32,16 +33,10 @@ import { useUpdatesStore } from "@/stores/updates";
 const RECENT_ACTIVITY_LIMIT = 6;
 
 export function OverviewPage() {
-  const { result, error, scanning, refresh } = useScanStore();
-  const views = useAuditStore((s) => s.views);
-  // The safety pass is the slowest thing the app does; until it has
-  // ANSWERED once, Home cannot say whether anything needs attention — so
-  // it says that it is still looking rather than showing an empty page. A
-  // failed audit is an answer: the section renders what is known, with the
-  // failure as a row of its own, instead of a skeleton for the session.
-  const stillChecking = useAuditStore(
-    (s) => s.auditedAt === null && s.checkError === null,
-  );
+  // Home says whether anything needs attention, which is the audit's
+  // answer as much as the scan's.
+  useAuditOnMount();
+  const { result, error, scanning } = useScanStore();
   // `checkError`, not the store's shared `error`: item actions write the
   // shared field too, and a failed remove or adopt is not a failed audit.
   const auditError = useAuditStore((s) => s.checkError);
@@ -85,7 +80,7 @@ export function OverviewPage() {
       size="sm"
       variant="outline"
       disabled={scanning}
-      onClick={() => void refresh({ announce: true })}
+      onClick={() => void rescanEverything()}
     >
       {SCAN_AGAIN_LABEL}
     </Button>
@@ -115,11 +110,9 @@ export function OverviewPage() {
 
   const rows = attentionRows({
     editedPackages,
-    views,
     result,
     updatesError,
     auditError,
-    onUnmanaged: () => goTo("unmanaged"),
     onProjects: () => goTo("projects"),
     onUpdates: () => setPage("updates"),
     onLibrary: () => goToLibrary(),
@@ -152,8 +145,13 @@ export function OverviewPage() {
             </StatusNote>
           ) : null}
           {/* Nothing to decide means nothing to say: the section is gone
-              rather than standing there reporting its own emptiness. */}
-          {!result || stillChecking ? (
+              rather than standing there reporting its own emptiness. Only
+              the scan is waited on. Every row this section can produce
+              comes from the scan or the update check, bar the audit's own
+              failure row, which appears when the audit reports — holding
+              the whole list on the slowest read in the app would hide rows
+              that were ready seconds earlier. */}
+          {!result ? (
             <Section title="Needs attention">
               <AttentionSkeleton />
             </Section>

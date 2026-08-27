@@ -1,28 +1,41 @@
-// One place the app counts what the audit found, so Home and the project
-// cards can never quote different numbers for the same thing.
+// One place the app reads what the audit found is unmanaged, so a project's
+// card and the page behind it can never quote different numbers for the
+// same thing.
 //
 // The engine emits one drift row per harness an item targets, so a skill
 // present for five tools is five rows and one thing. A person counts the
-// thing. Merging happens inside each scope: the same name in two projects
+// thing. Counting happens inside one scope: the same name in two projects
 // is genuinely two items, and folding those together would undercount.
 import type { AuditView } from "@/bindings";
-import { mergeDriftRows } from "@/lib/drift-merge";
+import { type MergedDriftRow, mergeDriftRows } from "@/lib/drift-merge";
 
-export interface AuditCounts {
-  /** Content on the machine that kendex did not put there, once per item
-   *  however many tools it is installed for. Adopting is an offer the user
-   *  takes up, so this is never counted as work waiting on them. */
-  unmanaged: number;
+/** Everything at this place kendex did not put there, one entry per item
+ *  however many tools it is installed for. Adopting is an offer the user
+ *  takes up, so this is never work waiting on them.
+ *
+ *  Null where the audit could not read this place. What is there is
+ *  genuinely unknown, and an empty list is a claim: it would read as
+ *  "nothing unmanaged here", and every row the app would have offered to
+ *  adopt writes to the filesystem. Null so no caller can spend it as a
+ *  number without deciding what to say.
+ *
+ *  A reading fails two ways and both land here, because both leave the same
+ *  rows standing from the last audit that worked: one place refuses to be
+ *  read and its own view carries the error, or the whole check fails and
+ *  the store keeps every view it had. Taking both in one argument each is
+ *  what stops a caller reading one channel and missing the other. An
+ *  undefined view is neither: the audit has not reached this place yet,
+ *  which is an empty answer rather than an unknown one. */
+export function unmanagedIn(
+  view: AuditView | undefined,
+  checkError: string | null,
+): MergedDriftRow[] | null {
+  if (checkError !== null || view?.error) return null;
+  if (!view) return [];
+  return mergeDriftRows(view.drift.filter((row) => row.state === "unmanaged"));
 }
 
-export function auditCounts(views: AuditView[]): AuditCounts {
-  return {
-    unmanaged: views.reduce(
-      (sum, view) =>
-        sum +
-        mergeDriftRows(view.drift.filter((row) => row.state === "unmanaged"))
-          .length,
-      0,
-    ),
-  };
-}
+export const unmanagedCount = (
+  view: AuditView | undefined,
+  checkError: string | null,
+): number | null => unmanagedIn(view, checkError)?.length ?? null;
