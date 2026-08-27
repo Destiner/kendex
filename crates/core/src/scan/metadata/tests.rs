@@ -12,6 +12,44 @@ fn reads_a_description_and_an_inline_tag_list() {
     assert_eq!(meta.tags, vec![Tag::Review, Tag::Testing]);
 }
 
+/// The summary is the marketplace's line and the description the agent's;
+/// a package that writes only the description is shown that one.
+#[test]
+fn a_summary_is_read_beside_the_description_and_stands_in_for_it() {
+    let both = frontmatter(
+        "description: Load to run preflight.\nsummary: Diff-scoped shellcheck and TOML checks.",
+    );
+    assert_eq!(
+        both.summary.as_deref(),
+        Some("Diff-scoped shellcheck and TOML checks.")
+    );
+    assert_eq!(
+        both.summary_or_description(),
+        Some("Diff-scoped shellcheck and TOML checks.")
+    );
+
+    let only = frontmatter("description: Load to run preflight.\nsummary: \"  \"");
+    assert_eq!(only.summary, None);
+    assert_eq!(
+        only.summary_or_description(),
+        Some("Load to run preflight.")
+    );
+
+    let toml = from_toml(
+        "description = \"a db\"\nsummary = \"Query the app database\"\ncommand = \"db\"\n",
+    );
+    assert_eq!(toml.summary.as_deref(), Some("Query the app database"));
+    assert_eq!(
+        from_toml("command = \"db\"\n").summary_or_description(),
+        None
+    );
+    // A blank summary in TOML is absent too, the same rule as the markdown
+    // header, so the row falls back to the description.
+    let blank = from_toml("description = \"a db\"\nsummary = \"  \"\n");
+    assert_eq!(blank.summary, None);
+    assert_eq!(blank.summary_or_description(), Some("a db"));
+}
+
 #[test]
 fn reads_a_block_tag_list() {
     let meta = frontmatter("tags:\n  - review\n  - security");
