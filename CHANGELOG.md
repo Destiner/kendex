@@ -16,6 +16,11 @@ an outside contributor.
 - **Breaking:** `size-ratchet` refuses a test-class baseline row that HEAD's
   baseline does not carry or carries lower. Rows already at HEAD keep; a
   test that outgrew its class threshold is split, never frozen.
+
+- The review gate's pending status now names the repo's own configured
+  evidence sources — `no review evidence at <sha> yet; expected from <names>`
+  — instead of reading as a block on someone's approval.
+
 - **Breaking:** a `core.hooksPath` naming a directory answers "could not
   determine" from `kendex guard check`; the stand-down prints git's own
   report of where it is set, then says to clear it at its source and arm.

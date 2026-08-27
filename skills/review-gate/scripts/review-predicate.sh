@@ -265,6 +265,30 @@ TRUSTED_LOGINS="$(rg_setting REVIEW_GATE_REVIEW_OBJECT_TRUSTED_LOGINS "")" || ex
 MIN_STATE="$(rg_setting REVIEW_GATE_REVIEW_OBJECT_MIN_STATE "any")" || exit 2
 ERROR_PATTERNS="$(rg_setting REVIEW_GATE_REVIEW_OBJECT_ERROR_PATTERNS "encountered an error and was unable to review")" || exit 2
 THREADS_MODE="$(rg_setting REVIEW_GATE_THREADS "enforce")" || exit 2
+
+# ONE parse of each packed trust list, here at the single place the settings
+# are resolved. Every consumer below works from these: the configuration
+# checks, the evidence reads, and the awaiting label. Entry boundaries and
+# emptiness are decided once, so a value like " ; , " cannot be an open trust
+# model to one reader and a named list to another.
+# pipefail inside, checked at every caller: this decides the trust boundary,
+# and the last stage of the pipeline returns 0 on empty output. A `tr` that
+# died would leave a RESTRICTED list looking empty, which the evidence read
+# takes as "any non-author" — the trust list would open the gate it was set
+# to close. A broken pipeline is exit 2 with no verdict instead.
+rg_pack() { # RAW SEPARATORS -> one trimmed, non-empty entry per line
+  ( set -o pipefail
+    printf '%s\n' "$1" | tr "$2" '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;/^$/d' )
+}
+# Called OUTSIDE the substitutions below: an `exit` inside `$( )` would leave
+# the subshell and the predicate would carry on with the empty value.
+rg_pack_failed() { # KEY
+  echo "::error::review-predicate: could not normalize $1 (broken pipeline) — no verdict" >&2
+  exit 2
+}
+TRUSTED_LOGINS_N="$(rg_pack "$TRUSTED_LOGINS" ';,')" || rg_pack_failed REVIEW_GATE_REVIEW_OBJECT_TRUSTED_LOGINS
+TRUSTED_CONTEXTS_N="$(rg_pack "$TRUSTED_CONTEXTS" ';')" || rg_pack_failed REVIEW_GATE_TRUSTED_STATUS_CONTEXTS
+COMMENT_REVIEWERS_N="$(rg_pack "$COMMENT_REVIEWERS" ';')" || rg_pack_failed REVIEW_GATE_COMMENT_REVIEWERS
 API_ATTEMPTS="$(rg_setting REVIEW_GATE_API_ATTEMPTS "1")" || exit 2
 API_RETRY_DELAY="$(rg_setting REVIEW_GATE_API_RETRY_DELAY_SECONDS "2")" || exit 2
 CARRY_FORWARD="$(rg_setting REVIEW_GATE_CARRY_FORWARD "")" || exit 2
@@ -374,14 +398,13 @@ if [ "$OUTAGE_CONTEXT" = "$GATE_CONTEXT_SELF" ]; then
   exit 2
 fi
 while IFS= read -r ctx; do
-  ctx="$(printf '%s' "$ctx" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
   [ -z "$ctx" ] && continue
   if [ "$ctx" = "$GATE_CONTEXT_SELF" ]; then
     echo "::error::review-predicate: REVIEW_GATE_TRUSTED_STATUS_CONTEXTS includes REVIEW_GATE_CONTEXT ('$GATE_CONTEXT_SELF') — the gate's own status cannot be its own review evidence" >&2
     exit 2
   fi
 done <<EOF_GATE_CTX
-$(printf '%s' "$TRUSTED_CONTEXTS" | tr ';' '\n')
+$TRUSTED_CONTEXTS_N
 EOF_GATE_CTX
 
 # The exclusion pattern GRAMMAR, and the one judge of it. Callers that need
@@ -448,7 +471,6 @@ rg_check_patterns REVIEW_GATE_CARRY_FORWARD_EXCLUDE_PROPHYLACTIC "$CARRY_EXCLUDE
 # a PR to evaluate — otherwise --check-config reports a legal configuration
 # that the next live run exits 2 on.
 while IFS= read -r cfg_pair; do
-  cfg_pair="$(printf '%s' "$cfg_pair" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
   [ -z "$cfg_pair" ] && continue
   cfg_login="${cfg_pair%%:*}"
   cfg_pattern="${cfg_pair#*:}"
@@ -457,7 +479,7 @@ while IFS= read -r cfg_pair; do
     exit 2
   fi
 done <<EOF_COMMENT_CFG
-$(printf '%s' "$COMMENT_REVIEWERS" | tr ';' '\n')
+$COMMENT_REVIEWERS_N
 EOF_COMMENT_CFG
 
 # Every configuration rule above has now run, and --check-config stops HERE:
@@ -588,9 +610,9 @@ ATTESTATION_DEF='def not_errored_attestation($mk):
 # by a newer CHANGES_REQUESTED from that same login — a trailing COMMENTED
 # never withdraws an approval.
 got="$(jq --arg sha "$HEAD_SHA" --arg author "$PR_AUTHOR" \
-        --arg trusted "$TRUSTED_LOGINS" --arg minstate "$MIN_STATE" \
+        --arg trusted "$TRUSTED_LOGINS_N" --arg minstate "$MIN_STATE" \
         --arg errmarks "$ERROR_PATTERNS" "$ATTESTATION_DEF"'
-  ($trusted | split("[;,\n]+"; "") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))) as $t
+  ($trusted | split("\n") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))) as $t
   | ($errmarks | split(";") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)) | map(ascii_downcase)) as $mk
   | [ .[]
       | select(.commit_id == $sha and .state != "DISMISSED" and .state != "PENDING" and .user.login != $author)
@@ -716,7 +738,6 @@ else
 fi
 check=0
 while IFS= read -r ctx; do
-  ctx="$(printf '%s' "$ctx" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
   [ -z "$ctx" ] && continue
   ctx_uri="$(jq -rn --arg s "$ctx" '$s|@uri')"
   # --paginate emits one OBJECT per page for this endpoint; jq -s merges the
@@ -883,7 +904,7 @@ while IFS= read -r ctx; do
   }
   check=$((check + check_runs + check_status))
 done <<EOF
-$(printf '%s' "$TRUSTED_CONTEXTS" | tr ';' '\n')
+$TRUSTED_CONTEXTS_N
 EOF
 
 # Comment-form clean-pass evidence: some reviewers post NEITHER a review
@@ -899,7 +920,7 @@ EOF
 # match every head. The trust anchor is the author login plus the LITERAL
 # binding pattern immediately preceding the sha slot, not the quoting.
 comment_hits=0
-if [ -n "$COMMENT_REVIEWERS" ]; then
+if [ -n "$COMMENT_REVIEWERS_N" ]; then
   # Two steps, not a pipe — same pagination/fail-loud/zero-byte reasons as
   # the reviews read above.
   raw_comments="$(gh_read "repos/$GH_REPO/issues/$PR_NUMBER/comments?per_page=100" --paginate)" || {
@@ -921,7 +942,6 @@ if [ -n "$COMMENT_REVIEWERS" ]; then
     exit 2
   }
   while IFS= read -r pair; do
-    pair="$(printf '%s' "$pair" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     [ -z "$pair" ] && continue
     # Grammar was proved in the configuration phase above, which is the one
     # site for it; this loop only splits what that pass accepted.
@@ -951,7 +971,7 @@ if [ -n "$COMMENT_REVIEWERS" ]; then
     }
     comment_hits=$((comment_hits + hits))
   done <<EOF
-$(printf '%s' "$COMMENT_REVIEWERS" | tr ';' '\n')
+$COMMENT_REVIEWERS_N
 EOF
 fi
 
@@ -1050,9 +1070,9 @@ if [ -n "$CARRY_FORWARD" ] && [ "$got" = "0" ] && [ "$check" = "0" ] \
   # carry could matter), newest-first, distinct, never the head itself,
   # bounded so a force-push-heavy PR cannot turn the walk into an API storm.
   carry_candidates="$(jq -r --arg sha "$HEAD_SHA" --arg author "$PR_AUTHOR" \
-      --arg trusted "$TRUSTED_LOGINS" --arg minstate "$MIN_STATE" \
+      --arg trusted "$TRUSTED_LOGINS_N" --arg minstate "$MIN_STATE" \
       --arg errmarks "$ERROR_PATTERNS" "$ATTESTATION_DEF"'
-    ($trusted | split("[;,\n]+"; "") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))) as $t
+    ($trusted | split("\n") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))) as $t
     | ($errmarks | split(";") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)) | map(ascii_downcase)) as $mk
     | [ .[]
         | select(.state != "DISMISSED" and .state != "PENDING" and .user.login != $author)
@@ -1330,6 +1350,61 @@ while :; do
 done
 fi
 
+# One packed list -> trimmed, non-empty entries, one per line. FILTER_AUTHOR
+# drops the PR author, whose own review and comment are never evidence.
+# The PR author is never evidence, so a source keyed on their login is not a
+# way to open this gate and must not be named as one. LOGIN_HALF takes what
+# precedes the first colon, which is how the comment-form evidence loop reads
+# a pair — the label names the string that loop matches on.
+aw_eligible() { # LIST [LOGIN_HALF]
+  printf '%s\n' "$1" |
+    while IFS= read -r aw_item; do
+      [ "${2:-0}" = 1 ] && aw_item="${aw_item%%:*}"
+      [ -z "$aw_item" ] && continue
+      [ "$aw_item" = "$PR_AUTHOR" ] && continue
+      printf '%s\n' "$aw_item"
+    done
+}
+
+# The sources that could still open the gate at THIS head, under the same
+# rules the evaluation above applied: an empty review-object trust list
+# accepts any non-author review, a named list accepts those logins, and the
+# author is never evidence under either. Trusted status contexts are check
+# names rather than logins, so no author filter applies there. The awaiting
+# status is composed from this list — eligibility is decided here, and
+# awaiting-detail.sh only fits the answer into GitHub's description limit.
+awaiting_sources() { # -> one eligible source per line, duplicates collapsed
+  {
+    # The same normalized list the evidence read is given, so an empty trust
+    # list is empty for both. Emptiness is tested BEFORE the author filter: a
+    # list holding only the author is a named list nothing can satisfy, not
+    # an open one.
+    if [ -z "$TRUSTED_LOGINS_N" ]; then
+      # The minimum state is part of the policy, not decoration: under
+      # 'approved' a COMMENTED review does not satisfy this source, so the
+      # text must not send a reader to leave one.
+      if [ "$MIN_STATE" = "approved" ]; then
+        printf '%s\n' "any non-author approval"
+      else
+        printf '%s\n' "any non-author review"
+      fi
+    else
+      aw_eligible "$TRUSTED_LOGINS_N"
+    fi
+    printf '%s\n' "$TRUSTED_CONTEXTS_N" | sed '/^$/d'
+    aw_eligible "$COMMENT_REVIEWERS_N" 1
+    # The operator override is evidence this predicate accepts, so it is a
+    # way to open the gate and belongs in the list. Leaving it out told an
+    # operator nothing was eligible while the recovery path they own was
+    # configured and working. Empty means the source is disabled.
+    # printf, not echo: a status context is free-form, and bash's echo eats a
+    # value like -n or -e as an option and prints no name at all.
+    if [ -n "$OUTAGE_CONTEXT" ]; then
+      printf '%s\n' "$OUTAGE_CONTEXT"
+    fi
+  } | awk '!seen[$0]++'
+}
+
 echo "PR #$PR_NUMBER head $HEAD_SHA: reviews=$got clean-analysis=$check comment-form=$comment_hits outage-marker=$outageok carried=$carried changes-requested=$cr unresolved-threads=$unresolved untracked-claims=$untracked (threads=$THREADS_MODE)" >&2
 
 if [ "$cr" != "0" ]; then
@@ -1337,7 +1412,24 @@ if [ "$cr" != "0" ]; then
 elif [ "$untracked" != "0" ]; then
   echo "verdict=untracked-claim detail=$untracked tracking claim(s) name no issue — write Declined: <reason>, or add the tracker/#id"
 elif [ "$got" = "0" ] && [ "$check" = "0" ] && [ "$comment_hits" = "0" ] && [ "$outageok" = "0" ] && [ "$carried" = "0" ]; then
-  echo "verdict=awaiting detail=awaiting a non-author review for $HEAD_SHA"
+  # Captured, never interpolated straight into the echo: a composer that
+  # failed would otherwise leave an empty description on a verdict that still
+  # printed, and a status is the only thing a reader gets.
+  # Captured on its OWN line: as an environment assignment on the composer
+  # command, this substitution's status is discarded and the composer would
+  # format whatever partial list it was handed and exit 0.
+  awaiting_rc=0
+  awaiting_srcs="$(awaiting_sources)" || awaiting_rc=$?
+  if [ "$awaiting_rc" != 0 ]; then
+    echo "::error::review-predicate: could not resolve the awaiting sources (exit $awaiting_rc) — no verdict" >&2
+    exit 2
+  fi
+  awaiting_detail="$(HEAD_SHA="$HEAD_SHA" SOURCES="$awaiting_srcs" "$script_dir/awaiting-detail.sh")" || awaiting_rc=$?
+  if [ "$awaiting_rc" != 0 ] || [ -z "$awaiting_detail" ]; then
+    echo "::error::review-predicate: scripts/awaiting-detail.sh failed (exit $awaiting_rc) — no verdict" >&2
+    exit 2
+  fi
+  echo "verdict=awaiting detail=$awaiting_detail"
 elif [ "$unresolved" != "0" ]; then
   echo "verdict=threads-open detail=$unresolved unresolved review thread(s)"
 elif [ "$carried" = "1" ]; then

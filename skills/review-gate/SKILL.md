@@ -36,12 +36,19 @@ the gate; and merge-group statuses never read the mode, posting green as
 | `changes-requested` | `failure` | A reviewer objects. Red means objection — never a build failure. |
 | (exit 2, no verdict) | *unchanged* | A read failed or config is invalid. Take NO action; retry next pass. |
 
-**Reading the gate's own pending text.** `awaiting a non-author review for
-<sha>` means no review evidence exists at that head yet — the ordinary
-re-review window after a push, not a wait for a person. The bots are the
-non-author reviewers: if a trusted one has already reviewed this head,
-dispatch the writer instead of waiting, and wait on a human only where the
-repo configures one.
+**Reading the gate's own pending text.** `no review evidence at <sha> yet;
+expected from <names>` is the `awaiting` verdict. The names are the sources
+that could still open the gate at that head, resolved from the repo's own
+settings and filtered the way the evidence read filters them — the PR author
+never appears, and an empty trust list reads as `any non-author review` (or
+`approval` under `REVIEW_GATE_REVIEW_OBJECT_MIN_STATE = "approved"`). Past
+140 characters the sha shortens to 12 and the names that do not fit are
+counted (`and N more`). A configured operator override is a source too, and
+is named with the rest. `no configured source is eligible here` means every
+configured login is the author and no override is set.
+
+Act on the names, not on the pending state: where they are bots and one has
+already reviewed this head, dispatch the writer instead of waiting.
 
 # Working in a consumer repo
 
