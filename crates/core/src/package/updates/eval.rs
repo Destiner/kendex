@@ -266,9 +266,7 @@ impl Eval<'_> {
             entry.scope == self.scope_key
                 && entry.kind == kind
                 && entry.name == name
-                // A mute recorded before the repository move must keep
-                // muting after the migration rewrites the manifest.
-                && crate::repo_move::same_repo(&entry.repo, repo)
+                && entry.repo == repo
         })
     }
 }

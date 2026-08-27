@@ -156,6 +156,12 @@ an outside contributor.
 - **Breaking:** the `trading-design` skill is no longer offered. Run
   `kendex remove trading-design --scope all` wherever it is installed (or
   drop its `[skills.trading-design]` entries and run `kendex apply --scope all`).
+- **Breaking:** nothing reads the old vstack names any more — the files, the
+  `vstack2` app directories, the repository redirect, the alias binary, and
+  `kendex import`. Rename them to `kendex`, or reinstall the scope fresh.
+- **Breaking:** `--scope` takes `project`, `global` or `all` only; the v1
+  aliases `p`/`local`, `g`/`user` and `both`/`*` are gone. `-g` still means
+  global.
 
 ### Added
 
@@ -240,8 +246,8 @@ an outside contributor.
   conflict · flagged M items on safety` — each outcome it carries naming a next
   step. A run whose installs were all blocked no longer says "nothing installed".
 - One conflict prints once, naming every tool it blocks and every position it
-  sits at, plus how the files in the way compare with the catalog — identical or
-  which files differ, noting where they carry a `source: vstack` stamp.
+  sits at, plus how the files in the way compare with the catalog — identical,
+  or which files differ.
 - A hook that skips a tool now points at the hook's own `harnesses:` line in the
   catalog, and skills that require each other read `installing dev also installs
   orch, reviewer (required)`.
@@ -260,7 +266,7 @@ an outside contributor.
   install vanillagreencom/kendex/kendex-cli`.
 - Commit checks moved into the git pre-commit hook, which also runs rust-fmt,
   rust-clippy, and biome; kendex's harness hook refuses `--no-verify` and
-  hook-skipping git config. v1 guard settings convert with `kendex guard import-v1`.
+  hook-skipping git config.
 - **Breaking:** `KENDEX_PRE_COMMIT_RUST_CLIPPY` is gone. To disable the
   lane, set `enabled = false` under `[guards.rust-clippy]` in
   `kendex.settings.toml`; a custom command moves to `KENDEX_GUARD_PRE_COMMIT_LOCAL`.
@@ -353,9 +359,7 @@ an outside contributor.
   the terminal.
 - `kendex adopt` binds an adopted item to the tools that were actually
   reading it, not the scope's full defaults.
-- `kendex import` finds a v1 install's global state on macOS, symlinked
-  repository paths read as catalogs again, and `kendex guard repair`
-  accepts a hooks receipt spelled through a symlink.
+- Symlinked repository paths read as catalogs again.
 - The review-gate package's tests run in projects that install it, and
   preflight no longer flags cross-repo citations like `kendex:docs/x.md`.
 - The project-management pipeline creates Linear issues in Backlog, not
