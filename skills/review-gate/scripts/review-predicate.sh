@@ -3,9 +3,10 @@
 # reviewed?". Shipped by the kendex review-gate skill and vendored into
 # consumers at .agents/skills/review-gate/scripts/. The authoritative caller
 # contract — evidence forms, trust model, settings keys, the carry-forward
-# engine, env seams, output, and exit codes — is print_usage below: run with
-# --help.
+# engine, env seams, output, exit codes — is print_usage below: run --help.
 set -u
+# A merge gate must never let an inherited BASHOPTS decide which paths match.
+shopt -u nocasematch nocaseglob extglob 2>/dev/null || true
 
 print_usage() {
   cat <<'USAGE'
@@ -161,22 +162,35 @@ then built-in defaults — lib/settings.sh; list values pack with ';'):
                                             silently disable a merge gate
 
 Carry-forward engine:
-  REVIEW_GATE_CARRY_FORWARD    Carry-safe delta classes ('docs', 'comments';
-      ';' or '|' separated; empty = off — exact-head evidence only). When NO
-      evidence exists at head, a qualifying review object at an ancestor
-      commit N still satisfies the evidence term if the N->head diff
-      classifies ENTIRELY into the enabled classes, or the trees are
+  REVIEW_GATE_CARRY_FORWARD    Carry-safe delta classes ('docs', 'comments',
+      'vendored'; ';' or '|' separated; empty = off — exact-head evidence
+      only). When NO evidence exists at head, a qualifying review object at
+      an ancestor commit N still satisfies the evidence term if the N->head
+      diff classifies ENTIRELY into the enabled classes, or the trees are
       identical. Classes: 'docs' = docs-only files (*.md / *.markdown by
       extension); 'comments' = comment-only changes to code files
       (per-extension comment-token table; added/removed/renamed files,
-      patch-less files, and unknown extensions refuse). Only the NEWEST
-      ancestor candidate decides. A delta at the compare API's 300-file cap
-      refuses carry. Never a waiver: real evidence must exist, and only
-      EXTENDS across a delta a review would not re-examine; code changes
-      always require fresh evidence, and changes-requested / unresolved
-      threads still fail closed with carried evidence. The 'comments'
-      classifier is line-lexical (blind to heredocs and multiline strings) —
-      enable it only where that residual risk is acceptable.
+      patch-less files, and unknown extensions refuse); 'vendored' = files
+      under a path REVIEW_GATE_VENDORED_PATHS names, whatever their
+      extension or status — the repository's committed kendex render trees,
+      trusted as kendex output without review of their bytes (so a
+      hand-edit under one rides; keep policy-bearing paths in
+      REVIEW_GATE_CARRY_FORWARD_EXCLUDE, which outranks the class). Only
+      the NEWEST ancestor candidate decides. A delta at the compare API's
+      300-file cap refuses carry. Never a waiver: real evidence must exist,
+      and only EXTENDS across a delta a review would not re-examine; code
+      changes OUTSIDE the enabled classes require fresh evidence, and
+      changes-requested / unresolved threads still fail closed with carried
+      evidence. The 'comments' classifier is line-lexical (blind to
+      heredocs and multiline strings) — enable it only where that residual
+      risk is acceptable.
+  REVIEW_GATE_VENDORED_PATHS    Path globs (';'-separated; the exclusion
+      grammar and matcher) naming the kendex render trees the 'vendored'
+      class carries, e.g. '.agents/*;.claude/skills/*'. Read from the
+      default-branch checkout like every setting, so the PR under judgment
+      cannot widen it; a rename carries only with BOTH names under the set.
+      Configuration errors (exit 2): an unsupported spelling, the class
+      enabled over an empty set, an entry naming no literal path ('*/*').
   REVIEW_GATE_CARRY_FORWARD_EXCLUDE    Path globs (';'-separated,
       shell-style; '*' matches '/' too — fnmatch without FNM_PATHNAME) that
       disqualify a carry: any file in the N->head delta matching an
@@ -293,6 +307,7 @@ API_ATTEMPTS="$(rg_setting REVIEW_GATE_API_ATTEMPTS "1")" || exit 2
 API_RETRY_DELAY="$(rg_setting REVIEW_GATE_API_RETRY_DELAY_SECONDS "2")" || exit 2
 CARRY_FORWARD="$(rg_setting REVIEW_GATE_CARRY_FORWARD "")" || exit 2
 CARRY_EXCLUDE="$(rg_setting REVIEW_GATE_CARRY_FORWARD_EXCLUDE "")" || exit 2
+VENDORED_PATHS="$(rg_setting REVIEW_GATE_VENDORED_PATHS "")" || exit 2
 GATE_MODE="$(rg_setting REVIEW_GATE_MODE "enforce")" || exit 2
 
 # Configuration errors are exit 2 (no verdict), same contract as a failed
@@ -344,13 +359,16 @@ esac
 # Carry-forward classes: ';' (engine list convention) or '|' (the shape the
 # ask was filed with) both split. An unknown class is a config error — a typo
 # must never silently widen or narrow what carries.
+rg_class_enabled() { # CLASS — 0 when REVIEW_GATE_CARRY_FORWARD lists it
+  printf '%s' "$CARRY_FORWARD" | tr ';|' '\n\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -qx -- "$1"
+}
 while IFS= read -r cls; do
   cls="$(printf '%s' "$cls" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
   [ -z "$cls" ] && continue
   case "$cls" in
-    docs|comments) ;;
+    docs|comments|vendored) ;;
     *)
-      echo "::error::review-predicate: REVIEW_GATE_CARRY_FORWARD class must be 'docs' or 'comments', got '$cls'" >&2
+      echo "::error::review-predicate: REVIEW_GATE_CARRY_FORWARD class must be 'docs', 'comments' or 'vendored', got '$cls'" >&2
       exit 2
       ;;
   esac
@@ -464,6 +482,30 @@ EOF_PATTERNS
 CARRY_EXCLUDE_PROPHYLACTIC="$(rg_setting REVIEW_GATE_CARRY_FORWARD_EXCLUDE_PROPHYLACTIC "")" || exit 2
 rg_check_patterns REVIEW_GATE_CARRY_FORWARD_EXCLUDE "$CARRY_EXCLUDE"
 rg_check_patterns REVIEW_GATE_CARRY_FORWARD_EXCLUDE_PROPHYLACTIC "$CARRY_EXCLUDE_PROPHYLACTIC"
+# The vendored path set is judged by the same grammar and by two rules of
+# its own: no empty set under an enabled class, and no entry without literal
+# path text — an unbounded class by either spelling. Both hold whether or not
+# the class is on, so a set written ahead of enabling it is checked at once.
+rg_check_patterns REVIEW_GATE_VENDORED_PATHS "$VENDORED_PATHS"
+VENDORED_PATHS_N="$(rg_pack "$VENDORED_PATHS" ';')" || rg_pack_failed REVIEW_GATE_VENDORED_PATHS
+if rg_class_enabled vendored && [ -z "$VENDORED_PATHS_N" ]; then
+  echo "::error::review-predicate: REVIEW_GATE_CARRY_FORWARD enables 'vendored' but REVIEW_GATE_VENDORED_PATHS names no path — the class carries only what the committed path set names" >&2
+  exit 2
+fi
+# A literal NAME character, not merely one that is not '*': `case` globbing
+# crosses '/', so '*/*' matches nearly every nested path; only a name bounds.
+while IFS= read -r vp; do
+  [ -z "$vp" ] && continue
+  case "$vp" in
+    *[[:alnum:]]*) ;;
+    *)
+      echo "::error::review-predicate: REVIEW_GATE_VENDORED_PATHS entry '$vp' names no literal path text — '*' crosses '/', so it would carry nearly every file; name the render tree" >&2
+      exit 2
+      ;;
+  esac
+done <<EOF_VENDORED_PATHS
+$VENDORED_PATHS_N
+EOF_VENDORED_PATHS
 
 # Comment-reviewer GRAMMAR, validated with every other setting rather than at
 # the moment the evidence loop first reads a pair. A malformed entry is a
@@ -1052,11 +1094,10 @@ fi
 # and an IDENTICAL tree (rebase residue, empty commits — the VST-58 shape)
 # always carries once any class is enabled. This is NOT the retired
 # docs-only waiver: real evidence must exist, and only EXTENDS across a
-# delta review would not re-examine — code changes always require fresh
-# evidence, and the changes-requested and thread terms below still fail
-# closed with carried evidence exactly as with head evidence. Only the
-# NEWEST ancestor candidate decides: an older candidate's delta is a
-# superset, so walking further back can only widen what carries.
+# delta review would not re-examine — code changes OUTSIDE the enabled
+# classes require fresh evidence, and changes-requested and threads still
+# fail closed with carried evidence. Only the NEWEST ancestor decides: an
+# older candidate's delta is a superset, walking back only widens carry.
 carried=0
 carry_base=""
 carry_kind=""
@@ -1149,26 +1190,27 @@ if [ -n "$CARRY_FORWARD" ] && [ "$got" = "0" ] && [ "$check" = "0" ] \
     # still change agent behavior — AGENTS.md and other instruction markdown
     # are "docs" by extension yet are obeyed mechanically, so a push editing
     # them deserves fresh review. Any changed file matching an exclusion glob
-    # refuses the whole carry. Matching is shell-style via `case` ('*'
-    # crosses '/', so '*AGENTS.md' covers the file at any depth); patterns
-    # never touch the filesystem. Older candidates' deltas are supersets, so
-    # stop walking — same shape as the 300-entry refusal above.
-    # Identical-tree carries never reach here (no delta, nothing to
-    # exclude). The matching loop below is line-based, and a git filename
-    # MAY legally embed a newline — split across lines, such a name could
-    # dodge a compound glob (`skills/*.md` misses `skills/foo\nbar.md`
-    # tested as two records) while the classifier still carries the intact
-    # name. So exclusion matching first demands provable record boundaries:
-    # any control character in any filename refuses the carry (fresh review
-    # required), the same completeness posture as the 300-entry cap.
-    if [ -n "$CARRY_EXCLUDE" ]; then
+    # refuses the whole carry; older candidates' deltas are supersets, so
+    # stop walking, and identical-tree carries never reach here. Matching is
+    # shell-style via `case` ('*' crosses '/', so '*AGENTS.md' covers the
+    # file at any depth) and never touches the filesystem. It is also line-
+    # based, and a git filename MAY legally embed a newline: split across
+    # lines such a name dodges a compound glob (`skills/*.md` misses
+    # `skills/foo\nbar.md` read as two records) while the classifier carries
+    # it intact — so any control character in any filename refuses the carry,
+    # the completeness posture of the 300-entry cap. The vendored class reads
+    # the same list and needs the same boundaries. A RENAME contributes BOTH
+    # names (GitHub reports the source in .previous_filename): a rename out
+    # of an excluded path relocates the very file the exclusion holds back.
+    delta_files=""
+    if [ -n "$CARRY_EXCLUDE" ] || rg_class_enabled vendored; then
       # \p{Cc} (the Unicode control category), NOT a class range written
       # with \uNNNN escapes: jq's Oniguruma mis-handles those inside [...]
       # (observed on jq 1.8.2: such a class matches plain ASCII names), and
       # a scan that matches everything would silently disable carry-forward
       # wherever exclusions are configured. The selftest's surgical
       # non-match case pins the false-positive direction.
-      ctrl_hit="$(jq '[.files[] | (.filename // "") | test("\\p{Cc}")] | any' <<<"$cmp")" || {
+      ctrl_hit="$(jq '[.files[] | ((.filename // ""), (.previous_filename // "")) | test("\\p{Cc}")] | any' <<<"$cmp")" || {
         echo "::error::could not scan the $base...$HEAD_SHA delta filenames for control characters" >&2
         exit 2
       }
@@ -1176,10 +1218,12 @@ if [ -n "$CARRY_FORWARD" ] && [ "$got" = "0" ] && [ "$check" = "0" ] \
         echo "::warning::compare $base...$HEAD_SHA contains a filename with control characters: exclusion matching cannot be proven; refusing carry-forward" >&2
         break
       fi
-      delta_files="$(jq -r '.files[] | .filename // ""' <<<"$cmp")" || {
+      delta_files="$(jq -r '.files[] | (.filename // ""), (.previous_filename // "")' <<<"$cmp")" || {
         echo "::error::could not list the $base...$HEAD_SHA delta files for exclusion matching" >&2
         exit 2
       }
+    fi
+    if [ -n "$CARRY_EXCLUDE" ]; then
       excluded=""
       while IFS= read -r fn; do
         [ -z "$fn" ] && continue
@@ -1201,19 +1245,47 @@ EOF_EXCL_FILES
         break
       fi
     fi
+    # The vendored class (KEN-666): a delta file under a path the repository
+    # committed in REVIEW_GATE_VENDORED_PATHS is kendex's own render, and
+    # carries whatever its extension or status — under the trust model the
+    # exclusions already rely on (the settings are read from the default
+    # branch, so the PR under judgment cannot widen the set). Matching is
+    # the exclusion matcher's, and an exclusion on the same path has already
+    # refused above: the deny list outranks the class. A rename needs BOTH
+    # names in the set; a source outside it, or none given at all, refuses.
+    VENDORED_FILES=""
+    if rg_class_enabled vendored; then
+      while IFS= read -r fn; do
+        [ -z "$fn" ] && continue
+        while IFS= read -r pat; do
+          [ -z "$pat" ] && continue
+          case "$fn" in
+            $pat) VENDORED_FILES="$VENDORED_FILES$fn
+"; break ;;
+          esac
+        done <<EOF_VENDORED_PATS
+$VENDORED_PATHS_N
+EOF_VENDORED_PATS
+      done <<EOF_VENDORED_FILES
+$delta_files
+EOF_VENDORED_FILES
+    fi
     # Classify every changed file into an ENABLED class; anything else —
     # code lines, added/removed/renamed files under "comments", binary or
     # patch-less files, unknown extensions — refuses the whole carry.
-    carry_ok="$(jq -r --arg classes "$CARRY_FORWARD" '
+    carry_ok="$(jq -r --arg classes "$CARRY_FORWARD" --arg vendored "$VENDORED_FILES" '
       ($classes | split("[;|]"; "") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))) as $cl
       | def comment_token:
           if test("\\.(sh|bash|py|rb|toml|yml|yaml)$") then "#"
           elif test("\\.(js|mjs|cjs|ts|tsx|jsx|rs|go|c|h|cc|cpp|hpp|java|kt|swift)$") then "//"
           else null end;
-      [ .files[]
+      ($vendored | split("\n") | map(select(length > 0))) as $vf
+      | [ .files[]
         | . as $f
         | (.filename // "") as $fn
-        | if (($cl | index("docs")) != null)
+        | if ($vf | index($fn)) != null and (($f.previous_filename // "") as $p | ($f.status != "renamed" and $p == "") or ($p != "" and ($vf | index($p)) != null))
+          then "vendored"
+          elif (($cl | index("docs")) != null)
              and ($f.status != "renamed")
              and (($f.previous_filename // "") == "")
              and ($fn | test("\\.(md|markdown)$"))

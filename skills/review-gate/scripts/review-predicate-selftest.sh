@@ -67,6 +67,7 @@ ACTIVE_API_DELAY="$(rg_setting REVIEW_GATE_API_RETRY_DELAY_SECONDS "2")" || exit
 ACTIVE_CARRY="$(rg_setting REVIEW_GATE_CARRY_FORWARD "")" || exit 1
 ACTIVE_CARRY_EXCLUDE="$(rg_setting REVIEW_GATE_CARRY_FORWARD_EXCLUDE "")" || exit 1
 ACTIVE_CARRY_EXCLUDE_PROPHYLACTIC="$(rg_setting REVIEW_GATE_CARRY_FORWARD_EXCLUDE_PROPHYLACTIC "")" || exit 1
+ACTIVE_VENDORED_PATHS="$(rg_setting REVIEW_GATE_VENDORED_PATHS "")" || exit 1
 # The repo's ACTIVE mode is validated here but NEVER copied into behavior
 # cases (reset() pins enforce — under a committed "off" every awaiting/
 # objection case would answer approved and red the required selftest job).
@@ -105,102 +106,7 @@ mkdir -p "$fixtures" "$shim"
 #                          so the `jq -s` page merges are actually driven
 # Every request URL is appended to .urls.log so cases can pin read shapes
 # (per_page, endpoints skipped).
-cat >"$shim/gh" <<'SHIM'
-#!/usr/bin/env bash
-set -u
-url=""; filter=""; paginate=0; graphql_page2=0; graphql_after=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    api|--slurp) ;;
-    --paginate) paginate=1 ;;
-    -f|-F)
-      shift
-      # A cursor variable marks a follow-up thread page: serve the page-2
-      # fixture (when present) so pagination is exercised for real. The
-      # cursor VALUE is kept so cursor-keyed fixtures
-      # (graphql.cursor-<value>.json) can drive an arbitrarily deep walk —
-      # the page-budget bound cannot be proven with a single follow-up page.
-      case "$1" in
-        after=*)
-          graphql_page2=1
-          graphql_after="${1#after=}"
-          # Cursor-keyed fixtures embed the cursor in a pathname, so the
-          # namespace is enforced, not assumed: every cursor this suite
-          # authors is [A-Za-z0-9_-]. Anything else would silently fall
-          # back to the page-2/default fixture and a case could claim a
-          # deep walk it never drove — refuse loudly instead.
-          # Empty is refused with the same teeth: an empty after= cannot
-          # select a cursor fixture and would silently fall through to the
-          # page-2/default fixture — the false coverage this guard exists
-          # to prevent.
-          case "$graphql_after" in
-            '' | *[!A-Za-z0-9_-]*)
-              echo "shim: cursor value unusable as a fixture key (allowed: non-empty A-Za-z0-9_-): $graphql_after" >&2
-              exit 92
-              ;;
-          esac
-          ;;
-      esac
-      ;;
-    --jq) shift; filter="$1" ;;
-    graphql) url="graphql" ;;
-    *) [ -z "$url" ] && url="$1" ;;
-  esac
-  shift
-done
-case "$url" in
-  *"/check-runs"*) name=checkruns ;;
-  *"/compare/"*) name=compare ;;
-  *"/reviews"*)  name=reviews ;;
-  *"/statuses"*) name=statuses ;;
-  *"/status"*)   name=status ;;
-  *"/issues/"*"/comments"*) name=comments ;;
-  graphql)       name=graphql ;;
-  *"/pulls/"*)   name=pull ;;
-  *) echo "shim: unexpected request: $url" >&2; exit 90 ;;
-esac
-echo "$url" >>"$GH_SHIM_FIXTURES/.urls.log"
-if [ -n "${GH_SHIM_FAIL:-}" ] && [ "$GH_SHIM_FAIL" = "$name" ]; then
-  if [ -n "${GH_SHIM_FAIL_TIMES:-}" ]; then
-    count=0
-    counter="$GH_SHIM_FIXTURES/.failcount.$name"
-    [ -f "$counter" ] && count="$(cat "$counter")"
-    if [ "$count" -lt "$GH_SHIM_FAIL_TIMES" ]; then
-      echo $((count + 1)) >"$counter"
-      echo "shim: simulated API failure for $name ($((count + 1))/$GH_SHIM_FAIL_TIMES)" >&2
-      exit 1
-    fi
-  else
-    echo "shim: simulated API failure for $name" >&2
-    exit 1
-  fi
-fi
-if [ -n "${GH_SHIM_EMPTY:-}" ] && [ "$GH_SHIM_EMPTY" = "$name" ]; then
-  exit 0
-fi
-file="$GH_SHIM_FIXTURES/$name.json"
-if [ "$name" = "graphql" ] && [ -n "$graphql_after" ] && [ -f "$GH_SHIM_FIXTURES/graphql.cursor-$graphql_after.json" ]; then
-  # Cursor-keyed page: the fixture named by the requested cursor wins, so a
-  # case can lay out a distinct advancing page per cursor and walk the full
-  # page budget. Falls through to the single page-2 fixture when absent —
-  # the two-page pattern's shape.
-  file="$GH_SHIM_FIXTURES/graphql.cursor-$graphql_after.json"
-elif [ "$name" = "graphql" ] && [ "$graphql_page2" = "1" ] && [ -f "$GH_SHIM_FIXTURES/graphql.page2.json" ]; then
-  file="$GH_SHIM_FIXTURES/graphql.page2.json"
-elif [ "$name" = "graphql" ] && [ -n "$graphql_after" ]; then
-  # A follow-up request with NEITHER a cursor-keyed fixture NOR a page-2
-  # fixture would silently re-serve page one — a deep-walk case missing one
-  # of its files (a valid-looking cursor with a fixture gap) must refuse,
-  # not fabricate coverage.
-  echo "shim: follow-up page requested (after=$graphql_after) but no graphql.cursor-$graphql_after.json or graphql.page2.json fixture exists" >&2
-  exit 93
-fi
-[ -f "$file" ] || { echo "shim: no fixture $file" >&2; exit 91; }
-if [ -n "$filter" ]; then jq -r "$filter" <"$file"; else cat "$file"; fi
-if [ "$paginate" = "1" ] && [ -f "$GH_SHIM_FIXTURES/$name.page2.json" ] && [ -z "$filter" ]; then
-  cat "$GH_SHIM_FIXTURES/$name.page2.json"
-fi
-SHIM
+cp "$here/../tests/lib/gh-shim.sh" "$shim/gh"
 chmod +x "$shim/gh"
 
 # Shim refusal self-check, red-first: the three fixture-integrity refusals
@@ -225,62 +131,9 @@ rm -rf "$_shimcheck_dir"
 [ "$_shimcheck_gap" -eq 93 ] || { echo "FATAL: shim did not refuse a fixture-less follow-up page (want exit 93, got $_shimcheck_gap)" >&2; exit 1; }
 
 # ------------------------------------------------------------------ helpers ---
-list_items() { # ';'-separated string -> one trimmed non-empty item per line
-  printf '%s' "$1" | tr ';' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true
-}
-first_item() { list_items "$1" | head -n 1; }
-
-comment() { # login, body
-  jq -n --arg login "$1" --arg body "$2" '[{user:{login:$login},body:$body}]'
-}
-threads() { # isResolved values as args
-  local nodes="[]"
-  for r in "$@"; do nodes="$(jq -c --argjson r "$r" '. + [{isResolved:$r}]' <<<"$nodes")"; done
-  jq -n --argjson nodes "$nodes" \
-    '{data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false},nodes:$nodes}}}}}'
-}
-review() { # login, state, submitted_at, [commit sha; default HEAD], [body] -> one review row
-  # Real review rows always carry a body (often ""), so the fixture does too:
-  # the errored-attestation filter reads it, and modeling the field as absent
-  # would leave the `.body // ""` fallback the only shape ever exercised.
-  jq -n --arg sha "${4:-$HEAD}" --arg login "$1" --arg state "$2" --arg at "${3:-2026-01-01T00:00:00Z}" \
-    --arg body "${5-}" \
-    '{commit_id:$sha,state:$state,submitted_at:$at,body:$body,user:{login:$login}}'
-}
-reviews_set() { # rows... -> reviews.json
-  local rows="[]" row
-  for row in "$@"; do rows="$(jq -c --argjson r "$row" '. + [$r]' <<<"$rows")"; done
-  printf '%s\n' "$rows" >"$fixtures/reviews.json"
-}
-checkrun() { # name, conclusion, summary, [app slug] -> checkruns.json
-  # Real check runs always carry a publishing app; the default models a
-  # trusted reviewer's own app. Pass "github-actions" for the near-miss:
-  # a PR workflow can publish under ANY NAME through that shared app.
-  # Every real row also carries a run id — the predicate validates it, so
-  # the fixture models the real shape.
-  jq -n --arg name "$1" --arg conclusion "$2" --arg summary "${3:-}" --arg app "${4:-trusted-reviewer-app}" \
-    '{check_runs:[{id:1,name:$name,conclusion:$conclusion,app:{slug:$app},output:{title:null,summary:$summary}}]}' \
-    >"$fixtures/checkruns.json"
-}
-compare_fix() { # status, [files JSON array] -> compare.json (the N...head delta)
-  jq -n --arg status "$1" --argjson files "${2:-[]}" '{status:$status,files:$files}' \
-    >"$fixtures/compare.json"
-}
-delta_file() { # filename, status, patch -> one compare files[] entry
-  jq -n --arg fn "$1" --arg status "$2" --arg patch "$3" \
-    '{filename:$fn,status:$status,patch:$patch}'
-}
-status_ctx() { # context, state, description, [creator login] -> statuses.json
-  # The predicate reads the STATUSES LIST endpoint, which returns a bare
-  # array and — unlike the combined endpoint — carries the real creator
-  # login. The default models a normal publisher; pass "" explicitly for the
-  # anomalous no-login case the reject-list must not trust. `${4-...}` and
-  # NOT `${4:-...}`: the colon form would substitute the default for an
-  # explicitly-empty argument, silently turning that case into its opposite.
-  jq -n --arg ctx "$1" --arg state "$2" --arg desc "${3:-}" --arg creator "${4-trusted-publisher}" \
-    '[{context:$ctx,state:$state,description:$desc,created_at:"2026-01-01T00:00:00Z",
-      creator:(if $creator == "" then null else {login:$creator} end)}]' >"$fixtures/statuses.json"
-}
+# The fixture writers, shared with the wrapper suites under tests/. They
+# write into $fixtures and bind to $HEAD, both set above.
+. "$here/../tests/lib/selftest-fixtures.sh"
 
 cases=0
 failures=0
@@ -305,6 +158,7 @@ run() { # case-name, expected-verdict, expected-exit
     REVIEW_GATE_STATUS_SNAPSHOT_FILE="$CFG_SNAPSHOT" \
     REVIEW_GATE_CARRY_FORWARD="$CFG_CARRY" \
     REVIEW_GATE_CARRY_FORWARD_EXCLUDE="$CFG_CARRY_EXCLUDE" \
+    REVIEW_GATE_VENDORED_PATHS="$CFG_VENDORED_PATHS" \
     REVIEW_GATE_MODE="$CFG_GATE_MODE" \
     GH_REPO="owner/repo" PR_NUMBER=1 HEAD_SHA="$HEAD" PR_AUTHOR="$CFG_PR_AUTHOR" \
     "$predicate" 2>/dev/null)"
@@ -340,6 +194,7 @@ reset() {
   CFG_API_DELAY="0"
   CFG_CARRY="$ACTIVE_CARRY"
   CFG_CARRY_EXCLUDE="$ACTIVE_CARRY_EXCLUDE"
+  CFG_VENDORED_PATHS="$ACTIVE_VENDORED_PATHS"
   # PINNED to enforce, never the repo's ACTIVE value: mode "off" is a bypass
   # switch, not a trust surface — under it every behavior case would answer
   # approved and the suite would fail, turning a deliberately disabled gate
@@ -1933,6 +1788,26 @@ reset
 CFG_CARRY="everything"
 run "carry: an unknown carry class is a config error" "" 2
 
+# The vendored class (KEN-666): a delta file under a path the repository
+# committed in REVIEW_GATE_VENDORED_PATHS is kendex's own render and carries
+# whatever its extension. The approve and its near-miss live here; the
+# class's full table, each refusal pinned by reason, is
+# tests/vendored-class.test.sh.
+RENDER_DELTA="$(delta_file ".agents/skills/hello/scripts/run.sh" modified '@@ -1 +1 @@
+-do_the_thing
++do_the_other_thing')"
+reset
+carry_candidate
+CFG_CARRY="vendored"; CFG_VENDORED_PATHS=".agents/*"
+compare_fix ahead "[$RENDER_DELTA]"
+run "vendored: a render-tree code delta carries under the committed path set" approved
+
+reset
+carry_candidate
+CFG_CARRY="docs"; CFG_VENDORED_PATHS=".agents/*"
+compare_fix ahead "[$RENDER_DELTA]"
+run "vendored off: the same delta refuses — a path set alone enables nothing" awaiting
+
 # ================================================================ configured ===
 # The same discipline against THIS repo's resolved trust settings.
 echo "--- configured layer (this repo's REVIEW_GATE_* settings)"
@@ -2574,6 +2449,7 @@ if [ -n "$ACTIVE_OUTAGE" ]; then
     REVIEW_GATE_CONTEXT="$CFG_GATE_CONTEXT" REVIEW_GATE_THREADS="$CFG_THREADS" \
     REVIEW_GATE_CARRY_FORWARD="$CFG_CARRY" \
     REVIEW_GATE_CARRY_FORWARD_EXCLUDE="$CFG_CARRY_EXCLUDE" \
+    REVIEW_GATE_VENDORED_PATHS="$CFG_VENDORED_PATHS" \
     REVIEW_GATE_MODE="$CFG_GATE_MODE" \
     GH_REPO="owner/repo" PR_NUMBER=1 HEAD_SHA="$HEAD" PR_AUTHOR="$CFG_PR_AUTHOR" \
     "$predicate" 2>/dev/null)" || detail_rc=$?
