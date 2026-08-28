@@ -4,6 +4,11 @@ For consumers that vendor an upstream tree byte-for-byte and merge re-vendor
 PRs. Suppressing duplicate upstream findings is a reviewer-instruction
 problem; configuration answers break the gate.
 
+A committed `kendex refresh` tree is the other case: no pin covers it, an edit
+under it wedges the next refresh rather than landing, and the rule there is
+flat with no carve-out — [rendered-paths.md](rendered-paths.md), which reuses
+three sections of this one.
+
 ## What suppression must not break
 
 **Evidence.** The gate's evidence term needs a trusted non-author review object
@@ -91,20 +96,28 @@ Once per re-vendor train, on ONE consumer PR, collect upstream-remedy findings
 from BOTH surfaces: the review bodies, AND EVERY vendored-path thread a
 location-bound reviewer left.
 
-`kendex report --skill review-gate --title [TITLE] --body-file [PATH]` routes
-the report upstream. The command is non-interactive: `--title` is required,
-and exactly one of `--body` or `--body-file` must be given — with neither (or
-both) it exits without filing. Two further preconditions, each silent when
-unmet:
+`kendex report --skill [NAME] --title [TITLE] --body-file [PATH]` files the
+report. The command is non-interactive: `--title` is required, and exactly one
+of `--body` or `--body-file` must be given — with neither (or both) it exits
+without filing. `--dry-run` prints the decision and the `gh` command it would
+run.
 
-- **The selector is required.** With no `--skill`/`--agent`/`--hook`/`--asset`,
-  the CLI warns once that ownership could not be determined and files against
-  the LOCAL repo.
-- **For a skill, only the installed `SKILL.md` frontmatter decides.** Routing
-  needs the vendored `SKILL.md` present at the install path and carrying
-  `source: kendex` (or the upstream `repository` slug). A repo that vendored
-  only the scripts subtree files locally. Check before relying on it, or open
-  the upstream issue by hand.
+The lock is the one judge, and it records provenance for every kind — skills,
+agents, hooks and Pi extensions alike. A name routes upstream when the lock
+holds at least one entry for it, narrowed to the kind the selector names, and
+EVERY matching entry's `source_repo` is kendex's own repo, the one candidate
+the comparison holds — an item vendored from anywhere else files against the
+LOCAL repo, and its issue is opened by hand. One entry recorded from somewhere
+else makes the name ambiguous and keeps the report local, which is also what an
+unlocked name gets. How the manifest spelled the repo does not decide it: a
+shorthand, an https URL and a `git@` reference fold to one identity. `--skill`,
+`--agent`, `--hook` and `--asset` are the selectors; with none of them the CLI
+warns once that ownership could not be determined and files against the LOCAL
+repo.
+
+A repo that vendored only a scripts subtree, with no lock entry over it, has
+no name to select — open the upstream issue by hand. Confirm with `--dry-run`
+before relying on any of it.
 
 Do not fix it locally, and do not file the same finding from each consumer.
 
