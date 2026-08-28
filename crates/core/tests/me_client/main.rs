@@ -196,7 +196,7 @@ fn the_fixture_success_body_reads_as_signed_in() {
     let fetch = Canned::new(vec![ok(status, None, &fixture_body(&["success", "body"]))]);
     let state = me::load(&env, &fetch, &MemoryStore::signed_in()).expect("load");
     match state {
-        AccountState::SignedIn { identity } => {
+        AccountState::SignedIn { identity, .. } => {
             assert_eq!(identity.name, "Ada Lovelace");
             assert_eq!(identity.github_login.as_deref(), Some("1234567"));
         }
@@ -206,6 +206,64 @@ fn the_fixture_success_body_reads_as_signed_in() {
         fetch.bearers.borrow().as_slice(),
         [Some("kxa_old".to_owned())]
     );
+}
+
+/// The answer names the sign-in it was read under, which is what a caller
+/// holding an earlier answer compares against. Nothing in the identity can
+/// stand in for it: a rename leaves the same credential, and signing in
+/// again as the same person leaves a different one under the same name.
+#[test]
+fn a_read_answers_with_the_sign_in_it_was_read_under() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let fetch = Canned::new(vec![ok(
+        fixture_status(&["success", "status"]),
+        None,
+        &fixture_body(&["success", "body"]),
+    )]);
+    let state = me::load(&env_in(dir.path()), &fetch, &MemoryStore::signed_in()).expect("load");
+    match state {
+        AccountState::SignedIn { sign_in, .. } => assert_eq!(sign_in, ADA),
+        other => panic!("expected signed-in, got {other:?}"),
+    }
+}
+
+/// The expiry names the sign-in the server refused, so a caller holding it
+/// can tell that verdict from one about a credential installed since.
+#[test]
+fn an_expiry_answers_with_the_sign_in_the_server_refused() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = MemoryStore::signed_in();
+    let fetch = Canned::new(vec![
+        ok(401, None, ""),
+        ok(400, None, r#"{"error":"invalid_grant"}"#),
+    ]);
+    match me::load(&env_in(dir.path()), &fetch, &store).expect("load") {
+        AccountState::Expired { sign_in } => assert_eq!(sign_in, ADA),
+        other => panic!("expected expired, got {other:?}"),
+    }
+}
+
+/// A read the server could not answer serves the cached identity, and it
+/// belongs to the sign-in that was installed when the read began.
+#[test]
+fn an_offline_read_answers_with_that_sign_in_too() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let env = env_in(dir.path());
+    let store = MemoryStore::signed_in();
+    let warm = Canned::new(vec![ok(
+        fixture_status(&["success", "status"]),
+        None,
+        &fixture_body(&["success", "body"]),
+    )]);
+    me::load(&env, &warm, &store).expect("warm the cache");
+
+    let offline = Canned::new(vec![Err(CoreError::RegistryUnavailable {
+        why: "the network is away".to_owned(),
+    })]);
+    match me::load(&env, &offline, &store).expect("load") {
+        AccountState::Offline { sign_in, .. } => assert_eq!(sign_in, ADA),
+        other => panic!("expected offline, got {other:?}"),
+    }
 }
 
 #[test]
@@ -218,7 +276,7 @@ fn the_fixture_unlinked_body_reads_as_no_github_login() {
     )]);
     let state = me::load(&env_in(dir.path()), &fetch, &MemoryStore::signed_in()).expect("load");
     match state {
-        AccountState::SignedIn { identity } => assert_eq!(identity.github_login, None),
+        AccountState::SignedIn { identity, .. } => assert_eq!(identity.github_login, None),
         other => panic!("expected signed-in, got {other:?}"),
     }
 }
@@ -234,7 +292,7 @@ fn network_away_serves_the_cached_identity_as_offline() {
     let down = Canned::new(vec![away()]);
     let state = me::load(&env, &down, &store).expect("offline load");
     match state {
-        AccountState::Offline { identity } => assert_eq!(identity.name, "Ada Lovelace"),
+        AccountState::Offline { identity, .. } => assert_eq!(identity.name, "Ada Lovelace"),
         other => panic!("expected offline, got {other:?}"),
     }
 }
@@ -278,7 +336,7 @@ fn a_dead_refresh_grant_reads_as_expired() {
         ok(400, None, r#"{"error":"invalid_grant"}"#),
     ]);
     let state = me::load(&env_in(dir.path()), &fetch, &store).expect("load");
-    assert_eq!(state, AccountState::Expired);
+    assert!(matches!(state, AccountState::Expired { .. }));
     assert!(
         store.load().expect("load").is_none(),
         "a dead credential is not kept for endless retries"
@@ -299,10 +357,10 @@ fn an_expired_credential_drops_the_cached_identity() {
         ok(401, None, r#"{"error":"invalid_token"}"#),
         ok(400, None, r#"{"error":"invalid_grant"}"#),
     ]);
-    assert_eq!(
+    assert!(matches!(
         me::load(&env, &dead, &store).expect("load"),
-        AccountState::Expired
-    );
+        AccountState::Expired { .. }
+    ));
     assert!(
         !cache.exists(),
         "the next sign-in must not inherit this account's identity"
@@ -324,7 +382,7 @@ fn a_rotation_the_server_still_rejects_reads_as_expired() {
         ok(401, None, r#"{"error":"invalid_token"}"#),
     ]);
     let state = me::load(&env, &fetch, &store).expect("load");
-    assert_eq!(state, AccountState::Expired);
+    assert!(matches!(state, AccountState::Expired { .. }));
     assert!(
         store.load().expect("load").is_none(),
         "a rotation the server refuses is not kept for endless retries"

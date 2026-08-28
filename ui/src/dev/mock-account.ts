@@ -7,7 +7,7 @@
 // that could not be confirmed, one that was rejected, a read that fails —
 // reach the store through its dev reader, which the backend takes over
 // once it can reach the server. `?account=` on the dev URL picks one.
-import type { AccountStatus } from "@/bindings";
+import type { AccountCallRefused, AccountStatus } from "@/bindings";
 import { hasCredential, type SettledAccount } from "@/stores/account";
 import { type AccountRead, setAccountReader } from "@/stores/account-read";
 import type { Handler } from "./mock-state";
@@ -17,15 +17,30 @@ import type { Handler } from "./mock-state";
 const IDENTITY = { name: "Ada Lovelace", githubLogin: "1234567" };
 
 const SIGNED_OUT: SettledAccount = { kind: "signed-out" };
-const SIGNED_IN: SettledAccount = { kind: "signed-in", identity: IDENTITY };
+/** The name core mints for a sign-in: one per credential, a new one for
+ *  every sign-in. Minting it here the way core does is what makes signing
+ *  in again a change of hands in the harness, as it is in the app. */
+let signIns = 0;
+const mintSignIn = (): string => {
+  signIns += 1;
+  return `sign-in-${signIns}`;
+};
+
+const SIGN_IN = mintSignIn();
+
+const SIGNED_IN: SettledAccount = {
+  kind: "signed-in",
+  identity: IDENTITY,
+  signIn: SIGN_IN,
+};
 
 /** Every state the store can settle on, and the name `?account=` calls it.
  *  Typed by the state's own tag, so a sixth state has to be added here. */
 export const MOCK_ACCOUNTS: Record<SettledAccount["kind"], SettledAccount> = {
   "signed-out": SIGNED_OUT,
   "signed-in": SIGNED_IN,
-  offline: { kind: "offline", identity: IDENTITY },
-  expired: { kind: "expired" },
+  offline: { kind: "offline", identity: IDENTITY, signIn: SIGN_IN },
+  expired: { kind: "expired", signIn: SIGN_IN },
 };
 
 /** A read that cannot be made is the fifth thing the store draws, so the
@@ -73,6 +88,65 @@ export function isSignedIn(): boolean {
   return "ok" in served && hasCredential(served.ok);
 }
 
+/** The whole sentence a real expiry carries, remedy included. */
+const EXPIRED =
+  "your sign-in has expired (invalid_grant) — run `kendex login` again";
+
+/** The calls that go out under the stored sign-in, by the name the bridge
+ *  dispatches on. */
+export const EXPIRING_CALLS = ["mine_submit", "mine_submissions"] as const;
+
+export type ExpiringCall = (typeof EXPIRING_CALLS)[number];
+
+/** Which call `?expire=` puts the expiry on, or null for none.
+ *
+ *  It names one call rather than arming them all because the Mine tab
+ *  polls its submissions on mount: an expiry both calls answer to would
+ *  end the account before anyone could press Submit, and the submit
+ *  meeting one is the flow this exists to show. The read and the calls
+ *  answer separately for the same reason. The server can refuse a
+ *  credential this machine still holds, and `?account=expired` takes the
+ *  Submit away instead of letting it meet the refusal. */
+export function expiringCallFromUrl(search: string): ExpiringCall | null {
+  const asked = new URLSearchParams(search).get("expire");
+  if (asked === null) return null;
+  const named = EXPIRING_CALLS.find((call) => call === asked);
+  if (named) return named;
+  console.warn(
+    `mock cannot expire '${asked}' — nothing armed. Pick one of ${EXPIRING_CALLS.join(", ")}`,
+  );
+  return null;
+}
+
+let expiring: ExpiringCall | null =
+  typeof window === "undefined"
+    ? null
+    : expiringCallFromUrl(window.location.search);
+
+/** Arms the expiry on one call, for tests and for the dev URL. */
+export function setExpiringCall(call: ExpiringCall | null): void {
+  expiring = call;
+}
+
+/** Why a call made under the sign-in refuses, or null when it goes
+ *  through. Tagged as the command answers, so a consumer reading
+ *  `.message` gets the sentence rather than undefined.
+ *
+ *  Meeting the expiry is what ends the sign-in, so the credential goes
+ *  with it and the read that follows says signed out, as it does in the
+ *  app. The scenario is spent in the same moment: signing in again comes
+ *  back to a working call rather than expiring for the rest of the
+ *  session. */
+export function callRefusal(call: ExpiringCall): AccountCallRefused | null {
+  if (expiring === call) {
+    expiring = null;
+    served = { ok: SIGNED_OUT };
+    return { kind: "expired", message: EXPIRED };
+  }
+  if (!isSignedIn()) return { kind: "failed", message: "sign in first" };
+  return null;
+}
+
 /** Points the store's account read here, so `?account=` picks a state
  *  without a server to ask. */
 export function installAccountReader(): void {
@@ -88,11 +162,19 @@ const wire = (account: SettledAccount): AccountStatus["state"] => {
     case "signed-out":
       return { state: "signed-out" };
     case "expired":
-      return { state: "expired" };
+      return { state: "expired", sign_in: account.signIn };
     case "offline":
-      return { state: "offline", identity: account.identity };
+      return {
+        state: "offline",
+        identity: account.identity,
+        sign_in: account.signIn,
+      };
     case "signed-in":
-      return { state: "signed-in", identity: account.identity ?? IDENTITY };
+      return {
+        state: "signed-in",
+        identity: account.identity ?? IDENTITY,
+        sign_in: account.signIn,
+      };
   }
 };
 
@@ -115,9 +197,12 @@ export const accountHandlers: Record<string, Handler> = {
   },
   account_login_poll: () => {
     polls += 1;
-    if (polls < 2) return "pending";
-    served = { ok: SIGNED_IN };
-    return "signed";
+    if (polls < 2) return { kind: "pending" };
+    // The credential the approval stores, and the name it is stored
+    // under: the read that follows has to answer with this one.
+    const signIn = mintSignIn();
+    served = { ok: { ...SIGNED_IN, signIn } };
+    return { kind: "signed", sign_in: signIn };
   },
   account_logout: () => {
     served = { ok: SIGNED_OUT };

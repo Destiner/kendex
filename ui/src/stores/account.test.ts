@@ -1,8 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type AccountStatus, commands } from "@/bindings";
-import { hasCredential, type SettledAccount, useAccountStore } from "./account";
+import { commands } from "@/bindings";
+import {
+  ADA,
+  account,
+  answers,
+  BOB,
+  fresh,
+  load,
+  OTHER_SIGN_IN,
+  ROW,
+  SIGN_IN,
+  serves,
+  unreadable,
+} from "@/test/account-store";
+import {
+  type AccountIdentity,
+  hasCredential,
+  type SettledAccount,
+  useAccountStore,
+} from "./account";
 import { type AccountRead, setAccountReader } from "./account-read";
 
+// `vi.mock` is hoisted above the imports, so its factory cannot reach one.
 vi.mock("@/bindings", () => ({
   commands: {
     accountStatus: vi.fn(),
@@ -14,42 +33,15 @@ vi.mock("@/bindings", () => ({
   },
 }));
 
-const ADA = { name: "Ada Lovelace", githubLogin: "ada" };
-
-/** What the real command answers: the state the backend settled on. */
-const answers = (state: AccountStatus["state"]) =>
-  vi.mocked(commands.accountStatus).mockResolvedValue({
-    status: "ok",
-    data: { state, endpoint: "https://kendex.ai" },
-  } as Awaited<ReturnType<typeof commands.accountStatus>>);
-
-const unreadable = (why = "keychain locked") =>
-  vi.mocked(commands.accountStatus).mockResolvedValue({
-    status: "error",
-    error: why,
-  } as Awaited<ReturnType<typeof commands.accountStatus>>);
-
-/** What a backend that has reached the server answers with. */
-const serves = (account: SettledAccount) =>
-  setAccountReader(async () => ({ ok: account }));
-
-const load = () => useAccountStore.getState().load();
-const account = () => useAccountStore.getState().account;
-
-const fresh = () =>
-  useAccountStore.setState({
-    account: { kind: "loading" },
-    error: null,
-    readError: null,
-    submissions: null,
-    signingIn: false,
-    userCode: null,
-    reading: false,
-  });
-
 beforeEach(() => {
   fresh();
   vi.clearAllMocks();
+  // A read that finds the credential replaced asks for the new account's
+  // rows, so the harness has an answer for it.
+  vi.mocked(commands.mineSubmissions).mockResolvedValue({
+    status: "ok",
+    data: [],
+  } as Awaited<ReturnType<typeof commands.mineSubmissions>>);
 });
 
 afterEach(() => setAccountReader(null));
@@ -66,70 +58,100 @@ describe("the account state a read settles on", () => {
   });
 
   it("carries every state the command settles on", async () => {
-    answers({ state: "signed-in", identity: ADA });
+    answers({ state: "signed-in", identity: ADA, sign_in: SIGN_IN });
     await load();
-    expect(account()).toEqual({ kind: "signed-in", identity: ADA });
+    expect(account()).toEqual({
+      kind: "signed-in",
+      identity: ADA,
+      signIn: SIGN_IN,
+    });
 
-    answers({ state: "offline", identity: ADA });
+    answers({ state: "offline", identity: ADA, sign_in: SIGN_IN });
     await load();
-    expect(account()).toEqual({ kind: "offline", identity: ADA });
+    expect(account()).toEqual({
+      kind: "offline",
+      identity: ADA,
+      signIn: SIGN_IN,
+    });
 
-    answers({ state: "expired" });
+    answers({ state: "expired", sign_in: SIGN_IN });
     await load();
-    expect(account()).toEqual({ kind: "expired" });
+    expect(account()).toEqual({ kind: "expired", signIn: SIGN_IN });
   });
 
   it("keeps the expired explanation on the read that follows it", async () => {
-    answers({ state: "expired" });
+    answers({ state: "expired", sign_in: SIGN_IN });
     await load();
     // Answering expired is what clears the credential, so the next read
     // finds none. The explanation has to outlive that read.
     answers({ state: "signed-out" });
     await load();
-    expect(account()).toEqual({ kind: "expired" });
+    expect(account()).toEqual({ kind: "expired", signIn: SIGN_IN });
 
     // Signing in is what takes it off the screen.
-    answers({ state: "signed-in", identity: ADA });
+    answers({ state: "signed-in", identity: ADA, sign_in: SIGN_IN });
     await load();
-    expect(account()).toEqual({ kind: "signed-in", identity: ADA });
+    expect(account()).toEqual({
+      kind: "signed-in",
+      identity: ADA,
+      signIn: SIGN_IN,
+    });
   });
 
   it("carries the identity the backend names", async () => {
-    serves({ kind: "signed-in", identity: ADA });
+    serves({ kind: "signed-in", identity: ADA, signIn: SIGN_IN });
     await load();
-    expect(account()).toEqual({ kind: "signed-in", identity: ADA });
+    expect(account()).toEqual({
+      kind: "signed-in",
+      identity: ADA,
+      signIn: SIGN_IN,
+    });
   });
 
   it("is offline with the cached identity when the server is unreachable", async () => {
-    serves({ kind: "offline", identity: ADA });
+    serves({ kind: "offline", identity: ADA, signIn: SIGN_IN });
     await load();
-    expect(account()).toEqual({ kind: "offline", identity: ADA });
+    expect(account()).toEqual({
+      kind: "offline",
+      identity: ADA,
+      signIn: SIGN_IN,
+    });
   });
 
   it("is expired when the credential is no longer accepted", async () => {
-    serves({ kind: "expired" });
+    serves({ kind: "expired", signIn: SIGN_IN });
     await load();
-    expect(account()).toEqual({ kind: "expired" });
+    expect(account()).toEqual({ kind: "expired", signIn: SIGN_IN });
   });
 });
 
 // A read that failed knows nothing new, so it takes nothing away.
 describe("a read that could not be made", () => {
   it("becomes offline when a name is already in hand", async () => {
-    useAccountStore.setState({ account: { kind: "signed-in", identity: ADA } });
+    useAccountStore.setState({
+      account: { kind: "signed-in", identity: ADA, signIn: SIGN_IN },
+    });
     unreadable();
     await load();
-    expect(account()).toEqual({ kind: "offline", identity: ADA });
+    expect(account()).toEqual({
+      kind: "offline",
+      identity: ADA,
+      signIn: SIGN_IN,
+    });
     expect(useAccountStore.getState().readError).toBe("keychain locked");
   });
 
   it("leaves a credential with no name signed in", async () => {
     useAccountStore.setState({
-      account: { kind: "signed-in", identity: null },
+      account: { kind: "signed-in", identity: null, signIn: SIGN_IN },
     });
     unreadable();
     await load();
-    expect(account()).toEqual({ kind: "signed-in", identity: null });
+    expect(account()).toEqual({
+      kind: "signed-in",
+      identity: null,
+      signIn: SIGN_IN,
+    });
     expect(useAccountStore.getState().readError).toBe("keychain locked");
   });
 
@@ -230,7 +252,9 @@ describe("whether a read is out", () => {
   // A read the account outran is dropped, but it was still the last read
   // out: leaving the flag up would disable a retry with nothing to wait for.
   it("is false when the read it dropped was the last one out", async () => {
-    useAccountStore.setState({ account: { kind: "signed-in", identity: ADA } });
+    useAccountStore.setState({
+      account: { kind: "signed-in", identity: ADA, signIn: SIGN_IN },
+    });
     const gates = staged();
     const out = load();
     vi.mocked(commands.accountLogout).mockResolvedValue({
@@ -238,7 +262,7 @@ describe("whether a read is out", () => {
       data: null,
     } as Awaited<ReturnType<typeof commands.accountLogout>>);
     await useAccountStore.getState().signOut();
-    gates[0]?.({ ok: { kind: "signed-in", identity: ADA } });
+    gates[0]?.({ ok: { kind: "signed-in", identity: ADA, signIn: SIGN_IN } });
     await out;
     expect(reading()).toBe(false);
     expect(account()).toEqual({ kind: "signed-out" });
@@ -260,7 +284,7 @@ describe("an approved device flow", () => {
     } as Awaited<ReturnType<typeof commands.accountLoginStart>>);
     vi.mocked(commands.accountLoginPoll).mockResolvedValue({
       status: "ok",
-      data: "signed",
+      data: { kind: "signed", sign_in: SIGN_IN },
     } as Awaited<ReturnType<typeof commands.accountLoginPoll>>);
     vi.mocked(commands.openUrl).mockResolvedValue({
       status: "ok",
@@ -279,9 +303,13 @@ describe("an approved device flow", () => {
   beforeEach(approves);
 
   it("puts the name the read brings back on the account", async () => {
-    serves({ kind: "signed-in", identity: ADA });
+    serves({ kind: "signed-in", identity: ADA, signIn: SIGN_IN });
     await signIn();
-    expect(account()).toEqual({ kind: "signed-in", identity: ADA });
+    expect(account()).toEqual({
+      kind: "signed-in",
+      identity: ADA,
+      signIn: SIGN_IN,
+    });
     expect(useAccountStore.getState().signingIn).toBe(false);
   });
 
@@ -289,12 +317,201 @@ describe("an approved device flow", () => {
     unreadable();
     await signIn();
     expect(hasCredential(account())).toBe(true);
-    expect(account()).toEqual({ kind: "signed-in", identity: null });
+    expect(account()).toEqual({
+      kind: "signed-in",
+      identity: null,
+      signIn: SIGN_IN,
+    });
+  });
+
+  // One sign-in is one change of hands. The approval stores the
+  // credential and the read that follows only names it, so counting that
+  // read as a second handover discards work started on the first.
+  it("counts one handover for the approval and the read that names it", async () => {
+    serves({ kind: "signed-in", identity: ADA, signIn: SIGN_IN });
+    const before = useAccountStore.getState().handovers();
+    await signIn();
+    expect(useAccountStore.getState().handovers()).toBe(before + 1);
+  });
+
+  // The Mine tab asks for submissions the moment a credential exists,
+  // which is before the read that names it lands. A second handover in
+  // between discards the answer, and the rows read as unsubmitted until
+  // the next sixty-second tick.
+  it("keeps rows asked for on approval through the read that names it", async () => {
+    const ROW = {
+      repo: "ada/team-skills",
+      status: "pending",
+      status_reason: null,
+      head_commit: null,
+      indexed_at: null,
+    };
+    vi.mocked(commands.mineSubmissions).mockResolvedValue({
+      status: "ok",
+      data: [ROW],
+    } as Awaited<ReturnType<typeof commands.mineSubmissions>>);
+    let polling: Promise<void> | null = null;
+    setAccountReader(async () => {
+      polling = useAccountStore.getState().loadSubmissions();
+      return { ok: { kind: "signed-in", identity: ADA, signIn: SIGN_IN } };
+    });
+
+    await signIn();
+    await polling;
+
+    expect(useAccountStore.getState().submissions).toEqual([ROW]);
   });
 });
 
 // The read repeats on its own now, so it must not be able to write over
 // what the person just did.
+// The identity says who the account belongs to. It cannot say which
+// sign-in the credential came from, and those come apart in both
+// directions: a person renames themselves or unlinks GitHub under one
+// credential, and signs in again to get a different credential under an
+// identity that has not changed at all.
+describe("what a read compares to decide the credential changed hands", () => {
+  const RENAMED = { name: "Ada L.", githubLogin: "ada" };
+  const UNLINKED = { name: "Ada Lovelace", githubLogin: null };
+
+  /** Reads `read` while `held` is on screen, and answers how many times
+   *  the account changed hands over it. */
+  const heldThenRead = async (held: SettledAccount, read: SettledAccount) => {
+    useAccountStore.setState({ account: held, submissions: [ROW] });
+    const before = useAccountStore.getState().handovers();
+    serves(read);
+    await load();
+    return useAccountStore.getState().handovers() - before;
+  };
+
+  const signedIn = (identity: AccountIdentity, signIn = SIGN_IN) =>
+    ({ kind: "signed-in", identity, signIn }) as const;
+
+  // A profile rename is one account editing itself. Counting it as a
+  // change of hands would clear the rows, and with a submit in flight it
+  // would discard that credential's own expiry.
+  it("does not count a rename under one sign-in", async () => {
+    expect(await heldThenRead(signedIn(ADA), signedIn(RENAMED))).toBe(0);
+    expect(useAccountStore.getState().submissions).toEqual([ROW]);
+  });
+
+  it("does not count the GitHub link being removed", async () => {
+    expect(await heldThenRead(signedIn(ADA), signedIn(UNLINKED))).toBe(0);
+    expect(useAccountStore.getState().submissions).toEqual([ROW]);
+  });
+
+  // The hole no comparison of identity fields could close: `kendex login`
+  // in a terminal, by the person already signed in. Everything a read is
+  // told about who they are is unchanged, and the credential is not the
+  // one the app was holding.
+  it("counts the same person signing in again", async () => {
+    expect(
+      await heldThenRead(signedIn(ADA), signedIn(ADA, OTHER_SIGN_IN)),
+    ).toBe(1);
+    // The last credential's rows are gone and the new one's are asked
+    // for, which is what the harness answers with here.
+    expect(useAccountStore.getState().submissions).toEqual([]);
+  });
+
+  it("counts a different person signing in", async () => {
+    expect(
+      await heldThenRead(signedIn(ADA), signedIn(BOB, OTHER_SIGN_IN)),
+    ).toBe(1);
+    expect(useAccountStore.getState().submissions).toEqual([]);
+  });
+
+  // Core defaults `sign_in` so a credential stored before the field
+  // existed still parses instead of signing that person out, and it reads
+  // back empty. Empty is the absence of an answer: two such credentials
+  // are unrelated, and calling them one sign-in would keep the first
+  // account's rows under the second.
+  it("counts a change of hands between two unnamed credentials", async () => {
+    expect(await heldThenRead(signedIn(ADA, ""), signedIn(BOB, ""))).toBe(1);
+    // Cleared on the doubt, and asked for again on the same doubt.
+    expect(useAccountStore.getState().submissions).toEqual([]);
+  });
+
+  it("counts one even where nothing else about them differs", async () => {
+    expect(await heldThenRead(signedIn(ADA, ""), signedIn(ADA, ""))).toBe(1);
+  });
+
+  it("counts one when a named credential replaces an unnamed one", async () => {
+    expect(await heldThenRead(signedIn(ADA, ""), signedIn(ADA))).toBe(1);
+  });
+
+  // The Mine tab's poll is keyed to being signed in, which never stops
+  // being true across a swap, so nothing asks again for up to a minute.
+  // Clearing the last account's rows is the floor; the new account's
+  // rows are what belongs on screen.
+  it("asks for the new sign-in's rows rather than leaving the tab empty", async () => {
+    const THEIRS = { ...ROW, repo: "bob/team-skills" };
+    vi.mocked(commands.mineSubmissions).mockResolvedValue({
+      status: "ok",
+      data: [THEIRS],
+    } as Awaited<ReturnType<typeof commands.mineSubmissions>>);
+    useAccountStore.setState({
+      account: signedIn(ADA),
+      submissions: [ROW],
+    });
+
+    serves(signedIn(BOB, OTHER_SIGN_IN));
+    await load();
+
+    expect(useAccountStore.getState().submissions).toEqual([THEIRS]);
+    expect(commands.mineSubmissions).toHaveBeenCalledTimes(1);
+  });
+
+  // The store's one read at startup settles an account it never held, and
+  // that is not a credential being replaced. Submissions stay the Mine
+  // tab's to ask for, as the store's "no surface reads on mount" says.
+  // A credential that predates the field can never be proven the same as
+  // the next one, so every read clears its rows. If the refetch waits for
+  // a proven difference the tab is emptied and stays empty, for exactly
+  // the people whose credential cannot answer, until they sign in again.
+  it("asks again for an unnamed credential it cannot prove unchanged", async () => {
+    const THEIRS = { ...ROW, repo: "ada/other-skills" };
+    vi.mocked(commands.mineSubmissions).mockResolvedValue({
+      status: "ok",
+      data: [THEIRS],
+    } as Awaited<ReturnType<typeof commands.mineSubmissions>>);
+    useAccountStore.setState({
+      account: signedIn(ADA, ""),
+      submissions: [ROW],
+    });
+
+    serves(signedIn(ADA, ""));
+    await load();
+
+    expect(useAccountStore.getState().submissions).toEqual([THEIRS]);
+    expect(commands.mineSubmissions).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for nothing on the first read of the session", async () => {
+    serves(signedIn(ADA));
+    await load();
+
+    expect(commands.mineSubmissions).not.toHaveBeenCalled();
+  });
+
+  it("asks for nothing when the same sign-in is read again", async () => {
+    useAccountStore.setState({
+      account: signedIn(ADA),
+      submissions: [ROW],
+    });
+
+    serves(signedIn(ADA));
+    await load();
+
+    expect(useAccountStore.getState().submissions).toEqual([ROW]);
+    expect(commands.mineSubmissions).not.toHaveBeenCalled();
+  });
+
+  it("counts nothing when the same sign-in is read again", async () => {
+    expect(await heldThenRead(signedIn(ADA), signedIn(ADA))).toBe(0);
+    expect(useAccountStore.getState().submissions).toEqual([ROW]);
+  });
+});
+
 describe("a read racing a deliberate change", () => {
   it("leaves a denied approval its explanation", async () => {
     vi.mocked(commands.accountLoginStart).mockResolvedValue({
@@ -337,7 +554,9 @@ describe("a read racing a deliberate change", () => {
     return gates;
   };
 
-  const signedIn: AccountRead = { ok: { kind: "signed-in", identity: ADA } };
+  const signedIn: AccountRead = {
+    ok: { kind: "signed-in", identity: ADA, signIn: SIGN_IN },
+  };
 
   const logsOut = () =>
     vi.mocked(commands.accountLogout).mockResolvedValue({
@@ -357,7 +576,9 @@ describe("a read racing a deliberate change", () => {
   });
 
   it("drops a read that began before a sign-out", async () => {
-    useAccountStore.setState({ account: { kind: "signed-in", identity: ADA } });
+    useAccountStore.setState({
+      account: { kind: "signed-in", identity: ADA, signIn: SIGN_IN },
+    });
     const gates = staged();
     const reading = load();
     logsOut();
@@ -370,7 +591,9 @@ describe("a read racing a deliberate change", () => {
   // The sign-out is not the account changing hands; the reply that says
   // the credential is gone is. A read begun in between knows neither.
   it("drops a read that began while a sign-out was landing", async () => {
-    useAccountStore.setState({ account: { kind: "signed-in", identity: ADA } });
+    useAccountStore.setState({
+      account: { kind: "signed-in", identity: ADA, signIn: SIGN_IN },
+    });
     const answered: { now?: () => void } = {};
     vi.mocked(commands.accountLogout).mockReturnValue(
       new Promise((resolve) => {
@@ -392,7 +615,7 @@ describe("a read racing a deliberate change", () => {
   it("drops rows that arrive after the account changed hands", async () => {
     const arrivingAfter = async (change: () => Promise<void>) => {
       useAccountStore.setState({
-        account: { kind: "signed-in", identity: ADA },
+        account: { kind: "signed-in", identity: ADA, signIn: SIGN_IN },
         submissions: [],
       });
       vi.mocked(commands.mineSubmissions).mockImplementation(async () => {
@@ -420,7 +643,7 @@ describe("a read racing a deliberate change", () => {
   // to leave the same thing behind, or someone else's stay on screen.
   it("drops the submissions when a read finds the credential gone", async () => {
     useAccountStore.setState({
-      account: { kind: "signed-in", identity: ADA },
+      account: { kind: "signed-in", identity: ADA, signIn: SIGN_IN },
       submissions: [],
     });
     answers({ state: "signed-out" });
@@ -432,7 +655,7 @@ describe("a read racing a deliberate change", () => {
 describe("signing out", () => {
   it("goes to signed out and drops the submissions with it", async () => {
     useAccountStore.setState({
-      account: { kind: "signed-in", identity: ADA },
+      account: { kind: "signed-in", identity: ADA, signIn: SIGN_IN },
       submissions: [],
     });
     vi.mocked(commands.accountLogout).mockResolvedValue({
@@ -463,13 +686,17 @@ describe("which states go looking for submissions", () => {
   };
 
   it("asks while a credential is held", async () => {
-    expect(await asks({ kind: "signed-in", identity: ADA })).toBe(true);
+    expect(
+      await asks({ kind: "signed-in", identity: ADA, signIn: SIGN_IN }),
+    ).toBe(true);
     vi.clearAllMocks();
-    expect(await asks({ kind: "offline", identity: ADA })).toBe(true);
+    expect(
+      await asks({ kind: "offline", identity: ADA, signIn: SIGN_IN }),
+    ).toBe(true);
   });
 
   it("does not ask once it is signed out or expired", async () => {
     expect(await asks({ kind: "signed-out" })).toBe(false);
-    expect(await asks({ kind: "expired" })).toBe(false);
+    expect(await asks({ kind: "expired", signIn: SIGN_IN })).toBe(false);
   });
 });

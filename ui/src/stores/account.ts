@@ -4,41 +4,28 @@
 // Startup makes the one account read; every surface reads `account` from
 // here rather than asking again.
 import { create } from "zustand";
-import { commands, type SubmissionRow } from "@/bindings";
+import {
+  type AccountCallRefused,
+  commands,
+  type SubmissionRow,
+} from "@/bindings";
 import { readAccount } from "./account-read";
+import {
+  type AccountState,
+  asksForRows,
+  asOffline,
+  hasCredential,
+  keepsExpiry,
+  sameCredential,
+} from "./account-state";
 
-/** Who the account belongs to, as the server names them. The linked
- * GitHub account is null once it has been unlinked. */
-export interface AccountIdentity {
-  name: string;
-  githubLogin: string | null;
-}
-
-/** What is known about the account right now.
- *
- * `signed-in` carries the identity once the backend has one; a credential
- * in the keychain is enough to be signed in before then. `offline` is a
- * credential we know the owner of but could not confirm; `expired` is one
- * the server no longer accepts. */
-export type AccountState =
-  | { kind: "loading" }
-  | { kind: "signed-out" }
-  | { kind: "signed-in"; identity: AccountIdentity | null }
-  | { kind: "offline"; identity: AccountIdentity }
-  | { kind: "expired" };
-
-/** Every state but the one that means "not read yet". */
-export type SettledAccount = Exclude<AccountState, { kind: "loading" }>;
-
-/** The states that hold a credential, and so may know a name. */
-type WithIdentity = Extract<AccountState, { kind: "signed-in" | "offline" }>;
-
-/** Signed in far enough to submit: an unconfirmed credential still is. */
-export const hasCredential = (account: AccountState): account is WithIdentity =>
-  account.kind === "signed-in" || account.kind === "offline";
-
-const cachedIdentity = (account: AccountState): AccountIdentity | null =>
-  hasCredential(account) ? account.identity : null;
+// The one door every surface already comes to for these.
+export {
+  type AccountIdentity,
+  type AccountState,
+  hasCredential,
+  type SettledAccount,
+} from "./account-state";
 
 interface AccountStore {
   account: AccountState;
@@ -67,6 +54,19 @@ interface AccountStore {
   cancelSignIn: () => void;
   signOut: () => Promise<void>;
   loadSubmissions: () => Promise<void>;
+  /** How many times the account has changed hands. A call going out under
+   *  the sign-in reads it first and gives it back to `refused`, which
+   *  drops an expiry about a credential nobody holds any more. */
+  handovers: () => number;
+  /** A call made under the sign-in, read for what its refusal says about
+   *  the account. Expiry is the credential ending: the sign-in is dead
+   *  server-side and nothing on this machine can revive it, so it leaves
+   *  behind what signing out leaves. Every other refusal is news about
+   *  that one action and about nothing else, and stays where it was
+   *  made.
+   *
+   *  `since` is the count the call went out under. */
+  refused: (refusal: AccountCallRefused, since: number) => void;
 }
 
 /** Bumped to abandon a poll loop whose dialog was closed. */
@@ -80,6 +80,18 @@ let handover = 0;
 /** Reads in the order they were asked for. Only the newest may land: two
  *  can be out at once, and the slower one is not the truer one. */
 let reads = 0;
+
+/** What the end of a credential leaves behind, wherever it ends: the rows
+ *  were its, and a read that failed under it explains an account nobody
+ *  holds any more. The `handover` bump is the change of hands itself, so
+ *  a read still out for the old credential is abandoned. Callers keep
+ *  their own guards; only the write is shared. */
+const credentialEnded = (
+  account: AccountState,
+): Pick<AccountStore, "account" | "submissions" | "readError"> => {
+  handover += 1;
+  return { account, submissions: null, readError: null };
+};
 
 const wait = (seconds: number) =>
   new Promise((resolve) => setTimeout(resolve, seconds * 1000));
@@ -112,32 +124,28 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
       // away. With an identity already in hand the failure is exactly
       // offline; a credential without a name stays signed in, and a state
       // never read stays unread with the failure to show for it.
-      const identity = cachedIdentity(get().account);
-      if (identity)
-        set({
-          account: { kind: "offline", identity },
-          readError: answer.error,
-        });
-      else set({ readError: answer.error });
+      const offline = asOffline(get().account);
+      const readError = answer.error;
+      set(offline ? { account: offline, readError } : { readError });
       return;
     }
-    // Submissions belong to the credential. A read that finds it gone
-    // leaves what signing out leaves, so nobody's rows outlive them.
-    if (hasCredential(answer.ok)) set({ account: answer.ok, readError: null });
-    else {
-      // Losing the credential by observation changes hands as surely as
-      // signing out does, so work already out for the old one is stale.
-      handover += 1;
-      // The server says expired once: answering it clears the credential,
-      // so the next read says signed out. The explanation outlives that
-      // read — only signing in or out takes it off the screen.
-      const held = get().account;
-      const keep = held.kind === "expired" && answer.ok.kind === "signed-out";
-      set({
-        account: keep ? held : answer.ok,
-        readError: null,
-        submissions: null,
-      });
+    const held = get().account;
+    if (keepsExpiry(held, answer.ok)) {
+      set(credentialEnded(held));
+    } else if (sameCredential(held, answer.ok)) {
+      // The same sign-in: named at last, or confirmed again.
+      set({ account: answer.ok, readError: null });
+    } else {
+      // Either the credential is gone, or a read has found one the app
+      // did not put there: `kendex login` in a terminal is how that
+      // happens. Both are the account changing hands, and submissions
+      // belong to the credential, so nobody's rows outlive them.
+      set(credentialEnded(answer.ok));
+      // Clearing is only the floor. The tab asks for rows when it becomes
+      // signed in, which never stopped being true across a swap, so
+      // nothing else would ask again for a minute and the new sign-in
+      // would sit in front of an empty tab.
+      if (asksForRows(held, answer.ok)) await get().loadSubmissions();
     }
   },
 
@@ -165,21 +173,27 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
         set({ signingIn: false, userCode: null, error: polled.error });
         return;
       }
-      if (polled.data === "signed") {
+      if (polled.data.kind === "signed") {
         // The approval is proof a credential was stored, so it is recorded
         // before anything else is asked: a read that fails after this must
-        // not leave the person looking at a sign-in button. The read that
-        // follows is what puts a name to it.
+        // not leave the person looking at a sign-in button. The poll
+        // answers with the sign-in core minted, so the credential is named
+        // from the moment it exists and the read that follows only puts a
+        // person's name to it.
         handover += 1;
         set({
           signingIn: false,
           userCode: null,
-          account: { kind: "signed-in", identity: null },
+          account: {
+            kind: "signed-in",
+            identity: null,
+            signIn: polled.data.sign_in,
+          },
         });
         await get().load();
         return;
       }
-      if (polled.data === "slow-down") interval += 5;
+      if (polled.data.kind === "slow-down") interval += 5;
     }
   },
 
@@ -194,22 +208,42 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
       set({ error: out.error });
       return;
     }
-    handover += 1;
-    set({
-      account: { kind: "signed-out" },
-      submissions: null,
-      error: null,
-      readError: null,
-    });
+    set({ ...credentialEnded({ kind: "signed-out" }), error: null });
   },
 
   loadSubmissions: async () => {
     if (!hasCredential(get().account)) return;
     const before = handover;
     const rows = await commands.mineSubmissions();
-    // Rows belong to the account they were asked for. One that changed
-    // hands while they were coming has none of them.
+    // The poll shows nothing of its own, so a session that died between
+    // ticks would otherwise go on being polled invisibly.
+    if (rows.status === "error") {
+      get().refused(rows.error, before);
+      return;
+    }
+    // Rows belong to the account they were asked for: ones that changed
+    // hands while they were coming belong to nobody on screen.
     if (before !== handover) return;
-    if (rows.status === "ok") set({ submissions: rows.data });
+    set({ submissions: rows.data });
+  },
+
+  handovers: () => handover,
+
+  refused: (refusal, since) => {
+    if (refusal.kind !== "expired") return;
+    // The expiry belongs to the credential the call went out under. One
+    // that landed after the account changed hands — a sign-out taken
+    // while the call was out, a sign-in finishing behind it — is about a
+    // credential nobody holds any more, and ending the account over it
+    // would end the one that replaced it.
+    if (since !== handover) return;
+    // Expiry is a credential ending, so there has to be one to end.
+    const held = get().account;
+    if (!hasCredential(held)) return;
+    // The next read says signed out where the refusal cleared the
+    // credential, and meets the same dead sign-in and says expired where
+    // it could not. `load` keeps this state through either answer, and
+    // the name says which sign-in the verdict was about.
+    set(credentialEnded({ kind: "expired", signIn: held.signIn }));
   },
 }));
