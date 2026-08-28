@@ -307,3 +307,193 @@ describe("a call refused because the sign-in expired", () => {
     expect(useAccountStore.getState().submissions).toBeNull();
   });
 });
+
+// The other refusal. It says nothing about the credential, so the account
+// stays where it is — but it does say the rows on screen are no longer
+// confirmed, and dropping that left the tab reporting work already in
+// review as never submitted.
+describe("a submissions read the server could not answer", () => {
+  const ROW = {
+    repo: "ada/team-skills",
+    status: "pending",
+    status_reason: null,
+    head_commit: null,
+    indexed_at: null,
+  };
+  const WHY = "kendex.ai could not be reached";
+
+  const signedIn = {
+    kind: "signed-in" as const,
+    identity: ADA,
+    signIn: SIGN_IN,
+  };
+
+  const fails = () =>
+    vi.mocked(commands.mineSubmissions).mockResolvedValue({
+      status: "error",
+      error: { kind: "failed", message: WHY },
+    } as Awaited<ReturnType<typeof commands.mineSubmissions>>);
+
+  it("records why, and leaves the rows it could not refresh", async () => {
+    useAccountStore.setState({ account: signedIn, submissions: [ROW] });
+    fails();
+
+    await useAccountStore.getState().loadSubmissions();
+
+    expect(useAccountStore.getState().submissionsError).toBe(WHY);
+    expect(useAccountStore.getState().submissions).toEqual([ROW]);
+    expect(account()).toEqual(signedIn);
+  });
+
+  // Expiry is the credential ending, and the rows go with it. A failure
+  // about a read of them would sit on the Mine tab over an account the
+  // sidebar and Settings already say is expired.
+  it("leaves nothing behind when the same read meets a dead sign-in", async () => {
+    useAccountStore.setState({
+      account: signedIn,
+      submissions: [ROW],
+      submissionsError: WHY,
+    });
+    vi.mocked(commands.mineSubmissions).mockResolvedValue({
+      status: "error",
+      error: { kind: "expired", message: "run login again" },
+    } as Awaited<ReturnType<typeof commands.mineSubmissions>>);
+
+    await useAccountStore.getState().loadSubmissions();
+
+    expect(account()).toEqual({ kind: "expired", signIn: SIGN_IN });
+    expect(useAccountStore.getState().submissions).toBeNull();
+    expect(useAccountStore.getState().submissionsError).toBeNull();
+  });
+
+  it("goes with the credential when the person signs out", async () => {
+    useAccountStore.setState({ account: signedIn, submissionsError: WHY });
+    vi.mocked(commands.accountLogout).mockResolvedValue({
+      status: "ok",
+      data: null,
+    } as Awaited<ReturnType<typeof commands.accountLogout>>);
+
+    await useAccountStore.getState().signOut();
+
+    expect(useAccountStore.getState().submissionsError).toBeNull();
+  });
+
+  it("takes the failure back when a later read lands", async () => {
+    useAccountStore.setState({ account: signedIn, submissionsError: WHY });
+
+    await useAccountStore.getState().loadSubmissions();
+
+    expect(useAccountStore.getState().submissionsError).toBeNull();
+    expect(useAccountStore.getState().submissions).toEqual([]);
+  });
+
+  // The tab's timer and a submit that just landed both ask, so two reads
+  // are routinely out at once. Whichever was asked for last is the later
+  // word on the same credential, and it is the one that has to stand
+  // however the responses come back.
+  describe("two reads out at once", () => {
+    type Answer = Awaited<ReturnType<typeof commands.mineSubmissions>>;
+
+    /** Hands back the two reads' resolvers in the order they were asked
+     *  for, both still out. */
+    const bothOut = () => {
+      const land: ((answer: Answer) => void)[] = [];
+      vi.mocked(commands.mineSubmissions).mockImplementation(
+        () => new Promise<Answer>((resolve) => land.push(resolve)),
+      );
+      useAccountStore.setState({ account: signedIn });
+      const first = useAccountStore.getState().loadSubmissions();
+      const second = useAccountStore.getState().loadSubmissions();
+      return { land, first, second };
+    };
+
+    const landed = { status: "ok", data: [ROW] } as Answer;
+    const failed = {
+      status: "error",
+      error: { kind: "failed", message: WHY },
+    } as Answer;
+
+    it("keeps the newer success when the older read fails last", async () => {
+      const { land, first, second } = bothOut();
+      land[1](landed);
+      await second;
+      land[0](failed);
+      await first;
+
+      expect(useAccountStore.getState().submissions).toEqual([ROW]);
+      expect(useAccountStore.getState().submissionsError).toBeNull();
+    });
+
+    it("keeps the newer failure when the older read lands last", async () => {
+      const { land, first, second } = bothOut();
+      land[1](failed);
+      await second;
+      land[0](landed);
+      await first;
+
+      expect(useAccountStore.getState().submissionsError).toBe(WHY);
+      expect(useAccountStore.getState().submissions).toBeNull();
+    });
+  });
+
+  // The guards and the write have to be one continuation. Handing the
+  // answer back across an await puts a microtask between them, and a
+  // sign-out resolving its own await lands in that gap: the guards let
+  // the rows through, the account ends, and the rows are written over it.
+  // Reachable only by interleaving, never by a click.
+  it("writes no rows over an account that ended after the guards", async () => {
+    useAccountStore.setState({ account: signedIn });
+    type Answer = Awaited<ReturnType<typeof commands.mineSubmissions>>;
+    type Out = Awaited<ReturnType<typeof commands.accountLogout>>;
+    let landRows: (answer: Answer) => void = () => {};
+    let landOut: (answer: Out) => void = () => {};
+    vi.mocked(commands.mineSubmissions).mockReturnValue(
+      new Promise<Answer>((resolve) => {
+        landRows = resolve;
+      }),
+    );
+    vi.mocked(commands.accountLogout).mockReturnValue(
+      new Promise<Out>((resolve) => {
+        landOut = resolve;
+      }),
+    );
+
+    const polling = useAccountStore.getState().loadSubmissions();
+    const out = useAccountStore.getState().signOut();
+    // The read answers first, so its guards run while the account is
+    // still held; the sign-out lands in the microtask straight after.
+    landRows({ status: "ok", data: [ROW] });
+    landOut({ status: "ok", data: null });
+    await Promise.all([polling, out]);
+
+    expect(account()).toEqual({ kind: "signed-out" });
+    expect(useAccountStore.getState().submissions).toBeNull();
+  });
+
+  // A failure about a credential nobody holds any more explains rows
+  // nobody is looking at, and would sit over the account that replaced it.
+  // The read has to still be out when the account moves, so its answer is
+  // held back until the sign-out has landed.
+  it("says nothing about an account that changed hands under it", async () => {
+    useAccountStore.setState({ account: signedIn });
+    vi.mocked(commands.accountLogout).mockResolvedValue({
+      status: "ok",
+      data: null,
+    } as Awaited<ReturnType<typeof commands.accountLogout>>);
+    type Answer = Awaited<ReturnType<typeof commands.mineSubmissions>>;
+    let land: (answer: Answer) => void = () => {};
+    vi.mocked(commands.mineSubmissions).mockReturnValue(
+      new Promise<Answer>((resolve) => {
+        land = resolve;
+      }),
+    );
+
+    const polling = useAccountStore.getState().loadSubmissions();
+    await useAccountStore.getState().signOut();
+    land({ status: "error", error: { kind: "failed", message: WHY } });
+    await polling;
+
+    expect(useAccountStore.getState().submissionsError).toBeNull();
+    expect(account()).toEqual({ kind: "signed-out" });
+  });
+});
