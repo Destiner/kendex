@@ -19,7 +19,7 @@ repo-effects:
     - ".git/hooks/commit-msg"
   installer: "scripts/install-git-hooks"
   uninstaller: "scripts/install-git-hooks --uninstall"
-  removal: "run the uninstaller before removing this package: it drops only the helper and one marked line, leaving any hook you wrote. kendex remove does not run it for you, so shims left behind would exec scripts that are gone and fail every commit closed"
+  removal: "kendex guard uninstall, or any kendex CLI verb that drops the package (remove, an apply or refresh that takes it away, marketplace unsubscribe --remove-packages) runs the uninstaller before the files go; it drops only the helper and one marked line, leaving any hook you wrote. Deleting the package any other way leaves shims that exec scripts which are gone and fail every commit closed"
   companions:
     - "size-ratchet"
     - "preflight"

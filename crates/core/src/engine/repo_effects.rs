@@ -14,10 +14,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::model::ItemKind;
-use crate::repo_effects::{DeclaredEffects, declared};
+use crate::env::Env;
+use crate::error::Result;
+use crate::model::{ItemKind, Scope};
+use crate::repo_effects::{Declaration, DeclaredEffects, declaration, declared};
 
-use super::desired::{Artifact, DesiredState};
+use super::desired::{Artifact, DesiredState, read_dirs, skill_canonical};
 use super::report_types::{DriftCause, DriftRow};
 use super::set_change::{SetChange, SetDirection};
 
@@ -135,3 +137,157 @@ fn blocked(drift: &[DriftRow], name: &str) -> bool {
         .filter(|row| row.kind == ItemKind::Skill && row.name == name)
         .any(|row| row.dead_stop() || row.cause.is_some_and(DriftCause::holds_the_write))
 }
+
+/// Every declared effect this plan takes out of the scope, once per
+/// package — the other direction of [`run`].
+///
+/// A package leaves when no harness's copy of it survives in the lock this
+/// pass writes. That is the package-level question, the same one the add
+/// side asks: a copy dropped for one tool while another keeps it is a
+/// package still installed, and its effect still wanted.
+///
+/// Read off the tree on disk, not off the desired state, because the
+/// desired state no longer has the item — that is what leaving means. The
+/// tree is still there while this plan is only planned, which is the whole
+/// window the CLI has to run the uninstaller in: once the plan executes the
+/// scripts are gone, and shims that exec a script that is not there fail
+/// every commit closed. A tree already missing declares nothing here; what
+/// it left armed is `guard::stranded`'s to report. A tree that is there and
+/// cannot be read is neither, and neither is one whose declaration will not
+/// parse: either error stops the plan with the package still installed,
+/// rather than reporting a declaration of nothing and letting the removal
+/// take the scripts out from under armed shims.
+///
+/// Empty outside a project. An effect is a change to a repository, and the
+/// global scope is not one; `run_script` refuses it.
+pub(super) fn leaving(
+    env: &Env,
+    scope: &Scope,
+    before: &crate::lock::Lock,
+    after: &crate::lock::Lock,
+) -> Result<Vec<DeclaredEffects>> {
+    if !matches!(scope, Scope::Project { .. }) {
+        return Ok(Vec::new());
+    }
+    let staying = skill_names(after);
+    let mut found: BTreeMap<String, DeclaredEffects> = BTreeMap::new();
+    for name in skill_names(before).difference(&staying) {
+        let Some(installed) = installed_tree(env, scope, before, name)? else {
+            continue;
+        };
+        let effects = match declaration(&installed.text) {
+            Declaration::Effects(effects) => effects,
+            // A package that declares nothing has nothing to undo.
+            Declaration::Absent => continue,
+            Declaration::Unreadable => return Err(unreadable(&installed.declaration)),
+        };
+        found.insert(
+            (*name).to_owned(),
+            DeclaredEffects {
+                name: (*name).to_owned(),
+                root: installed.root,
+                effects,
+            },
+        );
+    }
+    Ok(found.into_values().collect())
+}
+
+/// The packages a lock carries, by name: the package, not any tool's copy
+/// of it. A lock row is per harness, and an effect belongs to the package —
+/// so both directions ask whether the NAME is in the scope, never whether
+/// one tool's row is.
+fn skill_names(lock: &crate::lock::Lock) -> BTreeSet<&str> {
+    lock.entries
+        .values()
+        .filter(|entry| entry.kind == ItemKind::Skill)
+        .map(|entry| entry.name.as_str())
+        .collect()
+}
+
+/// The two names an installed skill's declaration can sit under: the
+/// second is what a switched-off installation keeps its content as.
+const DECLARATION_NAMES: [&str; 2] = ["SKILL.md", "SKILL.md.disabled"];
+
+/// A departing package's installed tree, and the declaration file read out
+/// of it — a path rather than the two names, because it is what an error
+/// about the declaration has to name for anyone to go and fix it.
+#[derive(Debug)]
+struct Installed {
+    root: std::path::PathBuf,
+    declaration: std::path::PathBuf,
+    text: String,
+}
+
+/// A declaration that will not read stops the plan with the package still
+/// installed, the same as a file that will not read at all. Calling it a
+/// package that declares nothing is what leaves hook shims delegating to
+/// scripts the removal has taken away, and the plan that does it previews
+/// as an ordinary removal.
+fn unreadable(at: &std::path::Path) -> crate::error::CoreError {
+    crate::repo_effects::err(format!(
+        "{}: this package's repo-effects declaration will not read, so kendex cannot tell whether it has an uninstaller to run — repair the frontmatter, then remove the package",
+        at.display()
+    ))
+}
+
+/// Where a departing package's tree sits on disk, and its declaration.
+///
+/// The shared tree first, then every directory the departing rows' own
+/// tools read skills from: a copy delivery writes the package into the
+/// tool's own directory and the shared tree may not exist at all, so
+/// reading only `.agents/skills` found no declaration for exactly the
+/// install whose scripts were about to be trashed. The first copy that
+/// carries a declaration is the one whose scripts run.
+///
+/// Both spellings, because switching an installation off renames its
+/// `SKILL.md` to `SKILL.md.disabled` and nothing disarms on that switch:
+/// probing the enabled name alone read a package that was installed,
+/// armed, then disabled as a package that declares nothing, and the
+/// removal took its scripts out from under shims still delegating to
+/// them. A tree carrying both names never installs — `desired_skill`
+/// refuses it — so which one is read is not a question here.
+///
+/// A candidate with neither name is skipped; a candidate whose
+/// declaration will not read is an error, because the alternative is to
+/// call a package that declares an uninstaller a package that declares
+/// nothing.
+fn installed_tree(
+    env: &Env,
+    scope: &Scope,
+    before: &crate::lock::Lock,
+    name: &str,
+) -> Result<Option<Installed>> {
+    let mut candidates = vec![skill_canonical(env, scope, name)];
+    for entry in before
+        .entries
+        .values()
+        .filter(|entry| entry.kind == ItemKind::Skill && entry.name == name)
+    {
+        // The name a harness's own directory holds is that harness's, not
+        // the shared tree's: `rendered_name` joins a namespaced name with
+        // the separator this tool will load, which is a hyphen wherever
+        // names must be lower-kebab. Probing every directory under the
+        // canonical spelling found nothing for exactly those installs.
+        let rendered = crate::harness::rendered_name(entry.harness, name);
+        for dir in read_dirs(env, scope, entry.harness, ItemKind::Skill) {
+            candidates.push(dir.join(&rendered));
+        }
+    }
+    for root in candidates {
+        for file in DECLARATION_NAMES {
+            let declaration = root.join(file);
+            if let Some(text) = crate::fs::read_if_exists(&declaration)? {
+                return Ok(Some(Installed {
+                    root,
+                    declaration,
+                    text,
+                }));
+            }
+        }
+    }
+    Ok(None)
+}
+
+#[cfg(all(test, unix))]
+mod tests;

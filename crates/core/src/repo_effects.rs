@@ -25,9 +25,10 @@
 mod declaration;
 pub mod disclosure;
 use declaration::split_script;
-pub use declaration::{RepoEffects, declared};
+pub use declaration::{Declaration, RepoEffects, declaration, declared};
 pub use disclosure::{
     Companion, Disclosure, Offers, Withheld, Written, installed_skills, offers, offers_for,
+    touches_git,
 };
 
 use serde::{Deserialize, Serialize};
@@ -95,7 +96,22 @@ fn launch_script(
     Ok(crate::guard::relay(&output))
 }
 
-fn err(message: impl Into<String>) -> crate::error::CoreError {
+/// Run one of a package's declared scripts and hand back what it said.
+///
+/// Whichever script it is: `arm` is the installer's path and judges the
+/// exit itself, because a failed install is a half-written repository with
+/// one account to give. A caller undoing an effect reads the same verdict
+/// against a different plan, so it takes the report and decides.
+pub fn run_script(
+    scope: &crate::model::Scope,
+    root: &std::path::Path,
+    spec: &str,
+) -> crate::error::Result<crate::guard::GuardReport> {
+    let (repo, program, argv) = resolve_script(scope, root, spec)?;
+    launch_script(repo, &program, argv)
+}
+
+pub(crate) fn err(message: impl Into<String>) -> crate::error::CoreError {
     crate::error::CoreError::Guard {
         check: "repo-effects".to_owned(),
         message: message.into(),
