@@ -54,6 +54,23 @@ impl SeededEnv {
         trim_blank_edges(comment)
     }
 
+    /// The default this entry ships, spelled the way a note shows it: the
+    /// decoded value in quotes, or the assignment's right-hand side
+    /// verbatim where the strict reader cannot decode it. Every entry
+    /// `merge` seeds has one, so a note can never drop an owner and then
+    /// name the wrong package as the one whose value lands.
+    fn default_shown(&self) -> String {
+        let line = self.entry.lines.last().map_or("", String::as_str);
+        match crate::settings_template::decoded_value(line) {
+            Some(value) => format!("\"{value}\""),
+            None => line
+                .split_once('=')
+                .map_or(line, |(_, value)| value)
+                .trim()
+                .to_owned(),
+        }
+    }
+
     /// The ledger record seeding this entry writes.
     pub fn seed_record(&self) -> SettingsSeed {
         SettingsSeed {
@@ -270,6 +287,56 @@ pub fn merge(original: Option<&str>, entries: &[SeededEnv]) -> Option<(String, V
         out.push_str(line);
     }
     Some((out, added))
+}
+
+/// What the plan says about keys several packages ship with different
+/// defaults: one line per key, naming every default and everyone who ships
+/// it. `merge` takes the first declaration and writes nothing about the
+/// others, so a disagreement about what a key should be is invisible
+/// anywhere else — and packages agreeing on a shared key, which is the
+/// ordinary case, say nothing at all.
+///
+/// Every entry counts, whatever shape its value is in. `merge` reads the
+/// same lenient list, so an entry this dropped would be one the note left
+/// out of a key it does seed — and with it the owner named as the one
+/// whose value lands.
+///
+/// The note is raised before the settings file is even read, because the
+/// disagreement is worth saying either way. So it says which default
+/// seeding WOULD write, under the condition seeding writes at all: a key
+/// the file already assigns is left alone, and a note claiming a value
+/// landed would be false exactly there.
+///
+/// Key, owners and defaults are all catalog text a download supplied, so
+/// the finished line goes through [`crate::names::shown`]: a note is read
+/// on a terminal, and nothing in it is a sequence to act on.
+pub fn conflict_notes(entries: &[SeededEnv]) -> Vec<String> {
+    // Distinct defaults per key, each with its owners, both in declaration
+    // order; the key order is the file's, so the notes read stably.
+    let mut by_key: BTreeMap<&str, Vec<(String, Vec<&str>)>> = BTreeMap::new();
+    for seeded in entries {
+        let default = seeded.default_shown();
+        let defaults = by_key.entry(&seeded.entry.key).or_default();
+        match defaults.iter_mut().find(|(seen, _)| seen == &default) {
+            Some((_, owners)) => owners.push(&seeded.owner),
+            None => defaults.push((default, vec![&seeded.owner])),
+        }
+    }
+    by_key
+        .into_iter()
+        .filter(|(_, defaults)| defaults.len() > 1)
+        .map(|(key, defaults)| {
+            let lands = defaults[0].1[0];
+            let shown: Vec<String> = defaults
+                .iter()
+                .map(|(value, owners)| format!("{value} ({})", owners.join(", ")))
+                .collect();
+            crate::names::shown(&format!(
+                "{SETTINGS_FILE} {key}: packages ship different defaults — {} — where this file does not already assign it, {lands}'s is the one seeded, so set the value yourself if that is not the one you want",
+                shown.join(", ")
+            ))
+        })
+        .collect()
 }
 
 /// The ledger records the added entries were seeded, each under the owner

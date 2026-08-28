@@ -1083,8 +1083,22 @@ export type FileStatus = "added" | "removed" | "modified" |
 export type Finding = {
 	rule: string,
 	severity: Severity,
-	/**  The file and line, or the config key that holds the entry. */
+	/**
+	 *  The file this fired in, or the config key that holds the entry.
+	 *  Never a line: composing one in would make this a display string, and
+	 *  a display string is something every reader has to parse back — which
+	 *  no reader can do correctly for a file whose own name ends in a colon
+	 *  and digits.
+	 */
 	location: string,
+	/**
+	 *  The 1-based line within `location`, for a rule that reads lines.
+	 *  Part of a finding's identity, not decoration: one rule fires at many
+	 *  lines of one file, and anything that orders, keys or folds findings
+	 *  has to read this as well as `location` or it shows one problem where
+	 *  there are several.
+	 */
+	line: number | null,
 	message: string,
 	remediation: string,
 };
@@ -2259,6 +2273,11 @@ export type SourceRow = {
 /**  One check finding shaped for a screen with an Open button. */
 export type StatusFinding = {
 	file: string,
+	/**
+	 *  The 1-based line within `file`, where the finding has one. Kept
+	 *  apart from the path so the row can offer to open the file.
+	 */
+	line: number | null,
 	kind: string,
 	name: string,
 	pass: string,

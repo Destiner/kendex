@@ -1,20 +1,21 @@
 //! Authoring validation over a catalog directory: what a maintainer can
 //! know about their own content before anyone installs it.
 //!
-//! Two passes over every item. The structural pass asks whether each
+//! Three passes over every item. The structural pass asks whether each
 //! harness's loader could hold this item at all — a name it will not
-//! accept, a SKILL.md that disagrees with its own directory. The safety
-//! pass runs the same rules an install runs, against the same content, so
-//! a catalog finds out in its own CI rather than in somebody else's plan
-//! preview.
+//! accept, a SKILL.md that disagrees with its own directory. The settings
+//! pass reads a settings template against the grammar the shell loaders
+//! read a consumer's settings file with. The safety pass runs the same
+//! rules an install runs, so a catalog finds out in its own CI rather than
+//! in somebody else's plan preview.
 //!
-//! Both passes only report what an author can act on. Anything rendering
+//! Every pass only reports what an author can act on. Anything rendering
 //! resolves on its own is not a problem this can help with, and naming it
 //! would send people to fix something that is not broken.
 //!
 //! This lives in core because the CLI's `check --catalog`, the indexer's
-//! per-package scores, and authoring preflight all ask the same two
-//! questions of the same bytes — one implementation, one answer.
+//! per-package scores, and authoring preflight all ask the same questions
+//! of the same bytes — one implementation, one answer.
 
 use std::path::{Path, PathBuf};
 
@@ -27,15 +28,21 @@ use crate::render::validate;
 use crate::source::{CatalogMode, SourceConfig};
 use crate::source_read::SealedSource;
 
-/// The versioned envelope `check --catalog --json` and `marketplace mine
-/// --json` wrap their reports in. Schema 2 counts safety findings as
-/// `safety_findings`, carries no per-finding token, and `ok` answers what
-/// fails the run — breakage, plus structural advisories under `--strict` —
-/// never a safety finding.
-pub const CHECK_SCHEMA: u32 = 2;
+mod settings;
+pub use settings::SETTINGS_PASS;
 
-/// The `pass` a safety finding carries; structural findings carry the
-/// harness whose loader complained.
+/// The versioned envelope `check --catalog --json` and `marketplace mine
+/// --json` wrap their reports in. Schema 3 counts safety findings as
+/// `safety_findings`, carries no per-finding token, and `ok` answers what
+/// fails the run — breakage, plus advisories under `--strict` — never a
+/// safety finding. Schema 2 spelled a finding's line into `file`; schema 3
+/// keeps `file` a path and puts the line in `line`, which is a change of
+/// meaning in a field that was already there, not an addition.
+pub const CHECK_SCHEMA: u32 = 3;
+
+/// The `pass` a safety finding carries; a structural finding carries the
+/// harness whose loader complained, and a settings finding
+/// [`SETTINGS_PASS`].
 pub const SAFETY_PASS: &str = "safety";
 
 /// The `pass`/`kind` of a finding about the catalog itself rather than any
@@ -55,17 +62,27 @@ const CHECKED_KINDS: [ItemKind; 5] = [
 /// needs to place it. Field order is the JSON field order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CheckFinding {
-    /// The file within the catalog — for safety findings, the rule's own
-    /// location, which may name a file inside a skill tree.
+    /// The file this is about, as a path within the catalog: joined to the
+    /// catalog's path it is something a viewer opens, which is what the
+    /// Mine row's Open does with it. A line goes in `line`, never here. Two
+    /// values are not paths and cannot be: an item listed that cannot be
+    /// read names what was listed, and the safety pass writes a
+    /// sub-location — `PATH (command)`, `PATH (entry)`, `PATH (env KEY)`,
+    /// `PATH (header KEY)` — for the parts of a hook or MCP entry that are
+    /// no file at all. Those are the only shapes, nothing parses them back,
+    /// and there is no path in them to find.
     pub file: String,
+    /// The 1-based line within `file`, where the finding has one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
     pub kind: &'static str,
     pub name: String,
-    /// The harness whose loader complains, or [`SAFETY_PASS`].
+    /// The harness whose loader complains, [`SETTINGS_PASS`], or [`SAFETY_PASS`].
     pub pass: String,
-    /// `error`/`warning` for structural findings; the safety severity
-    /// (`low`..`critical`) for safety findings.
+    /// `error`/`warning` for structural and settings findings; the safety
+    /// severity (`low`..`critical`) for safety findings.
     pub severity: &'static str,
-    /// The safety rule that fired; `None` for structural findings.
+    /// The safety rule that fired; `None` otherwise.
     pub rule: Option<String>,
     pub message: String,
     pub fix: String,
@@ -86,38 +103,39 @@ impl CheckFinding {
     }
 }
 
-/// One item with both passes run over it.
+/// One item, every pass run over it.
 ///
 /// `advisory` sits under its own key rather than flattened because nothing
 /// serializes this struct: it derives neither `Serialize` nor `Type`.
 /// Whatever first gives it a serialized form flattens it there, so its
 /// fields read at the top-level paths `ItemSafety` and `PackageSafety`
-/// already serve, and leaves `structural` under its own key — the two
-/// passes answer different questions and a reader has to be able to tell
-/// them apart.
+/// already serve, and leaves `structural` under its own key — it and the
+/// safety payload answer different questions a reader has to tell apart.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckedItem {
     pub kind: ItemKind,
     pub name: String,
     /// The item's own path within the catalog.
     pub file: String,
-    /// The structural pass: would each harness's loader accept this?
+    /// Would each harness's loader accept this item, and does its settings
+    /// template read as the shell loaders read it?
     pub structural: Vec<CheckFinding>,
     /// The safety pass, the same payload every other score surface embeds.
     pub advisory: quality::AuditResult,
 }
 
 impl CheckedItem {
-    /// Every finding as a schema-2 row: structural first, then safety, in
-    /// report order. This is the one adapter from the advisory payload to
-    /// the report shape — a safety finding's `remediation` becomes `fix`,
-    /// its `location` the row's `file`.
+    /// Every finding as a report row: `structural` first, then safety. The
+    /// one adapter from the advisory payload to the report shape — a safety
+    /// finding's `remediation` becomes `fix`, and its location and line
+    /// carry across as the two values they already are.
     pub fn rows(&self) -> impl Iterator<Item = CheckFinding> + '_ {
         self.structural
             .iter()
             .cloned()
             .chain(self.advisory.findings.iter().map(|finding| CheckFinding {
                 file: finding.location.clone(),
+                line: finding.line,
                 kind: self.kind.name(),
                 name: self.name.clone(),
                 pass: SAFETY_PASS.to_owned(),
@@ -175,9 +193,9 @@ impl CatalogCheck {
         tally
     }
 
-    /// How many problems fail the run: breakage always, structural
-    /// advisories only under `strict`. Safety findings fail nothing — the
-    /// score is advisory end to end, in a catalog's own CI included.
+    /// How many problems fail the run: breakage always, advisories only
+    /// under `strict`. Safety findings fail nothing — the score is
+    /// advisory end to end, in a catalog's own CI included.
     pub fn failing(&self, strict: bool) -> usize {
         let tally = self.tally();
         tally.breakage
@@ -216,6 +234,7 @@ pub fn check_with(
         .findings()
         .map(|finding| CheckFinding {
             file: finding.location.clone(),
+            line: None,
             kind: CATALOG_PASS,
             name: display.to_owned(),
             pass: CATALOG_PASS.to_owned(),
@@ -240,6 +259,7 @@ pub fn check_with(
                 // say) is a catalog problem, not content to score.
                 None => report.catalog.push(CheckFinding {
                     file: name.clone(),
+                    line: None,
                     kind: kind.name(),
                     name,
                     pass: CATALOG_PASS.to_owned(),
@@ -269,7 +289,8 @@ pub fn check_item(
         .unwrap_or(path)
         .display()
         .to_string();
-    let structural = structural(kind, name, &file, &content);
+    let mut structural = structural(kind, name, &file, &content);
+    structural.extend(settings::findings(sealed, kind, name, &file, path)?);
     // The safety half of the authoring check: the same rules an install
     // runs, over the same content.
     let advisory = quality::audit(AuditInput {
@@ -341,6 +362,7 @@ fn structural(kind: ItemKind, name: &str, file: &str, content: &Content) -> Vec<
         }
         out.extend(findings.into_iter().map(|finding| CheckFinding {
             file: file.to_owned(),
+            line: None,
             kind: kind.name(),
             name: name.to_owned(),
             pass: harness.name().to_owned(),

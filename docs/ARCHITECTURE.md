@@ -454,15 +454,15 @@ lives in one capability table read by core and UI.
   repeats it.
 - **A seeded settings comment refreshes only while provably unedited.**
   Skills seed `[env]` defaults into `kendex.settings.toml` write-if-absent;
-  the lock keeps, per key, which skill seeded it and the FNV-1a hash of the
-  comment block last written. A template revision rewrites a key's comment
-  only while its on-disk text hashes to that record and the template
-  belongs to the recorded owner. A v1 record imports with no owner; a
-  template earns it only when the on-disk comment is provably what v1
-  seeded and matches the template word for word. When several skills ship
-  one key, seeding writes the first declaration and refresh follows the
-  recorded owner; a bare key is never adopted. Value lines are never touched; comment-block
-  bytes (and an inserted seed block) are the only bytes that change.
+  the lock keeps, per key, the seeding skill and the FNV-1a hash of the
+  comment block last written. A revision rewrites a key's comment only
+  while its on-disk text hashes to that record and the template belongs to
+  the recorded owner. A v1 record imports with no owner; a template earns
+  it only where the on-disk comment is provably what v1 seeded, word for
+  word. Where several skills ship one key, the first declaration is seeded,
+  refresh follows the recorded owner, a bare key is never adopted, and a
+  plan note names every owner and default where they differ. Value lines
+  never change; comment-block and inserted-seed bytes are all that do.
 - **Schemas are versioned and migrations are applies.** Manifest and lock
   carry a format version; older files load, and the upgrade rides the
   normal journaled, previewed plan as a surgical edit (the version line
@@ -643,12 +643,12 @@ lives in one capability table read by core and UI.
   sibling, or different bytes there is a refusal (invariants 4 and 6). The
   local source lists a `plugin/item` name beside a plain `plugin`.
 - **The machine seam reads through the same core installing does.**
-  `check_catalog.rs` (core) owns both authoring passes — structural (would
-  each loader hold this) and safety (the rules an install runs) — behind
-  `kendex check --catalog [--json]`, the indexer's per-package scores and
-  authoring preflight; the CLI prints lines or a versioned envelope
-  (`schema`, typed findings, counts, `ok`). Structural breakage fails the
-  check; safety findings are advisory everywhere, `--strict` included.
+  `check_catalog.rs` owns three authoring passes — structural (would a loader
+  hold this), settings (a template, read to the shell loaders' grammar, one
+  corpus pinning both) and safety (install rules) — behind `kendex check
+  --catalog [--json]`, indexer scores and preflight; the CLI prints lines or
+  a versioned envelope (`schema`, findings, counts, `ok`). Breakage fails the
+  check, settings findings under `--strict`; safety never.
   `source/index.rs` emits the per-marketplace summary the community
   directory reads (`kendex index [<dir>] --json`, schema 2, plain directory,
   no network): metadata from the catalog's `[marketplace]` table

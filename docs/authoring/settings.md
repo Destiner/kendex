@@ -31,6 +31,11 @@ install rewrites a value. The presence check is deliberately wider than what
 the readers look at: an assignment of that key anywhere in the file, inside
 `[env]` or not, counts as present and suppresses the insert.
 
+Several packages may ship the same key. Where they agree on the default,
+nothing is said. Where they disagree, every plan and audit carries one note
+naming each owner and each default, and seeding still writes the first
+declaration in package-name order.
+
 Comment blocks are the one thing a later install may rewrite. The lock records,
 per key, the skill that seeded it and a hash of the comment block seeding last
 wrote. A revised template rewrites that block only while the on-disk text still
@@ -40,20 +45,33 @@ a consumer's own wording survives every refresh.
 
 ## The grammar
 
-Write one `[env]` table. Give each key a comment block immediately above it: a
-blank line between them, or another assignment, ends the block and the key
-seeds with no explanation at all. That comment is what the consumer reads
-beside the key in their own settings file.
+The shell loaders decide this, not the template: what your `[env]` table says
+is copied into the consumer's `kendex.settings.toml`, and
+`skills/*/scripts/lib/kendex-env.sh` and `settings.sh` are what read it there.
 
-Every value is a single-line double-quoted string containing no `"` and no
-`\`. Nothing checks your template — neither an install nor
-`kendex marketplace check` parses it — so a value in any other shape seeds
-cleanly and then fails the load in every consumer that installs you.
+- One `[env]` table. A table header is a lone `[name]` on its own line —
+  `[env] # the table` is refused, and so is anything else with a bracket in it.
+- A key is a shell identifier: letters, digits and underscores, starting with a
+  letter or underscore. Anything else, `FOO-BAR` and `"WAIT"` included, is
+  seeded and then read by nothing.
+- A value is one double-quoted string on one line, containing no `"` and no
+  `\`, optionally followed by a `#` comment.
+- Each key gets a comment block immediately above it. A blank line between
+  them, or another assignment, ends the block. That comment is what the
+  consumer reads beside the key in their own settings file.
 
-A repeated key is treated differently on each side. In the consumer's
-`kendex.settings.toml`, a duplicate assignment inside `[env]` fails the load.
-In your template it does not: seeding takes the first declaration of a key and
-drops every later one without a word. Write each key once.
+`kendex marketplace check` reads your template against exactly that grammar and
+names every defect it finds, each with the line it sits on; it also names a
+template with no `[env]` table at all, a key with no comment block, an
+assignment outside `[env]`, a key assigned twice, and a file that is not valid
+TOML. A syntax error is reported alongside the rest unless it is the same
+defect said twice, so one run tells you everything. The check runs strict, so
+any of them fails it.
+
+Seeding stays lenient, and that is the point of checking: in the consumer's
+`kendex.settings.toml` a duplicate assignment inside `[env]` fails the load,
+while a template with one seeds its first declaration and drops the rest
+without a word. Write each key once.
 
 ## Naming
 
