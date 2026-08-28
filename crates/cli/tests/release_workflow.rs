@@ -192,6 +192,36 @@ fn the_manifest_pairs_every_signature_with_the_artifact_it_signs() {
     }
 }
 
+/// `kendex update` fetches both of these by name, so both have to be files
+/// a tag run actually publishes: the AppImage the manifest step names, and
+/// the `.sig` beside it that its `kendex_*_amd64.AppImage.sig` glob matches.
+/// A rename on either side is first seen by a user whose update fails after
+/// the release shipped, because release.yml runs on tags only.
+#[test]
+fn the_urls_core_builds_are_the_artifact_the_release_signs_and_its_signature() {
+    let base = "https://github.com/vanillagreencom/kendex/releases/download/v5.1.0";
+    for (platform, target) in [
+        ("linux-x86_64", "x86_64-unknown-linux-gnu"),
+        ("linux-aarch64", "aarch64-unknown-linux-gnu"),
+    ] {
+        let artifact = SIGNED_ARTIFACTS
+            .iter()
+            .find(|(key, _)| *key == platform)
+            .map(|(_, file)| *file)
+            .unwrap_or_default();
+        assert_eq!(
+            kendex_core::update_feed::app_image_url("5.1.0", target).unwrap_or_default(),
+            Some(format!("{base}/{artifact}")),
+            "{platform}"
+        );
+        assert_eq!(
+            kendex_core::update_feed::app_image_signature_url("5.1.0", target).unwrap_or_default(),
+            Some(format!("{base}/{artifact}.sig")),
+            "{platform}"
+        );
+    }
+}
+
 /// Tauri v2 signs the AppImage itself. The `.AppImage.tar.gz` shape belongs
 /// to the deprecated v1-compatible updater, and looking for it leaves Linux
 /// out of the manifest with the job still green.
