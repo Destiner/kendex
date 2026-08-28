@@ -24,6 +24,59 @@ fn kendex_in(home: &Path, cwd: &Path, args: &[&str], envs: &[(&str, String)]) ->
     command.output().expect("kendex binary runs")
 }
 
+/// Runs a copy of the binary that was written moments ago, from `home`.
+///
+/// Exec of a just-written file answers ETXTBSY while any process still
+/// holds a descriptor open for writing it. Nothing here keeps one — but a
+/// sibling test in this binary forks to run its own command, that child
+/// inherits ours for the moment between its fork and its exec, and under
+/// load that moment is long enough to land in. The descriptor goes as soon
+/// as the child execs, so the answer is to ask again rather than to stop
+/// copying.
+fn kendex_copy(exe: &Path, home: &Path, args: &[&str], envs: &[(&str, String)]) -> Output {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        let mut command = Command::new(exe);
+        command
+            .args(args)
+            .env_clear()
+            .env("HOME", home)
+            .env("KENDEX_REAL_HOME", "1")
+            .env("PATH", std::env::var("PATH").unwrap_or_default());
+        for (key, value) in envs {
+            command.env(key, value);
+        }
+        match command.output() {
+            Ok(output) => return output,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ExecutableFileBusy
+                    && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Err(error) => panic!("running {}: {error}", exe.display()),
+        }
+    }
+}
+
+/// The CLI replaces a desktop app only where the release publishes one it
+/// installed. Elsewhere the app arrives by its own route and is not the
+/// command's to touch or to describe.
+fn stderr(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+fn stdout(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+fn publishes_an_app_image() -> bool {
+    matches!(
+        env!("KENDEX_TARGET"),
+        "x86_64-unknown-linux-gnu" | "aarch64-unknown-linux-gnu"
+    )
+}
+
 #[allow(clippy::unwrap_used)]
 fn sandbox_with_catalog() -> tempfile::TempDir {
     let tmp = tempfile::tempdir().unwrap();
@@ -194,24 +247,28 @@ fn update_replaces_the_binary_from_a_local_feed() {
     )
     .unwrap();
 
-    let output = Command::new(&me)
-        .args(["update"])
-        .env_clear()
-        .env("HOME", home)
-        .env("KENDEX_REAL_HOME", "1")
-        .env("PATH", std::env::var("PATH").unwrap_or_default())
-        .env(
+    let output = kendex_copy(
+        &me,
+        home,
+        &["update"],
+        &[(
             "KENDEX_UPDATE_FEED",
             format!("file://{}/feed.json", home.display()),
-        )
-        .output()
-        .unwrap();
+        )],
+    );
     assert!(
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(fs::read_to_string(&me).unwrap(), "#!/bin/sh\necho v9\n");
+    let said = String::from_utf8_lossy(&output.stdout);
+    match publishes_an_app_image() {
+        true => assert!(said.contains("no kendex desktop app here"), "{said}"),
+        // Nothing here installs an app, so nothing here may claim one way
+        // or the other about the app this platform does have.
+        false => assert!(!said.contains("desktop app"), "{said}"),
+    }
 
     // Same version → no-op without --force.
     let same = fs::read_to_string(home.join("feed.json"))
@@ -301,6 +358,148 @@ fn update_replaces_the_binary_from_a_local_feed() {
     let older = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(older.contains("is newer") && !older.contains("is available"));
+}
+
+/// A half-updated machine is the one state this command must never leave,
+/// because the command's own version is what the next run reads: a new
+/// command beside an old app answers already-up-to-date forever. So the
+/// app goes first and a refusal there stops the run with the old command
+/// still on disk — which is what lets the next run try both halves again,
+/// with no --force and nothing said about one.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_desktop_app_that_cannot_be_replaced_leaves_the_command_alone() {
+    let tmp = sandbox_with_catalog();
+    let home = tmp.path();
+    let bin = home.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let me = bin.join("kendex");
+    fs::copy(env!("CARGO_BIN_EXE_kendex"), &me).unwrap();
+    fs::set_permissions(&me, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let app_dir = home.join(".local/share/kendex");
+    fs::create_dir_all(&app_dir).unwrap();
+    fs::write(app_dir.join("kendex.AppImage"), "old app").unwrap();
+    fs::set_permissions(&app_dir, fs::Permissions::from_mode(0o555)).unwrap();
+    // Root writes through the mode bits, so the refusal this test needs
+    // never happens there.
+    if fs::write(app_dir.join("probe"), "").is_ok() {
+        fs::set_permissions(&app_dir, fs::Permissions::from_mode(0o755)).unwrap();
+        return;
+    }
+
+    fs::write(home.join("new-binary"), "#!/bin/sh\necho v9\n").unwrap();
+    let target = env!("KENDEX_TARGET");
+    fs::write(
+        home.join("feed.json"),
+        format!(
+            r#"{{"schema":1,"version":"9.9.9","assets":{{"{target}":"file://{}/new-binary"}}}}"#,
+            home.display()
+        ),
+    )
+    .unwrap();
+    let update = || {
+        kendex_copy(
+            &me,
+            home,
+            &["update"],
+            &[(
+                "KENDEX_UPDATE_FEED",
+                format!("file://{}/feed.json", home.display()),
+            )],
+        )
+    };
+
+    let first = update();
+    // The second run is the whole point: with the command still on its old
+    // version it reads the feed as newer and reaches the app again.
+    let second = update();
+    fs::set_permissions(&app_dir, fs::Permissions::from_mode(0o755)).unwrap();
+
+    // Read as text: the real binary is not UTF-8, so only a command that
+    // moved reads back as the replacement, and a failure prints that line
+    // rather than a megabyte of ELF.
+    let moved = fs::read_to_string(&me).is_ok_and(|got| got == "#!/bin/sh\necho v9\n");
+    assert!(!moved, "the command moved before the app it depends on");
+    assert_eq!(
+        fs::read_to_string(app_dir.join("kendex.AppImage")).unwrap(),
+        "old app"
+    );
+    if !publishes_an_app_image() {
+        // No AppImage is published for this target, so there is nothing to
+        // replace and nothing to refuse.
+        assert!(first.status.success(), "{}", stderr(&first));
+        return;
+    }
+    for (which, output) in [("first", &first), ("second", &second)] {
+        let said = format!("{}{}", stderr(output), stdout(output));
+        assert!(!output.status.success(), "{which}: {said}");
+        assert!(
+            said.contains("nothing was updated") && said.contains("refuses writes"),
+            "{which}: {said}"
+        );
+        assert!(
+            !said.contains("already up to date"),
+            "{which} dead-ended instead of retrying: {said}"
+        );
+    }
+}
+
+/// A copy kendex cannot place is a copy it will not overwrite. The command
+/// says so in the channel's own words rather than failing at the rename
+/// with an io error, and a package-owned path on a distro it cannot name
+/// reaches this the same way.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn update_refuses_a_copy_it_cannot_account_for() {
+    let tmp = sandbox_with_catalog();
+    let home = tmp.path();
+    let bin = home.join("sealed");
+    fs::create_dir_all(&bin).unwrap();
+    let me = bin.join("kendex");
+    fs::copy(env!("CARGO_BIN_EXE_kendex"), &me).unwrap();
+    fs::set_permissions(&me, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(&bin, fs::Permissions::from_mode(0o555)).unwrap();
+    // Root writes through the mode bits, so the channel this test needs
+    // never comes back Unknown there.
+    if fs::write(bin.join("probe"), "").is_ok() {
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+        return;
+    }
+
+    fs::write(home.join("new-binary"), "#!/bin/sh\necho v9\n").unwrap();
+    let target = env!("KENDEX_TARGET");
+    fs::write(
+        home.join("feed.json"),
+        format!(
+            r#"{{"schema":1,"version":"9.9.9","assets":{{"{target}":"file://{}/new-binary"}}}}"#,
+            home.display()
+        ),
+    )
+    .unwrap();
+
+    let output = kendex_copy(
+        &me,
+        home,
+        &["update"],
+        &[(
+            "KENDEX_UPDATE_FEED",
+            format!("file://{}/feed.json", home.display()),
+        )],
+    );
+    fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("cannot tell how this copy was installed"),
+        "{stderr}"
+    );
+    assert_eq!(
+        fs::read(&me).unwrap(),
+        fs::read(env!("CARGO_BIN_EXE_kendex")).unwrap(),
+        "the refused copy was left exactly as it was"
+    );
 }
 
 #[test]

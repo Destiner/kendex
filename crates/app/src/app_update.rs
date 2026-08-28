@@ -1,6 +1,8 @@
 use kendex_core::app_update::AppUpdateView;
 use kendex_core::env::Env;
+use kendex_core::install_channel::{AppInstall, Host, InstallChannel};
 use kendex_core::registry::ReleaseFeedFetch;
+use tauri_plugin_updater::UpdaterExt;
 
 fn feed_url() -> String {
     #[cfg(debug_assertions)]
@@ -44,6 +46,70 @@ fn check(refresh: bool) -> Result<AppUpdateView, String> {
 #[specta::specta]
 pub fn app_update_check(refresh: bool) -> Result<AppUpdateView, String> {
     check(refresh)
+}
+
+/// What the running build is, in the terms its platform's rules read. This
+/// is the one place the app decides which platform it is on; core holds the
+/// rules for all three.
+fn app_install() -> Result<AppInstall, String> {
+    #[cfg(target_os = "linux")]
+    {
+        // Both variables are inherited by everything an AppImage-launched
+        // terminal starts, so core places this executable rather than
+        // taking either at its word.
+        let exe = std::env::current_exe().ok();
+        Ok(AppInstall::from_appimage_env(
+            &Host,
+            std::env::var_os("APPIMAGE").as_deref(),
+            std::env::var_os("APPDIR").as_deref(),
+            exe.as_deref(),
+        ))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::env::current_exe()
+            .map(|exe| AppInstall::mac_bundle(&Host, &exe))
+            .map_err(|error| format!("the running app's own path is unreadable: {error}"))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Ok(AppInstall::WindowsInstaller)
+    }
+}
+
+/// Who owns the running bytes, so the notice offers the one action that can
+/// work on this machine.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn app_update_channel() -> Result<InstallChannel, String> {
+    Ok(kendex_core::install_channel::for_app(
+        &app_install()?,
+        &Host,
+    ))
+}
+
+/// Replace this install with the latest release and relaunch into it. The
+/// separately signed updater manifest is the delivery path and verifies
+/// itself; the discovery feed never supplies an install URL. A failure
+/// leaves the running app untouched and usable.
+#[tauri::command]
+#[specta::specta]
+pub async fn app_update_install(app: tauri::AppHandle) -> Result<(), String> {
+    // The notice offers this on no other channel; the command asks anyway,
+    // so nothing a caller gets wrong can overwrite a package manager's files.
+    kendex_core::install_channel::for_app(&app_install()?, &Host).allow_replacement()?;
+    let update = app
+        .updater()
+        .map_err(|error| error.to_string())?
+        .check()
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "this build is already the latest release".to_owned())?;
+    update
+        .download_and_install(|_chunk, _total| {}, || {})
+        .await
+        .map_err(|error| error.to_string())?;
+    app.restart()
 }
 
 /// The launch does not wait for network or cache I/O. The first command call
