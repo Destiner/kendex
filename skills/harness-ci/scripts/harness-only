@@ -155,6 +155,129 @@ fi
 
 printf '%s\n' "$changed" | sed -e 's/^/harness-only: changed: /' >&2
 
+# A repo that adopts skills in place keeps project source at
+# .agents/skills/<name> — kendex.toml declares them `source = "in-place"` —
+# and its adopted hook scripts under .agents/hooks: bytes kendex reads,
+# never writes. The checkout's manifests speak for the head. A missing
+# manifest yields no carve-outs; one that exists but cannot be read or
+# classified carves every skill path — false, the safe answer.
+in_place_skills=""
+manifest_carves() { # IN-TREE PATH -> carve lines for one manifest, "*" on a failed read or parse
+  # The diff is between commits, so the manifests are read from the
+  # selected head tree, never from whatever the checkout happens to hold.
+  # One that exists there but cannot be read proves nothing and carves.
+  local manifest_content manifest_entry
+  # ls-tree answers existence from the tree object alone, so absence and a
+  # failed lookup stay distinct: no entry means no manifest, while a listing
+  # that fails, a symlink entry (git show hands back its target text), or a
+  # blob that will not read are all unclassifiable and carve.
+  manifest_entry="$(git_repo ls-tree "$head" -- "$1" 2>/dev/null)" || { echo "*"; return 0; }
+  [ -n "$manifest_entry" ] || return 0
+  case "$manifest_entry" in 120000*) echo "*"; return 0 ;; esac
+  manifest_content="$(git_repo show "$head:$1" 2>/dev/null)" || { echo "*"; return 0; }
+  # The line parser reads the spellings kendex writes and the common hand
+  # edits; completeness is not load-bearing. Every line that could take
+  # part in spelling the value — a bare in-place mention, a \u/\U escape
+  # anywhere, a multiline source string — is counted, and any the name
+  # extraction cannot account for degrades to the coarse carve: every
+  # .agents/skills path reads as project source. Over-matching is the safe
+  # direction — lanes run. No legal TOML spelling of the value can answer
+  # harness_only=true wrongly; the exotic ones cost lanes that run.
+  sq="'"
+  printf '%s\n' "$manifest_content" | awk -v q="$sq" '
+    BEGIN {
+      d = "\""
+      v = "(" d "in-place" d "|" d d d "in-place" d d d "|" q "in-place" q "|" q q q "in-place" q q q ")"
+      src = "source[ \t]*=[ \t]*" v
+      seg = "([A-Za-z0-9_-]+|" d "[^" d "]*" d "|" q "[^" q "]*" q ")"
+      dotted = "^" seg "[ \t]*\\.[ \t]*(" d "source" d "|" q "source" q "|source)[ \t]*="
+      esc = "\\\\[uUx]"
+      k = "(" d "|" q ")?"
+      mlsrc = k "source" k "[ \t]*=[ \t]*(" d d d "|" q q q ")"
+    }
+    {
+      line = $0
+      sub(/\r$/, "", line)
+      sub(/^[ \t]+/, "", line)
+      if (line ~ /in-place/ || line ~ esc || line ~ mlsrc) coarse += 1
+    }
+    line ~ /^\[[ \t]*skills[ \t]*\][ \t]*(#.*)?$/ { in_skills = 1; name = ""; next }
+    line ~ /^\[[ \t]*skills[ \t]*\./ {
+      in_skills = 0
+      name = line
+      sub(/^\[[ \t]*skills[ \t]*\.[ \t]*/, "", name)
+      sub(/[ \t]*\][ \t]*(#.*)?$/, "", name)
+      if (name ~ "^\"[^\"]*\"$" || name ~ ("^" q "[^" q "]*" q "$")) {
+        name = substr(name, 2, length(name) - 2)
+      }
+      next
+    }
+    line ~ /^\[/ { in_skills = 0; name = "" }
+    name != "" && line ~ ("^" src "[ \t]*(#.*)?$") {
+      accounted += 1
+      if (name ~ /\\/) { print "*" } else { print name }
+      next
+    }
+    (in_skills || line ~ /^skills[ \t]*\./) && line ~ src {
+      body = line
+      sub(/^skills[ \t]*\.[ \t]*/, "", body)
+      key = body
+      if (key ~ /^"/) { sub(/^"/, "", key); sub(/".*$/, "", key) }
+      else if (key ~ ("^" q)) { sub("^" q, "", key); key = substr(key, 1, index(key, q) - 1) }
+      else { sub(/[ \t=.].*$/, "", key) }
+      if (key != "") {
+        accounted += 1
+        # Only two shapes tie the key to the value on one line: a
+        # structural dotted declaration (segment, dot, source, equals) and
+        # a closed one-level inline table. Anything else — a continuation
+        # line, a quoted key wearing a dot, a nested table, a key of
+        # exactly "source", an escape-bearing key — carves.
+        trusted = 0
+        if (body ~ dotted) { trusted = 1 }
+        else if (body ~ /^[^{}]*=[ \t]*\{[^{}]*\}[ \t]*,?[ \t]*(#.*)?$/) { trusted = 1 }
+        if (!trusted || key == "source" || key ~ /\\/) { print "*" } else { print key }
+      }
+    }
+    END { if (coarse > accounted) print "*" }
+  ' 2>/dev/null || echo "*"
+}
+# A source-catalog project keeps its install state in kendex-local.toml
+# (kendex.toml stays the catalog definition), and adoption declares in
+# place through whichever manifest is active — so both are read, unioned.
+in_place_skills="$(
+  manifest_carves kendex.toml
+  manifest_carves kendex-local.toml
+)"
+NL=$(printf "\nx")
+NL="${NL%x}"
+in_place_path() { # PATH -> 0 when the path is the repo's own in-place content
+  local rest skill
+  case "$1" in
+    .agents/hooks/*) return 0 ;;
+    .agents/skills/*/*) ;;
+    *) return 1 ;;
+  esac
+  [ -n "$in_place_skills" ] || return 1
+  # The coarse carve: an in-place mention the extraction could not account
+  # for makes every skill path project source rather than guessing names.
+  case "$in_place_skills" in
+    "*" | "*"$NL* | *$NL"*" | *$NL"*"$NL*) return 0 ;;
+  esac
+  # A declared name matches as a path prefix, so a namespaced declaration
+  # (skills."plugin/item") covers its whole tree like a plain one.
+  rest="${1#.agents/skills/}"
+  skill="$rest"
+  while :; do
+    case "$in_place_skills" in
+      "$skill" | "$skill"$'\n'* | *$'\n'"$skill" | *$'\n'"$skill"$'\n'*) return 0 ;;
+    esac
+    case "$skill" in
+      */*) skill="${skill%/*}" ;;
+      *) return 1 ;;
+    esac
+  done
+}
+
 # --no-renames, and it is load-bearing. With rename detection on,
 # `git diff --name-only` emits only the POST-image path, so moving a product
 # file INTO a render tree lists one harness path and nothing else — the diff
@@ -168,7 +291,15 @@ harness_only=true
 while IFS= read -r path; do
   [ -n "$path" ] || continue
   case "$path" in
-    .agents/* | .claude/* | .codex/* | .opencode/* | .cursor/* | .pi/*) continue ;;
+    .agents/*)
+      # In-place content under the render tree is project source.
+      if in_place_path "$path"; then
+        harness_only=false
+        break
+      fi
+      continue
+      ;;
+    .claude/* | .codex/* | .opencode/* | .cursor/* | .pi/*) continue ;;
     # Both spellings of the one OpenCode config: kendex writes the .jsonc file
     # when a project carries that one instead, and it is the same artifact.
     opencode.json | opencode.jsonc) continue ;;

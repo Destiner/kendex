@@ -3,7 +3,11 @@
 A repository that commits its kendex render gets diffs that touch nothing it
 builds, lints, typechecks or tests. This package ships the one function that
 recognises them — changed paths in, `harness_only=true|false` out — plus the
-tests that prove the semantics, run in kendex CI on every change.
+tests that prove the semantics, run in kendex CI on every change. Content
+the repository authors inside the render trees — skills its manifests
+(`kendex.toml`, or `kendex-local.toml` in a source catalog) declare
+`source = "in-place"` for, scripts under `.agents/hooks` — is project
+source, and any change to it answers `false`.
 
 Opt-in: running CI over harness directories is a policy choice, and a repo
 that wants it simply does not install this.
@@ -90,6 +94,7 @@ There is no flag that turns any of these into a `true`.
 | Suite | Covers |
 | --- | --- |
 | `path-set` | Every render tree, mixed diffs, deletions, the near-miss paths |
+| `in-place` | Trees either manifest declares in place, `.agents/hooks`, the no-manifest control |
 | `rename-into-render` | The `git mv` into a render tree, and the control proving the flag is load-bearing |
 | `event-ranges` | The force-push case, the moving base branch, merge groups |
 | `fail-closed` | Unclassified events, unresolvable endpoints, an empty diff, a merge-base diff git refuses, a path git had to quote |
