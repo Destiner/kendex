@@ -259,6 +259,71 @@ output=$(load_token GH_TOKEN=op://vault/github/main)
 assert_eq "$output" "ghs_FILEBOT123" "unresolved env token allows direct project token"
 assert_file_missing "$TMP_ROOT/op.calls" "direct project token avoids op for inherited op reference"
 
+# The op-retry project-env load stays best-effort (|| true) for token
+# ABSENCE, but its stderr is open: a refused settings load must surface the
+# loader's ::error instead of a bare no-token failure blaming auth.
+rm -f "$TMP_ROOT/repo/.env.local"
+printf '[env]\nDUP = "a"\nDUP = "b"\n' > "$TMP_ROOT/repo/kendex.settings.toml"
+rc=0
+output=$( (cd "$TMP_ROOT/repo" && PATH="$TMP_ROOT/bin:$PATH" bash -c '
+  source "'"$REPO_ROOT"'/skills/github/scripts/lib/gh-auth.sh"
+  kendex_github_load_token "$PWD"
+') 2>"$TMP_ROOT/load-refused.err" ) || rc=$?
+assert_eq "$rc" "1" "a refused settings load still reports no token (absence stays best-effort)"
+if grep -q "assigned more than once" "$TMP_ROOT/load-refused.err"; then
+  PASS=$((PASS + 1))
+  printf '  ok    the refused settings load surfaces its diagnostic on the no-token path\n'
+else
+  FAIL=$((FAIL + 1))
+  printf '  FAIL  the refused settings load surfaces its diagnostic on the no-token path\n        stderr: %s\n' "$(cat "$TMP_ROOT/load-refused.err")"
+fi
+rm -f "$TMP_ROOT/repo/kendex.settings.toml"
+
+# A token assigned BEFORE the bad line must not be selected off the partial
+# read: the loader stops before .env.local, so the stale committed token
+# would beat the personal override that outranks it. On a FAILED load no
+# project-file token is picked up at all — keyring/env auth decides.
+printf '[env]\nGH_TOKEN = "ghp_PartialCommitted111"\nDUP = "a"\nDUP = "b"\n' > "$TMP_ROOT/repo/kendex.settings.toml"
+printf 'GH_TOKEN=ghp_LocalOverride222\n' > "$TMP_ROOT/repo/.env.local"
+rc=0
+output=$( (cd "$TMP_ROOT/repo" && PATH="$TMP_ROOT/bin:$PATH" bash -c '
+  source "'"$REPO_ROOT"'/skills/github/scripts/lib/gh-auth.sh"
+  kendex_github_load_token "$PWD"
+') 2>"$TMP_ROOT/partial-token.err" ) || rc=$?
+assert_eq "$rc" "1" "a FAILED load selects no project token (a partial read would invert precedence)"
+assert_eq "$output" "" "no token from the partial read escapes kendex_github_load_token"
+if grep -q "assigned more than once" "$TMP_ROOT/partial-token.err"; then
+  PASS=$((PASS + 1))
+  printf '  ok    the partial-read bail keeps the loader diagnostic on stderr\n'
+else
+  FAIL=$((FAIL + 1))
+  printf '  FAIL  the partial-read bail keeps the loader diagnostic on stderr\n        stderr: %s\n' "$(cat "$TMP_ROOT/partial-token.err")"
+fi
+
+# Through github-api.sh's load_bot_token (the pr-create/pr-merge path,
+# both errexit callers) a REJECTED load is a loud failure, never an empty
+# not-configured success: empty means "mutate as the current user", and a
+# settings defect must not switch the GitHub identity.
+rc=0
+output=$(load_token 2>"$TMP_ROOT/partial-bot.err") || rc=$?
+assert_eq "$rc" "1" "load_bot_token fails LOUD on a rejected settings load (no current-user fallback)"
+assert_eq "$output" "" "no token text escapes the rejected load"
+if grep -q "assigned more than once" "$TMP_ROOT/partial-bot.err"; then
+  PASS=$((PASS + 1))
+  printf '  ok    load_bot_token keeps the loader diagnostic on stderr\n'
+else
+  FAIL=$((FAIL + 1))
+  printf '  FAIL  load_bot_token keeps the loader diagnostic on stderr\n        stderr: %s\n' "$(cat "$TMP_ROOT/partial-bot.err")"
+fi
+if grep -q "refusing the current-user fallback" "$TMP_ROOT/partial-bot.err"; then
+  PASS=$((PASS + 1))
+  printf '  ok    the refusal names the identity fallback it is preventing\n'
+else
+  FAIL=$((FAIL + 1))
+  printf '  FAIL  the refusal names the identity fallback it is preventing\n        stderr: %s\n' "$(cat "$TMP_ROOT/partial-bot.err")"
+fi
+rm -f "$TMP_ROOT/repo/kendex.settings.toml" "$TMP_ROOT/repo/.env.local"
+
 echo
 printf 'pass: %d   fail: %d\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]

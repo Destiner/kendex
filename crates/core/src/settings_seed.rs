@@ -1,8 +1,10 @@
 //! `kendex.settings.toml` seeding — skills ship a
 //! `kendex.settings.toml.example` and their `[env]` entries merge into the
 //! project's settings file, write-if-absent per key: comment blocks travel
-//! with their key, and uniqueness is file-wide because the shell-side
-//! reader is not TOML-table-aware.
+//! with their key. The shell-side readers consume the `[env]` table only,
+//! but the presence check here stays file-wide, conservatively: seeding
+//! must never add a key that some assignment outside `[env]` already
+//! names.
 //!
 //! Seeded comments stay current ([`refresh`]): the lock keeps, per key, the
 //! FNV-1a hash of the comment block last written by seeding, and a key's
@@ -221,7 +223,7 @@ pub fn merge(original: Option<&str>, entries: &[SeededEnv]) -> Option<(String, V
 
     let Some(original) = original else {
         let mut out = String::from(
-            "# Public kendex settings seeded from installed skill defaults.\n# Skill scripts read this [env] table after .env and before .env.local.\n# Keep secrets, tokens, and personal overrides in .env.local.\n\n[env]\n",
+            "# Public kendex settings seeded from installed skill defaults.\n# Skill scripts read this [env] table; process env and .env.local override it.\n# Keep secrets, tokens, and personal overrides in .env.local.\n\n[env]\n",
         );
         out.push_str(&render_entries(&missing, "\n"));
         return Some((out, added));

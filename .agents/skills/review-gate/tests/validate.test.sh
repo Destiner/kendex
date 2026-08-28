@@ -34,6 +34,7 @@ for line in \
   "one adopted writer workflow" \
   "the adopted workflow is the shipped template, line for line" \
   "every REVIEW_GATE_* key assigned in" \
+  "every REVIEW_GATE_* assignment sits inside the [env] table" \
   "every REVIEW_GATE_* assignment uses the bare key name the loader reads" \
   "every committed setting resolves to a legal value"; do
   printf '%s' "$OUT" | grep -qF -- "$line" &&
@@ -102,6 +103,22 @@ dir="$DIR"
 (cd "$dir" && git rm -q --cached kendex.settings.toml && git commit -q -m "untrack the settings file")
 expect_fail "an UNTRACKED settings file is a finding, not a pass" "$dir" "present but UNTRACKED"
 
+# The resolver treats a committed .kendex/settings.toml as the authoritative
+# default TOML source, so its typo'd trust key must be a finding — not a
+# clean pass while the engine ignores the typo and the gate widens.
+repo_fails "a typo'd key in a COMMITTED .kendex/settings.toml is a finding" "never reads" \
+  'mkdir -p .kendex && printf "[env]\nREVIEW_GATE_REVIEW_OBJECT_TRUSTED_LOGIN = \"x\"\n" > .kendex/settings.toml'
+printf '%s' "$OUT" | grep -F "never reads" | grep -qF ".kendex/settings.toml" &&
+  ok "the nested-file finding names .kendex/settings.toml" ||
+  bad "the nested-file finding names .kendex/settings.toml" "$OUT"
+
+# REVIEW_GATE_MODE resolves from env and the committed root only, so a
+# nested assignment is read by nothing and must be its own finding — while
+# the same assignment in the root file stays clean.
+repo_fails "a nested REVIEW_GATE_MODE assignment is a never-reads finding" "never reads from this file" \
+  'mkdir -p .kendex && printf "[env]\nREVIEW_GATE_MODE = \"off\"\n" > .kendex/settings.toml'
+setting_clean "a root REVIEW_GATE_MODE assignment stays clean" REVIEW_GATE_MODE "off"
+
 # ...and the explicit caller handle is exempt, since it names a path that was
 # never required to live in the repository.
 sandbox
@@ -159,6 +176,37 @@ sandbox
 dir="$DIR"
 printf '[env]\nREVIEW_GATE_THREADS = "off"\n' >>"$dir/kendex.settings.toml"
 expect_clean "a plain assignment under a table header is read normally" "$dir"
+
+# The loader reads the [env] table only, so a bare assignment anywhere else
+# is silently ignored at gate time — its own finding, distinct from the
+# unreadable-shape one, since the spelling is right and only the location is
+# wrong. Both hiding places are pinned: above the first header, and under an
+# unrelated table.
+sandbox
+dir="$DIR"
+printf 'REVIEW_GATE_THREADS = "off"\n[env]\nREVIEW_GATE_CONTEXT = "Review gate"\n' >"$dir/kendex.settings.toml"
+expect_fail "a bare assignment ABOVE the [env] header is a finding" "$dir" "outside the [env] table"
+
+sandbox
+dir="$DIR"
+printf '\n[notes]\nREVIEW_GATE_THREADS = "off"\n' >>"$dir/kendex.settings.toml"
+expect_fail "a bare assignment under an UNRELATED table is a finding" "$dir" "outside the [env] table"
+
+# A header the loader cannot parse corrupts every classification after it
+# ([env] with a trailing comment hides the whole table), so it is its own
+# finding rather than an ignored line.
+sandbox
+dir="$DIR"
+printf '\n[env] # comment\nREVIEW_GATE_THREADS = "off"\n' >>"$dir/kendex.settings.toml"
+expect_fail "a header the loader cannot parse is its own finding" "$dir" "table header(s) the loader cannot parse"
+
+# Every settings reader refuses a BOM-prefixed file whole, so the BOM is
+# its own finding — without it the report would blame lines the corrupted
+# read never classified.
+sandbox
+dir="$DIR"
+printf '\357\273\277[env]\nREVIEW_GATE_THREADS = "off"\n' >"$dir/kendex.settings.toml"
+expect_fail "a leading UTF-8 BOM is its own finding" "$dir" "byte-order mark"
 
 # An inline table puts the setting AFTER the line's first `=`, which is why
 # the rule judges the line rather than a position inside it.
