@@ -75,6 +75,10 @@ an outside contributor.
 
 ### Fixed
 
+- `mutation-stability` no longer reads a stable test as unstable, or a killed
+  mutant as a survivor, when the caller shares a build cache. Everything it
+  wrote to a copy is now stamped past the build before it, so cargo rebuilds.
+
 - `kendex check` names every stranded commit-hook file, not the first and half
   of the next. A deep checkout path — macOS temp directories, most nested
   clones — ran the line past a length limit meant for text from outside kendex.
