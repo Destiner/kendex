@@ -1,9 +1,10 @@
 //! The identity client: GET /api/v1/me against the contract fixture,
 //! every account state, all of them settled and all of them `load`'s
 //! answers, the offline cache ladder, and the cache's endpoint key. The
-//! UI holds its own "not read yet" and never gets it here. The fixture is
-//! a byte copy of kendex-web's
-//! `contracts/api/v1/me.json` — drift between the repos is a `cmp` away.
+//! UI holds its own "not read yet" and never gets it here. Which sign-in
+//! an answer belongs to is `sign_in_binding`. The fixture is a byte copy
+//! of kendex-web's `contracts/api/v1/me.json` — drift between the repos
+//! is a `cmp` away.
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -14,7 +15,12 @@ use kendex_core::registry::credentials::{Credential, CredentialRefreshGuard, Cre
 use kendex_core::registry::me::{self, AccountState};
 use kendex_core::registry::{Fetch, FetchResponse};
 
-const FIXTURE: &str = include_str!("fixtures/api-v1-me.json");
+const FIXTURE: &str = include_str!("../fixtures/api-v1-me.json");
+
+/// The sign-in every fixture credential belongs to. A rotation carries it
+/// and only a new sign-in changes it, so a cache keyed to it survives one
+/// and not the other.
+const ADA: &str = "sign-in-ada";
 
 /// A canned transport: each call pops the next scripted answer and
 /// records what rode along with it.
@@ -89,11 +95,16 @@ impl MemoryStore {
             access_token: "kxa_old".to_owned(),
             refresh_token: "kxr_old".to_owned(),
             capabilities: vec!["submission:write".to_owned()],
+            sign_in: ADA.to_owned(),
         })))
     }
 
     fn signed_out() -> MemoryStore {
         MemoryStore(RefCell::new(None))
+    }
+
+    fn signed_in_as(credential: Credential) -> MemoryStore {
+        MemoryStore(RefCell::new(Some(credential)))
     }
 }
 
@@ -117,31 +128,29 @@ impl CredentialStore for MemoryStore {
 struct MemoryGuard;
 impl CredentialRefreshGuard for MemoryGuard {}
 
-/// A store whose credential disappears after N loads — logout winning a
-/// race against the read.
-struct VanishingStore {
-    loads_before_gone: RefCell<u32>,
-    credential: Credential,
+/// The key a generation carries beside its endpoint, exactly as `me.rs`
+/// writes it. A cache planted by hand needs the sign-in it belongs to, or
+/// the read refuses it for the wrong reason and the test proves nothing.
+fn sign_in_key(sign_in: &str) -> serde_json::Value {
+    kendex_core::hash::hash_bytes(sign_in.as_bytes()).into()
 }
 
-impl CredentialStore for VanishingStore {
-    fn save(&self, _credential: &Credential) -> Result<()> {
-        Ok(())
-    }
-    fn load(&self) -> Result<Option<Credential>> {
-        let mut left = self.loads_before_gone.borrow_mut();
-        if *left == 0 {
-            return Ok(None);
-        }
-        *left -= 1;
-        Ok(Some(self.credential.clone()))
-    }
-    fn clear(&self) -> Result<()> {
-        Ok(())
-    }
-    fn refresh_guard(&self) -> Result<Box<dyn CredentialRefreshGuard + '_>> {
-        Ok(Box::new(MemoryGuard))
-    }
+/// Plant a generation where a finished read would have left one.
+fn write_cache(env: &Env, body: &str, etag: Option<&str>, sign_in: Option<&str>) {
+    let dir = env.registry_cache_dir();
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let generation = serde_json::json!({
+        "endpoint": "https://kendex.ai",
+        "credential": sign_in.map(sign_in_key),
+        "etag": etag,
+        "fetched_at": 1,
+        "body": body,
+    });
+    std::fs::write(
+        dir.join("me.cache.json"),
+        serde_json::to_string(&generation).expect("generation"),
+    )
+    .expect("write");
 }
 
 fn env_in(dir: &Path) -> Env {
@@ -315,57 +324,6 @@ fn a_rotation_the_server_still_rejects_reads_as_expired() {
     let state = me::load(&env_in(dir.path()), &fetch, &MemoryStore::signed_in()).expect("load");
     assert_eq!(state, AccountState::Expired);
 }
-
-#[test]
-fn logout_winning_the_race_reads_as_signed_out() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    // The guard's read and with_access's first read still see the
-    // credential; the locked re-read after the 401 finds it gone.
-    let store = VanishingStore {
-        loads_before_gone: RefCell::new(2),
-        credential: Credential {
-            endpoint: "https://kendex.ai".to_owned(),
-            access_token: "kxa_old".to_owned(),
-            refresh_token: "kxr_old".to_owned(),
-            capabilities: vec![],
-        },
-    };
-    let fetch = Canned::new(vec![ok(401, None, r#"{"error":"invalid_token"}"#)]);
-    let state = me::load(&env_in(dir.path()), &fetch, &store).expect("load");
-    assert_eq!(state, AccountState::SignedOut);
-    assert_eq!(
-        *fetch.calls.borrow(),
-        1,
-        "no refresh is attempted once logout won"
-    );
-}
-
-#[test]
-fn a_sign_out_landing_mid_read_is_never_written_back() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let env = env_in(dir.path());
-    // The opening check and with_access both still see the credential; by
-    // the time the answer is settled, sign-out has cleared it.
-    let store = VanishingStore {
-        loads_before_gone: RefCell::new(2),
-        credential: Credential {
-            endpoint: "https://kendex.ai".to_owned(),
-            access_token: "kxa_old".to_owned(),
-            refresh_token: "kxr_old".to_owned(),
-            capabilities: vec![],
-        },
-    };
-    let fetch = Canned::new(vec![ok(200, None, &fixture_body(&["success", "body"]))]);
-    assert_eq!(
-        me::load(&env, &fetch, &store).expect("load"),
-        AccountState::SignedOut
-    );
-    assert!(
-        !env.registry_cache_dir().join("me.cache.json").exists(),
-        "a read finishing after sign-out must leave no identity on disk"
-    );
-}
-
 #[test]
 fn revalidation_sends_the_etag_and_304_keeps_the_identity() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -405,9 +363,18 @@ fn a_cache_from_another_endpoint_is_never_served() {
     let env = env_in(dir.path());
     let registry_dir = env.registry_cache_dir();
     std::fs::create_dir_all(&registry_dir).expect("mkdir");
+    // This sign-in's own key, so the endpoint is the only thing left to
+    // refuse it.
+    let generation = serde_json::json!({
+        "endpoint": "https://somewhere.else",
+        "credential": sign_in_key(ADA),
+        "etag": serde_json::Value::Null,
+        "fetched_at": 1,
+        "body": r#"{"name":"Stranger","github_login":null}"#,
+    });
     std::fs::write(
         registry_dir.join("me.cache.json"),
-        r#"{"endpoint":"https://somewhere.else","etag":null,"fetched_at":1,"body":"{\"name\":\"Stranger\",\"github_login\":null}"}"#,
+        serde_json::to_string(&generation).expect("generation"),
     )
     .expect("write");
     let down = Canned::new(vec![away()]);
@@ -472,6 +439,7 @@ fn a_fresh_sign_in_never_inherits_the_previous_identity() {
             access_token: "kxa_next".to_owned(),
             refresh_token: "kxr_next".to_owned(),
             capabilities: vec![],
+            sign_in: String::new(),
         },
     )
     .expect("commit");
@@ -503,29 +471,20 @@ fn a_304_with_nothing_cached_is_refused() {
 fn an_oversized_identity_cache_reads_as_no_cache() {
     let dir = tempfile::tempdir().expect("tempdir");
     let env = env_in(dir.path());
-    let registry_dir = env.registry_cache_dir();
-    std::fs::create_dir_all(&registry_dir).expect("mkdir");
-    // This endpoint's own generation, holding an identity that parses:
-    // the size is the only thing left to refuse it, so the cap is what
-    // this test measures. A padded body keeps that honest.
+    // This endpoint's and this sign-in's own generation, holding an
+    // identity that parses: the size is the only thing left to refuse it,
+    // so the cap is what this test measures. A padded body keeps that
+    // honest.
     let body = format!(
         r#"{{"name":"Ada Lovelace","github_login":null,"pad":"{}"}}"#,
         "x".repeat(41_000_000)
     );
-    let generation = serde_json::json!({
-        "endpoint": "https://kendex.ai",
-        "etag": serde_json::Value::Null,
-        "fetched_at": 1,
-        "body": body,
-    });
-    std::fs::write(
-        registry_dir.join("me.cache.json"),
-        serde_json::to_string(&generation).expect("generation"),
-    )
-    .expect("write");
+    write_cache(&env, &body, None, Some(ADA));
     let down = Canned::new(vec![away()]);
     assert!(
         me::load(&env, &down, &MemoryStore::signed_in()).is_err(),
         "a cache past the cap is never read, however well-formed"
     );
 }
+
+mod sign_in_binding;
