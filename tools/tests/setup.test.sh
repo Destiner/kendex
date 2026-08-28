@@ -90,13 +90,44 @@ printf 'fn main() {}\n' >"$R/crates/a.rs"
 git -C "$R" add -A
 RC=0
 OUT="$(git -C "$R" commit -m "feat: a crate change" 2>&1)" || RC=$?
-[ "$RC" -ne 0 ] && case "$OUT" in *"without a CHANGELOG.md entry"*) true ;; *) false ;; esac \
+[ "$RC" -ne 0 ] && case "$OUT" in *"without a changelog entry"*) true ;; *) false ;; esac \
   && ok "a crates/ change with no changelog entry is refused by the repo lane" \
   || bad "a crates/ change with no changelog entry is refused by the repo lane" "rc=$RC out=$OUT"
+mkdir -p "$R/changelog.d"
+printf '# changelog.d\n' >"$R/changelog.d/README.md"
+git -C "$R" add -A
+RC=0
+OUT="$(git -C "$R" commit -m "feat: a crate change" 2>&1)" || RC=$?
+[ "$RC" -ne 0 ] && case "$OUT" in *"without a changelog entry"*) true ;; *) false ;; esac \
+  && ok "changelog.d's own README does not stand in for a fragment" \
+  || bad "changelog.d's own README does not stand in for a fragment" "rc=$RC out=$OUT"
+mkdir -p "$R/changelog.d/fixed"
+printf -- '- A crate fix consumers see.\n' >"$R/changelog.d/fixed/ken-1.md"
+git -C "$R" add -A
+RC=0
+OUT="$(git -C "$R" commit -m "feat: a crate change" 2>&1)" || RC=$?
+[ "$RC" -eq 0 ] && ok "a changelog.d fragment satisfies the rule" \
+  || bad "a changelog.d fragment satisfies the rule" "rc=$RC out=$OUT"
+printf 'fn other() {}\n' >"$R/crates/b.rs"
+git -C "$R" add -A
 RC=0
 OUT="$(git -C "$R" commit -m "feat: a crate change [no-changelog]" 2>&1)" || RC=$?
 [ "$RC" -eq 0 ] && ok "[no-changelog] in the subject releases it" \
   || bad "[no-changelog] in the subject releases it" "rc=$RC out=$OUT"
+printf 'fn third() {}\n' >"$R/crates/c.rs"
+rm -f "$R/changelog.d/fixed/ken-1.md"
+git -C "$R" add -A
+RC=0
+OUT="$(git -C "$R" commit -m "feat: a crate change" 2>&1)" || RC=$?
+[ "$RC" -ne 0 ] && case "$OUT" in *"without a changelog entry"*) true ;; *) false ;; esac \
+  && ok "deleting a fragment is not writing one" \
+  || bad "deleting a fragment is not writing one" "rc=$RC out=$OUT"
+printf '# Changelog\n\n## [Unreleased]\n' >"$R/CHANGELOG.md"
+git -C "$R" add -A
+RC=0
+OUT="$(git -C "$R" commit -m "chore(release): the collated changelog" 2>&1)" || RC=$?
+[ "$RC" -eq 0 ] && ok "CHANGELOG.md still counts, the way the release commit needs" \
+  || bad "CHANGELOG.md still counts, the way the release commit needs" "rc=$RC out=$OUT"
 
 echo "=== this repo caps the subject; git's own subjects are exempt ==="
 LONG="docs: $(printf 'x%.0s' $(seq 1 70))" # 76 characters
@@ -160,7 +191,7 @@ printf 'fn main() {}\n' >"$R/crates/a.rs"
 git -C "$R" add -A
 RC=0
 OUT="$(git -C "$R" commit -m "feat: a crate change" 2>&1)" || RC=$?
-[ "$RC" -ne 0 ] && case "$OUT" in *"without a CHANGELOG.md entry"*) true ;; *) false ;; esac \
+[ "$RC" -ne 0 ] && case "$OUT" in *"without a changelog entry"*) true ;; *) false ;; esac \
   && ok "the changelog rule still runs, though the hook body exits before the end" \
   || bad "the changelog rule still runs, though the hook body exits before the end" "rc=$RC out=$OUT"
 RC=0
