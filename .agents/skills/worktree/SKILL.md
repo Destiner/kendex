@@ -45,27 +45,14 @@ When an execution policy rejects top-level `git rebase` porcelain, never retry t
 
 ## Recovering a broken `.agents` entry
 
-Route by shape, not by whether `test -L .agents` passes — the routing table and the tracked-content link mechanics are under `fix-links --help`. Run `fix-links` **from the main checkout**: the worktree's own copy of the script is reached *through* the entry being repaired. Until it is fixed, do not trust that tree for local verification.
+Route by shape, not by whether `test -L .agents` passes. Ask both indexes what sits under the path — `git -C <worktree> ls-files -- '.agents/'`, and the same command against the main checkout. The trailing slash is the query: descendants decide the layout, and the entry itself does not count. Neither index alone decides: a branch can add the render ahead of main, or trail the commit that started tracking it. Reading one index routes a healthy tree to the untracked-only repair, where `fix-links` produces no symlink and the operator loops on a command that changed nothing. Both answer while the path itself is broken:
 
-**Consumers: carry this inline in the tracked `AGENTS.md` / `CLAUDE.md`; do not point here** (this section is read *through* `.agents`). Copy it verbatim:
+- **Either non-empty** — the repo commits its render, and `.agents` is a REAL DIRECTORY by design: the tracked files, plus one symlink per untracked child, except an untracked `.gitignore`, which is a copy of main's file. A child missing its link, or a real path where a link belongs, is `fix-links`. A modified or corrupt TRACKED file is `git checkout -- <path>`, run in the checkout the file really lives in — the main checkout when the path sits under a configured symlink, the worktree otherwise.
+- **Both empty** — the entry is untracked-only and must itself be a symlink. `fix-links` is the repair; with no tracked content at the path, `git checkout -- .agents` changes nothing while the link stays broken.
 
-```text
-Broken `.agents` in a worktree: from the MAIN checkout run
-`.agents/skills/worktree/scripts/worktree fix-links <ID|PATH>`, never from the worktree.
-The command is the same for both shapes; what counts as broken is not. A repo that
-commits its render has tracked files under `.agents`, so the entry is a REAL DIRECTORY
-by design: those tracked files, plus one symlink per untracked child, except an
-untracked `.gitignore`, which is a copy of main's file and is healthy as a real file.
-The fault is normally a child that does not match that shape, a link missing or a real
-path where a link belongs. Where nothing under `.agents` is tracked the entry itself
-must be a symlink, and `git checkout -- .agents` is never the repair there (the path
-holds no tracked content, so the command changes nothing while the link stays broken).
-A genuinely modified or corrupt TRACKED file is the other case: `git checkout -- <path>`,
-run in the checkout the file really lives in (the main checkout when the path sits under
-a configured symlink). `fix-links` reports success only when every configured entry
-ended healthy; a non-zero exit names the paths it did not restore, so read them rather
-than re-running the same command.
-```
+`fix-links` reads its sources from the main checkout wherever it is invoked, and only the main checkout's copy of the script is guaranteed intact — a worktree copy reached *through* the entry being repaired may be among the missing files. Run `.agents/skills/worktree/scripts/worktree fix-links <ID|PATH>` from the main checkout; name the target, since a bare invocation there resolves to the main checkout and is refused. Until the entry is fixed, do not trust that tree for local verification. It reports success only when every configured entry ended healthy; a non-zero exit names the paths it did not restore, so read them rather than re-running the same command. Routing table and link mechanics: `fix-links --help`.
+
+Consumers wanting this locally get a pointer, never a copy. One line resolves the main checkout from any worktree, at any depth, and prints this file: `cat "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"/.agents/skills/worktree/SKILL.md`. A verbatim copy in a tracked `AGENTS.md` / `CLAUDE.md` is out of `kendex refresh`'s reach and goes stale silently.
 
 ## Session guard (ownership leases)
 
