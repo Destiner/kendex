@@ -11,9 +11,11 @@ import {
 } from "lucide-react";
 import { useEffect } from "react";
 import { commands } from "@/bindings";
+import { SidebarAccount } from "@/components/sidebar-account";
 import { SidebarNotice } from "@/components/sidebar-notice";
 import { Button } from "@/components/ui/button";
 import { UPDATES_ATTENTION_TITLE } from "@/lib/copy";
+import { SIDEBAR_ROW } from "@/lib/layout";
 import { rescanEverything } from "@/lib/rescan";
 import { isSearchShortcutKey } from "@/lib/search-shortcut";
 import { visibleUpdateCount } from "@/lib/update-groups";
@@ -22,12 +24,8 @@ import { type Page, useNavStore } from "@/stores/nav";
 import { useScanStore } from "@/stores/scan";
 import { useUpdatesStore } from "@/stores/updates";
 
-// One row shape for every nav item, so the icon column and the text column
-// line up down the whole sidebar. The transparent border is load-bearing:
-// the selected row shows one, and without it here every other row would
-// shift a pixel when selection moved.
-const NAV_ROW =
-  "flex h-9 items-center gap-2.5 rounded-lg border border-transparent px-2 font-mono text-sm";
+// A nav item is the shared sidebar row in the nav's own typeface.
+const NAV_ROW = `${SIDEBAR_ROW} font-mono text-sm`;
 
 const NAV: { page: Page; label: string; icon: typeof Home }[] = [
   { page: "home", label: "Home", icon: Home },
@@ -87,7 +85,13 @@ export function Sidebar() {
           <RefreshCw className={cn("size-4", scanning && "animate-spin")} />
         </Button>
       </div>
-      <nav className="flex flex-1 flex-col gap-0.5 px-2">
+      {/* The nav gives way rather than pushing its siblings out of a
+          clipped column: `min-h-0` lets the flex child shrink below the
+          height its rows want, and the scrollbar appears only once it has.
+          Without it, a short window — 900x600 at 200% zoom, both of which
+          this app allows — puts the foot of the sidebar past the clip with
+          nothing able to scroll to it. */}
+      <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2">
         {NAV.map(({ page: target, label, icon: Icon }) => (
           <button
             key={target}
@@ -125,6 +129,7 @@ export function Sidebar() {
         ))}
       </nav>
       <SidebarNotice />
+      <SidebarAccount />
     </aside>
   );
 }

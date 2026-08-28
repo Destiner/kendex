@@ -34,6 +34,9 @@ an outside contributor.
 - `REVIEW_GATE_CARRY_FORWARD` gains a `vendored` class: a `kendex refresh`
   push under the render trees a repo lists in `REVIEW_GATE_VENDORED_PATHS`
   carries the prior review, whatever the files' extensions.
+- The foot of the app's sidebar names the kendex.ai account you are signed
+  in to, says Offline when the server could not be reached, and offers Sign
+  in or Sign in again as the credential needs. Clicking opens Settings.
 
 ### Changed
 
