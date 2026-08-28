@@ -1,7 +1,9 @@
 //! Renaming a fork: the declaration, its provenance record, and its files in
 //! the local source move to the new name together.
 
-use super::{local_item, vacant_name};
+use std::path::{Path, PathBuf};
+
+use super::{SKILL_NAME_FILES, local_item, named_bytes, vacant_name};
 use crate::apply::{Op, Plan, PlannedOp, Pre};
 use crate::engine::ops::manifest_for_mutation;
 use crate::env::Env;
@@ -52,8 +54,20 @@ pub fn rename_fork(env: &Env, scope: &Scope, kind: ItemKind, old: &str, new: &st
         local_item(env, scope, kind, old),
         local_item(env, scope, kind, new),
     );
+    // `vacant_name` proved the destination reachable; the slot being left
+    // has to be too. A link anywhere below the local source's root and the
+    // fork's files makes the move dishonest: the rename carries the link
+    // rather than the tree, and every op bound to what stands past it —
+    // the name-stamping write below first of all — then acts on the far
+    // end, outside what this scope manages. Refused here, before a single
+    // op is planned, in the sealed reader's own words: it names the
+    // component it stopped at, which is the thing to go and look at.
+    if let Some(escape) = crate::source::slot_escapes(env, scope, &from)? {
+        return Err(escape);
+    }
     let mut ops = Vec::new();
     if from.exists() {
+        let stamped = stamp_name(kind, &from, &to, new)?;
         ops.push(PlannedOp {
             description: format!("rename the fork's files to {new}"),
             op: Op::Rename {
@@ -66,6 +80,7 @@ pub fn rename_fork(env: &Env, scope: &Scope, kind: ItemKind, old: &str, new: &st
                 to_pre: Pre::Absent,
             },
         });
+        ops.extend(stamped);
     }
     let Some(decl) = manifest.declared_mut(kind).remove(old) else {
         return Err(CoreError::NotDeclared {
@@ -92,4 +107,56 @@ pub fn rename_fork(env: &Env, scope: &Scope, kind: ItemKind, old: &str, new: &st
         scope: scope.clone(),
         ops,
     })
+}
+
+/// The writes that leave the renamed fork answering to `new`. Moving the
+/// directory and the declaration is not the whole rename: every tool knows
+/// a skill or an agent by the name its frontmatter gives, and the loader
+/// validators refuse a rendering whose file calls it something other than
+/// the name it installs under — so a rename that left the name behind
+/// would hand the person a package refused at the next apply.
+///
+/// Each write binds to the bytes the rename just carried, at the path it
+/// carried them to. Ops run in order and each proves its own precondition
+/// immediately before it writes, so what stands at the new path when the
+/// write runs is exactly the file hashed here at the old one; binding to
+/// the old path would prove nothing, the rename having emptied it. The
+/// binding is the plain-file one because kendex does not write a skill's
+/// or an agent's document through a link — a link arriving in the moved
+/// tree's place refuses the write rather than landing these bytes at the
+/// other end of it.
+///
+/// A name no single scalar can carry refuses the rename here, before
+/// anything is written: renaming around it is how the fork ends up
+/// declared under one name and answering to another.
+fn stamp_name(kind: ItemKind, from: &Path, to: &Path, new: &str) -> Result<Vec<PlannedOp>> {
+    let moved: Vec<(PathBuf, PathBuf)> = match kind {
+        ItemKind::Skill => SKILL_NAME_FILES
+            .iter()
+            .map(|rel| (from.join(rel), to.join(rel)))
+            .collect(),
+        // Every other kind the local source keeps is one file, and the
+        // file is what moved.
+        _ => vec![(from.to_path_buf(), to.to_path_buf())],
+    };
+    let mut ops = Vec::new();
+    for (old, new_path) in moved {
+        // Absent here is also "there, but not a plain file": a link or a
+        // directory wearing the name carries nothing this can stamp, and
+        // a rendering reading it is refused for that on its own.
+        let pre = Pre::plain_observed(&old)?;
+        if matches!(pre, Pre::Absent) {
+            continue;
+        }
+        let bytes = std::fs::read(&old).map_err(|e| CoreError::io(&old, e))?;
+        ops.push(PlannedOp {
+            description: format!("give the renamed {} its new name, {new}", kind.name()),
+            op: Op::WriteFile {
+                pre,
+                bytes: named_bytes(bytes, new)?,
+                path: new_path,
+            },
+        });
+    }
+    Ok(ops)
 }
