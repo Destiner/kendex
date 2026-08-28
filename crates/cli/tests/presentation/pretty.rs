@@ -182,7 +182,7 @@ const FRAME_LINES: usize = 2;
 #[allow(clippy::unwrap_used)]
 fn one_line_verdicts_are_drawn_as_one_group() {
     let tmp = tempfile::tempdir().unwrap();
-    let home = tmp.path();
+    let home = &rooted(&tmp);
     let project = blocked_project(home);
     // A row to verify has to be installed first; the blocked item stays
     // blocked and the two that install are the clean rows.
@@ -237,14 +237,14 @@ fn a_run_ending_outside_its_ledger_still_closes_the_frame() {
 fn a_warning_after_the_writes_lands_above_the_closing_ledger() {
     for ui in ["plain", "pretty"] {
         let tmp = tempfile::tempdir().unwrap();
-        let home = tmp.path();
+        let home = &rooted(&tmp);
         let project = home.join("dev/app");
         blocked_project_at(home, &project);
         // A file where the snapshot's directory belongs, so deriving it
         // fails and the pass after the writes has a warning to print.
-        let data = home.join(".local/share/kendex");
-        fs::create_dir_all(&data).unwrap();
-        fs::write(data.join("drift"), "not a directory\n").unwrap();
+        let drift = Env::host_rooted(home.clone()).drift_dir();
+        fs::create_dir_all(drift.parent().unwrap()).unwrap();
+        fs::write(&drift, "not a directory\n").unwrap();
 
         let printed = said(&kendex(
             home,
