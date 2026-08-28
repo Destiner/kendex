@@ -6,9 +6,10 @@
 use std::path::PathBuf;
 
 use kendex_core::author::{self, SubmitPreflight};
-use kendex_core::registry::client;
+use kendex_core::env::Env;
 use kendex_core::registry::credentials::{Credential, KeyringStore};
 use kendex_core::registry::login::{self, Poll};
+use kendex_core::registry::me::{self, AccountState};
 use kendex_core::registry::submit::{self, SubmissionRow};
 use kendex_core::registry::{CurlFetch, base_url};
 use serde::{Deserialize, Serialize};
@@ -17,16 +18,17 @@ use specta::Type;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountStatus {
-    pub signed_in: bool,
+    pub state: AccountState,
     pub endpoint: String,
 }
 
 #[tauri::command(async)]
 #[specta::specta]
 pub fn account_status() -> Result<AccountStatus, String> {
-    let signed_in = submit::signed_in(&KeyringStore).map_err(|e| e.to_string())?;
+    let env = Env::detect().map_err(|e| e.to_string())?;
+    let state = me::load(&env, &CurlFetch, &KeyringStore).map_err(|e| e.to_string())?;
     Ok(AccountStatus {
-        signed_in,
+        state,
         endpoint: base_url(),
     })
 }
@@ -44,7 +46,7 @@ pub struct LoginStart {
 #[tauri::command(async)]
 #[specta::specta]
 pub fn account_login_start() -> Result<LoginStart, String> {
-    let started = login::start(&CurlFetch).map_err(|e| e.to_string())?;
+    let started = login::start(&CurlFetch, "kendex app").map_err(|e| e.to_string())?;
     Ok(LoginStart {
         verification_url: format!("{}?code={}", started.verification_url, started.user_code),
         device_code: started.device_code,
@@ -61,7 +63,9 @@ pub fn account_login_poll(device_code: String) -> Result<String, String> {
         Poll::Pending => Ok("pending".to_owned()),
         Poll::SlowDown => Ok("slow-down".to_owned()),
         Poll::Signed(pair) => {
-            client::commit_login(
+            let env = Env::detect().map_err(|e| e.to_string())?;
+            me::commit_sign_in(
+                &env,
                 &KeyringStore,
                 &Credential {
                     endpoint: base_url(),
@@ -79,7 +83,8 @@ pub fn account_login_poll(device_code: String) -> Result<String, String> {
 #[tauri::command(async)]
 #[specta::specta]
 pub fn account_logout() -> Result<(), String> {
-    client::logout(&CurlFetch, &KeyringStore)
+    let env = Env::detect().map_err(|e| e.to_string())?;
+    me::sign_out(&env, &CurlFetch, &KeyringStore)
         .map(|_| ())
         .map_err(|e| e.to_string())
 }

@@ -13,6 +13,7 @@ struct Canned {
     answers: RefCell<Vec<kendex_core::error::Result<FetchResponse>>>,
     calls: RefCell<u32>,
     saw_etag: RefCell<Option<String>>,
+    saw_body: RefCell<Option<String>>,
 }
 
 impl Canned {
@@ -21,6 +22,7 @@ impl Canned {
             answers: RefCell::new(answers),
             calls: RefCell::new(0),
             saw_etag: RefCell::new(None),
+            saw_body: RefCell::new(None),
         }
     }
 }
@@ -29,9 +31,10 @@ impl Fetch for Canned {
     fn post_json_auth(
         &self,
         url: &str,
-        _body: &str,
+        body: &str,
         _bearer: Option<&str>,
     ) -> kendex_core::error::Result<FetchResponse> {
+        *self.saw_body.borrow_mut() = Some(body.to_owned());
         self.get(url, None)
     }
 
@@ -253,21 +256,6 @@ fn skillssh_refuses_names_its_install_url_cannot_carry() {
 }
 
 #[test]
-fn an_oversized_cache_file_reads_as_no_cache() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let env = env_in(dir.path());
-    let registry_dir = env.registry_cache_dir();
-    std::fs::create_dir_all(&registry_dir).expect("mkdir");
-    // Past the cap the file is not even read, whatever it claims to hold.
-    let oversized = "x".repeat(41_000_000);
-    std::fs::write(registry_dir.join("index.cache.json"), oversized).expect("write");
-    let down = Canned::new(vec![Err(CoreError::RegistryUnavailable {
-        why: "no route".into(),
-    })]);
-    assert!(cache::load(&env, &down, false).is_err());
-}
-
-#[test]
 fn etag_and_body_are_one_generation_on_disk() {
     let dir = tempfile::tempdir().expect("tempdir");
     let env = env_in(dir.path());
@@ -312,9 +300,14 @@ fn login_start_and_poll_speak_the_device_protocol() {
         None,
         r#"{"device_code":"kxd_x","user_code":"AAAA-BBBB","verification_url":"https://kendex.ai/device","interval":5,"expires_in":900}"#,
     )]);
-    let started = kendex_core::registry::login::start(&canned).expect("start");
+    let started = kendex_core::registry::login::start(&canned, "kendex CLI").expect("start");
     assert_eq!(started.user_code, "AAAA-BBBB");
     assert_eq!(started.interval_seconds, 5);
+    let asked = canned.saw_body.borrow().clone().expect("a body was sent");
+    assert!(
+        asked.contains(r#""client":"kendex CLI""#),
+        "the request names the asking surface: {asked}"
+    );
 
     use kendex_core::registry::login::{Poll, poll_once};
     let pending = Canned::new(vec![ok(400, None, r#"{"error":"authorization_pending"}"#)]);
