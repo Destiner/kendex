@@ -103,22 +103,30 @@ pub fn run(env: &Env, args: ReportArgs) -> CliResult {
     }
     let route = selector
         .as_ref()
-        .map(|(name, kind)| kendex_core::report::route(env, &scope, &lock, name, *kind, &upstream));
-    let kendex_owned = route.as_ref().is_some_and(|r| r.kendex_owned);
+        .map(|(name, kind)| kendex_core::report::route(&lock, name, *kind, &upstream));
+    // The judge names the destination as well as the decision: `gh --repo`
+    // takes `owner/repo`, not the URL `--upstream` may be spelled with.
+    let target = route
+        .as_ref()
+        .filter(|r| r.kendex_owned)
+        .and_then(|r| r.repo.clone());
+    let kendex_owned = target.is_some();
 
     let mut gh_args = vec!["issue".to_owned(), "create".to_owned()];
     let mut sent_body = body.clone();
     let mut area = None;
-    if kendex_owned {
-        let (name, kind) = selector
+    if let Some(target) = &target {
+        let name = selector.as_ref().map_or("unknown", |(n, _)| n.as_str());
+        // The kind the route resolved, so `--asset` on a skill stamps the
+        // same marker `--skill` would.
+        let kind_label = route
             .as_ref()
-            .map(|(n, k)| (n.as_str(), *k))
-            .unwrap_or(("unknown", None));
-        let kind_label = kind.map(ItemKind::name).unwrap_or("asset");
+            .and_then(|r| r.kind)
+            .map_or("asset", ItemKind::name);
         sent_body.push_str(&format!(
             "\n\n<!-- kendex-report:v1 asset={name} kind={kind_label} ownership=kendex -->"
         ));
-        gh_args.extend(["--repo".to_owned(), upstream.clone()]);
+        gh_args.extend(["--repo".to_owned(), target.clone()]);
         // Routing labels exist only on the canonical repo; a fork override
         // must not carry one or gh fails with "label not found".
         if let Some(derived) =
@@ -140,11 +148,7 @@ pub fn run(env: &Env, args: ReportArgs) -> CliResult {
         say(&format!("ownership: {ownership}"));
         say(&format!(
             "target: {}",
-            if kendex_owned {
-                upstream.as_str()
-            } else {
-                "current repo origin"
-            }
+            target.as_deref().unwrap_or("current repo origin")
         ));
         if let Some(area) = area {
             say(&format!("label: {area}"));

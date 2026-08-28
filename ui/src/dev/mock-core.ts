@@ -1,4 +1,10 @@
-import type { AppSettings, HarnessId, ItemKind, Scope } from "@/bindings";
+import type {
+  AppSettings,
+  HarnessId,
+  ItemKind,
+  ProvenanceRow,
+  Scope,
+} from "@/bindings";
 import { capabilityTable } from "./caps";
 import { type Handler, label, same, store, view } from "./mock-state";
 
@@ -151,25 +157,46 @@ export const coreHandlers: Record<string, Handler> = {
     ["acme-web", "api-server", "demo-app"].map(
       (name) => `${root.replace(/\/+$/, "")}/${name}`,
     ),
-  report_route: ({ scope, name }: { scope: Scope; name: string }) => {
+  report_route: ({
+    scope,
+    name,
+    kind,
+  }: {
+    scope: Scope;
+    name: string;
+    kind: ItemKind | null;
+  }) => {
     const upstream = "vanillagreencom/kendex";
-    // Mirrors the engine's rule: skills never route upstream through
-    // provenance alone, everything else from the catalog does.
-    const owned = store.state.items.some(
-      (it) =>
-        it.name === name &&
-        same(it.scope, scope) &&
-        it.kind !== "skill" &&
-        it.origin === upstream,
+    // Mirrors the engine's rule: the recorded origin decides, for every kind
+    // alike, and one row from anywhere else makes the name ambiguous. The
+    // provenance table is the mock's lock — an observed item's origin is the
+    // git origin of wherever its file sits, which for a skill installed by
+    // link is the consuming repository.
+    const matching = store.state.provenance.filter(
+      (row) =>
+        row.name === name &&
+        same(row.scope, scope) &&
+        (kind === null || row.kind === kind),
     );
-    const kind = store.state.items.find((it) => it.name === name)?.kind;
+    const recorded = (row: ProvenanceRow) =>
+      row.origin.origin === "marketplace" ? row.origin.repo : null;
+    const owned =
+      matching.length > 0 &&
+      matching.every((row) => recorded(row) === upstream);
+    const agreed = matching.every((row) => row.kind === matching[0]?.kind)
+      ? matching[0]?.kind
+      : undefined;
+    const resolved = kind ?? agreed;
+    // Mirrors derive_label.
     const label = !owned
       ? null
-      : kind === "hook" || kind === "pi-extension"
-        ? "harness"
-        : kind === "agent"
-          ? "skills"
-          : "cli";
+      : name.includes("review-gate")
+        ? "ci-infra"
+        : resolved === "hook" || resolved === "pi-extension"
+          ? "harness"
+          : resolved === "skill" || resolved === "agent"
+            ? "skills"
+            : "cli";
     return {
       kendexOwned: owned,
       repo: owned ? upstream : null,
