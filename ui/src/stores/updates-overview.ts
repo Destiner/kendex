@@ -1,9 +1,16 @@
-import { commands, type ItemWarning, type UpdateRow } from "@/bindings";
+import {
+  commands,
+  type ItemWarning,
+  type UpdateRow,
+  type UpdatesReport_Serialize,
+} from "@/bindings";
 import { settled } from "@/lib/settled";
 import { landings } from "./landings";
 import { type PendingFollow, withPending } from "./updates-follow";
 
-type Overview = { rows: UpdateRow[]; warnings: ItemWarning[] };
+// The command's own answer, as generated. A hand-written twin of it goes
+// out of step the moment the Rust report gains a field.
+type Overview = UpdatesReport_Serialize;
 type OverviewResult =
   | { status: "ok"; data: Overview }
   | { status: "error"; error: string };
@@ -42,6 +49,7 @@ export function overviewApplier(
     loaded?: boolean;
     error?: string | null;
     overviewInFlight?: boolean;
+    lastFetched?: number | null;
   }) => void,
   /** The follow flips whose writes have not answered — every landing wears
    *  them, so a read that began before a flip cannot bounce the switch. */
@@ -56,10 +64,14 @@ export function overviewApplier(
   // is counted here by the store's pending flips instead.
   let inFlight = 0;
 
+  // A read that failed keeps the age it had along with the rows it had: a
+  // check that could not run fetched nothing, so the last fetch is still
+  // when these rows were last true.
   const landOk = (data: Overview) =>
     set({
       rows: withPending(data.rows, pending()),
       warnings: data.warnings,
+      lastFetched: data.lastFetched,
       loaded: true,
       error: null,
     });
