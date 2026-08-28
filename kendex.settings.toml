@@ -249,17 +249,19 @@ ORCH_STATE_DIR = "tmp"
 SIZE_RATCHET_CLASSES = "*/README.md=120;*/tests/*=800;*/test/*=800;*/__tests__/*=800;*/tests.rs=800;*test_util.rs=800;*.test.*=800;ui/*.ts=250;ui/*.tsx=250"
 
 # ── Worktrees ────────────────────────────────────────────────────────────
-# What a fresh issue worktree gets from this checkout. Symlink untracked
-# paths only: an entry over tracked files makes git refuse writes in that
-# worktree while `git status` still reports clean.
+# What a fresh issue worktree gets from this checkout: only paths git does
+# not carry. An entry does nothing when git carries every path under it, and
+# links the untracked children when it does not. The harness trees (.agents,
+# .claude, .codex, .pi) are committed whole, so a worktree gets them from its
+# own branch. A render installed in the main checkout and left uncommitted is
+# deliberately not linked in: a worktree's harness matches its branch, and
+# commit the render to hand it to every worktree. A single tracked FILE is
+# the opposite hazard — it becomes a link git cannot write through, so
+# .claude/settings.json is absent here and each worktree carries git's own copy.
 #
-# .codex and .opencode are named whole: nothing under them is tracked.
-# .claude and .pi are named child by child: they hold tracked files
-# (.claude/CLAUDE.md, .pi/prompts) beside kendex-rendered, gitignored ones.
-# A DIRECTORY entry over tracked content is safe — worktree setup keeps it a
-# real directory and links only the untracked children. A single tracked FILE
-# is not: it becomes a link git cannot write through, so .claude/settings.json
-# is absent here and each worktree carries git's own copy.
+# .opencode is absent for a different reason: kendex-local.toml's [install]
+# harnesses names claude, codex and pi, not opencode, so nothing renders
+# there. The tree holds no files, and an entry would link an empty directory.
 WORKTREE_BASE_DIR = "~/dev/.worktrees/kendex"
 WORKTREE_COPIES = ".kendex-lock.json"
 WORKTREE_DEFAULT_BRANCH = "main"
@@ -273,7 +275,7 @@ WORKTREE_MKDIRS = "tmp"
 # the changed manifests — never in a linked worktree, whose install would
 # write through the link. .gitignore's bare `node_modules` pattern covers
 # the symlink.
-WORKTREE_SYMLINKS = ".env.local .agents .cache .codex .opencode .pi/agents .pi/kendex .claude/agents .claude/hooks .claude/skills ui/node_modules"
+WORKTREE_SYMLINKS = ".env.local .cache ui/node_modules"
 
 # Nothing needs one: .claude/CLAUDE.md is a tracked symlink, so it arrives
 # through git, and naming it here would shadow tracked content.
