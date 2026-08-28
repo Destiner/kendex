@@ -66,6 +66,10 @@ an outside contributor.
 
 ### Fixed
 
+- `worktree cleanup` and `worktree remove` prove a merge two ways and no other:
+  ancestry into the default branch, or the pull request whose head commit is
+  the branch tip. Squash merges collect, and every keep now names its reason.
+
 - A refresh cuts opencode.json's `kendex-hook-` `instructions` rows down to
   what it renders now, so a row kendex wrote leaves with its render. Every
   other row is untouched; rows a pre-rename tool wrote are removed by hand once.

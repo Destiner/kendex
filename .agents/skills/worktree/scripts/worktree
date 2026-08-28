@@ -261,10 +261,15 @@ Failure semantics:
   (fix-links restores configured symlinks); the branch is never deleted on
   that path. remove checks for a native 'git worktree lock' up front and
   exits non-zero with a diagnostic naming the lock reason and the
-  'git worktree unlock' command. Branch deletion uses safe 'git branch -d';
-  if that fails after worktree removal, the exit is non-zero with a
-  diagnostic naming the remaining branch and the manual 'git branch -D'
-  recovery command.
+  'git worktree unlock' command. The branch goes only on the proof cleanup
+  uses: ancestry into the default branch, or, when a squash erased that, a
+  pull request gh reports merged into the default branch of THIS repository
+  whose head commit IS this branch's tip. 'git branch -d' is not that proof and is not consulted —
+  it deletes a branch merged into its configured UPSTREAM, which 'push' sets,
+  so it passes for any pushed branch however far it is from the default
+  branch. Every other answer keeps the branch, and the exit is non-zero with a
+  diagnostic naming the remaining branch, the answer the proof gave, and the
+  manual 'git branch -D' recovery command.
 
 Session leases:
   remove releases its own lease before removing. A foreign lease is left
@@ -290,13 +295,25 @@ this session claimed — nor is a zero-commit worktree: a branch with no
 commits of its own is pending work, not merged work. Every skip is reported;
 a quiet cleanup means nothing was held back.
 
-cleanup fetches origin, considers non-main registered worktrees, proves each
-branch is merged into origin/<default> (or the local default branch when the
-remote ref is unavailable), then asks Git to remove the intact worktree and
-deletes the proven-merged local branch. If Git cannot remove a worktree,
-cleanup exits nonzero and preserves its path, configured symlinks, and
-branch for manual recovery. If branch deletion fails after worktree removal,
-cleanup also exits nonzero and names the remaining branch.
+cleanup fetches origin, considers non-main registered worktrees, and proves
+each branch merged two ways: ancestry into origin/<default> (or the local
+default branch when the remote ref is unavailable), or, when ancestry fails,
+a pull request gh reports merged into <default> in THIS repository whose
+head commit IS this branch's tip. The second proof is what a squash merge needs — it rewrites the
+work into a new commit, so a merged branch is an ancestor of nothing. With
+merge proven, cleanup asks Git to remove the intact worktree and deletes the
+local branch.
+
+The proof is that commit, never the branch name. One name is reused by every
+worktree an issue ever had, so a branch carrying commits past the pull request
+that merged it is unmerged work: cleanup keeps it and says so. Anything short
+of a proof keeps the worktree and names its reason, a lookup that cannot
+answer included. If the worktree listing itself fails, cleanup exits nonzero
+having inspected nothing, rather than reporting the empty sweep as a clean
+one. If Git cannot remove a worktree, cleanup exits nonzero and preserves its
+path, configured symlinks, and branch for manual recovery. If branch deletion
+fails after worktree removal, cleanup also exits nonzero and names the
+remaining branch.
 
 Options:
   --stale             Also collect worktrees whose guard lease is past the TTL
@@ -2855,6 +2872,88 @@ open_pr_for_branch() {
   printf '%s\n' "$result"
 }
 
+# Merge proof for a branch ancestry cannot see. Work that lands by squash — the
+# whole fleet, through the merge queue — is rewritten into a new commit, so the
+# branch tip is an ancestor of nothing and `merge-base --is-ancestor` reports a
+# merged branch as pending forever (#697). The forge's merged PR is the proof
+# that survives the rewrite.
+#
+# The proof is COMMIT identity, never the branch name. `issue_branch_name`
+# derives one name per issue, so every worktree ever made for an issue reuses
+# it: a name-only match hands the merged record of last month's PR to today's
+# fresh work and force-deletes it. The tip this repository has right now must
+# be the exact commit some merged PR carried, and `--base` keeps the answer to
+# PRs that landed on the default branch.
+#
+# Exit 0: merged, PR number on stdout. Exit 1: provably NOT merged, either
+# because no merged PR carries the name or because none of the ones that do has
+# this tip as its head — an identity mismatch is a definite answer, so it reads
+# as unmerged rather than as a failed lookup. Exit 2 stays reserved for a lookup
+# that genuinely cannot answer: gh missing, gh failing, a response this cannot
+# read. 1 and 2 print a one-line reason on stdout; only exit 0 authorizes a
+# delete.
+merged_pr_for_branch() {
+  local branch="$1" tip="" rows="" err_file="" detail="" oid="" number="" seen="" rc=0
+  [[ -n "$branch" ]] || { printf 'no branch to look up\n'; return 2; }
+  if ! command -v gh >/dev/null 2>&1; then
+    printf 'gh is not installed\n'
+    return 2
+  fi
+  tip="$(git -C "$PROJECT_ROOT" rev-parse --verify --quiet "refs/heads/$branch" || true)"
+  if [[ -z "$tip" ]]; then
+    printf 'branch has no local tip to compare a merged pull request against\n'
+    return 2
+  fi
+  if ! err_file="$(mktemp "${TMPDIR:-/tmp}/worktree-merged-pr.XXXXXX")"; then
+    printf 'could not create a scratch file for the gh diagnostic\n'
+    return 2
+  fi
+  # stdout and stderr are captured SEPARATELY. Folding them together let gh's
+  # routine chatter — an update notice, an auth warning — land beside the
+  # answer and fail the parse, turning the proof off for every branch at once.
+  # Every merged PR sharing the name is scanned, not just the newest row.
+  #
+  # The query answers for THIS checkout, the way reconcile-work-items does it:
+  # an inherited GH_REPO / GITHUB_REPOSITORY redirect would let another
+  # repository's same-named branch at the same commit authorize a delete here,
+  # and a fork's PR is someone else's merge, so cross-repository rows are cut.
+  rows="$( (cd "$PROJECT_ROOT" && env -u GH_REPO -u GITHUB_REPOSITORY \
+              gh pr list --state merged --head "$branch" \
+              --base "$DEFAULT_BRANCH" --limit 100 \
+              --json number,headRefOid,isCrossRepository \
+              --jq '.[] | select(.isCrossRepository | not) | "\(.headRefOid) \(.number)"') 2>"$err_file" )" || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    detail="$(tr '\n' ' ' <"$err_file")"
+    rm -f "$err_file"
+    printf '%s\n' "${detail:-gh pr list failed (exit $rc)}"
+    return 2
+  fi
+  rm -f "$err_file"
+  if [[ -z "$rows" ]]; then
+    printf 'no pull request merged into %s carries this branch name\n' "$DEFAULT_BRANCH"
+    return 1
+  fi
+  # Each row is validated as it is read: a row that is not a commit id and a
+  # number returns 2, so contamination anywhere ahead of a match stops the
+  # scan. A validated row whose oid equals the tip is the proof, and the scan
+  # stops there.
+  while read -r oid number; do
+    [[ -n "$oid$number" ]] || continue
+    if ! [[ "$oid" =~ ^[0-9a-f]{7,64}$ ]] || ! [[ "$number" =~ ^[0-9]+$ ]]; then
+      printf 'gh returned a row this cannot read: %s %s\n' "$oid" "$number"
+      return 2
+    fi
+    seen="$seen #$number"
+    if [[ "$oid" == "$tip" ]]; then
+      printf '%s\n' "$number"
+      return 0
+    fi
+  done <<<"$rows"
+  printf 'carries work past its merged pull request (merged under this name:%s; none has this tip %s as its head)\n' \
+    "$seen" "$tip"
+  return 1
+}
+
 resolve_pr_branch() {
   local pr="$1" output=""
   if ! command -v gh >/dev/null 2>&1; then
@@ -4348,21 +4447,45 @@ case "${1:-}" in
       [[ -d "$WT_PATH" ]] && rm -rf "$WT_PATH"
     fi
     git -C "$PROJECT_ROOT" worktree prune
-    # Only delete local branch if merged (branch -d checks this). If the
-    # worktree was removed but branch deletion is unsafe, report exactly what
+    # Only delete the local branch if merged, proven exactly the way `cleanup`
+    # proves it: ancestry into the default branch, or a merged pull request
+    # carrying this tip when a squash erased that ancestry. `git branch -d` is
+    # NOT that proof and no longer decides anything here — it deletes a branch
+    # merged into its configured UPSTREAM, and `push` sets one, so every pushed
+    # branch satisfied it however far it was from the default branch (#697).
+    # If the worktree was removed but neither proof holds, report exactly what
     # remains instead of letting set -e exit silently after partial cleanup.
     BRANCH_DELETE_FAILED=false
     if [[ -n "$BRANCH" ]] && git -C "$PROJECT_ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
+      REMOVE_MERGE_TARGET="origin/$DEFAULT_BRANCH"
+      if ! git -C "$PROJECT_ROOT" rev-parse --verify "$REMOVE_MERGE_TARGET" >/dev/null 2>&1; then
+        REMOVE_MERGE_TARGET="$DEFAULT_BRANCH"
+      fi
+      REMOVE_MERGE_DETAIL=""
+      REMOVE_MERGE_PROOF=""
+      REMOVE_MERGE_RC=0
+      if git -C "$PROJECT_ROOT" merge-base --is-ancestor "$BRANCH" "$REMOVE_MERGE_TARGET" 2>/dev/null; then
+        REMOVE_MERGE_PROOF="merged into $REMOVE_MERGE_TARGET"
+      else
+        REMOVE_MERGE_DETAIL="$(merged_pr_for_branch "$BRANCH")" || REMOVE_MERGE_RC=$?
+        REMOVE_MERGE_PROOF="squash-merged in pull request #$REMOVE_MERGE_DETAIL"
+      fi
       DELETE_OUTPUT=""
-      if ! DELETE_OUTPUT=$(git -C "$PROJECT_ROOT" branch -d "$BRANCH" 2>&1); then
+      if [[ "$REMOVE_MERGE_RC" == "0" ]] && DELETE_OUTPUT="$(git -C "$PROJECT_ROOT" branch -D "$BRANCH" 2>&1)"; then
+        echo "Deleted branch '$BRANCH' — $REMOVE_MERGE_PROOF." >&2
+      else
         BRANCH_DELETE_FAILED=true
         echo "Error: Removed worktree but could not delete local branch '$BRANCH'." >&2
         echo "  Remaining branch: $BRANCH" >&2
         echo "  Worktree path removed/pruned: $WT_PATH" >&2
-        echo "  Safe delete refused by: git branch -d $BRANCH" >&2
-        if [[ -n "$DELETE_OUTPUT" ]]; then
-          printf '%s\n' "$DELETE_OUTPUT" | sed 's/^/  git: /' >&2
-        fi
+        case "$REMOVE_MERGE_RC" in
+          0)
+            echo "  $REMOVE_MERGE_PROOF, but the delete itself failed." >&2
+            [[ -n "$DELETE_OUTPUT" ]] && printf '%s\n' "$DELETE_OUTPUT" | sed 's/^/  git: /' >&2
+            ;;
+          1) echo "  Not merged into $REMOVE_MERGE_TARGET, and $REMOVE_MERGE_DETAIL" >&2 ;;
+          *) echo "  Merged-pull-request lookup could not answer: ${REMOVE_MERGE_DETAIL:-no detail}" >&2 ;;
+        esac
         echo "  After verifying it is safe, delete manually with: git -C \"$PROJECT_ROOT\" branch -D \"$BRANCH\"" >&2
       fi
     fi
@@ -4421,52 +4544,106 @@ case "${1:-}" in
     # with spaces, and the main checkout is excluded by canonical comparison —
     # git may report it under an older lexical (symlinked) spelling that a
     # textual match against $PROJECT_ROOT would miss.
+    #
+    # The listing lands in a file so its exit status is READ. Fed through
+    # process substitution, bash discards that status, so a failed or truncated
+    # list left the candidate set empty and cleanup reported a clean sweep —
+    # the silent keep this whole loop exists to end. A file, not a variable:
+    # bash cannot hold the NUL bytes -z depends on.
+    if ! CLEANUP_LIST_FILE="$(mktemp "${TMPDIR:-/tmp}/worktree-cleanup-list.XXXXXX")"; then
+      echo "Error: could not create a scratch file to enumerate worktrees; nothing was inspected." >&2
+      exit 1
+    fi
+    CLEANUP_LIST_RC=0
+    git -C "$PROJECT_ROOT" worktree list --porcelain -z >"$CLEANUP_LIST_FILE" || CLEANUP_LIST_RC=$?
+    if [[ "$CLEANUP_LIST_RC" -ne 0 ]]; then
+      rm -f "$CLEANUP_LIST_FILE"
+      echo "Error: 'git -C \"$PROJECT_ROOT\" worktree list --porcelain -z' failed (exit $CLEANUP_LIST_RC)." >&2
+      echo "  No worktree was inspected and none was collected; this is not a clean sweep." >&2
+      exit 1
+    fi
     CLEANUP_TREES=()
     while IFS= read -r -d '' CLEANUP_LINE; do
       [[ "$CLEANUP_LINE" == worktree\ * ]] || continue
       CLEANUP_WT="${CLEANUP_LINE#worktree }"
       same_canonical_dir "$CLEANUP_WT" "$PROJECT_ROOT" && continue
       CLEANUP_TREES+=("$CLEANUP_WT")
-    done < <(git -C "$PROJECT_ROOT" worktree list --porcelain -z)
+    done <"$CLEANUP_LIST_FILE"
+    rm -f "$CLEANUP_LIST_FILE"
     for wt in ${CLEANUP_TREES[@]+"${CLEANUP_TREES[@]}"}; do
-      BRANCH=$(git -C "$wt" branch --show-current 2>/dev/null)
-      if [[ -n "$BRANCH" ]] && \
-         git -C "$PROJECT_ROOT" show-ref --verify --quiet "refs/heads/$BRANCH" && \
-         git -C "$PROJECT_ROOT" merge-base --is-ancestor "$BRANCH" "$CLEANUP_MERGE_TARGET"; then
-        # This runs BEFORE the lease probe: --stale must not release the lease
-        # of a worktree the skip is about to keep.
-        CLEANUP_TIP="$(git -C "$PROJECT_ROOT" rev-parse --verify --quiet "refs/heads/$BRANCH" || true)"
-        if [[ -z "$CLEANUP_TIP" ]] || grep -qxF "$CLEANUP_TIP" <<<"$CLEANUP_MAINLINE"; then
-          echo "Skipped (branch '$BRANCH' has no commits of its own — pending work, not merged): $wt" >&2
-          echo "  Zero-commit worktrees are never collected; drop it explicitly with: $0 remove \"$wt\"" >&2
-          continue
-        fi
-        # A merged branch does NOT mean an idle tree: uncommitted work in it is
-        # exactly what gets lost. Ask the lease, not the branch.
-        if ! cleanup_lease_permits_removal "$wt" "$(issue_session_owner "$BRANCH")"; then
-          continue
-        fi
-        CLEANUP_REMOVE_OUTPUT=""
-        if ! CLEANUP_REMOVE_OUTPUT="$(git -C "$PROJECT_ROOT" worktree remove --force "$wt" 2>&1)"; then
-          CLEANUP_FAILED=true
-          echo "Error: Git could not remove merged worktree; preserving it for manual recovery: $wt" >&2
-          [[ -n "$CLEANUP_REMOVE_OUTPUT" ]] && printf '%s\n' "$CLEANUP_REMOVE_OUTPUT" | sed 's/^/  git: /' >&2
-          continue
-        fi
-        if [[ -e "$wt" || -L "$wt" ]]; then
-          CLEANUP_FAILED=true
-          echo "Error: Git reported successful worktree removal but the path remains; preserving it for manual recovery: $wt" >&2
-          continue
-        fi
-        if ! git -C "$PROJECT_ROOT" branch -D "$BRANCH" >/dev/null 2>&1; then
-          CLEANUP_FAILED=true
-          echo "Error: Removed merged worktree but could not delete local branch '$BRANCH'." >&2
-          echo "  Remaining branch: $BRANCH" >&2
-          echo "  Worktree path removed/pruned: $wt" >&2
-          continue
-        fi
-        echo "Cleaned: $wt"
+      # Every arm below either removes the worktree or says on stderr why it is
+      # keeping it. Nothing falls through silently: the help promises that a
+      # quiet run held nothing back, and a silent keep is how 30 merged
+      # worktrees accumulated unreported (#697).
+      BRANCH=""
+      CLEANUP_BRANCH_RC=0
+      BRANCH=$(git -C "$wt" branch --show-current 2>/dev/null) || CLEANUP_BRANCH_RC=$?
+      if [[ "$CLEANUP_BRANCH_RC" != "0" ]]; then
+        echo "Skipped (git could not read the checked-out branch, exit $CLEANUP_BRANCH_RC): $wt" >&2
+        echo "  Inspect the path, then drop it explicitly with: $0 remove \"$wt\"" >&2
+        continue
       fi
+      if [[ -z "$BRANCH" ]]; then
+        echo "Skipped (no branch checked out — detached HEAD, so there is nothing to prove merged): $wt" >&2
+        echo "  Drop it explicitly with: $0 remove \"$wt\"" >&2
+        continue
+      fi
+      if ! git -C "$PROJECT_ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
+        echo "Skipped (branch '$BRANCH' has no ref in the main checkout): $wt" >&2
+        echo "  Drop it explicitly with: $0 remove \"$wt\"" >&2
+        continue
+      fi
+      # This runs BEFORE the merge and lease probes: a zero-commit branch is
+      # pending work whichever way it would have been proven merged, and
+      # --stale must not release the lease of a worktree the skip is keeping.
+      CLEANUP_TIP="$(git -C "$PROJECT_ROOT" rev-parse --verify --quiet "refs/heads/$BRANCH" || true)"
+      if [[ -z "$CLEANUP_TIP" ]] || grep -qxF "$CLEANUP_TIP" <<<"$CLEANUP_MAINLINE"; then
+        echo "Skipped (branch '$BRANCH' has no commits of its own — pending work, not merged): $wt" >&2
+        echo "  Zero-commit worktrees are never collected; drop it explicitly with: $0 remove \"$wt\"" >&2
+        continue
+      fi
+      if ! git -C "$PROJECT_ROOT" merge-base --is-ancestor "$BRANCH" "$CLEANUP_MERGE_TARGET"; then
+        CLEANUP_MERGE_DETAIL=""
+        CLEANUP_MERGE_RC=0
+        CLEANUP_MERGE_DETAIL="$(merged_pr_for_branch "$BRANCH")" || CLEANUP_MERGE_RC=$?
+        case "$CLEANUP_MERGE_RC" in
+          0) ;;
+          1)
+            echo "Skipped (branch '$BRANCH' is not merged — not an ancestor of $CLEANUP_MERGE_TARGET, and $CLEANUP_MERGE_DETAIL): $wt" >&2
+            continue
+            ;;
+          *)
+            echo "Skipped (merge status of branch '$BRANCH' could not be determined: ${CLEANUP_MERGE_DETAIL:-no detail}): $wt" >&2
+            echo "  A lookup that cannot answer never authorizes a removal; restore the gh query and re-run cleanup." >&2
+            continue
+            ;;
+        esac
+      fi
+      # A merged branch does NOT mean an idle tree: uncommitted work in it is
+      # exactly what gets lost. Ask the lease, not the branch.
+      if ! cleanup_lease_permits_removal "$wt" "$(issue_session_owner "$BRANCH")"; then
+        continue
+      fi
+      CLEANUP_REMOVE_OUTPUT=""
+      if ! CLEANUP_REMOVE_OUTPUT="$(git -C "$PROJECT_ROOT" worktree remove --force "$wt" 2>&1)"; then
+        CLEANUP_FAILED=true
+        echo "Error: Git could not remove merged worktree; preserving it for manual recovery: $wt" >&2
+        [[ -n "$CLEANUP_REMOVE_OUTPUT" ]] && printf '%s\n' "$CLEANUP_REMOVE_OUTPUT" | sed 's/^/  git: /' >&2
+        continue
+      fi
+      if [[ -e "$wt" || -L "$wt" ]]; then
+        CLEANUP_FAILED=true
+        echo "Error: Git reported successful worktree removal but the path remains; preserving it for manual recovery: $wt" >&2
+        continue
+      fi
+      if ! git -C "$PROJECT_ROOT" branch -D "$BRANCH" >/dev/null 2>&1; then
+        CLEANUP_FAILED=true
+        echo "Error: Removed merged worktree but could not delete local branch '$BRANCH'." >&2
+        echo "  Remaining branch: $BRANCH" >&2
+        echo "  Worktree path removed/pruned: $wt" >&2
+        continue
+      fi
+      echo "Cleaned: $wt"
     done
     if [[ "$CLEANUP_FAILED" == true ]]; then
       exit 1
