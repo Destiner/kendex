@@ -2,8 +2,9 @@
 # preflight — diff-scoped, fail-only checks: fail-open bash, new suites no
 # runner invokes, scratch directories no EXIT trap removes, directories
 # created at literal absolute temp paths, docs citing repo paths that do
-# not exist, source files citing docs that do not exist, work markers with
-# no issue behind them, reviewer-bot attributions in durable prose,
+# not exist, source files citing docs that do not exist, edits to a migration
+# a database has already run, work markers with no issue behind them,
+# reviewer-bot attributions in durable prose,
 # malformed JSON/TOML, workflow run: blocks their shell cannot parse.
 #
 # Precision before coverage: a lane that cannot decide says nothing. The
@@ -36,7 +37,8 @@ non-ignored untracked files; --staged sees only the index.
 
 Lanes: shell-syntax, shellcheck-errors, masked-returns, fail-open,
 unwired-suite, mktemp-trap, hardcoded-temp-path, docs-cited-paths,
-todo-links, reviewer-attribution, data-syntax, workflow-run-syntax.
+applied-migration-edited, todo-links, reviewer-attribution, data-syntax,
+workflow-run-syntax.
 
 Exit codes: 0 clean; 1 findings; 2 usage/environment error.
 EOF
@@ -92,7 +94,7 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # reshape the patch this parser reads.
 git_diff() { git -c core.quotePath=false -c diff.noprefix=false -c diff.mnemonicPrefix=false diff --no-ext-diff --no-textconv "$@"; }
 
-resolve_base() { # -> merge-base commit on stdout
+resolve_base() { # -> merge-base commit on stdout; nonzero when none resolves
   local cand base
   if [ -n "$BASE_REF" ]; then
     git rev-parse --verify --quiet "$BASE_REF^{commit}" >/dev/null || env_error "--base ref does not resolve to a commit: $BASE_REF"
@@ -108,7 +110,7 @@ resolve_base() { # -> merge-base commit on stdout
     printf '%s' "$base"
     return 0
   done
-  env_error "could not resolve a default diff base (tried origin/HEAD, origin/main, main) — pass --base REF or --all"
+  return 1
 }
 
 case "$MODE" in
@@ -123,7 +125,7 @@ case "$MODE" in
     ;;
   base)
     git rev-parse --verify --quiet HEAD >/dev/null || env_error "the repository has no commits yet — pass --all"
-    BASE="$(resolve_base)"
+    BASE="$(resolve_base)" || env_error "could not resolve a default diff base (tried origin/HEAD, origin/main, main) — pass --base REF or --all"
     git_diff --name-only --diff-filter=d -z "$BASE" -- >"$TMP/files.z" || env_error "git diff against $BASE failed"
     git_diff --unified=0 --no-color --no-renames --diff-filter=d "$BASE" -- >"$TMP/patch" || env_error "git diff against $BASE failed"
     git_diff --name-only --no-renames --diff-filter=A "$BASE" -- >"$TMP/newfiles.list" || env_error "git diff against $BASE failed"
@@ -1065,6 +1067,114 @@ while IFS= read -r f; do
     fi
   done <"$REC"
 done <"$TMP/files.list"
+
+# --- lane applied-migration-edited -------------------------------------------
+# A versioned migration a database has already run is frozen. refinery
+# (`abort_divergent` by default) and Flyway record a checksum over the file's
+# name and text and refuse to run against a database whose recorded checksum
+# no longer matches, so the edit has no forward fix: the correction would be
+# one more edit to the same frozen file. The default glob is their filename
+# shape and nothing else, because a runner that records an applied version
+# without a checksum reopens its database happily after an edit: golang-migrate,
+# Goose, Alembic and Django all do, and naming their files here would hard-fail
+# a legitimate change. Every other layout, sqlx among them, is opt-in through
+# the setting, which is also where a Flyway repository excludes its repeatable
+# migrations. Only a path the MERGE BASE carries is the shape, since a
+# migration added at a new version is how a correction ships, and one this
+# branch added has reached no database. `--all` reads every tracked line as
+# added and a repository with no base to read answers nothing, so both leave
+# the lane quiet, as does an empty glob set.
+MIGRATION_GLOBS="${PREFLIGHT_MIGRATION_GLOBS-**/migrations/V*__*.sql}"
+
+glob_matches() { # PATTERN PATH — a `*` never reaches past its own component
+  local pat="$1" path="$2" pc pp
+  while :; do
+    if [ -z "$pat" ]; then
+      if [ -z "$path" ]; then return 0; fi
+      return 1
+    fi
+    [ -n "$path" ] || return 1
+    case "$pat" in */*) pc="${pat%%/*}"; pat="${pat#*/}" ;; *) pc="$pat"; pat="" ;; esac
+    case "$path" in */*) pp="${path%%/*}"; path="${path#*/}" ;; *) pp="$path"; path="" ;; esac
+    case "$pp" in $pc) ;; *) return 1 ;; esac
+  done
+}
+
+is_migration_path() { # PATH — a configured glob, `**/` the only depth crossing
+  local pat rc=1 rest
+  # The setting holds patterns, so the word split runs with globbing off:
+  # expanded against the working directory they would become file lists.
+  set -f
+  for pat in $MIGRATION_GLOBS; do
+    case "$pat" in
+      '**/'*)
+        pat="${pat#'**/'}"
+        rest="$1"
+        while :; do
+          if glob_matches "$pat" "$rest"; then
+            rc=0
+            break
+          fi
+          case "$rest" in */*) rest="${rest#*/}" ;; *) break ;; esac
+        done
+        ;;
+      *) glob_matches "$pat" "$1" && rc=0 ;;
+    esac
+    [ "$rc" = 1 ] || break
+  done
+  set +f
+  return "$rc"
+}
+
+migration_content_moved() { # PATH — the diff moved text, not only the file mode
+  local counts
+  if [ "$MODE" = staged ]; then
+    counts="$(git_diff --cached --numstat -- "$1")" || return 0
+  else
+    counts="$(git_diff --numstat "$BASE" -- "$1")" || return 0
+  fi
+  case "$counts" in "0${TAB}0${TAB}"*) return 1 ;; esac
+  return 0
+}
+
+MIGRATION_BASE=""
+if [ "$MODE" = staged ]; then
+  MIGRATION_BASE="$(resolve_base)" || MIGRATION_BASE=""
+elif [ "$MODE" != all ]; then
+  MIGRATION_BASE="$BASE"
+fi
+
+if [ -n "$MIGRATION_BASE" ] && [ -n "$MIGRATION_GLOBS" ]; then
+  # MDR are the statuses the verb below names; the base read, not the filter,
+  # is what keeps an added file out.
+  if [ "$MODE" = staged ]; then
+    git_diff --cached --find-renames --name-status --diff-filter=MDR -z >"$TMP/migrations.z" || env_error "git diff --cached failed"
+  else
+    git_diff --find-renames --name-status --diff-filter=MDR -z "$BASE" -- >"$TMP/migrations.z" || env_error "git diff against $BASE failed"
+  fi
+  while IFS= read -r -d '' mstatus && IFS= read -r -d '' mpath; do
+    mnew=""
+    case "$mstatus" in R*) IFS= read -r -d '' mnew || break ;; esac
+    is_migration_path "$mpath" || continue
+    # Staged scope diffs against HEAD, which reads a migration this branch
+    # added and then corrected as modified. No database has run that one.
+    git cat-file -e "$MIGRATION_BASE:$mpath" 2>/dev/null || continue
+    case "$mstatus" in
+      D*) mverb="deleted" ;;
+      R*) mverb="renamed to $mnew" ;;
+      # A mode change reports M with the text untouched, and no runner's
+      # checksum covers the executable bit.
+      *)
+        migration_content_moved "$mpath" || continue
+        mverb="edited"
+        ;;
+    esac
+    # A deleted or renamed path is not in the change set the lanes above walk,
+    # so the verdict would count a finding against a file it never named.
+    grep -qxF -- "$mpath" "$TMP/files.list" || FILE_COUNT=$((FILE_COUNT + 1))
+    emit "$mpath" 0 applied-migration-edited "an applied migration was $mverb — its recorded checksum no longer matches, so every database that ran it refuses to open; ship the correction as a new migration"
+  done <"$TMP/migrations.z"
+fi
 
 # --- verdict -----------------------------------------------------------------
 COUNT="$(awk 'END { print NR }' "$TMP/findings.tsv")"

@@ -31,7 +31,7 @@ skipped() {
 
 seed() { # NAME — fixture in $R: committed baseline, origin/main, feature branch
   R="$TMP/$1"
-  mkdir -p "$R/docs" "$R/scripts" "$R/hooks" "$R/tests" "$R/data"
+  mkdir -p "$R/docs" "$R/scripts" "$R/hooks" "$R/tests" "$R/data" "$R/store/migrations"
   git -C "$R" -c init.defaultBranch=main init -q
   git -C "$R" config user.email test@example.com
   git -C "$R" config user.name test
@@ -43,6 +43,13 @@ seed() { # NAME — fixture in $R: committed baseline, origin/main, feature bran
   printf '# History\n\nClamped in review (qodo PR #431).\n' >"$R/docs/history.md"
   printf '#!/usr/bin/env bash\necho old\nTMP="$(mktemp -d)"\n' >"$R/scripts/old.sh"
   printf '#!/usr/bin/env bash\nset -euo pipefail\n# See docs/gone.md for background.\necho old\n' >"$R/scripts/pointer.sh"
+  printf 'CREATE TABLE t (id INTEGER);\n' >"$R/store/migrations/V1__init.sql"
+  printf 'CREATE OR REPLACE VIEW v AS SELECT 1;\n' >"$R/store/migrations/R__views.sql"
+  printf '# Migrations\n' >"$R/store/migrations/README.md"
+  mkdir -p "$R/store/migrations/archive"
+  printf 'SELECT 1;\n' >"$R/store/migrations/archive/helper.sql"
+  printf '# revision id, no checksum\n' >"$R/store/migrations/0001_initial.py"
+  printf 'SELECT 1;\n' >"$R/data/report.sql"
   git -C "$R" add -A
   git -C "$R" commit -qm init
   git clone -q --bare "$R" "$R.git"
@@ -649,6 +656,71 @@ if command -v shellcheck >/dev/null 2>&1; then
 else
   skipped "a vendored shellcheck error still fails" "shellcheck not on PATH"
 fi
+
+echo "=== a new migration, and its neighbours, are not an applied-migration edit ==="
+seed migrations
+printf 'CREATE TABLE w (id INTEGER);\n' >"$R/store/migrations/V2__later.sql"
+printf '# Migrations\n\nOne per change.\n' >"$R/store/migrations/README.md"
+printf 'SELECT 2;\n' >"$R/data/report.sql"
+# A repeatable migration carries no version and is outside the default shape.
+printf 'CREATE OR REPLACE VIEW v AS SELECT 1, 2;\n' >"$R/store/migrations/R__views.sql"
+# A mode change reports M with the text untouched.
+chmod +x "$R/store/migrations/V1__init.sql"
+# A `*` never reaches past its own component, so a nested file is outside the
+# default glob, and a runner that records a revision id without a checksum is
+# outside the default set.
+printf 'SELECT 2;\n' >"$R/store/migrations/archive/helper.sql"
+printf '# revision id, still no checksum\n' >"$R/store/migrations/0001_initial.py"
+git -C "$R" add -A
+run_pf
+clean "a new version, an edited note beside it, an edited .sql outside a migrations directory, an edited repeatable migration, a mode-only change, a nested .sql, and a Python migration"
+printf 'CREATE TABLE t (id INTEGER); -- clearer\n' >"$R/store/migrations/V1__init.sql"
+git -C "$R" add -A
+run_pf
+fires "the same fixture with the base's own migration edited fails" "store/migrations/V1__init.sql:0: [applied-migration-edited]"
+# The setting is the opt-in for both: the same two files fail when the globs
+# name them, so the quiet run above is a scope decision, not a dead lane.
+export PREFLIGHT_MIGRATION_GLOBS='**/migrations/*.sql **/migrations/*_*.py'
+run_pf
+fires "a Python migration fails once the globs name it" "store/migrations/0001_initial.py:0: [applied-migration-edited]"
+fires "a repeatable migration fails once a glob names it, which is why the default does not" "store/migrations/R__views.sql:0: [applied-migration-edited]"
+case "$OUT" in
+  *"store/migrations/archive/helper.sql"*)
+    bad "the extra component keeps the nested file outside migrations/*.sql" "out=$OUT" ;;
+  *) ok "the extra component keeps the nested file outside migrations/*.sql" ;;
+esac
+export PREFLIGHT_MIGRATION_GLOBS='**/migrations/*/*.sql'
+run_pf
+fires "and a glob spanning that component reaches it" "store/migrations/archive/helper.sql:0: [applied-migration-edited]"
+unset PREFLIGHT_MIGRATION_GLOBS
+run_pf --all
+# The verdict line has to be there: a run that died before reaching it carries
+# no finding either, and that is not the lane standing down.
+if case "$OUT" in
+  *"[applied-migration-edited]"*) false ;;
+  *"preflight: "*) true ;;
+  *) false ;;
+esac then
+  ok "--all reads every line as added, so the lane cannot decide and stays quiet"
+else
+  bad "--all reads every line as added, so the lane cannot decide and stays quiet" "out=$OUT"
+fi
+
+echo "=== a migration this branch added is not one a database has run ==="
+seed migrationsbranch
+printf 'CREATE TABLE w (id INTEGER);\n' >"$R/store/migrations/V2__later.sql"
+git -C "$R" add -A
+git -C "$R" commit -qm "add V2"
+printf 'CREATE TABLE w (id INTEGER, n TEXT);\n' >"$R/store/migrations/V2__later.sql"
+git -C "$R" add -A
+run_pf --staged
+clean "correcting a migration this branch added, in the staged scope that diffs against HEAD"
+run_pf
+clean "and the base scope reads the same file as added"
+printf 'CREATE TABLE t (id INTEGER); -- clearer\n' >"$R/store/migrations/V1__init.sql"
+git -C "$R" add -A
+run_pf --staged
+fires "the base's own migration, staged, still fails" "store/migrations/V1__init.sql:0: [applied-migration-edited]"
 
 printf '\n%s passed, %s failed, %s skipped\n' "$PASS" "$FAIL" "$SKIP"
 [ "$FAIL" -eq 0 ]
