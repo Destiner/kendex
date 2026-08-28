@@ -508,3 +508,29 @@ fn a_mac_bundle_is_the_one_behind_the_name_it_was_launched_under() {
     assert_eq!(install, AppInstall::MacBundle(PathBuf::from(caskroom)));
     assert_eq!(for_app(&install, &probe), InstallChannel::Direct);
 }
+
+/// What `judged_path` hands over. The resolving behind these values is
+/// pinned above by the two link tests,
+/// `an_appimage_reached_through_a_link_belongs_to_whatever_it_points_at`
+/// and `a_mac_bundle_is_the_one_behind_the_name_it_was_launched_under`.
+/// New here is the accessor, and on macOS that it stays the executable:
+/// `for_app` reaches the bundle from it by the same `bundle_root` asserted
+/// here. Whether the updater plugin derives that same bundle is the app
+/// crate's test, not this one's.
+#[test]
+fn judged_path_hands_over_the_file_for_app_approved() {
+    let image = "/home/pat/Apps/kendex-5.0.1.AppImage";
+    assert_eq!(app_image(image).judged_path(), Some(Path::new(image)));
+
+    let exe = "/Users/pat/Library/Caskroom/kendex/5.0.1/kendex.app/Contents/MacOS/kendex";
+    let bundle = "/Users/pat/Library/Caskroom/kendex/5.0.1/kendex.app";
+    let install = AppInstall::MacBundle(PathBuf::from(exe));
+    assert_eq!(install.judged_path(), Some(Path::new(exe)));
+    assert_eq!(
+        install.judged_path().and_then(bundle_root),
+        Some(Path::new(bundle))
+    );
+
+    assert_eq!(AppInstall::WindowsInstaller.judged_path(), None);
+    assert_eq!(AppInstall::AppImage(None).judged_path(), None);
+}

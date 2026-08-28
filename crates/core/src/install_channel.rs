@@ -69,6 +69,21 @@ pub enum AppInstall {
 }
 
 impl AppInstall {
+    /// The path to hand whatever performs the replacement, so that the path
+    /// [`for_app`] judged and the path acted on are one file. `None` where
+    /// no path decides the install.
+    ///
+    /// On macOS this has to stay the executable: the consumer climbs from
+    /// it to the surrounding bundle, and handed the bundle it climbs one
+    /// level further, to the directory the bundle sits in.
+    pub fn judged_path(&self) -> Option<&Path> {
+        match self {
+            Self::AppImage(image) => image.as_deref(),
+            Self::MacBundle(exe) => Some(exe),
+            Self::WindowsInstaller => None,
+        }
+    }
+
     /// The macOS app, resolved: a Homebrew cask links `/Applications` at
     /// its Caskroom, and a process is handed the path it was launched
     /// under rather than the bundle behind it.
