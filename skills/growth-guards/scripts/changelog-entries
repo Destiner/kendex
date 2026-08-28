@@ -1,0 +1,284 @@
+#!/usr/bin/env bash
+# changelog-entries — a changelog entry over the character cap fails
+# (default 200). One number is the whole rule: no line counting, so an entry
+# that states its outcome passes however it is wrapped.
+#
+# An entry opens on a list marker (-, *, +) at column 0 followed by a space
+# or tab, and runs to the next such marker, an ATX heading, or a blank line
+# followed by a line that is neither indented nor a marker. A blank line
+# alone does not end it: a second paragraph indented under the marker is
+# part of the entry, which is the shape a Markdown list item and this
+# family's fragment tooling both accept. Entry text is those lines with CR
+# stripped and whitespace runs collapsed to one space, counted in
+# characters — UTF-8 sequences count once, so an em dash costs what it
+# reads as.
+#
+# Content comes from the index, like the other scans, and a blob git would
+# call binary is skipped the way their --cached scans skip one. A configured
+# path that is not readable changelog text — a symlink, a submodule gitlink,
+# binary content — is named as unmeasured rather than folded into the clean
+# count. Text that is not valid UTF-8 has no character count to take, so it
+# is a collection error naming the line, never a measurement: git calls such
+# a blob text whenever it carries no NUL, and counting it would read a run of
+# stray bytes as almost no characters at all. Configured paths matching no
+# tracked file are a clean pass: a repository with no changelog has nothing
+# to judge.
+#
+# Exit codes: 0 clean; 1 violations; 2 usage/config/collection error.
+set -euo pipefail
+# Pathname expansion off: the configured paths are globs, and splitting them
+# into words would otherwise expand each against the work tree — matching
+# whatever happens to be checked out instead of the tracked paths the scan
+# judges, and matching nothing at all in a sparse or bare checkout.
+set -f
+
+GG_BOOT="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd; printf x)"
+GG_BOOT="${GG_BOOT%x}"
+# The one newline `pwd` added; anything before it is the path.
+SCRIPT_DIR="${GG_BOOT%$'\n'}"
+GG_CHECK="changelog-entries"
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/settings.sh
+source "$SCRIPT_DIR/lib/settings.sh"
+
+usage() {
+  cat <<'EOF'
+usage: changelog-entries
+
+A changelog entry longer than the cap fails. An entry opens on a list
+marker (-, *, +) at column 0 followed by a space or tab, and runs to the
+next such marker, an ATX heading (up to three leading spaces, one to six
+hashes, then a space, a tab, or end of line), or a blank line followed by a
+line that is neither indented nor a marker — so an indented second paragraph
+is part of the entry. Its text is those lines with CR stripped and whitespace runs
+collapsed to one space, counted in characters.
+
+Tracked content is read from the index. A configured path git tracks as a
+symlink or submodule, or whose content is binary, is named as unmeasured;
+text that is not valid UTF-8 has no character count and is a collection
+error. Paths matching no tracked file are a clean pass.
+
+Configuration (env > .env.local > .kendex/settings.toml >
+kendex.settings.toml [env] > default):
+  GROWTH_GUARDS_CHANGELOG_CAP     characters per entry  (default 200)
+  GROWTH_GUARDS_CHANGELOG_PATHS   space-separated shell globs against the
+                                  full repo-relative path, '*' crossing
+                                  '/' as in the excludes lists
+                                  (default CHANGELOG.md)
+
+Exit codes: 0 clean; 1 violations; 2 usage/config/collection error.
+EOF
+}
+
+if [ $# -gt 0 ]; then
+  case "$1" in
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *) gg_config_error "unknown argument '$1' (see --help)" ;;
+  esac
+fi
+
+gg_repo_root_cd
+
+CAP="$(gg_setting GROWTH_GUARDS_CHANGELOG_CAP 200)" || exit 2
+gg_positive_int "$CAP" "GROWTH_GUARDS_CHANGELOG_CAP"
+
+PATHS_RAW="$(gg_setting GROWTH_GUARDS_CHANGELOG_PATHS "CHANGELOG.md")" || exit 2
+
+# Each pattern goes through the family's path discipline: absolute, escaping
+# and '-'-leading values are configuration errors, never a glob that quietly
+# matches nothing. An empty list is one too — a check that measures nowhere
+# while reporting OK is the silent pass this family refuses; dropping the
+# check from GROWTH_GUARDS_CHECKS is how it is turned off.
+PATTERNS=""
+# The same list rendered for messages: a configured pattern is somebody's
+# bytes too, and %q would escape the globs out of the copy that has to match.
+PATTERNS_SHOWN=""
+for raw in $PATHS_RAW; do
+  norm="$(gg_config_path "$raw" changelog)" || exit 2
+  PATTERNS="${PATTERNS:+$PATTERNS }$norm"
+  PATTERNS_SHOWN="${PATTERNS_SHOWN:+$PATTERNS_SHOWN }$(gg_shown "$norm")"
+done
+[ -n "$PATTERNS" ] || gg_config_error "GROWTH_GUARDS_CHANGELOG_PATHS names no path — name at least one, or drop this check from GROWTH_GUARDS_CHECKS"
+
+matches_configured() { # PATH — 0 when some configured glob matches the full path
+  local path="$1" pat
+  for pat in $PATTERNS; do
+    # $pat must expand unquoted to act as a glob.
+    # shellcheck disable=SC2254
+    case "$path" in
+      $pat) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+# git calls a blob binary when a NUL byte falls in its leading bytes, and the
+# --cached scans the sibling checks run skip such a blob. This walk reads raw
+# bytes rather than going through git grep, so it makes the same judgement
+# itself: measuring binary yields a meaningless length and prints the bytes
+# back out.
+BINARY_SAMPLE=8000
+blob_is_binary() { # FILE LABEL — 0 when a NUL falls in the leading bytes
+  local total stripped
+  total="$(head -c "$BINARY_SAMPLE" -- "$1" | wc -c)" \
+    || gg_collection_error "could not sample $(gg_shown "$2") to classify its content"
+  stripped="$(head -c "$BINARY_SAMPLE" -- "$1" | LC_ALL=C tr -d '\000' | wc -c)" \
+    || gg_collection_error "could not sample $(gg_shown "$2") to classify its content"
+  [ "$((total))" -ne "$((stripped))" ]
+}
+
+# Violation rows as "V<TAB>line<TAB>characters<TAB>first line", then one
+# "N<TAB>count" tally so the clean verdict reports what it measured rather
+# than asserting it. LC_ALL=C is what makes the character count exact: it
+# puts awk on bytes, and the continuation bytes subtracted below are what
+# turn bytes back into characters. Under a UTF-8 locale the class would
+# match nothing and every multibyte entry would count short. The same byte
+# view is what lets CTRL name the C0 controls and DEL exactly, which the
+# quoted first line is stripped of — an escape sequence, a carriage return
+# or a backspace in a tracked file must not reach the reader's terminal
+# through a diagnostic. Tab survives, and so do high bytes: they are the
+# UTF-8 an entry is legitimately written in.
+ENTRY_AWK='
+BEGIN {
+  CONT = "[\200-\277]"
+  CTRL = "[\001-\010\013-\037\177]"
+  # Strict UTF-8, spelled out as the byte grammar RFC 3629 defines: the count
+  # below is "bytes that are not continuation bytes", which is the character
+  # count only while every continuation byte follows a lead byte that claims
+  # it. A line of stray continuation bytes would otherwise measure as nothing.
+  UTF8 = "^([\001-\177]"
+  UTF8 = UTF8 "|[\302-\337][\200-\277]"
+  UTF8 = UTF8 "|\340[\240-\277][\200-\277]"
+  UTF8 = UTF8 "|[\341-\354][\200-\277][\200-\277]"
+  UTF8 = UTF8 "|\355[\200-\237][\200-\277]"
+  UTF8 = UTF8 "|[\356-\357][\200-\277][\200-\277]"
+  UTF8 = UTF8 "|\360[\220-\277][\200-\277][\200-\277]"
+  UTF8 = UTF8 "|[\361-\363][\200-\277][\200-\277][\200-\277]"
+  UTF8 = UTF8 "|\364[\200-\217][\200-\277][\200-\277])*$"
+}
+function chars(s,   n, c) { n = length(s); c = gsub(CONT, "", s); return n - c }
+# ATX syntax, whole: up to three leading spaces, then one to six hashes, then
+# a space, a tab, or end of line. Nothing else decides whether a line is a
+# heading, so all three parts are here — a predicate that reads "opens with a
+# hash" folds a continuation naming an issue number into nothing, and one that
+# demands column zero folds an indented heading into the entry above it. Four
+# leading spaces is an indented code block and stays a continuation. Spelled
+# as loops because a {1,6} interval is not portable across the awks this
+# family runs under.
+function is_heading(l,   i, n, c) {
+  i = 0
+  while (i < 3 && substr(l, i + 1, 1) == " ") i++
+  if (substr(l, i + 1, 1) != "#") return 0
+  n = 0
+  while (substr(l, i + n + 1, 1) == "#") n++
+  if (n > 6) return 0
+  c = substr(l, i + n + 1, 1)
+  return (c == "" || c == " " || c == "\t")
+}
+function flush(   t, len, label) {
+  blank = 0
+  if (!open) return
+  open = 0
+  total++
+  t = text
+  gsub(/[ \t]+/, " ", t)
+  sub(/^ /, "", t)
+  sub(/ $/, "", t)
+  len = chars(t)
+  if (len > cap) {
+    label = first
+    gsub(CTRL, "?", label)
+    printf "V\t%d\t%d\t%s\n", start, len, label
+  }
+}
+{ line = $0; sub(/\r$/, "", line) }
+line !~ UTF8                      { printf "X\t%d\n", NR; bad = 1; exit }
+line ~ /^[ \t]*$/                 { if (open) blank = 1; next }
+line ~ /^[-*+][ \t]/              { flush(); open = 1; start = NR; first = line; text = line; next }
+is_heading(line)                  { flush(); next }
+open && blank && line !~ /^[ \t]/ { flush(); next }
+open                              { text = text " " line; blank = 0 }
+END { if (!bad) { flush(); printf "N\t%d\n", total } }
+'
+
+gg_tmpdir
+# ls-files -s emits one record per STAGE for an unmerged path, so the walk
+# below would read rival blobs as separate files.
+gg_require_merged_index
+git ls-files -sz >"$GG_TMP/files.z" || gg_collection_error "git ls-files failed"
+
+checked=0
+entries=0
+violations=0
+skipped=0
+
+note_skip() { # PATH REASON — a matched path this scan cannot measure
+  echo "changelog-entries: not measured: $(gg_shown "$1") — $2"
+  skipped=$((skipped + 1))
+}
+
+while IFS= read -r -d '' rec; do
+  # Record shape: "<mode> <sha> <stage>\t<path>".
+  f="${rec#*"$GG_TAB"}"
+  matches_configured "$f" || continue
+  mode="${rec%% *}"
+  case "$mode" in
+    120000)
+      note_skip "$f" "tracked as a symlink, not changelog text"
+      continue
+      ;;
+    160000)
+      note_skip "$f" "tracked as a submodule gitlink, not changelog text"
+      continue
+      ;;
+  esac
+  rest="${rec#* }"
+  sha="${rest%% *}"
+  git cat-file blob "$sha" >"$GG_TMP/blob" 2>"$GG_TMP/blob.err" \
+    || { [ ! -s "$GG_TMP/blob.err" ] || cat -- "$GG_TMP/blob.err" >&2
+      gg_collection_error "cannot read blob $sha for $(gg_shown "$f") — refusing to skip an unread changelog"; }
+  if blob_is_binary "$GG_TMP/blob" "$f"; then
+    note_skip "$f" "binary content, not changelog text"
+    continue
+  fi
+  checked=$((checked + 1))
+  status=0
+  LC_ALL=C awk -v cap="$CAP" "$ENTRY_AWK" <"$GG_TMP/blob" >"$GG_TMP/report" || status=$?
+  [ "$status" -eq 0 ] || gg_collection_error "could not measure the entries in $(gg_shown "$f") (awk exit $status)"
+  while IFS="$GG_TAB" read -r kind a b c; do
+    case "$kind" in
+      N) entries=$((entries + a)) ;;
+      X) gg_collection_error "$(gg_shown "$f") line $a is not valid UTF-8 — an entry with no character count cannot be measured against the cap" ;;
+      V)
+        echo "changelog-entries FAIL long entry: $(gg_shown "$f"):$a — $b characters (cap $CAP)"
+        # Content, not a name: the awk pass already replaced every C0 control
+        # and DEL, a newline cannot survive a line read, and %q here would
+        # render a legible entry as an escaped blob.
+        echo "  entry: $c"
+        echo "  remedies: state the outcome and stop; a Breaking migration note stays inline, and the reasoning belongs in the commit"
+        violations=$((violations + 1))
+        ;;
+      *) gg_collection_error "unrecognized measurement record $(gg_shown "$kind") while reading $(gg_shown "$f")" ;;
+    esac
+  done <"$GG_TMP/report"
+done <"$GG_TMP/files.z"
+
+UNMEASURED=""
+[ "$skipped" -eq 0 ] || UNMEASURED="; $skipped matched path(s) not measured"
+
+if [ "$violations" -gt 0 ]; then
+  echo "changelog-entries: $violations entry(ies) over the cap — cap $CAP characters, $entries entry(ies) in $checked file(s)$UNMEASURED"
+  exit 1
+fi
+# Only when NOTHING matched: a path that matched and was skipped is reported
+# as skipped above, and telling its reader that no file matched would send
+# them to widen a glob that was already right.
+if [ "$checked" -eq 0 ] && [ "$skipped" -eq 0 ]; then
+  echo "changelog-entries: OK — no tracked file matches GROWTH_GUARDS_CHANGELOG_PATHS ($PATTERNS_SHOWN)"
+  exit 0
+fi
+echo "changelog-entries: OK — $entries entry(ies) in $checked file(s) within the cap ($CAP characters)$UNMEASURED"

@@ -57,6 +57,45 @@ space or end of line. Indented or quoted occurrences never fire; neither
 does bare `=======` — a valid Markdown setext underline (a real conflict
 always carries the open and close markers).
 
+## changelog-entries
+
+A changelog entry longer than `GROWTH_GUARDS_CHANGELOG_CAP` characters
+(default 200) fails, naming the file, the entry's line, its length and its
+first line. One number is the whole rule — no line counting and no
+continuation grammar — so an entry that states its outcome passes however it
+is wrapped.
+
+An entry opens on a list marker (`-`, `*`, `+`) at column 0 followed by a
+space or tab, so a horizontal rule or a front-matter fence opens none. It runs
+to the next such marker, an ATX heading (up to three leading spaces, one to
+six hashes, then a space, a tab, or end of line — so a continuation naming an
+issue number opens none, and neither does a line indented four spaces), or a
+blank line followed by a line that is neither indented nor a marker. A blank line alone does not end it: an indented
+second paragraph is part of the entry, the shape a Markdown list item and the
+fragment tooling both accept, and an indented bullet belongs to the entry it
+sits under rather than being one. Its text is those lines with CR stripped and
+whitespace runs collapsed to one space. The count is in characters: a UTF-8
+sequence counts once, so an em dash costs one.
+
+A configured path that is not readable changelog text is named as unmeasured
+and counted apart from the clean total: a path git tracks as a symlink or a
+submodule gitlink, and a blob git would call binary, which the sibling checks'
+`--cached` scans skip the same way.
+
+Text that is not valid UTF-8 is a collection error naming the line, not a
+skip. git calls such a blob text whenever it holds no NUL, and there is no
+character count to take over it — a run of stray continuation bytes would
+otherwise measure as almost nothing.
+
+`GROWTH_GUARDS_CHANGELOG_PATHS` (default `CHANGELOG.md`) is a
+space-separated list of shell globs matched against the full repo-relative
+path, `*` crossing `/` as in the excludes lists. Paths matching no tracked
+file are a clean pass — a repository with no changelog has nothing to judge —
+and a repository keeping one entry per file names that tree instead
+(`changelog.d/*/*.md`, whose two segments keep a `changelog.d/README.md` out).
+An empty list is a config error; the way to switch the check off is to drop
+it from `GROWTH_GUARDS_CHECKS`.
+
 ## commit-msg
 
 Conventional-commit gate over one message, shaped for the git `commit-msg`
