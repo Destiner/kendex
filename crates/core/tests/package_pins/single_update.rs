@@ -8,32 +8,15 @@ use std::fs;
 use kendex_core::apply;
 use kendex_core::engine::{PlanOptions, plan_refresh};
 use kendex_core::error::CoreError;
-use kendex_core::lock::{entry_key, load as load_lock, lock_path};
+use kendex_core::lock::{load as load_lock, lock_path};
 use kendex_core::manifest;
-use kendex_core::model::{HarnessId, ItemKind};
-use kendex_core::{package, remote};
+use kendex_core::model::ItemKind;
+use kendex_core::package;
 
 use super::{
-    REPO, World, commit, declare, installed_body, sync_and_apply, world, write_agent,
-    write_manifest, write_skill,
+    REPO, World, commit, declare, declared_rev, fetch_mirrors, installed_body, locked_commit,
+    sync_and_apply, world, write_agent, write_manifest, write_skill,
 };
-
-#[allow(clippy::unwrap_used)]
-fn fetch_mirrors(w: &World) {
-    let loaded = manifest::load_for_mutation(&manifest::manifest_path(&w.env, &w.scope))
-        .unwrap()
-        .unwrap();
-    remote::sync_sources(&w.env, &loaded).unwrap();
-}
-
-#[allow(clippy::unwrap_used)]
-fn locked_commit(w: &World, name: &str) -> String {
-    let lock = load_lock(&lock_path(&w.env, &w.scope)).unwrap();
-    lock.entries[&entry_key(ItemKind::Skill, name, HarnessId::Claude)]
-        .source_commit
-        .clone()
-        .unwrap()
-}
 
 #[test]
 #[allow(clippy::unwrap_used)]
@@ -74,49 +57,6 @@ fn updating_one_follower_leaves_its_siblings_at_their_commits() {
     apply::execute(&w.env, &report.plan, None).unwrap();
     assert!(installed_body(&w, "b").contains("b version two."));
     assert_eq!(locked_commit(&w, "b"), second);
-}
-
-#[test]
-#[allow(clippy::unwrap_used)]
-fn updating_a_bundle_member_moves_its_bundle_and_no_one_else() {
-    let w = world();
-    write_skill(&w.upstream, "m1", "", "m1 version one.");
-    write_skill(&w.upstream, "m2", "", "m2 version one.");
-    write_skill(&w.upstream, "solo", "", "solo version one.");
-    fs::write(
-        w.upstream.join("kendex.toml"),
-        "[bundles.kit]\ndescription = \"a set\"\nskills = [\"m1\", \"m2\"]\n",
-    )
-    .unwrap();
-    let first = commit(&w.upstream, "one");
-    declare(
-        &w,
-        "[skills.solo]\nsource = \"cat\"\n\n[bundles.kit]\nsource = \"cat\"\n",
-    );
-    sync_and_apply(&w);
-
-    write_skill(&w.upstream, "m1", "", "m1 version two.");
-    write_skill(&w.upstream, "m2", "", "m2 version two.");
-    write_skill(&w.upstream, "solo", "", "solo version two.");
-    let second = commit(&w.upstream, "two");
-    fetch_mirrors(&w);
-
-    // The member has no declaration of its own — the bundle is what
-    // carries its revision, so updating the member moves the bundle.
-    let report = package::update_one(&w.env, &w.scope, ItemKind::Skill, "m1").unwrap();
-    apply::execute(&w.env, &report.plan, None).unwrap();
-
-    assert!(installed_body(&w, "m1").contains("m1 version two."));
-    assert!(
-        installed_body(&w, "m2").contains("m2 version two."),
-        "a fellow member shares the bundle's one revision"
-    );
-    assert!(
-        installed_body(&w, "solo").contains("solo version one."),
-        "a follower outside the bundle stays put"
-    );
-    assert_eq!(locked_commit(&w, "m1"), second);
-    assert_eq!(locked_commit(&w, "solo"), first);
 }
 
 #[test]
@@ -172,17 +112,6 @@ fn updating_a_name_nothing_declares_or_records_is_refused() {
 
     let error = package::update_one(&w.env, &w.scope, ItemKind::Skill, "stranger").unwrap_err();
     assert!(matches!(error, CoreError::NotDeclared { .. }), "{error}");
-}
-
-/// The manifest text as it sits on disk, and the revision a package is
-/// declared with there. A synthetic hold that reaches the file is a hold
-/// nobody chose: that package stops updating, forever and silently.
-#[allow(clippy::unwrap_used)]
-fn declared_rev(w: &World, name: &str) -> Option<String> {
-    let loaded = manifest::load_for_mutation(&manifest::manifest_path(&w.env, &w.scope))
-        .unwrap()
-        .unwrap();
-    loaded.declared(ItemKind::Skill)[name].rev.clone()
 }
 
 #[allow(clippy::unwrap_used)]

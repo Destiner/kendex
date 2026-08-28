@@ -28,6 +28,7 @@ use crate::model::{HarnessId, ItemKind, Scope};
 use crate::source::find_item;
 
 use super::ItemWarning;
+use super::desired::hold::HeldPins;
 use super::desired::{DesiredState, target_harnesses};
 use super::expansion::{Catalogs, Expansion};
 
@@ -46,6 +47,7 @@ struct Carried {
 pub(super) fn expand(
     scope: &Scope,
     manifest: &Manifest,
+    held: Option<&HeldPins>,
     expansion: &mut Expansion,
     catalogs: &mut Catalogs,
     state: &mut DesiredState,
@@ -53,7 +55,7 @@ pub(super) fn expand(
     let mut carried: BTreeMap<(ItemKind, String), Carried> = BTreeMap::new();
     for (name, decl) in &manifest.bundles {
         for (kind, member, member_decl, harnesses) in
-            installable(name, decl, scope, manifest, catalogs, state)
+            installable(name, decl, scope, manifest, held, catalogs, state)
         {
             let edge = (
                 Reason::MemberOf {
@@ -137,6 +139,39 @@ pub(crate) fn member_decl(bundle: &ItemDecl) -> ItemDecl {
     }
 }
 
+/// The revision one member reads, where the set is not the only thing that
+/// says.
+///
+/// A set carries one revision to everything in it, and that is the answer
+/// wherever the member has nothing else to read. A member the manifest
+/// declares reads its own declaration instead, and what the set brings to
+/// that reading is the revision the person wrote on the set — never the
+/// pin a single-package update invented to hold the set still. Weighed
+/// against the pin, one package is wanted at two revisions nobody chose,
+/// and a plan that refuses both writes nothing for a package nobody
+/// pinned.
+///
+/// What the declaration brings is the revision the person wrote on it, and
+/// [`super::expansion::Planned`] keeps that where the pass pinned the
+/// declaration too. Where the two differ the disagreement is real, and it
+/// is stated in the revisions they wrote.
+fn carried_rev(
+    manifest: &Manifest,
+    held: Option<&HeldPins>,
+    bundle: &str,
+    bundle_rev: Option<String>,
+    kind: ItemKind,
+    member: &str,
+) -> Option<String> {
+    if !manifest.declared(kind).contains_key(member) {
+        return bundle_rev;
+    }
+    match held.is_some_and(|pins| pins.invented_bundle(bundle)) {
+        true => None,
+        false => bundle_rev,
+    }
+}
+
 /// The members of one set this plan can actually install, each with the
 /// declaration it installs under and the tools it lands on. Every member left
 /// out is accounted for: held back by a removal, not offered by the catalog,
@@ -146,6 +181,7 @@ fn installable(
     decl: &ItemDecl,
     scope: &Scope,
     manifest: &Manifest,
+    held: Option<&HeldPins>,
     catalogs: &mut Catalogs,
     state: &mut DesiredState,
 ) -> Vec<(ItemKind, String, ItemDecl, Vec<HarnessId>)> {
@@ -189,7 +225,15 @@ fn installable(
             });
             continue;
         }
-        let member_decl = member_decl(decl);
+        let mut member_decl = member_decl(decl);
+        member_decl.rev = carried_rev(
+            manifest,
+            held,
+            name,
+            member_decl.rev,
+            member.kind,
+            &member.name,
+        );
         let harnesses = target_harnesses(&member_decl, manifest, member.kind, scope);
         if harnesses.is_empty() {
             state.notes.push(format!(
