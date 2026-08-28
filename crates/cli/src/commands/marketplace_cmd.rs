@@ -1,9 +1,10 @@
 use clap::Subcommand;
 use kendex_core::env::Env;
+use kendex_core::names::shown;
 use kendex_core::source_ops;
 
 use super::engine_common::apply_report;
-use super::{CliResult, out, resolve_scopes, say};
+use super::{CliResult, out, resolve_scopes, say, scope_label};
 use crate::scope::ScopeFilter;
 
 #[derive(Subcommand)]
@@ -171,7 +172,10 @@ fn run_unsubscribe(
     if closure.items.is_empty() {
         let report = kendex_core::source_ops::remove_source(env, &scope, name)?;
         apply_report(env, &report)?;
-        say(&format!("{}: unsubscribed from '{name}'", scope.label()));
+        say(&format!(
+            "{}: unsubscribed from '{name}'",
+            scope_label(&scope)
+        ));
         return Ok(());
     }
 
@@ -207,7 +211,7 @@ fn run_unsubscribe(
     let kept = if keep_packages { "kept" } else { "removed" };
     say(&format!(
         "{}: unsubscribed from '{name}', {} {kept}",
-        scope.label(),
+        scope_label(&scope),
         closure.items.len()
     ));
     Ok(())
@@ -268,16 +272,19 @@ fn run_subscribe(
         && let Some(repo) = decl.repo.clone()
         && let Err(error) = kendex_core::remote::sync(env, &repo, decl.rev.as_deref())
     {
-        say(&format!("warning: not fetched yet ({error})"));
+        say(&format!(
+            "warning: not fetched yet ({})",
+            shown(&error.to_string())
+        ));
     }
     say(&format!(
         "{}: subscribed to '{}' ({})",
-        scope.label(),
-        subscribed.name,
-        subscribed.reference
+        scope_label(&scope),
+        shown(&subscribed.name),
+        shown(&subscribed.reference)
     ));
     if let Some(lead) = subscribed.lead {
-        say(&format!("package: {lead}"));
+        say(&format!("package: {}", shown(&lead)));
     }
     Ok(())
 }

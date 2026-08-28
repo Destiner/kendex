@@ -1,5 +1,6 @@
 use kendex_core::env::Env;
 use kendex_core::model::{HarnessId, Scope};
+use kendex_core::names::shown;
 use kendex_core::{scan, settings};
 
 use super::{CliResult, resolve_scopes, say};
@@ -20,7 +21,7 @@ pub fn run(env: &Env, filter: ScopeFilter, harness: Option<String>) -> CliResult
         .map(|i| {
             [
                 i.kind.name().to_owned(),
-                i.name.clone(),
+                shown(&i.name),
                 i.harness.name().to_owned(),
                 match &i.scope {
                     Scope::Global => "global".to_owned(),
@@ -54,7 +55,7 @@ pub fn run(env: &Env, filter: ScopeFilter, harness: Option<String>) -> CliResult
         }
     }
     for warning in &result.warnings {
-        say(&format!("warning: {warning}"));
+        say(&format!("warning: {}", shown(warning)));
     }
     Ok(())
 }

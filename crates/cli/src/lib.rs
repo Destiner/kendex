@@ -3,8 +3,8 @@ mod dispatch_args;
 use dispatch_args::{check, remove};
 mod flags;
 mod scope;
+mod ui;
 
-use std::io::Write;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
@@ -207,12 +207,36 @@ pub fn main() -> ExitCode {
     // the session hook reads the empty report as a clean machine.
     let machine_check = matches!(&cli.command, Some(Command::Check { catalog: None, .. }));
     match run(cli) {
-        Ok(code) => code,
+        Ok(code) => {
+            ui::finish();
+            code
+        }
         Err(e) => {
-            let _ = writeln!(std::io::stderr(), "Error: {e}");
-            match machine_check {
-                true => ExitCode::from(2),
-                false => ExitCode::FAILURE,
+            // The last line of the run, and the one that closes the frame
+            // a terminal opened: whatever was still being said is drawn
+            // above it rather than swallowed by the exit.
+            match (machine_check, ui::cancelled(e.as_ref())) {
+                // The check's exit code is its whole contract, and a run
+                // that ended before it could answer is "could not check"
+                // however it ended.
+                (true, _) => {
+                    ui::outro_fail(&format!("Error: {e}"));
+                    ExitCode::from(2)
+                }
+                // 130 is what a shell reports for a run its user killed,
+                // and scripts key on it. A plain prompt lets SIGINT do
+                // that itself; the framed one traps Ctrl-C in raw mode and
+                // hands back an interrupted read instead, so the code has
+                // to be restored here or the framing would have quietly
+                // turned every cancel into an ordinary failure.
+                (false, true) => {
+                    ui::outro_fail("cancelled");
+                    ExitCode::from(130)
+                }
+                (false, false) => {
+                    ui::outro_fail(&format!("Error: {e}"));
+                    ExitCode::FAILURE
+                }
             }
         }
     }

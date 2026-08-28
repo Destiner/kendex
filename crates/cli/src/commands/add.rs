@@ -4,10 +4,13 @@ use kendex_core::lock::{load as load_lock, lock_path};
 use kendex_core::model::Scope;
 
 use kendex_core::manifest::Method;
+use kendex_core::names::shown;
 
-use super::engine_common::{confirm_and_execute, parse_harnesses, print_report};
-use super::{CliResult, harness_picker, resolve_scopes, say};
+use super::engine_common::{confirm_and_apply, parse_harnesses, print_report};
+use super::ledger::{Wrote, say_ledger};
+use super::{CliResult, harness_picker, resolve_scopes, warn};
 use crate::scope::ScopeFilter;
+use crate::ui;
 
 pub struct AddArgs {
     pub source: Option<String>,
@@ -32,6 +35,41 @@ pub struct AddArgs {
     pub allow_repo_effects: bool,
 }
 
+/// Where this install goes and how it is delivered. Flags settle both
+/// where they were given; otherwise a terminal is asked and a session
+/// without one keeps the scope's own defaults. What the request would
+/// declare decides which tools can take it, so the picker and
+/// `--all-harnesses` offer only those.
+fn settle_targets(
+    env: &Env,
+    scope: &Scope,
+    request: &mut AddRequest,
+    args: &AddArgs,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let kinds = ops::requested_kinds(request);
+    request.harnesses = match (args.all_harnesses, args.harness.is_empty()) {
+        (true, _) => Some(harness_picker::installable_at(scope, &kinds)),
+        (false, false) => Some(parse_harnesses(&args.harness)?),
+        (false, true) => None,
+    };
+    request.method = match (args.copy, args.method.as_deref()) {
+        (true, _) | (_, Some("copy")) => Some(Method::Copy),
+        (_, Some("symlink")) => Some(Method::Symlink),
+        _ => None,
+    };
+    let chosen = harness_picker::ask(
+        env,
+        scope,
+        &kinds,
+        request.harnesses.is_some(),
+        request.method,
+        args.yes,
+    )?;
+    request.harnesses = request.harnesses.take().or(chosen.harnesses);
+    request.method = chosen.method;
+    Ok(())
+}
+
 fn split(values: &[String]) -> Vec<String> {
     values
         .iter()
@@ -42,7 +80,8 @@ fn split(values: &[String]) -> Vec<String> {
         .collect()
 }
 
-pub fn run(env: &Env, args: AddArgs) -> CliResult {
+pub fn run(env: &Env, mut args: AddArgs) -> CliResult {
+    ui::intro("kendex add");
     let filter = if args.global {
         ScopeFilter::Global
     } else {
@@ -95,7 +134,7 @@ pub fn run(env: &Env, args: AddArgs) -> CliResult {
     }
 
     let mut request = AddRequest {
-        source: args.source,
+        source: args.source.take(),
         agents,
         skills,
         hooks,
@@ -110,47 +149,64 @@ pub fn run(env: &Env, args: AddArgs) -> CliResult {
         bundles,
         hold: args.hold,
     };
-    // Flags settle the targets where they were given; otherwise a terminal
-    // is asked and a session without one keeps the scope's own defaults.
-    // What the request would declare decides which tools can take it, so
-    // the picker and `--all-harnesses` offer only those.
-    let kinds = ops::requested_kinds(&request);
-    request.harnesses = match (args.all_harnesses, args.harness.is_empty()) {
-        (true, _) => Some(harness_picker::installable_at(&scope, &kinds)),
-        (false, false) => Some(parse_harnesses(&args.harness)?),
-        (false, true) => None,
+    settle_targets(env, &scope, &mut request, &args)?;
+    let planned = {
+        let _planning = ui::spinner("planning the install");
+        ops::add(env, &scope, &request)
     };
-    request.method = match (args.copy, args.method.as_deref()) {
-        (true, _) | (_, Some("copy")) => Some(Method::Copy),
-        (_, Some("symlink")) => Some(Method::Symlink),
-        _ => None,
-    };
-    let chosen = harness_picker::ask(
-        env,
-        &scope,
-        &kinds,
-        request.harnesses.is_some(),
-        request.method,
-        args.yes,
-    )?;
-    request.harnesses = request.harnesses.or(chosen.harnesses);
-    request.method = chosen.method;
-    let report = match ops::add(env, &scope, &request) {
+    let report = match planned {
         Err(kendex_core::error::CoreError::SourcePending { .. }) => {
             let manifest = ops::manifest_for_mutation(env, &scope)?;
-            for warning in kendex_core::remote::sync_sources(env, &manifest)? {
-                say(&format!("warning: {warning}"));
+            let synced = {
+                let _reading = ui::spinner("reading sources");
+                kendex_core::remote::sync_sources(env, &manifest)?
+            };
+            for warning in synced {
+                warn(&format!("warning: {}", shown(&warning)));
             }
+            let _planning = ui::spinner("planning the install");
             ops::add(env, &scope, &request)?
         }
         other => other?,
     };
-    print_report(env, &report);
-    confirm_and_execute(env, &report, args.yes)?;
-    // Disclosed after the write, because the script an effect runs is the
-    // one this install just put on disk.
-    let shown_to_them = super::repo_effects::disclose(env, &scope, &report.repo_effects)?;
-    super::repo_effects::walkthrough(&scope, &shown_to_them, args.allow_repo_effects)?;
-    say("done");
-    Ok(())
+    write_and_close(env, &scope, &report, args.yes, args.allow_repo_effects)
+}
+
+/// The write, the repository-effects account, and the close.
+///
+/// Disclosed after the write, because the script an effect runs is the one
+/// this install just put on disk. That leaves a prompt between the write
+/// and the closing line, so the close is handed over rather than written
+/// under it: what the run wrote is reported whatever the reader answers.
+fn write_and_close(
+    env: &Env,
+    scope: &Scope,
+    report: &kendex_core::engine::EngineReport,
+    yes: bool,
+    allow_effects: bool,
+) -> CliResult {
+    let blocked = print_report(env, report);
+    let applied = confirm_and_apply(env, report, yes)?;
+    super::repo_effects::disclose_and_finish(
+        env,
+        scope,
+        &report.repo_effects,
+        allow_effects,
+        || {
+            // "done" answered whether the process ended, never what it
+            // did. The verb is the one that was typed, because the count
+            // is of changes and not of packages: a run whose only change
+            // is the declaration added something, and installed nothing.
+            let count = (!report.plan.is_empty()).then_some(applied);
+            say_ledger(
+                scope,
+                Wrote {
+                    verb: "added",
+                    count,
+                },
+                &blocked,
+                &report.safety,
+            );
+        },
+    )
 }

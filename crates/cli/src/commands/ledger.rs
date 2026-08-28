@@ -1,26 +1,31 @@
-//! How a refresh ends. A count of writes alone answers "did anything
-//! happen" and nothing else: the installs the plan refused and the scores
-//! worth reading are both outcomes of the same run, and a reader who has
-//! to run a second command to learn they exist was not told.
+//! How a run ends. A count of writes alone answers "did anything happen"
+//! and nothing else: the installs the plan refused and the scores worth
+//! reading are both outcomes of the same run, and a reader who has to run
+//! a second command to learn they exist was not told.
 //!
 //! One line, one part per outcome, and under it the next step for each
 //! outcome it carries. A completed write is not one of those: it needs no
 //! next step, and the count says all there is to say about it.
+//!
+//! Every verb that writes closes on this. What differs between them is
+//! the verb in the head — refreshed, applied, installed, removed — and
+//! nothing else: the parts are outcomes of a plan, and every verb that
+//! runs a plan can have them.
 
 use std::collections::BTreeSet;
 
-use kendex_core::engine::EngineReport;
+use kendex_core::engine::ItemSafety;
 use kendex_core::model::{ItemKind, Scope};
 
 use super::offers::{Blocked, scope_flag};
-use super::say;
+use super::scope_label;
+use crate::ui;
 
 /// Items the safety block above carries a finding against. Counted from
 /// the rows that block was printed from, so the number and the lines it
 /// sends the reader to are one reading of one set of bytes.
-fn flagged(report: &EngineReport) -> usize {
-    report
-        .safety
+fn flagged(scored: &[ItemSafety]) -> usize {
+    scored
         .iter()
         .filter(|row| !row.advisory.findings.is_empty())
         .map(|row| (row.kind, row.name.clone()))
@@ -28,41 +33,80 @@ fn flagged(report: &EngineReport) -> usize {
         .len()
 }
 
-/// The closing line of one scope's refresh, and the next step for each
-/// outcome it carries. `wrote` is `None` where the plan had nothing to do.
-/// Zero parts are left off: a clean run says what it did and stops.
-pub fn say_ledger(scope: &Scope, wrote: Option<usize>, blocked: &[Blocked], report: &EngineReport) {
-    let skipped = blocked.len();
-    let flagged = flagged(report);
-    let head = match (wrote, skipped) {
-        // Nothing to write and nothing refused is a scope that is current.
-        // Nothing to write *because* everything was refused is not.
+/// What a run wrote, in its own verb. `None` where the plan had nothing
+/// to do — which is a current scope only where nothing was refused
+/// either, since a plan empty *because* every write was refused is not a
+/// scope that is up to date.
+fn wrote(verb: &str, count: Option<usize>, skipped: usize) -> String {
+    match (count, skipped) {
         (None, 0) => "up to date".to_owned(),
-        (None, _) => "refreshed 0 changes".to_owned(),
-        (Some(n), _) => format!("refreshed {n} change{}", plural(n)),
-    };
-    let mut parts = vec![head];
+        (None, _) => format!("{verb} 0 changes"),
+        (Some(n), _) => format!("{verb} {n} change{}", plural(n)),
+    }
+}
+
+/// What a run wrote, said in its own verb, for a verb whose count is
+/// never in doubt.
+pub struct Wrote<'a> {
+    pub verb: &'a str,
+    /// `None` where the plan had nothing to do.
+    pub count: Option<usize>,
+}
+
+/// The closing line of one scope's run, and the next step for each
+/// outcome it carries. Zero parts are left off: a clean run says what it
+/// did and stops.
+///
+/// Both parts are read off blocks the caller has already printed and
+/// point the reader back at them, which is why the caller hands over the
+/// very rows it printed rather than a report to re-read: a flagged count
+/// over a block nobody printed sends the reader to lines that are not
+/// there. A verb that printed neither passes both empty and closes on its
+/// head alone.
+pub fn say_ledger(scope: &Scope, wrote: Wrote<'_>, blocked: &[Blocked], scored: &[ItemSafety]) {
+    let (line, steps) = ledger(scope, wrote, blocked, scored);
+    ui::ledger(&line, &steps);
+}
+
+/// The same outcomes, from a run that acted on none of them. A preview
+/// carries no next step: the conflict lines above it are where the ways
+/// out are printed, and a closing line naming one of them again is the
+/// same sentence twice on one screen.
+pub fn say_preview(scope: &Scope, wrote: Wrote<'_>, blocked: &[Blocked], scored: &[ItemSafety]) {
+    let (line, _) = ledger(scope, wrote, blocked, scored);
+    ui::ledger(&line, &[]);
+}
+
+fn ledger(
+    scope: &Scope,
+    said: Wrote<'_>,
+    blocked: &[Blocked],
+    scored: &[ItemSafety],
+) -> (String, Vec<String>) {
+    let skipped = blocked.len();
+    let flagged = flagged(scored);
+    let mut parts = vec![wrote(said.verb, said.count, skipped)];
+    let mut steps: Vec<String> = Vec::new();
     if skipped > 0 {
         parts.push(format!(
             "skipped {skipped} item{} on conflict",
             plural(skipped)
         ));
+        steps.push(format!("skipped — {}", conflict_exit(scope, blocked)));
     }
     if flagged > 0 {
         parts.push(format!(
             "flagged {flagged} item{} on safety",
             plural(flagged)
         ));
-    }
-    say(&format!("{}: {}", scope.label(), parts.join(" · ")));
-    if skipped > 0 {
-        say(&format!("  skipped — {}", conflict_exit(scope, blocked)));
-    }
-    if flagged > 0 {
         // No verb reads these back: every surface that writes prints its
         // own advisory block, and this run's is the one printed above.
-        say("  flagged — the safety lines above");
+        steps.push("flagged — the safety lines above".to_owned());
     }
+    (
+        format!("{}: {}", scope_label(scope), parts.join(" · ")),
+        steps,
+    )
 }
 
 /// The next step for the skipped part. A command is named only where it

@@ -1,9 +1,10 @@
 use kendex_core::drift::hook;
 use kendex_core::env::Env;
 use kendex_core::model::Scope;
+use kendex_core::names::shown;
 
 use super::engine_common::{confirm_and_execute, print_safety};
-use super::{CliResult, resolve_scopes, say};
+use super::{CliResult, resolve_scopes, say, scope_label};
 use crate::scope::ScopeFilter;
 
 pub fn run(env: &Env, filter: ScopeFilter, yes: bool) -> CliResult {
@@ -22,12 +23,12 @@ pub fn install(env: &Env, scope: &Scope, yes: bool) -> CliResult {
     if plan.is_empty() {
         say(&format!(
             "{}: drift hook already declared and current",
-            scope.label()
+            scope_label(scope)
         ));
     } else {
-        say(&format!("{}: declaring the drift hook", scope.label()));
+        say(&format!("{}: declaring the drift hook", scope_label(scope)));
         for op in &plan.ops {
-            say(&format!("  - {}", op.description));
+            say(&format!("  - {}", shown(&op.description)));
         }
         let report = kendex_core::engine::EngineReport {
             repo_effects: Vec::new(),
@@ -49,11 +50,11 @@ pub fn install(env: &Env, scope: &Scope, yes: bool) -> CliResult {
         kendex_core::engine::plan_apply(env, scope, &kendex_core::engine::PlanOptions::default())?;
     if !report.plan.is_empty() {
         for op in &report.plan.ops {
-            say(&format!("  - {}", op.description));
+            say(&format!("  - {}", shown(&op.description)));
         }
         print_safety(&report);
         confirm_and_execute(env, &report, yes)?;
     }
-    say(&format!("{}: drift hook installed", scope.label()));
+    say(&format!("{}: drift hook installed", scope_label(scope)));
     Ok(())
 }

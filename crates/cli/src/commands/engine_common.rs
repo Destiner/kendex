@@ -1,12 +1,15 @@
 pub use super::blocked::{print_conflicts, print_drift};
-use std::io::{IsTerminal, Write};
 
 use kendex_core::engine::{DriftRow, DriftState, EngineReport};
 use kendex_core::env::Env;
 use kendex_core::error::CoreError;
 use kendex_core::model::{HarnessId, ItemKind};
+use kendex_core::names::shown;
 
-use super::{CliResult, say};
+use std::io::IsTerminal;
+
+use super::{CliResult, note, say, warn};
+use crate::ui;
 
 pub fn parse_harnesses(values: &[String]) -> Result<Vec<HarnessId>, String> {
     values
@@ -23,37 +26,51 @@ pub fn parse_harnesses(values: &[String]) -> Result<Vec<HarnessId>, String> {
 /// it left alone and why — so a verb that prints nothing else about the
 /// plan still prints these.
 pub fn print_notes(report: &EngineReport) {
-    for note in &report.notes {
-        say(&format!("note: {note}"));
+    for line in &report.notes {
+        note(&format!("note: {}", shown(line)));
     }
 }
 
-pub fn print_report(env: &Env, report: &EngineReport) {
+/// The whole plan on a terminal, and back to the caller the items it
+/// refused — one derivation, so a closing count and the conflict lines it
+/// sends the reader to are one reading of one set of rows.
+pub fn print_report(env: &Env, report: &EngineReport) -> Vec<super::offers::Blocked> {
     print_notes(report);
     for warning in &report.warnings {
         let target = match warning.harness {
-            Some(harness) => format!("{} ({})", warning.name, harness.display_name()),
-            None => warning.name.clone(),
+            Some(harness) => format!("{} ({})", shown(&warning.name), harness.display_name()),
+            None => shown(&warning.name),
         };
-        say(&format!("warning: {target}: {}", warning.message));
+        warn(&format!("warning: {target}: {}", shown(&warning.message)));
         if let Some(fix) = &warning.remediation {
-            say(&format!("  fix: {fix}"));
+            say(&format!("  fix: {}", shown(fix)));
         }
     }
     print_safety(report);
-    let blocked = !print_conflicts(env, report).is_empty();
+    let blocked = print_conflicts(env, report);
     if report.plan.is_empty() {
         // "nothing to do" directly under a conflict reads as "and nothing
         // you can do" — the run has plenty to do, once the reader picks.
-        say(match blocked {
-            true => "nothing to do until you settle the conflicts above",
-            false => "nothing to do",
+        say(match blocked.is_empty() {
+            false => "nothing to do until you settle the conflicts above",
+            true => "nothing to do",
         });
-        return;
+        return blocked;
     }
-    say("plan:");
+    let ops = report.plan.ops.len();
+    // The op list is what the confirm below is an answer to: a reader
+    // asked to approve a count was never shown what it covers.
+    say(&format!("plan: {} change{}", ops, plural(ops)));
     for op in &report.plan.ops {
-        say(&format!("  - {}", op.description));
+        say(&format!("  - {}", shown(&op.description)));
+    }
+    blocked
+}
+
+fn plural(n: usize) -> &'static str {
+    match n {
+        1 => "",
+        _ => "s",
     }
 }
 
@@ -62,7 +79,6 @@ pub fn print_report(env: &Env, report: &EngineReport) {
 /// to be said here: seen in `list` and nowhere else, it reads as checked
 /// and passing rather than as never looked at.
 pub fn print_unmanaged(drift: &[DriftRow]) {
-    use kendex_core::names::shown;
     let rows: Vec<&DriftRow> = drift
         .iter()
         .filter(|row| row.state == DriftState::Unmanaged)
@@ -70,7 +86,9 @@ pub fn print_unmanaged(drift: &[DriftRow]) {
     if rows.is_empty() {
         return;
     }
-    say(&format!(
+    // A footnote, not one more verdict: said in its own voice so it does
+    // not join the block of rows above it.
+    note(&format!(
         "not managed: {} item{} kendex did not install and does not touch",
         rows.len(),
         if rows.len() == 1 { "" } else { "s" }
@@ -112,9 +130,8 @@ pub fn print_safety(report: &EngineReport) {
 /// Where a scored package sits, as its score line says so: an
 /// installation belongs to a tool, a catalog item to a path inside its
 /// catalog. Naming the two shapes is what keeps the caller from
-/// hand-building a subject string — the printer escapes what it prints,
-/// and a caller passing text it escaped itself would double-escape it,
-/// `shown` not being idempotent.
+/// hand-building a subject string, so every score line is worded the same
+/// way and escapes the same parts of itself.
 pub enum ScoredAt<'a> {
     /// The tool whose copy of the item was scored.
     Harness(HarnessId),
@@ -148,7 +165,6 @@ pub fn print_advisory(
     at: ScoredAt<'_>,
     advisory: &kendex_core::quality::AuditResult,
 ) {
-    use kendex_core::names::shown;
     let at = match at {
         ScoredAt::Harness(harness) => format!(" for {}", harness.display_name()),
         ScoredAt::CatalogPath("") => String::new(),
@@ -184,7 +200,7 @@ fn print_skipped(advisory: &kendex_core::quality::AuditResult) {
     say(&format!(
         "  not fully checked: {} rule(s) had nothing to read — {}",
         advisory.skipped.len(),
-        kendex_core::names::shown(&first.reason)
+        shown(&first.reason)
     ));
 }
 
@@ -212,17 +228,11 @@ pub fn confirm_and_apply(
     if report.plan.is_empty() {
         return Ok(0);
     }
-    if !yes {
-        if !std::io::stdin().is_terminal() {
-            return Err("refusing to apply without --yes in a non-interactive session".into());
-        }
-        let _ = write!(std::io::stderr(), "apply? [y/N] ");
-        let mut answer = String::new();
-        std::io::stdin().read_line(&mut answer)?;
-        if !matches!(answer.trim(), "y" | "Y" | "yes") {
-            return Err("apply cancelled".into());
-        }
-    }
+    // The count is the consequence: an answer given to a bare "apply?" is
+    // an answer to the verb's name rather than to what it writes.
+    let ops = report.plan.ops.len();
+    ask_before_writing(&format!("apply {ops} change{}?", plural(ops)), yes)?;
+    let _writing = ui::spinner("writing");
     apply_report(env, report)
 }
 
@@ -239,6 +249,22 @@ pub fn confirm_and_apply(
 pub fn apply_report(env: &Env, report: &EngineReport) -> Result<usize, Box<dyn std::error::Error>> {
     super::repo_effects::undo(&report.plan.scope, report)?;
     Ok(kendex_core::apply::execute(env, &report.plan, None)?.applied)
+}
+
+/// The answer every verb needs before it writes, asked one way. `--yes`
+/// skips it; a run with nobody to ask refuses before its first write
+/// rather than guessing, and says which flag would have answered it.
+pub fn ask_before_writing(question: &str, yes: bool) -> CliResult {
+    if yes {
+        return Ok(());
+    }
+    if !std::io::stdin().is_terminal() {
+        return Err("refusing to apply without --yes in a non-interactive session".into());
+    }
+    match ui::confirm(question)? {
+        true => Ok(()),
+        false => Err("apply cancelled".into()),
+    }
 }
 
 /// A refresh failure per v1: any per-item failure or a locked item missing
