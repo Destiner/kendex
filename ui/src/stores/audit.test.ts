@@ -461,3 +461,177 @@ describe("audit store run() actions", () => {
     expect(toast.success).not.toHaveBeenCalled();
   });
 });
+
+// An audit reads every scope over seconds while the page it started from
+// leaves its buttons live. A command that lands in between read its scope
+// later, so the audit's answer is already out of date when it arrives.
+describe("an audit that lands after a command it cannot answer for", () => {
+  const settled: AuditView = { ...emptyView, drift: [], plan: ["settled"] };
+  const stale: AuditView = { ...emptyView, drift: [], plan: ["stale"] };
+
+  beforeEach(() => {
+    useAuditStore.setState({
+      // A view to replace: a command's response lands into the scope it
+      // already holds.
+      views: [emptyView],
+      auditing: false,
+      error: null,
+      checkError: null,
+      busy: false,
+      auditedAt: null,
+      scopeCheckedAt: {},
+      backgroundFailureAnnounced: false,
+    });
+    vi.clearAllMocks();
+  });
+
+  const park = <T>() => {
+    let land: (value: T) => void = () => {};
+    const parked = new Promise<T>((resolve) => {
+      land = resolve;
+    });
+    return { parked, land: (value: T) => land(value) };
+  };
+
+  it("keeps the command's view rather than putting the row back", async () => {
+    const audit = park<{ status: "ok"; data: AuditView[] }>();
+    vi.mocked(commands.auditAll).mockReturnValue(
+      audit.parked as ReturnType<typeof commands.auditAll>,
+    );
+    vi.mocked(commands.removeItem).mockResolvedValue({
+      status: "ok",
+      data: settled,
+    });
+
+    const running = useAuditStore.getState().refresh();
+    await useAuditStore.getState().removeItem(globalScope, "hook", "lint");
+    audit.land({ status: "ok", data: [stale] });
+    await running;
+
+    expect(useAuditStore.getState().views).toEqual([settled]);
+    // Undated, so the next visit pays for a reading that can speak for
+    // what just happened instead of reusing one that cannot.
+    expect(useAuditStore.getState().auditedAt).toBeNull();
+  });
+
+  // A read that did not finish is not news about the state it left behind
+  // either: reported, it would mark a reading unconfirmed that a command
+  // has since confirmed.
+  it("drops a stale failure rather than calling the reading unchecked", async () => {
+    const audit = park<{ status: "error"; error: string }>();
+    vi.mocked(commands.auditAll).mockReturnValue(
+      audit.parked as ReturnType<typeof commands.auditAll>,
+    );
+    vi.mocked(commands.removeItem).mockResolvedValue({
+      status: "ok",
+      data: settled,
+    });
+
+    const running = useAuditStore.getState().refresh();
+    await useAuditStore.getState().removeItem(globalScope, "hook", "lint");
+    audit.land({ status: "error", error: "boom" });
+    await running;
+
+    expect(useAuditStore.getState().checkError).toBeNull();
+    expect(useAuditStore.getState().views).toEqual([settled]);
+  });
+
+  // Dropping the read is only half of it. The command installed its own
+  // scope and nothing re-read the rest, so a stamp left standing would hold
+  // the freshness window open over the very bytes the force was about — an
+  // editor save, say, with every score still quoting the state before it.
+  it("pays for the read it dropped instead of reusing the stamp", async () => {
+    vi.mocked(commands.auditAll).mockResolvedValue({
+      status: "ok",
+      data: [stale],
+    });
+    await useAuditStore.getState().refresh();
+    expect(useAuditStore.getState().auditedAt).not.toBeNull();
+
+    const audit = park<{ status: "ok"; data: AuditView[] }>();
+    vi.mocked(commands.auditAll).mockReturnValue(
+      audit.parked as ReturnType<typeof commands.auditAll>,
+    );
+    vi.mocked(commands.removeItem).mockResolvedValue({
+      status: "ok",
+      data: settled,
+    });
+    const forced = useAuditStore.getState().refresh({ force: true });
+    await useAuditStore.getState().removeItem(globalScope, "hook", "lint");
+    audit.land({ status: "ok", data: [stale] });
+    await forced;
+
+    const dropped = vi.mocked(commands.auditAll).mock.calls.length;
+    vi.mocked(commands.auditAll).mockResolvedValue({
+      status: "ok",
+      data: [settled],
+    });
+    // An ordinary visit, not another force: the window must not answer it.
+    await useAuditStore.getState().refresh();
+
+    expect(vi.mocked(commands.auditAll).mock.calls.length).toBe(dropped + 1);
+  });
+
+  // A command that failed is not a command that wrote nothing: adopt and
+  // the take-over both run a plan before a step that can still fail, so an
+  // audit older than the attempt is out of date whatever the attempt
+  // answered.
+  it("drops an audit that an attempt ran across, however it ended", async () => {
+    const audit = park<{ status: "ok"; data: AuditView[] }>();
+    vi.mocked(commands.auditAll).mockReturnValue(
+      audit.parked as ReturnType<typeof commands.auditAll>,
+    );
+    vi.mocked(commands.removeItem).mockResolvedValue({
+      status: "error",
+      error: "disk is full",
+    });
+
+    const running = useAuditStore.getState().refresh();
+    await useAuditStore.getState().removeItem(globalScope, "hook", "lint");
+    audit.land({ status: "ok", data: [stale] });
+    await running;
+
+    expect(useAuditStore.getState().views).toEqual([emptyView]);
+    expect(useAuditStore.getState().auditedAt).toBeNull();
+  });
+
+  // The third ordering: a reading that lands while a command is still
+  // running. The command has been writing throughout, and the mark at the
+  // end of its attempt would come too late to undo an install.
+  it("drops a reading that landed while an attempt was still running", async () => {
+    const audit = park<{ status: "ok"; data: AuditView[] }>();
+    const command = park<{ status: "error"; error: string }>();
+    vi.mocked(commands.auditAll).mockReturnValue(
+      audit.parked as ReturnType<typeof commands.auditAll>,
+    );
+    vi.mocked(commands.removeItem).mockReturnValue(
+      command.parked as ReturnType<typeof commands.removeItem>,
+    );
+
+    const running = useAuditStore.getState().refresh();
+    const acting = useAuditStore
+      .getState()
+      .removeItem(globalScope, "hook", "lint");
+    audit.land({ status: "ok", data: [stale] });
+    await running;
+
+    expect(useAuditStore.getState().views).toEqual([emptyView]);
+    expect(useAuditStore.getState().auditedAt).toBeNull();
+
+    command.land({ status: "error", error: "disk is full" });
+    await acting;
+  });
+
+  // The control: an audit nothing overtook is the answer, as it was.
+  it("installs an audit that no command overtook", async () => {
+    vi.mocked(commands.auditAll).mockResolvedValue({
+      status: "ok",
+      data: [stale],
+    });
+
+    await useAuditStore.getState().refresh();
+
+    expect(useAuditStore.getState().views).toEqual([stale]);
+    expect(useAuditStore.getState().auditedAt).not.toBeNull();
+  });
+});

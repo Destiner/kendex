@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use kendex_core::apply;
 use kendex_core::engine::{DriftCause, DriftRow, DriftState, PlanOptions, audit, plan_apply};
 use kendex_core::env::{Env, FakeOs};
-use kendex_core::model::Scope;
+use kendex_core::model::{HarnessId, ItemKind, Scope};
 
 struct World {
     _tmp: tempfile::TempDir,
@@ -373,4 +373,179 @@ fn an_edit_under_one_tool_holds_when_another_tool_is_declared_over_it() {
         "the take-over trashed an edit the edit gate protects"
     );
     assert!(!trashed(&w.env.trash_dir()));
+}
+
+/// A repo arriving with its own directory at both positions the link shape
+/// uses. The refusal reads the canonical tree and stops there, so the
+/// harness-native directory is never planned — and the take-over empties
+/// both. The row names both, or the offer built on it moves a directory it
+/// never mentioned.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn the_refusal_names_every_position_a_take_over_empties() {
+    let w = linking_world();
+    let canonical = w.home.join("app/.agents/skills/deploy");
+    let link = w.home.join("app/.claude/skills/deploy");
+    for (at, whose) in [(&canonical, "the shared tree"), (&link, "Claude's own")] {
+        fs::create_dir_all(at).unwrap();
+        fs::write(
+            at.join("SKILL.md"),
+            format!("{whose}, from the tool that came before"),
+        )
+        .unwrap();
+    }
+
+    let audited = audit(&w.env, &w.scope).unwrap();
+    let row = deploy_row(&audited.drift);
+    assert_eq!(row.detail, canonical.display().to_string(), "{row:?}");
+    assert_eq!(
+        row.also_in_the_way,
+        vec![link.display().to_string()],
+        "{row:?}"
+    );
+
+    let report = plan_apply(&w.env, &w.scope, &take_over()).unwrap();
+    apply::execute(&w.env, &report.plan, None).unwrap();
+    // What the row promised is what ran: both directories recoverable, and
+    // the declaration installed over each position.
+    let saved = trash_text(&w.env.trash_dir());
+    assert!(saved.contains("the shared tree"), "{saved}");
+    assert!(saved.contains("Claude's own"), "{saved}");
+    assert!(
+        fs::read_to_string(canonical.join("SKILL.md"))
+            .unwrap()
+            .contains("Upstream.")
+    );
+    assert!(link.is_symlink());
+}
+
+/// The ordinary linking shape: the canonical tree is in the way and the
+/// tool's own position holds nothing yet. A path that is not on disk named
+/// as in the way would have the offer promise to move a directory that
+/// does not exist, and the summary report two places where there is one.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn an_empty_harness_position_is_not_named_as_in_the_way() {
+    let w = linking_world();
+    let canonical = w.home.join("app/.agents/skills/deploy");
+    fs::create_dir_all(&canonical).unwrap();
+    fs::write(canonical.join("SKILL.md"), "the tool that came before").unwrap();
+
+    let audited = audit(&w.env, &w.scope).unwrap();
+    let row = deploy_row(&audited.drift);
+    assert_eq!(row.detail, canonical.display().to_string(), "{row:?}");
+    assert!(row.also_in_the_way.is_empty(), "{row:?}");
+}
+
+/// A link somebody made is never a take-over's target, so it is never
+/// named as in the way either — an offer promising to move it would
+/// promise what the plan refuses.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_link_at_the_harness_position_is_not_named_as_in_the_way() {
+    let w = linking_world();
+    let canonical = w.home.join("app/.agents/skills/deploy");
+    fs::create_dir_all(&canonical).unwrap();
+    fs::write(canonical.join("SKILL.md"), "the tool that came before").unwrap();
+    let elsewhere = w.home.join("somewhere/deploy");
+    fs::create_dir_all(&elsewhere).unwrap();
+    fs::write(elsewhere.join("SKILL.md"), "someone else's copy").unwrap();
+    let link = w.home.join("app/.claude/skills/deploy");
+    fs::create_dir_all(link.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &link).unwrap();
+
+    let audited = audit(&w.env, &w.scope).unwrap();
+    let row = deploy_row(&audited.drift);
+    assert_eq!(row.cause, Some(DriftCause::UnmanagedContent), "{row:?}");
+    assert!(row.also_in_the_way.is_empty(), "{row:?}");
+}
+
+/// Every file under the trash, joined — so a test can name which of two
+/// positions was set aside rather than only that something was.
+#[allow(clippy::unwrap_used)]
+fn trash_text(trash: &Path) -> String {
+    fn walk(dir: &Path, text: &mut String) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, text);
+            } else if let Ok(read) = fs::read_to_string(&path) {
+                text.push_str(&read);
+                text.push('\n');
+            }
+        }
+    }
+    let mut text = String::new();
+    walk(trash, &mut text);
+    text
+}
+
+/// Two tools holding copies that differ. Keeping is one move over both, and
+/// the capture refuses a set it would have to merge — so neither place may
+/// be offered a Keep, or the button runs a command that always fails.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_keep_is_not_offered_where_the_tools_copies_disagree() {
+    let w = world();
+    declare_copy_for(&w, "[\"claude\", \"codex\"]");
+    let claude = w.home.join("app/.claude/skills/deploy");
+    let codex = w.home.join("app/.agents/skills/deploy");
+    for at in [&claude, &codex] {
+        fs::create_dir_all(at).unwrap();
+    }
+    fs::write(claude.join("SKILL.md"), "the tool that came before").unwrap();
+    fs::write(codex.join("SKILL.md"), "a different copy entirely").unwrap();
+
+    assert!(
+        !keep_offered(&w),
+        "a Keep was drawn for a set adopt refuses"
+    );
+    // The verb agrees with the offer, which is the whole point of asking
+    // core rather than reading the cause a second time.
+    assert!(
+        kendex_core::engine::adopt::adopt(
+            &w.env,
+            &w.scope,
+            ItemKind::Skill,
+            "deploy",
+            &[HarnessId::Claude, HarnessId::Codex],
+        )
+        .is_err()
+    );
+
+    // The control: the same two places agreeing are one copy, and keeping
+    // them is the move it always was.
+    fs::write(codex.join("SKILL.md"), "the tool that came before").unwrap();
+    assert!(keep_offered(&w));
+}
+
+/// Whether every place this item is blocked at is offered a keep.
+#[allow(clippy::unwrap_used)]
+fn keep_offered(w: &World) -> bool {
+    let audited = audit(&w.env, &w.scope).unwrap();
+    let rows: Vec<&DriftRow> = audited
+        .drift
+        .iter()
+        .filter(|row| row.name == "deploy" && row.dead_stop())
+        .collect();
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    kendex_core::engine::exits::for_item(&w.env, &w.scope, &rows)
+        .iter()
+        .all(|exit| exit.keep)
+}
+
+/// The declaration, for several tools, each keeping its own copy.
+#[allow(clippy::unwrap_used)]
+fn declare_copy_for(w: &World, harnesses: &str) {
+    fs::write(
+        w.home.join("app/kendex.toml"),
+        format!(
+            "schema = 6\n\n[sources.cat]\npath = \"{}\"\n\n[install]\nharnesses = {harnesses}\nmethod = \"copy\"\n\n[skills.deploy]\nsource = \"cat\"\n",
+            w.home.join("catalog").display()
+        ),
+    )
+    .unwrap();
 }

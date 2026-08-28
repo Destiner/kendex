@@ -28,6 +28,9 @@ an outside contributor.
 - `kendex update` brings the desktop app along on a direct install, and on a
   package-manager install prints that manager's update command instead of
   replacing files it does not own.
+- Problems now lists a declared package whose place already holds files
+  kendex did not write, with the ways out core reports for it: keep those
+  files, or install what kendex.toml asks for and send them to the trash.
 - `REVIEW_GATE_CARRY_FORWARD` gains a `vendored` class: a `kendex refresh`
   push under the render trees a repo lists in `REVIEW_GATE_VENDORED_PATHS`
   carries the prior review, whatever the files' extensions.
@@ -72,6 +75,15 @@ an outside contributor.
 
 ### Fixed
 
+- A blocked declaration now names every position its take-over empties. A
+  tree read through a tool's own link sits at two, and `apply --plan` named
+  one while `--replace-unmanaged` moved both.
+- `kendex adopt` is no longer offered for an item whose tools hold copies
+  that differ. The capture refuses those, so the suggestion named a command
+  that always failed; the offer now asks the same reader the verb does.
+- In the app, a row you just settled no longer comes back. A machine-wide
+  check that started before the change and landed after it overwrote the
+  newer reading, and kept it for the freshness window.
 - `worktree cleanup` and `worktree remove` prove a merge two ways and no other:
   ancestry into the default branch, or the pull request whose head commit is
   the branch tip. Squash merges collect, and every keep now names its reason.
