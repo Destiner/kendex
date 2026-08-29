@@ -24,9 +24,7 @@ git -C [WORKTREE_PATH] status --porcelain
 git -C [WORKTREE_PATH] diff "origin/[BASE_BRANCH_FROM_PREVIOUS_COMMAND]"...HEAD --stat
 ```
 
-A non-empty `status --porcelain` stops the review. Managed with a `dev_agent`: re-delegate to commit or revert the leftovers, then re-enter § 1. Standalone: report the dirty files and ask the user to commit, revert, or run `orch review all` for an ad-hoc uncommitted review.
-
-No committed diff after that check → report "No committed changes to review" and **END**.
+A non-empty `status --porcelain` stops the review. Managed with a `dev_agent`: re-delegate to commit or revert the leftovers, then re-enter § 1. Standalone: report the dirty files and ask the user to commit, revert, or run `orch review all` for an ad-hoc uncommitted review. No committed diff after that check → report "No committed changes to review" and **END**.
 
 **Trivial diffs skip review by rule, not by asking.** A diff that is docs- or comments-only, or under ten changed lines with no logic change, records the skip and goes to § 9 with verdict `pass`:
 
@@ -80,11 +78,7 @@ Read existing reviewer state before any spawn:
 .agents/skills/orch/scripts/workflow-state get [ISSUE_ID] '{review_agents: (.review_agents // []), review_agent_ids: (.review_agent_ids // {}), review_agent_runtime_types: (.review_agent_runtime_types // {})}'
 ```
 
-Classify each reviewer in `[AGENTS]` as reusable, missing, closed, or confirmed-stuck: reuse by exact name when its recorded id points to a live session, attempt one resume when only a name is recorded, and add only the rest to `REVIEWERS_TO_LAUNCH`. Carry a reusable reviewer's existing runtime-type entry forward.
-
-On a RE-REVIEW whose panel shrank (§ 4 scopes it), retire the out-of-panel sessions first.
-
-**Do not spawn yet** — resolve § 2.1 first.
+Classify each reviewer in `[AGENTS]` as reusable, missing, closed, or confirmed-stuck: reuse by exact name when its recorded id points to a live session, attempt one resume when only a name is recorded, and add only the rest to `REVIEWERS_TO_LAUNCH`. Carry a reusable reviewer's existing runtime-type entry forward. On a RE-REVIEW whose panel shrank (§ 4 scopes it), retire the out-of-panel sessions first. **Do not spawn yet** — resolve § 2.1 first.
 
 ### 2.1 External Review Availability
 
@@ -96,9 +90,7 @@ External review runs automatically alongside the internal panel when available, 
 .agents/skills/second-opinion/scripts/second-opinion detect
 ```
 
-A failure, `none`, or empty output sets `EXTERNAL_REVIEW_REQUESTED=false`; anything else sets it `true`. The output is an availability signal only — the external review is launched without `--target`.
-
-On `none`, the error JSON's `candidates` carry a reason per target. Tell the user once — `External review skipped — [CANDIDATE_REASONS]. Fix: [FIX]` — then continue. `[FIX]` follows the reasons: **CLI not found** → install that target's CLI or set its `SECOND_OPINION_<NAME>_CMD` in `kendex.settings.toml [env]`; **same model as this session** or a session-identity reason → export `SECOND_OPINION_CURRENT_MODEL` in this session (session-scoped, never committed to project settings) or widen `SECOND_OPINION_MODELS`.
+A failure, `none`, or empty output sets `EXTERNAL_REVIEW_REQUESTED=false`; anything else sets it `true`. The output is an availability signal only — the external review is launched without `--target`. On `none`, the error JSON's `candidates` carry a reason per target. Tell the user once — `External review skipped — [CANDIDATE_REASONS]. Fix: [FIX]` — then continue. `[FIX]` follows the reasons: **CLI not found** → install that target's CLI or set its `SECOND_OPINION_<NAME>_CMD` in `kendex.settings.toml [env]`; **same model as this session** or a session-identity reason → export `SECOND_OPINION_CURRENT_MODEL` in this session (session-scoped, never committed to project settings) or widen `SECOND_OPINION_MODELS`.
 
 ### 2.2 Launch And Delegate
 
@@ -128,9 +120,7 @@ Stamp the freshness boundary immediately before the delegation batch. In wave mo
 .agents/skills/orch/scripts/workflow-state set-now [ISSUE_ID] review_delegated_at
 ```
 
-Delegate to every reviewer in the active set in parallel. When `EXTERNAL_REVIEW_REQUESTED=true`, launch the external review in the same batch — a shell command, not an agent session: it consumes no slot and joins only the cycle's first wave.
-
-Mint each reviewer's artifact path immediately before its delegation — one command per reviewer, its output filling `[ARTIFACT_PATH]`:
+Delegate to every reviewer in the active set in parallel. When `EXTERNAL_REVIEW_REQUESTED=true`, launch the external review in the same batch — a shell command, not an agent session: it consumes no slot and joins only the cycle's first wave. Mint each reviewer's artifact path immediately before its delegation — one command per reviewer, its output filling `[ARTIFACT_PATH]`:
 
 ```bash
 .agents/skills/orch/scripts/review-artifact-check --path [WORKTREE_PATH] [AGENT]
@@ -272,17 +262,17 @@ Omit empty categories. Decline any item that cannot affect real usage with a one
 
 ### At The Cap
 
-The cap decides before any delegation. Read the fix rounds already run:
+The cap decides before any delegation. Read the re-review cycles already entered:
 
 ```bash
-.agents/skills/orch/scripts/workflow-state get [ISSUE_ID] '{cycles: (.cycles // 0)}'
+.agents/skills/orch/scripts/workflow-state get [ISSUE_ID] '{rereview_cycles: (.rereview_cycles // 0)}'
 ```
 
 ```bash
 .agents/skills/orch/scripts/orch-env REVIEW_MAX_CYCLES 4
 ```
 
-`cycles` counts completed fix rounds — `dev-fix.md` increments it. Below the cap → Fix Delegation. At or past it the fix loop ends here, with no further fix round, so the items this pass reported are the latest word on the diff.
+`rereview_cycles` counts the re-review cycles this loop has entered — the Bounded Re-Review write below raises it, and nothing else does. Below the cap → Fix Delegation. At it the fix loop ends here — the count is entries already taken, so it never goes past the cap — with no further fix round, so the items this pass reported are the latest word on the diff. Read `rereview_cycles`, never `cycles`: `cycles` is the general fix-round tally `dev-fix.md` keeps, and QA and pre-loop fix rounds bump it without spending this budget.
 
 **Capped items are escalated, never dropped.** Record every blocker and `category == "fix"` suggestion this pass found still outstanding, including one already listed in `fixed_items` whose fix did not hold. Exclude only what is already in `escalated_items` and what § 4 declined; a decline is terminal. Match on the RECORDED entry's (location, description), the § 8 key — a re-reporting reviewer copies both fields verbatim off the Fixed line, so the pair matches. An item `fixed_items` already lists has a superseded entry there: its fix did not hold, so the same write drops it. One write per item, before routing to § 5 — the drop and the record land in one command, so the item is never in both buckets and never in neither:
 
@@ -292,7 +282,7 @@ The cap decides before any delegation. Read the fix rounds already run:
 
 `[ARTIFACT_PATH]` is the `json_paths` entry the item came from, `[ARRAY]` is `blockers` or `suggestions`, and `[INDEX]` is its position there. Only a path, an array name, and an integer are ever typed: the finding's own text stays inside the artifact and reaches jq through the binding. It must never be pasted into the command, in a quoted shell word or anywhere else — a location like ``fs.rs::write_all's guard`` ends the shell word early and the item goes unrecorded, and `$(…)` and multi-command blocks are rejected shapes ([references/codex-runtime.md](../references/codex-runtime.md)), so the file is the only channel.
 
-`[SOURCE]` is `pr-review` here and `qa-review` when § 7 applies this rule. § 8 then reports them as escalated instead of re-deriving them as declined, and they reach its filing candidates, taking each item's agent and priority from the `json_paths` artifact it came from. Report the outstanding items and proceed to § 5.
+`[SOURCE]` is `pr-review` here and `qa-review` for a QA-sourced item that reached this rule through § 7's return path. § 8 then reports them as escalated instead of re-deriving them as declined, and they reach its filing candidates, taking each item's agent and priority from the `json_paths` artifact it came from. Report the outstanding items and proceed to § 5.
 
 ### Fix Delegation
 
@@ -330,7 +320,7 @@ The scoped panel is the union of the reviewers whose domains the round's diff to
 .agents/skills/orch/scripts/workflow-state set [ISSUE_ID] rereview_skipped '[REASON]'
 ```
 
-**The loop ends** when two consecutive cycles surface no new blocker, or when the At The Cap check above ends it (`workflow-state set … rereview_panel` refuses once `cycles` is past the cap). The cap bounds NEW cycles, never verification: a fix diff no reviewer has seen gets one focused verification pass — the `rereview_panel` rule above, scoped to exactly that diff — before § 5, cap or no cap. That pass's items re-enter § 4, where the cap check escalates them instead of delegating again. In wave mode the panel replaces `[AGENTS]` for the cycle and wave mechanics apply unchanged.
+**The loop ends** when two consecutive cycles surface no new blocker, or when the At The Cap check above ends it (the `rereview_panel` write raises `rereview_cycles` and refuses once that count reaches the cap). The cap bounds NEW cycles, never verification: a fix diff no reviewer has seen gets one focused verification pass — the `rereview_panel` rule above, scoped to exactly that diff — and this loop's last fix round has budget for it. A pass over a diff no reviewer has seen once the budget is spent takes `verification_panel` instead, which the cap does not gate. That pass's items re-enter § 4, where the cap check escalates them instead of delegating again. In wave mode the panel replaces `[AGENTS]` for the cycle and wave mechanics apply unchanged.
 
 ## 5. Verdict Pass
 
@@ -361,11 +351,11 @@ git -C [WORKTREE_PATH] diff --quiet -G'unsafe |Ordering::|Atomic(U|I|Bool|Ptr)' 
 .agents/skills/orch/scripts/workflow-state set [ISSUE_ID] qa_decision '{"signals":[SIGNALS],"rationale":"[ONE_LINE]"}'
 ```
 
-Drop a signal when the triggering code is trivial or test-only; never drop one for schedule pressure. `skip_qa` true → set it false, record `qa_decision` with `"rationale":"user skip"`, → § 8. Signals empty → § 8. Otherwise → § 6.
+Drop a signal when the triggering code is trivial or test-only; never drop one for schedule pressure. `skip_qa` true → set it false, record `qa_decision` with `"rationale":"user skip"`, → § 7. Signals empty → § 7. Otherwise → § 6. Both of those reach § 7 rather than § 8: with no QA findings **Converged** is true and its disposition writes nothing, so the routing is unchanged and the exit stays in one place.
 
 ## 6. QA Checks
 
-**Skip if** the recorded `qa_decision.signals` is empty → § 8.
+**Skip if** the recorded `qa_decision.signals` is empty → § 7, which finds no QA artifacts, converges, and routes on: the exit is decided in one place even when QA never ran.
 
 Map each signal to its agent — `needs-safety-audit` → `reviewer-safety`, `needs-perf-test` → `reviewer-perf`, `needs-review` → `reviewer-correctness`; a project may override the mapping in its instructions. For each, delegate and wait:
 
@@ -387,15 +377,21 @@ Previous review cycle context (cycle [CYCLES]):
 - Do NOT re-report the fixed or escalated items listed above, unless you check a listed fixed item against the current diff and the defect is still there — then report it again, copying that entry's location and description verbatim and naming its recorded commit sha in your recommendation, or saying it was recorded then dropped in a rebase when the entry carries no sha. A listed fixed item you did not check, and every listed escalated item, stays suppressed. Otherwise report only new issues or regressions the fixes introduced.
 </delegation_format>
 
-Omit `[OWNER/REPO]` when `TRACKER=linear`. On return, append the artifact path to `json_paths`; when the agent reports a `benchmark_commit` other than `none`, confirm it resolves with `git -C [WORKTREE_PATH] log -1 --oneline [SHA]`. A performance QA agent's `qa_metadata.perf_qa` block is posted as an issue comment — Linear via `linear.sh comments create [ISSUE_ID] --body-file`, GitHub via `gh issue comment ${ISSUE_ID#issue-} --body-file` — written to a file first.
-
-A `pass` verdict continues to the next QA agent; `action_required` goes to § 7. After all QA agents complete, remaining `category == "fix"` items not already in `escalated_items` also go to § 7; otherwise → § 8. An item this round's QA artifact reports again is retained even when `fixed_items` lists it — that entry is stale, and dropping the item here would hide a live blocker behind the earlier fix.
+Omit `[OWNER/REPO]` when `TRACKER=linear`. On return, append the artifact path to `json_paths`; when the agent reports a `benchmark_commit` other than `none`, confirm it resolves with `git -C [WORKTREE_PATH] log -1 --oneline [SHA]`. A performance QA agent's `qa_metadata.perf_qa` block is posted as an issue comment — Linear via `linear.sh comments create [ISSUE_ID] --body-file`, GitHub via `gh issue comment ${ISSUE_ID#issue-} --body-file` — written to a file first. A `pass` verdict continues to the next QA agent. After all QA agents complete, → § 7 — every verdict, every time: § 7 owns the exit and no branch here decides one around it, carrying the blockers and the `category == "fix"` suggestions not already in `escalated_items`. An item this round's QA artifact reports again is retained even when `fixed_items` lists it — that entry is stale, and dropping the item here would hide a live blocker behind the earlier fix.
 
 ## 7. Handle QA Items
 
-**Skip if** every QA verdict is `pass` and no fix suggestions remain → § 8.
+When **Converged** below is false, follow the § 4 pattern — collect, present, then delegate through `workflows/dev-fix.md`, by rule and with no selection prompt — with these overrides: items come from the QA JSONs excluding anything already in `escalated_items`, and excluding a `fixed_items` entry only when this round's QA artifact does not report it again; the table header is `QA Agent` and the title `QA Review Items — [ISSUE_ID]`; `source` is `qa-review` and `qa_agent` carries the agent name. A re-found item is retained on purpose: its `fixed_items` entry is stale, and the Converged exit below is what drops that entry and records the item. **No cap check runs here**, and the § 4 budget `REVIEW_MAX_CYCLES` bounds is neither read nor raised in this section: a QA re-check is not a re-review cycle, and a § 4 loop that spent its whole budget still owes this round its QA re-check. After the fix round, apply the § 4 bounded re-review rule with § 6 as the target instead of § 2 — a focused QA re-check whose panel is set on `qa_recheck_panel` — unless the round's diff reaches beyond QA's own surface, which returns to § 2 with its panel on `verification_panel`. Both are sibling keys the `rereview_panel` guard neither counts nor refuses: a verification pass is not a fix cycle, so `REVIEW_MAX_CYCLES` does not gate it, which is what § 4's own rule says in words. Either target re-runs the QA agents or the reviewers and comes back here; neither decides an exit.
 
-Follow the § 4 pattern — collect, present, run the At The Cap check, then delegate through `workflows/dev-fix.md`, by rule and with no selection prompt — with these overrides: items come from the QA JSONs excluding anything already in `escalated_items`, and excluding a `fixed_items` entry only when this round's QA artifact does not report it again; the table header is `QA Agent` and the title `QA Review Items — [ISSUE_ID]`; `source` is `qa-review` and `qa_agent` carries the agent name. A re-found item is retained on purpose: its `fixed_items` entry is stale, and the cap's one write supersedes that entry and escalates the item with `source` `qa-review`. The cap check runs here in the same place it does in § 4, ahead of the delegation: at or past the cap the QA items are escalated with `source` `qa-review` and the round goes to § 8, with no further fix round. After the fix round, apply the § 4 bounded re-review rule with § 6 as the target instead of § 2 — a focused QA re-check — unless the round's diff reaches beyond QA's own surface, which returns to § 2.
+### Converged
+
+This is the one exit predicate for QA, and the only route to § 8: § 6, a QA re-check, and a § 2 verification pass all come back here and none of them returns on its own. **Converged** is true when this round's QA artifacts report nothing this section can act on: a blocker or a `category == "fix"` suggestion first raised on this pass is a new finding, and the predicate is false. A `category == "issue"` suggestion is not one of them. § 7 delegates blockers and `category == "fix"` suggestions, so an issue suggestion would turn the loop with nothing to hand a fix round; it rides through to § 8, where the audit pipeline files it as the finding contract says. True → the disposition below, then § 8. False → the fix round above. The predicate stops repeated patching of a finding already answered; it never discards one. The loop otherwise runs on while each round finds a DISTINCT defect this diff introduced, each of those earning its fix, and stops the moment one root cause reappears at a new site: that round's answer is SKILL.md § Review must converge's structural close, cutting the surface that generates the class, never another patch round.
+
+On the way out, and before § 8, disposition every item still outstanding — every blocker and every `category == "fix"` suggestion this round's QA artifacts report, whether or not `fixed_items` already lists it, excluding only what `escalated_items` carries and what this section declined; an item dev returns as Blocked reaches `escalated_items` through `dev-fix.md` unchanged. One write per item, which drops any superseded `fixed_items` entry and records the item in the same command, its `[ARTIFACT_PATH]` the `json_paths` entry the item came from, `[ARRAY]` either `blockers` or `suggestions` and `[INDEX]` its position there, so the finding's own text reaches jq through the file, never a quoted shell word, and the reason is this exit's own, never the cap's:
+
+```bash
+.agents/skills/orch/scripts/workflow-state update [ISSUE_ID] --slurpfile art '[ARTIFACT_PATH]' '$art[0].[ARRAY][[INDEX]] as $item | .fixed_items = ((.fixed_items // []) | map(select(.location != $item.location or .description != $item.description))) | .escalated_items = ((.escalated_items // []) + [{description: $item.description, location: $item.location, reason: "QA loop converged with the item unresolved", outcome: "blocked", source: "qa-review"}])'
+```
 
 ## 8. Summary And Issue Audit
 

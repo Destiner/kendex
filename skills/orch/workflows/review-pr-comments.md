@@ -166,7 +166,18 @@ Omit empty sections and proceed straight to § 6 — no user prompt.
 
 **Skip if** nothing is marked Fixing → § 6.2.
 
-Ensure the worktree exists (`worktree exists`/`worktree path`, creating with `--pr [PR_NUMBER]` when missing), group the items by `agent`, then stamp the round per group as separate tool calls immediately before delegating, arming the watchdog per [SKILL.md § Round Closure](../SKILL.md#round-closure):
+Read the round budget first. The cap governs what may be pushed, so it decides before the fix round, never after one:
+
+```bash
+.agents/skills/orch/scripts/workflow-state get [ISSUE_ID] '{iterations: (.pr_comment_review.iterations // 0)}'
+```
+```bash
+.agents/skills/orch/scripts/orch-env REVIEW_MAX_EXTERNAL_ROUNDS 4
+```
+
+`iterations` at or past `REVIEW_MAX_EXTERNAL_ROUNDS` ends the ordinary fix rounds on this PR. Two rules decide the pass. **At the cap the disposition is unconditional and the fix is what stops**: every thread is analyzed and gets its reply posted and resolved, on this pass and every later one, and what the cap forbids is the fix and the push that follows it. The **fix set** is what the rest of this section groups, records and delegates: the items marked Fixing, and **at the cap only the cap-exempt ones — a defect this diff itself introduces or arms**, since a cap that forces a disposition onto a defect the change created ships the defect. No later step re-derives it, so there is nothing to filter and no second place to keep in step. The pass then runs three steps, in order. **File first** — run § 6.2 for every item clearing its bar, invoked with its return recorded as `→ § 6.1` rather than § 6.2's usual `→ § 6.3`, since the nested audit returns where it is told and a cap path that does not say so files the issue and exits before anything else here runs. **Then the exception**, the only delegation and the only push this pass makes. **Then reply**, through the reply table below: `Tracked: [ISSUE_ID]` for a filed item, `Fixed in [SHA]` for one the exception fixed, `Declined: [REASON]` for the rest, which needs no issue. Resolve each thread as you reply, then → § 6.3 with § 6.2 already done.
+
+Ensure the worktree exists (`worktree exists`/`worktree path`, creating with `--pr [PR_NUMBER]` when missing), group the fix set by `agent`, then stamp the round per group as separate tool calls immediately before delegating, arming the watchdog per [SKILL.md § Round Closure](../SKILL.md#round-closure):
 
 ```bash
 .agents/skills/orch/scripts/worktree-claim --worktree [WORKTREE_PATH] --issue [ISSUE_ID]
@@ -180,7 +191,7 @@ Ensure the worktree exists (`worktree exists`/`worktree path`, creating with `--
 
 `worktree-claim` exit 75 aborts the delegation — another session holds this worktree, and its stderr names the holder; exit 1 is an unverifiable guard, which stops the workflow and is reported. Its printed token is the delegation's `Worktree Lease:` line.
 
-Persist this group's item set: write `[WORKTREE_PATH]/tmp/dev-round-items-[DEV_ROUND_ID].json` with the harness file-write tool — a JSON array of `{"n": [N], "text": "[ITEM_TEXT]"}`, `[ITEM_TEXT]` being that item's formatted block from the delegation verbatim — then:
+Persist this group's slice of the fix set: write `[WORKTREE_PATH]/tmp/dev-round-items-[DEV_ROUND_ID].json` with the harness file-write tool — a JSON array of `{"n": [N], "text": "[ITEM_TEXT]"}`, `[ITEM_TEXT]` being that item's formatted block from the delegation verbatim — then:
 
 ```bash
 .agents/skills/orch/scripts/dev-round-write --worktree [WORKTREE_PATH] --issue [ISSUE_ID] --round-id [DEV_ROUND_ID] --items-file [WORKTREE_PATH]/tmp/dev-round-items-[DEV_ROUND_ID].json
@@ -200,7 +211,7 @@ Round ID: [DEV_ROUND_ID]
 Artifact Key: [ISSUE_ID]
 
 Review items:
-[For each item marked "Fixing":]
+[For each item in the fix set:]
 ---
 #[N] | [AGENT] | [LOCATION]
 Title: "[TITLE]"
@@ -258,22 +269,22 @@ Inline `--body` only for plain strings; a reply containing backticks or fences g
 
 ### 6.3 Re-Triage Or Exit
 
-After pushing, do **not** wait for bots to re-review. Check once for comments that arrived while fixes were being applied, then loop or exit.
+This section counts the round and decides whether to loop; the cap is § 6.1's and is not re-applied here. Do **not** wait for bots to re-review — check once for comments that arrived while fixes were being applied, then loop or exit.
 
 ```bash
 .agents/skills/orch/scripts/workflow-state increment [ISSUE_ID] pr_comment_review.iterations
 ```
+
+This is the only writer of `pr_comment_review.iterations` in any workflow: one triage pass advances it by exactly one, and a caller that runs this workflow records its results without touching the counter.
+
 ```bash
-.agents/skills/orch/scripts/workflow-state get [ISSUE_ID] '{iterations: .pr_comment_review.iterations, known: (.pr_review_baseline.last_threads // [])}'
+.agents/skills/orch/scripts/workflow-state get [ISSUE_ID] '{known: (.pr_review_baseline.last_threads // [])}'
 ```
-
-`iterations >= 5` → § 7.
-
 ```bash
 .agents/skills/github/scripts/github.sh pr-threads [PR_NUMBER] --unresolved
 ```
 
-A thread is new when its `threads[].id` is not in `known`. No new threads → § 7. Otherwise update the baseline and loop to § 1:
+A thread is new when its `threads[].id` is not in `known`. No new threads → § 7. Otherwise update the baseline and loop to § 1, at the cap as below it: the next pass analyzes the new threads and posts their dispositions, and § 6.1 is where the fix and the push stop:
 
 ```bash
 .agents/skills/orch/scripts/workflow-state set [ISSUE_ID] pr_review_baseline '{"last_threads":[UNRESOLVED_THREAD_IDS]}'

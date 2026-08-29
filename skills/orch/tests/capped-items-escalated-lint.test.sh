@@ -90,7 +90,7 @@ first_line() { awk -v s="$1" 'index($0, s) && !n { n = NR } END { print n + 0 }'
 # POSIX classes only, never \s: BSD grep -E does not know it, and the assertion
 # would go vacuous on macOS rather than loud.
 SCHEMA_CAP_RE='\|[[:space:]]*`escalated_items`.*cycle cap'
-cap_refusal() { grep -F 'cycles is past the cap' "$1"; }
+cap_refusal() { grep -F 'cycles is at the cap' "$1"; }
 
 # --- 1: the cap decides before any fix round is delegated -------------------
 # With Fix Delegation first, reaching the cap still runs one more fix round and
@@ -189,6 +189,130 @@ else
   fail "§ 7 lost the named-bucket exclusion that retains a re-found QA item"
 fi
 
+# --- 11: § 7's own exit records a re-found item ------------------------------
+# § 7 runs no cap check, so its convergence exit is the only place a QA
+# blocker the fix did not hold gets recorded. Two consecutive re-checks
+# surfacing no NEW blocker routes to § 8, and a blocker re-reported every
+# round is not new: without the write it leaves the loop live with its stale
+# `fixed_items` entry standing, and § 8 reports it as fixed.
+s7_exit() { section_7 "$1" | awk '/^### Converged/ { on = 1; next } on && /^## / { on = 0 } on'; }
+EXIT7="$(s7_exit "$REVIEW_PR_WF")"
+if [[ -n "$EXIT7" ]] \
+   && grep -q -F 'escalated_items' <<<"$EXIT7" \
+   && grep -q -F 'fixed_items' <<<"$EXIT7" \
+   && grep -q -F 'qa-review' <<<"$EXIT7"; then
+  pass "§ 7's Converged exit records outstanding items before § 8"
+else
+  fail "§ 7's Converged exit lost its escalate-and-supersede write"
+fi
+
+# The exit's three load-bearing lines. Each check reads the one line that
+# carries its rule: a token scan over the whole slice cannot tell the
+# convergence test from the disposition set from the recorded reason, and a
+# control narrowing one of them would leave the token standing in another.
+s7_converged() { s7_exit "$1" | grep -F '**Converged** is true when'; }
+s7_dispo()     { s7_exit "$1" | grep -F 'On the way out'; }
+s7_write()     { s7_exit "$1" | grep -F -- '--slurpfile art'; }
+
+# --- 12: convergence is one re-check, over every category --------------------
+# A test that names only some categories lets a re-check smuggle a new finding
+# past the exit — a `category == "issue"` suggestion as surely as a
+# `category == "fix"` one. The exit stops repeated patching of an answered
+# finding; it never discards a genuine one.
+#
+# And the criterion has to be reachable: § 6 routes a clean QA pass to § 8 and
+# never back to § 7, so no path can observe two consecutive clean re-checks. A
+# criterion counting to two is a rule nothing executes, which reads as a
+# guarantee the workflow does not give.
+# The predicate covers what § 7 can act on and nothing else. § 7 delegates
+# blockers and `category == "fix"` suggestions, so a predicate that a
+# `category == "issue"` suggestion can falsify sends the loop to a fix round
+# with nothing to delegate. That suggestion is not escalated either: § 8's
+# audit files it, which is where the finding contract puts it.
+CONV="$(s7_converged "$REVIEW_PR_WF")"
+if grep -q -F 'twice running' <<<"$CONV" \
+   || grep -q -F 'two consecutive' <<<"$CONV"; then
+  fail "the convergence test counts re-checks § 6 never schedules"
+elif grep -q -F 'of any category' <<<"$CONV"; then
+  fail "an issue suggestion can falsify the predicate, with nothing to delegate"
+elif grep -q -F 'category == "fix"' <<<"$CONV" \
+     && grep -q -F 'blocker' <<<"$CONV"; then
+  pass "the predicate is the set § 7 can act on"
+else
+  fail "the predicate misses a class § 7 delegates"
+fi
+if grep -q -F 'category == "issue"' <<<"$CONV" && grep -q -F '§ 8' <<<"$CONV"; then
+  pass "the predicate routes an issue suggestion to § 8 instead"
+else
+  fail "the predicate does not say where an issue suggestion goes"
+fi
+
+# --- 12b: every path out of QA reaches the predicate -------------------------
+# The defect this closes is not a count, it is a path deciding its own exit.
+# § 6's all-pass branch returned to § 8 around whatever § 7 required, and § 7
+# carried a **Skip if** doing the same. One predicate, no early returns.
+section_6() { strip_comments "$1" | awk '$0 == "## 6. QA Checks" { on = 1; next } on && /^## 7[.]/ { on = 0 } on'; }
+section_5() { strip_comments "$1" | awk '$0 == "## 5. Verdict Pass" { on = 1; next } on && /^## 6[.]/ { on = 0 } on'; }
+# A route reads `→ § 8`; a bare mention is a cross-reference. § 5 names dev's
+# own § 8 legitimately, so the arrow is what the check reads. Every bypass
+# found so far lived in § 5 or § 6: skip_qa, empty signals, and all-pass.
+BYPASS=0
+for sect in 5 6; do
+  body="$(section_$sect "$REVIEW_PR_WF")"
+  if grep -q -F -- '→ § 8' <<<"$body"; then
+    fail "§ $sect routes to § 8 around the predicate" "$(grep -F -- '→ § 8' <<<"$body")"
+    BYPASS=1
+  fi
+done
+[[ "$BYPASS" -eq 0 ]] && pass "§ 5 and § 6 reach the predicate instead of returning to § 8"
+if grep -q -F '**Skip if**' <<<"$(section_7 "$REVIEW_PR_WF")"; then
+  fail "§ 7 carries an early return around its own predicate"
+else
+  pass "§ 7 has no early return around its predicate"
+fi
+
+# --- 12c: a verification pass is not a fix cycle -----------------------------
+# The § 7 → § 2 pass verifies a fix that already landed. Written to the gated
+# key it is refused once the internal budget is spent, and the round reaches
+# § 5 with an unseen fix diff — which is what § 4's rule forbids in words.
+S7ALL="$(section_7 "$REVIEW_PR_WF")"
+if grep -q -F 'verification_panel' <<<"$S7ALL" \
+   && grep -q -F 'neither counts nor refuses' <<<"$S7ALL"; then
+  pass "the § 2 verification pass takes an ungated key"
+else
+  fail "the § 2 verification pass is gated by the fix-cycle cap"
+fi
+
+# --- 13: the disposition set is every category, whatever fixed_items holds ---
+# Scoped to what `fixed_items` lists, or to one category, a finding first
+# raised on the final re-check reaches § 8 in neither bucket and § 8
+# re-derives it as a decline.
+DISPO="$(s7_dispo "$REVIEW_PR_WF")"
+# `every blocker and every suggestion`, not the bare words: the line also
+# glosses the command's [ARRAY] placeholder as `blockers` or `suggestions`,
+# which would satisfy a looser grep on its own.
+if grep -q -F 'category == "issue"' <<<"$DISPO"; then
+  fail "the exit escalates an issue suggestion instead of leaving it to § 8's audit"
+elif grep -q -F 'every blocker and every `category == "fix"` suggestion' <<<"$DISPO" \
+     && grep -q -F 'fixed_items' <<<"$DISPO"; then
+  pass "the exit dispositions what § 7 acts on, listed or not"
+else
+  fail "the exit's disposition set covers only part of what § 7 acts on"
+fi
+
+# --- 14: the recorded reason is § 7's own, never § 4's cap -------------------
+# § 7 runs no cap, so the cap's reason string in its write is a false reason in
+# the summary § 8 posts. Read the write itself: the prose around it explains
+# the reason and would satisfy a slice-wide grep on its own.
+WRITE7="$(s7_write "$REVIEW_PR_WF")"
+if grep -q -F 'outstanding at the review cycle cap' <<<"$WRITE7"; then
+  fail "§ 7's write records the cap's reason in a section that runs no cap"
+elif grep -q -F 'QA loop converged with the item unresolved' <<<"$WRITE7"; then
+  pass "§ 7's write records its own reason, not the cap's"
+else
+  fail "§ 7's write records no reason of its own"
+fi
+
 # --- planted controls: prove each check can fail ----------------------------
 echo
 echo "--- planted controls ---"
@@ -261,7 +385,7 @@ else
   fail "lint MISSED a placeholder pasted into a quoted shell word"
 fi
 
-if ! plant_pr source 's/`qa-review` when § 7 applies this rule/the § 7 value when it applies this rule/'; then
+if ! plant_pr source 's/`qa-review` for a QA-sourced item/the § 7 value for such an item/'; then
   fail "source control planted nothing — its sed program matched no text"
 elif sec_has "$CTRL" 'qa-review'; then
   fail "lint MISSED a cap rule that stops naming qa-review"
@@ -355,13 +479,126 @@ else
 fi
 
 # § 7's retaining rule reverted to the blanket exclusion.
-QA_REVERT='s/, and excluding a .fixed_items. entry only when this round.s QA artifact does not report it again//; s/A re-found item is retained on purpose[^.]*[.] //'
+QA_REVERT='s/, and excluding a .fixed_items. entry only when this round.s QA artifact does not report it again//; s/A re-found item is retained on purpose[^.]*[.] //; s/, whether or not .fixed_items. already lists it//; s/which drops any superseded .fixed_items. entry and records/which records/; /--slurpfile art/d'
 if ! plant_pr qa "$QA_REVERT"; then
   fail "qa control planted nothing — its sed program matched no text"
 elif s7_has "$CTRL" 'fixed_items'; then
   fail "lint MISSED § 7 reverting to the blanket fixed-or-escalated exclusion"
 else
   pass "lint flags § 7 reverting to the blanket fixed-or-escalated exclusion"
+fi
+
+# § 7's exit reverted to routing straight to § 8, which is the shape that let
+# a re-reported blocker leave the loop reported as fixed.
+if ! plant_pr s7exit '/^### Converged/,/^## 8[.]/d'; then
+  fail "§ 7 exit control planted nothing — its sed program matched no text"
+elif [[ -n "$(s7_exit "$CTRL")" ]]; then
+  fail "lint MISSED a § 7 exit that records nothing before § 8"
+else
+  pass "lint flags a § 7 exit that records nothing before § 8"
+fi
+
+# § 6 deciding its own exit again.
+if ! plant_pr s6exit 's/→ § 7 — every verdict, every time/→ § 8 when every verdict is pass, else § 7/'; then
+  fail "§ 6 early-return control planted nothing — its sed program matched no text"
+elif grep -q -F -- '→ § 8' <<<"$(section_6 "$CTRL")"; then
+  pass "lint flags § 6 returning to § 8 around the predicate"
+else
+  fail "lint MISSED § 6 returning to § 8 around the predicate"
+fi
+
+# § 5's skip_qa branch going straight to § 8, the bypass the § 6-only check
+# could not see.
+if ! plant_pr s5skip 's/`\"rationale\":\"user skip\"`, → § 7/`\"rationale\":\"user skip\"`, → § 8/'; then
+  fail "§ 5 skip control planted nothing — its sed program matched no text"
+elif grep -q -F -- '→ § 8' <<<"$(section_5 "$CTRL")"; then
+  pass "lint flags § 5's skip_qa branch returning to § 8"
+else
+  fail "lint MISSED § 5's skip_qa branch returning to § 8"
+fi
+
+# § 5's empty-signals branch doing the same.
+if ! plant_pr s5empty 's/Signals empty → § 7/Signals empty → § 8/'; then
+  fail "§ 5 signals control planted nothing — its sed program matched no text"
+elif grep -q -F -- '→ § 8' <<<"$(section_5 "$CTRL")"; then
+  pass "lint flags § 5's empty-signals branch returning to § 8"
+else
+  fail "lint MISSED § 5's empty-signals branch returning to § 8"
+fi
+
+# § 7 growing its own early return back.
+CTRL="$TMP_ROOT/pr-skipif.md"
+awk '
+  /^## 7\. Handle QA Items/ && !planted {
+    print; print ""
+    print "**Skip if** every QA verdict is `pass` and no fix suggestions remain → § 8."
+    planted = 1; next
+  }
+  { print }
+' "$REVIEW_PR_WF" > "$CTRL"
+if ! grep -qF '**Skip if** every QA verdict' "$CTRL"; then
+  fail "§ 7 skip-if control planted nothing — no early return was inserted"
+elif grep -q -F '**Skip if**' <<<"$(section_7 "$CTRL")"; then
+  pass "lint flags § 7 growing an early return back"
+else
+  fail "lint MISSED § 7 growing an early return back"
+fi
+
+# The verification pass routed back onto the gated key.
+if ! plant_pr s7verif 's/with its panel on .verification_panel./with its panel on `rereview_panel`/'; then
+  fail "§ 7 verification control planted nothing — its sed program matched no text"
+elif grep -q -F 'verification_panel' <<<"$(section_7 "$CTRL")"; then
+  fail "lint MISSED a verification pass gated by the fix-cycle cap"
+else
+  pass "lint flags a verification pass gated by the fix-cycle cap"
+fi
+
+# The criterion counting to two: § 6's clean branch goes to § 8, so the second
+# pass is never scheduled and the rule cannot fire.
+if ! plant_pr s7twice 's/first raised on this pass is a new finding/first raised on either of two consecutive passes is a new finding/'; then
+  fail "§ 7 twice-running control planted nothing — its sed program matched no text"
+elif grep -q -F 'two consecutive' <<<"$(s7_converged "$CTRL")"; then
+  pass "lint flags a convergence test that counts to two"
+else
+  fail "lint MISSED a convergence test that counts to two"
+fi
+
+# The predicate widened back to any category: an issue suggestion falsifies it
+# and the loop turns with nothing to delegate.
+if ! plant_pr s7conv 's/report nothing this section can act on/report no new finding of any category/'; then
+  fail "§ 7 convergence control planted nothing — its sed program matched no text"
+elif grep -q -F 'of any category' <<<"$(s7_converged "$CTRL")"; then
+  pass "lint flags a predicate an issue suggestion can falsify"
+else
+  fail "lint MISSED a predicate an issue suggestion can falsify"
+fi
+
+# The exit escalating an issue suggestion, which takes it out of § 8's audit
+# and records it as blocked instead of filed.
+if ! plant_pr s7sugg 's/every blocker and every `category == "fix"` suggestion/every blocker, every `category == "fix"` suggestion, and every `category == "issue"` suggestion/'; then
+  fail "§ 7 category control planted nothing — its sed program matched no text"
+elif grep -q -F 'category == "issue"' <<<"$(s7_dispo "$CTRL")"; then
+  pass "lint flags a § 7 exit that escalates an issue suggestion"
+else
+  fail "lint MISSED a § 7 exit that escalates an issue suggestion"
+fi
+
+# The disposition set narrowed to blockers alone.
+if ! plant_pr s7blk 's/every blocker and every `category == "fix"` suggestion this round.s QA artifacts report/every blocker this round.s QA artifacts report/'; then
+  fail "§ 7 blocker-only control planted nothing — its sed program matched no text"
+elif grep -q -F 'every blocker and every `category == "fix"` suggestion' <<<"$(s7_dispo "$CTRL")"; then
+  fail "lint MISSED a § 7 exit that dispositions blockers only"
+else
+  pass "lint flags a § 7 exit that dispositions blockers only"
+fi
+
+# The borrowed reason: § 4's cap string recorded by a section that runs no cap.
+if ! plant_pr s7reason 's/QA loop converged with the item unresolved/outstanding at the review cycle cap/'; then
+  fail "§ 7 reason control planted nothing — its sed program matched no text"
+elif grep -q -F 'QA loop converged with the item unresolved' <<<"$(s7_write "$CTRL")"; then
+  fail "lint MISSED a § 7 write recording the cap's reason"
+else
+  pass "lint flags a § 7 write recording the cap's reason"
 fi
 
 SCRATCH_SCHEMA="$TMP_ROOT/schema.md"
