@@ -5,7 +5,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::apply::{Op, PlannedOp, Pre};
+use crate::apply::{Description, Op, PlannedOp, Pre};
 use crate::env::Env;
 use crate::error::{CoreError, Result};
 use crate::model::{HarnessId, ItemKind, Scope};
@@ -193,7 +193,7 @@ pub(super) fn shared_capture_ops(
     let mut ops = Vec::new();
     if local_item.exists() {
         ops.push(PlannedOp {
-            description: format!("trash the local source's earlier copy of {name}"),
+            description: format!("trash the local source's earlier copy of {name}").into(),
             op: Op::Trash {
                 absent_is_done: false,
                 path: local_item.to_path_buf(),
@@ -204,7 +204,8 @@ pub(super) fn shared_capture_ops(
         });
     }
     ops.push(PlannedOp {
-        description: format!("move the shared folder's content of {name} into the local source"),
+        description: format!("move the shared folder's content of {name} into the local source")
+            .into(),
         op: Op::WriteTree {
             root: local_item.to_path_buf(),
             files: crate::capture::read_tree(&shared.target)?,
@@ -212,10 +213,7 @@ pub(super) fn shared_capture_ops(
         },
     });
     ops.push(PlannedOp {
-        description: format!(
-            "trash the shared folder at {} (recoverable)",
-            shared.target.display()
-        ),
+        description: Description::around("trash the shared folder at ", " (recoverable)"),
         op: Op::Trash {
             absent_is_done: false,
             path: shared.target.clone(),
@@ -226,7 +224,7 @@ pub(super) fn shared_capture_ops(
     });
     for (link, raw) in &shared.links {
         ops.push(PlannedOp {
-            description: format!("clear the link at {}", link.display()),
+            description: Description::around("clear the link at ", ""),
             op: Op::Trash {
                 absent_is_done: false,
                 path: link.clone(),

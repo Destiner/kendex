@@ -386,17 +386,14 @@ pub fn source(env: &Env, scope: &Scope, source_name: &str) -> Result<Plan> {
 
     let manifest_path = crate::manifest::manifest_path(env, &scope);
     ops.push(PlannedOp {
-        description: format!("keep {source_name}'s packages as your own in kendex.toml"),
+        description: format!("keep {source_name}'s packages as your own in kendex.toml").into(),
         op: Op::WriteManifest {
             pre: Pre::observed(&manifest_path)?,
             path: manifest_path,
             manifest: Box::new(converted),
         },
     });
-    Ok(Plan {
-        scope: scope.clone(),
-        ops,
-    })
+    Plan::landed(scope.clone(), ops)
 }
 
 /// The manifest this conversion writes: every kept package reading `local`

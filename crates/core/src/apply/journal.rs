@@ -18,6 +18,21 @@ pub struct Journal {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Entry {
     pub path: PathBuf,
+    /// Where `path` reached when this pre-image was taken.
+    ///
+    /// A restore puts bytes back where they came from, and where they came
+    /// from is not a spelling: a directory on the way to them can be
+    /// somebody's link, and can become one afterwards. The journal's paths
+    /// are its caller's own and need not be landings — under a temp root
+    /// reached through a link none of them is — so the place is written
+    /// down rather than inferred from how the path reads.
+    ///
+    /// `None` is a journal from a build that did not write it down. It
+    /// parses so that the restore can refuse it by name; nothing here
+    /// supplies a landing for it, because supplying one would be guessing
+    /// where somebody's bytes came from.
+    #[serde(default)]
+    pub landed: Option<PathBuf>,
     pub state: PreState,
 }
 
@@ -34,6 +49,19 @@ pub enum PreState {
     Symlink {
         target: PathBuf,
         store: Option<String>,
+        /// The file those bytes were copied from: this link followed the
+        /// whole way, leaf included.
+        ///
+        /// Not the entry's own landing, which stops at the leaf because
+        /// the write path has its own answers for a link sitting at a
+        /// position. These bytes came from the far end of it, and
+        /// redirecting a directory on the way to that end leaves the same
+        /// link reaching a different file — one the pre-image would then
+        /// be written into. `None` where nothing was copied, and where a
+        /// journal was written before the far end was recorded, which the
+        /// restore refuses rather than guesses at.
+        #[serde(default)]
+        reached: Option<PathBuf>,
     },
     /// Tree copied under `store/<index>/` in the journal dir.
     Dir {
@@ -59,12 +87,17 @@ pub fn write(dir: &Path, paths: &[PathBuf]) -> Result<()> {
             let slot_name = index.to_string();
             let slot = store.join(&slot_name);
             let resolved_file = path.exists() && path.is_file();
+            let mut reached = None;
             if resolved_file {
                 copy_file_durable(path, &slot)?;
+                // Read after the copy, so what is recorded is the file the
+                // bytes in the slot actually came from.
+                reached = Some(path.canonicalize().map_err(|e| CoreError::io(path, e))?);
             }
             PreState::Symlink {
                 target: fs::read_link(path).map_err(|e| CoreError::io(path, e))?,
                 store: resolved_file.then_some(slot_name),
+                reached,
             }
         } else if path.is_dir() {
             let slot = store.join(index.to_string());
@@ -82,6 +115,7 @@ pub fn write(dir: &Path, paths: &[PathBuf]) -> Result<()> {
             PreState::Absent
         };
         entries.push(Entry {
+            landed: Some(super::landing::landing(path)),
             path: path.clone(),
             state,
         });
@@ -198,9 +232,11 @@ fn rollback_where(dir: &Path, restore: impl Fn(&Path) -> bool) -> Result<()> {
     };
     let journal: Journal = match serde_json::from_str(&text) {
         Ok(journal) => journal,
-        // A torn meta can only mean the crash hit before the durable meta
-        // write completed — and mutations only start after it completes, so
-        // the world is untouched and the journal is safe to discard.
+        // A meta that will not parse is a torn one. It is written whole
+        // and durably before any mutation starts, so a partial one proves
+        // the world untouched and the journal safe to discard. A journal
+        // that parses but cannot be acted on is a different thing, whose
+        // mutations did start: that one is refused below, never cleared.
         Err(_) => return clear(dir),
     };
     let store = dir.join("store");
@@ -208,6 +244,20 @@ fn rollback_where(dir: &Path, restore: impl Fn(&Path) -> bool) -> Result<()> {
         if !restore(&entry.path) {
             continue;
         }
+        // A pre-image goes back where it came from, and the journal says
+        // where that was. A path reaching somewhere else now is reached
+        // through a directory somebody has changed since, and restoring
+        // there would put these bytes where they never came from. So is a
+        // journal that never wrote the place down: the apply it belongs to
+        // did mutate, and nothing here can say whether these bytes still
+        // have a way back. Both refuse, leaving the journal pending for
+        // inspection, the way a restore set that will not parse does.
+        let Some(landed) = &entry.landed else {
+            return Err(CoreError::UnrecordedLanding {
+                path: entry.path.clone(),
+            });
+        };
+        super::landing::still_reaches(landed, &entry.path)?;
         remove_any(&entry.path)?;
         match &entry.state {
             PreState::Absent => {}
@@ -220,14 +270,33 @@ fn rollback_where(dir: &Path, restore: impl Fn(&Path) -> bool) -> Result<()> {
             PreState::Symlink {
                 target,
                 store: slot,
+                reached,
             } => {
                 if let Some(parent) = entry.path.parent() {
                     fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
                 }
                 make_symlink(target, &entry.path)?;
                 // A write may have gone through the link: restore the
-                // linked-to file's bytes too.
+                // linked-to file's bytes too, and only into the file they
+                // came from. The link is back where it was, so the far end
+                // is knowable again — and it is a different question from
+                // the entry's own landing, which stops at this link.
                 if let Some(slot) = slot {
+                    let Some(reached) = reached else {
+                        return Err(CoreError::UnrecordedLanding {
+                            path: entry.path.clone(),
+                        });
+                    };
+                    let now = entry
+                        .path
+                        .canonicalize()
+                        .map_err(|e| CoreError::io(&entry.path, e))?;
+                    if now != *reached {
+                        return Err(CoreError::TargetMoved {
+                            path: entry.path.clone(),
+                            now,
+                        });
+                    }
                     copy_file_durable(&store.join(slot), &entry.path)?;
                 }
             }

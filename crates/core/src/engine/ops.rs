@@ -376,16 +376,15 @@ pub(crate) fn insert_manifest_save(
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string());
-    plan.ops.insert(
+    plan.insert(
         0,
         PlannedOp {
-            description: format!("Save {file}"),
+            description: format!("Save {file}").into(),
             op: Op::WriteManifest {
                 pre: Pre::observed(&path)?,
                 path,
                 manifest: Box::new(manifest),
             },
         },
-    );
-    Ok(())
+    )
 }

@@ -22,7 +22,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::apply::{Op, Plan, PlannedOp, Pre};
+use crate::apply::{Description, Op, Plan, PlannedOp, Pre};
 use crate::configedit::ConfigEdit;
 use crate::engine::targets::HookFormat;
 use crate::env::Env;
@@ -89,10 +89,7 @@ pub(super) fn adopt_hook(
             manifest: Box::new(manifest),
         },
     });
-    Ok(Plan {
-        scope: scope.clone(),
-        ops,
-    })
+    Plan::landed(scope.clone(), ops)
 }
 
 /// Every named tool's copy of the registration this name identifies, read
@@ -225,7 +222,7 @@ fn script_move(scope: &Scope, command: &str, ops: &mut Vec<PlannedOp>) -> Result
         });
     }
     ops.push(PlannedOp {
-        description: format!("move {token} into {HOME}"),
+        description: format!("move {token} into {HOME}").into(),
         // The entries as they sit: `hash_tree` follows links, so a script
         // swapped for a link to the same bytes between plan and apply would
         // move the wrong object.
@@ -339,7 +336,7 @@ fn drop_old_entries(found: &[Found]) -> Result<Vec<PlannedOp>> {
         .into_iter()
         .map(|(path, edits)| {
             Ok(PlannedOp {
-                description: format!("drop the old registration in {}", path.display()),
+                description: Description::around("drop the old registration in ", ""),
                 op: Op::EditFile {
                     pre: Pre::observed(&path)?,
                     path,

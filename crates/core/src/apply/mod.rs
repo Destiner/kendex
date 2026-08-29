@@ -6,13 +6,16 @@ use crate::model::Scope;
 
 mod common;
 pub mod journal;
+mod landing;
 mod op;
 mod plain;
+mod plan;
 mod pre;
 mod transaction;
 
 pub use common::{common_key, execute_common, recover_common_journals};
-pub use op::{Op, Plan, PlannedOp, Pre, read_git_config};
+pub use op::{Op, Pre, read_git_config};
+pub use plan::{Description, Plan, PlannedOp};
 use transaction::run_journaled;
 
 /// Filesystem-safe key naming a scope's journal dir and lock file. Keys off

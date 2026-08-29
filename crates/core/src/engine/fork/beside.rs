@@ -146,17 +146,14 @@ pub fn fork_beside(
 
     let manifest_path = manifest::manifest_path(env, scope);
     ops.push(PlannedOp {
-        description: format!("record the fork of {name} as {new_name} in kendex.toml"),
+        description: format!("record the fork of {name} as {new_name} in kendex.toml").into(),
         op: Op::WriteManifest {
             pre: Pre::observed(&manifest_path)?,
             path: manifest_path,
             manifest: Box::new(manifest),
         },
     });
-    Ok(Plan {
-        scope: scope.clone(),
-        ops,
-    })
+    Plan::landed(scope.clone(), ops)
 }
 
 /// The captured bytes answering to `new_name` — [`named_bytes`] over the
