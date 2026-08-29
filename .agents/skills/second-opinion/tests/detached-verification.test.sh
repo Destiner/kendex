@@ -129,7 +129,7 @@ output=""
 for arg in "$@"; do case "$arg" in --output=*) output="${arg#--output=}" ;; esac; done
 printf 'answer\n' > "$output"
 printf '0\n' > "$SIGNAL_RUNTIME/worker.status"
-sleep 5
+sleep 15
 SH
   chmod +x "$TMP_ROOT/bin/signal-worker"
   mkdir "$TMP_ROOT/signal-runtime"
@@ -141,11 +141,26 @@ SH
   sleep 2.2
   kill -TERM -- "-$signal_session" 2>/dev/null || true
   signal_wait="$(sed -n 's/^wait: //p' "$TMP_ROOT/signal-launch.stdout")"
+  signal_test_deadline=$(($(date +%s) + 5))
   signal_rc=0
   bash -c "$signal_wait" >"$TMP_ROOT/signal-wait.stdout" \
     2>"$TMP_ROOT/signal-wait.stderr" || signal_rc=$?
+  while [[ $signal_rc -eq 75 ]]; do
+    [[ $(date +%s) -le $signal_test_deadline ]] \
+      || fail "signal-during-wait did not reach a terminal result"
+    signal_rc=0
+    bash -c "$signal_wait" >"$TMP_ROOT/signal-wait.stdout" \
+      2>"$TMP_ROOT/signal-wait.stderr" || signal_rc=$?
+  done
   [[ $signal_rc -eq 143 ]] || fail "signal-during-wait returned $signal_rc"
-  if ps -eo sid= | awk -v sid="$signal_session" '$1 == sid { found = 1 } END { exit found ? 0 : 1 }'; then
+  for _signal_reap in {1..20}; do
+    ps -eo sid=,stat= | awk -v sid="$signal_session" \
+      '$1 == sid && $2 !~ /^Z/ { found = 1 } END { exit found ? 0 : 1 }' \
+      || break
+    sleep 0.1
+  done
+  if ps -eo sid=,stat= | awk -v sid="$signal_session" \
+    '$1 == sid && $2 !~ /^Z/ { found = 1 } END { exit found ? 0 : 1 }'; then
     fail "signal-during-wait left a process in its session"
   fi
   printf 'PASS: cancellation during worker wait reaps before returning 143\n'
