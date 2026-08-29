@@ -21,37 +21,55 @@
 //! inside `BLOB` to write over. That last one damages a file somebody
 //! owns, which is why the memory lives here now instead of three times.
 //!
-//! What this settles is exactly one thing: **which lines are structure and
-//! which are inside a value**, and where a structure line's top-level `=`
-//! falls. What a table means, what a finding is, and which values the
-//! shell loaders will read stay with the three callers, because they
-//! differ on purpose — the check is strict where seeding is lenient.
+//! What this settles is **which lines are structure and which are inside a
+//! value**, where a structure line's top-level `=` falls, and **whether a
+//! line left a value unfinished**. What a table means, what a finding is,
+//! and which values the shell loaders will read stay with the three
+//! callers, because they differ on purpose — the check is strict where
+//! seeding is lenient.
 //!
-//! ## What the grammar can carry across a line
+//! ## Where every value form can end
 //!
-//! Enumerated from TOML's value grammar rather than added one at a time as
-//! each face of the same defect surfaced. A value is exactly one of:
-//! string, integer, float, boolean, one of the five date-time forms,
-//! array, inline table. Taking them in turn:
+//! Enumerated from the value grammar of the spec the workspace's `toml`
+//! dependency implements — the root `Cargo.toml` is where that is chosen,
+//! and this table has to be re-read against it whenever it moves. Written
+//! out whole rather than a form at a time: a form left off it reads as
+//! finished and is copied into somebody's file, and one filed in the wrong
+//! column is refused though the parser accepts it. A value is exactly one
+//! of string, integer, float, boolean, one of the five date-time forms,
+//! array, or inline table. Each either has delimiters or does not, and each
+//! delimited one may cross a newline or may not:
 //!
-//! - **Multi-line basic** and **multi-line literal** strings carry
-//!   arbitrary text over line ends. Tracked.
-//! - **Arrays** carry over line ends and nest. Tracked by depth, because a
-//!   flag cannot say how deep and a nested `[` is not a table header.
-//! - **Single-line strings**, basic and literal, end with their line by
-//!   definition. The walk steps over them inside a line and never past it.
-//! - **Inline tables** may not hold a newline in TOML 1.0, so they carry
-//!   nothing across one. What they hold on their own line — `=` and `[` —
-//!   reaches no decision: only a line whose first non-blank character is
-//!   `[` reads as a table, and the assignment's `=` is the first one no
-//!   string encloses.
-//! - **Every scalar** is a single token holding none of `[`, `]`, `"`,
-//!   `'`, `#` or `=`, so none can be mistaken for structure or conceal it.
+//! | Form                      | Delimiter | Crosses a newline |
+//! |---------------------------|-----------|-------------------|
+//! | Multi-line basic string   | `"""`     | yes, carried      |
+//! | Multi-line literal string | `'''`     | yes, carried      |
+//! | Array                     | `[` `]`   | yes, carried      |
+//! | Inline table              | `{` `}`   | yes, carried      |
+//! | Single-line string        | `"` `'`   | no, breaks        |
+//! | Integer, float, boolean   | none      | cannot be open    |
+//! | The five date-time forms  | none      | cannot be open    |
 //!
-//! That is the whole of the value grammar, so the set that can carry
-//! across a line is closed at three, and all three are tracked. Every
-//! claim in this list has a control in `tests.rs`; the last three times
-//! this file was wrong, it was wrong in a comment first.
+//! Arrays and inline tables are carried by depth rather than by a flag,
+//! because a flag cannot say how deep and a nested `[` is not a table
+//! header. Depth is also why nothing here is a rule per form: an array
+//! inside an inline table, or a table inside an array, closes when its own
+//! delimiter does, like any other. A scalar is one token holding none of
+//! `[`, `]`, `{`, `}`, `"`, `'`, `#` or `=`, so none can be mistaken for
+//! structure, conceal it, or be left open.
+//!
+//! That is the whole of the value grammar, so both sets are closed: four
+//! forms carry, one breaks where its line ends, and the scalars cannot be
+//! open at all. A value is COMPLETE only where the line it ended on left
+//! neither kind open — which is why a row carries the two as separate
+//! facts and neither is the other's negation. A container the file never
+//! closes carries to the end and is incomplete there. A form this table
+//! cannot answer for is a gap to name here, never a silent default of
+//! complete.
+//!
+//! Every claim in this table has a control in `tests.rs`. This file goes
+//! wrong in a comment before it goes wrong in code, so the table is the
+//! thing to re-read against the spec first.
 //!
 //! What a line leaves open is read off it once, apart from the decision
 //! about what the line is, because the two are independent — a line can
@@ -108,6 +126,23 @@ pub struct Row<'a> {
     /// Byte offset of `text` in the source.
     pub at: usize,
     pub kind: Line<'a>,
+    /// Whether this line leaves a value open — the same fact
+    /// [`Line::InValue`] tells about the lines below it, told from the
+    /// line that opened it. Both tellings are needed: a caller holding an
+    /// assignment cannot ask the line under it whether the value closed
+    /// when the file ends there.
+    pub carries: bool,
+    /// Whether this line ends inside a delimiter no later line may close.
+    /// Only a single-line string can be one: the grammar ends it with its
+    /// line, so nothing below it can finish it. Every other container
+    /// carries instead, and one the file never closes carries to the end
+    /// of the file — [`Row::carries`] is what answers for those.
+    ///
+    /// The complement of [`Row::carries`], never its negation: both are
+    /// false for a value that simply ended, and `TOKEN = "` carries
+    /// nothing and is not finished either. A value is complete only where
+    /// neither is true of it.
+    pub broken: bool,
 }
 
 impl Row<'_> {
@@ -140,13 +175,16 @@ pub fn rows(text: &str) -> Vec<Row<'_>> {
             true => Line::InValue,
             false => kind_of(content),
         };
-        carry = advance(content, carry);
+        let ends = advance(content, carry);
+        carry = ends.carry;
         out.push(Row {
             line: line_number(index),
             raw,
             text: content,
             at,
             kind,
+            carries: carry.inside(),
+            broken: ends.broken,
         });
         at += raw.len();
     }

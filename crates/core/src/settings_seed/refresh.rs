@@ -10,9 +10,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::lock::SettingsSeed;
 
-use super::{
-    SeededEnv, assignment_key, comment_hash, env_section, file_eol, table_row, trim_blank_edges,
-};
+use super::write::{env_section, file_eol};
+use super::{SeededEnv, assignment_key, comment_hash, table_row, trim_blank_edges};
 use crate::settings_toml::Line;
 
 /// Rewrite `[env]` comment blocks whose upstream template text changed,
@@ -128,23 +127,27 @@ pub fn refresh_comments(
 
 /// The template that speaks for a key: the recorded owner's when several
 /// skills ship the key — declaration order must not shadow the ledger —
-/// else the first declaration.
+/// else the one [`super::writable_for`] chose.
+///
+/// Only a template that supplies a complete value is a candidate, on
+/// either path. A template seeding could not write is not the one whose
+/// comment belongs beside the key, and taking it here would let a broken
+/// skill rewrite the prose above bytes another skill supplied.
 fn template_for<'a>(
     key: &str,
     entries: &'a [SeededEnv],
     record: Option<&SettingsSeed>,
 ) -> Option<&'a SeededEnv> {
-    let mut candidates = entries.iter().filter(|seeded| seeded.entry.key == key);
-    let first = candidates.next()?;
+    let first = super::writable_for(entries, key)?;
     let Some(owner) = record.and_then(|record| record.owner.as_deref()) else {
         return Some(first);
     };
-    match first.owner == owner {
-        true => Some(first),
-        false => candidates
-            .find(|seeded| seeded.owner == owner)
-            .or(Some(first)),
+    if first.owner == owner {
+        return Some(first);
     }
+    super::writable_all(entries, key)
+        .find(|seeded| seeded.owner == owner)
+        .or(Some(first))
 }
 
 /// Adoption, not takeover: a block already matching the template enters

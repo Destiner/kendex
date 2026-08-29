@@ -322,11 +322,12 @@ fn a_table_header_leaves_nothing_open() {
     }
 }
 
-/// An inline table holds no newline in TOML 1.0, so it carries nothing;
-/// its `=` and `[` reach no decision, because the assignment's `=` is the
-/// first one outside a string and only a line-leading `[` is a table.
+/// An inline table that closes on its own line leaves nothing open, so the
+/// line below it is structure again. What it held reaches no decision: the
+/// assignment's `=` is the first one outside a string, and only a
+/// line-leading `[` is a table.
 #[test]
-fn an_inline_table_carries_nothing_across_a_line() {
+fn a_closed_inline_table_does_not_reach_the_line_below_it() {
     let text = "[env]\nA = { b = [1], c = \"x\" }\nMODE = \"real\"\n";
     assert_eq!(keys(text), vec!["A".to_owned(), "MODE".to_owned()]);
     assert_eq!(
@@ -430,4 +431,115 @@ fn a_header_carries_its_key_and_whether_the_loaders_read_it() {
     ] {
         assert_eq!(header_of(refused), None, "{refused}");
     }
+}
+
+/// `carries` is [`Line::InValue`] told from the line that opened the
+/// value, and the two are not interchangeable: a caller holding an
+/// assignment reads the fact off that line, which is the only place it is
+/// there to read when the file ends with the value still open.
+#[test]
+fn a_line_says_for_itself_whether_it_left_a_value_open() {
+    let carries = |text: &str| -> Vec<bool> { rows(text).iter().map(|row| row.carries).collect() };
+    for open in ["\"\"\"", "'''", "["] {
+        // Opened, carried, closed: only the last line is clear again.
+        let closed = format!("A = {open}\ntext\n{}\n", close_of(open));
+        assert_eq!(carries(&closed), [true, true, false], "{open}");
+        // Left open at the end of the file, where no line below it exists
+        // to be InValue.
+        let unclosed = format!("A = {open}\n");
+        assert_eq!(carries(&unclosed), [true], "{open}");
+    }
+    // A value that closes on its own line carries nothing.
+    assert_eq!(carries("A = \"one\"\nB = \"two\"\n"), [false, false]);
+}
+
+/// The delimiter that closes what this one opens.
+fn close_of(open: &str) -> &str {
+    match open {
+        "[" => "]",
+        other => other,
+    }
+}
+
+/// The other half of what a line leaves behind, and not the negation of
+/// `carries`: a single-line string ends with its line, so one left
+/// unterminated carries nothing and is still not finished. A caller
+/// reading completeness off `carries` alone calls `TOKEN = "` closed.
+#[test]
+fn a_form_the_grammar_cannot_continue_says_so_without_carrying() {
+    let ends = |text: &str| -> Vec<(bool, bool)> {
+        rows(text)
+            .iter()
+            .map(|row| (row.carries, row.broken))
+            .collect()
+    };
+    for quote in ['"', '\''] {
+        assert_eq!(
+            ends(&format!("TOKEN = {quote}\nMODE = \"real\"\n")),
+            [(false, true), (false, false)],
+            "{quote}: broken, and the line under it is structure again"
+        );
+    }
+    // Nothing else can be broken: every other container carries, so a
+    // later line closes it or the carry runs off the end of the file.
+    // A value that closes says neither, whatever its form.
+    for closed in [
+        "TOKEN = \"ok\"\n",
+        "MAP = { a = 1 }\n",
+        "MAP = { a = { b = 1 } }\n",
+        "MAP = { a = \"}\" }\n",
+        "LIST = [1, 2]\n",
+        // The scalars, which have no delimiters to leave open at all.
+        "N = 12\n",
+        "F = 1.5\n",
+        "B = true\n",
+        "D = 1979-05-27T07:32:00Z\n",
+        "D = 1979-05-27\n",
+        "D = 07:32:00\n",
+    ] {
+        assert_eq!(ends(closed), [(false, false)], "{closed:?}");
+    }
+    // And one that carries says only that it carries — the string and
+    // array answers are unchanged.
+    assert_eq!(
+        ends("BLOB = \"\"\"\ntext\n\"\"\"\n"),
+        [(true, false), (true, false), (false, false)]
+    );
+    assert_eq!(
+        ends("LIST = [\n  1,\n]\n"),
+        [(true, false), (true, false), (false, false)]
+    );
+    // An inline table carries by depth like an array, so what is legal
+    // inside one is whatever is legal in any other container.
+    assert_eq!(
+        ends("MAP = {\na = 1\n}\n"),
+        [(true, false), (true, false), (false, false)],
+        "the lines under it are the value's, not structure"
+    );
+    assert_eq!(
+        ends("MAP = { items = [\n  1,\n] }\n"),
+        [(true, false), (true, false), (false, false)],
+        "a multiline array nested in an inline table"
+    );
+    assert_eq!(
+        ends("MAP = { a = { b = 1 }\n"),
+        [(true, false)],
+        "the outer table is still open"
+    );
+    assert_eq!(
+        ends("LIST = [\n  { a = 1 },\n]\n"),
+        [(true, false), (true, false), (false, false)],
+        "and an inline table nested in an array"
+    );
+    // Depth is what answers, so the two nest through each other.
+    assert_eq!(
+        ends("LIST = [\n  { a = [\n    1,\n  ] },\n]\n"),
+        [
+            (true, false),
+            (true, false),
+            (true, false),
+            (true, false),
+            (false, false)
+        ]
+    );
 }

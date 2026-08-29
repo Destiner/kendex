@@ -1,11 +1,11 @@
 //! Reading one line's characters: which of them are inside a string, how
-//! deep the arrays are, and where a value's quotes sit.
+//! deep the arrays and inline tables are, and where a value's quotes sit.
 //!
 //! Split from the row model above it because the two answer different
 //! questions. This one never decides what a line IS — it only says what a
-//! line leaves open and where its pieces are, which is the state every
-//! classification depends on and none of them is allowed to compute for
-//! itself.
+//! line leaves open, what it left unfinished, and where its pieces are,
+//! which is the state every classification depends on and none of them is
+//! allowed to compute for itself.
 
 use std::ops::Range;
 
@@ -31,22 +31,45 @@ impl Open {
 }
 
 /// What a value has left open across a line boundary — every container
-/// the grammar can carry over one, in one value, so a walk cannot answer
-/// for one and forget the other.
+/// the grammar can carry over one, held together in one value, so a walk
+/// cannot answer for one of them and forget another.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) struct Carry {
     /// The multiline string still open, if any.
     string: Option<Open>,
     /// How many arrays are open. Counted rather than flagged: arrays nest.
     arrays: usize,
+    /// How many inline tables are open. Counted for the same reason, and
+    /// carried for the same reason: under the spec this workspace parses
+    /// with, an inline table may hold newlines like any other container.
+    tables: usize,
 }
 
 impl Carry {
     /// Whether a line starting here is inside a value rather than being
     /// structure of its own.
     pub(super) fn inside(self) -> bool {
-        self.string.is_some() || self.arrays > 0
+        self.string.is_some() || self.arrays > 0 || self.tables > 0
     }
+}
+
+/// What one line leaves behind. Two facts, because the grammar splits its
+/// containers in two: those a later line may close, and those it may not.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct Ends {
+    /// What a line below this one starts inside — the containers a later
+    /// line is allowed to close.
+    pub(super) carry: Carry,
+    /// Whether a container the grammar does NOT let cross a newline was
+    /// still open at the end of this line. Only a single-line string can
+    /// be one: every other container carries, so a later line closes it or
+    /// the carry runs to the end of the file, and both are answered by
+    /// [`Carry`].
+    ///
+    /// The complement of [`Carry`], not its negation. Read closure from
+    /// the absence of a carry alone and `TOKEN = "` answers the same as a
+    /// value that simply ended: closed.
+    pub(super) broken: bool,
 }
 
 /// The byte offset of the first `=` no string encloses. `None` where the
@@ -68,15 +91,21 @@ pub(super) fn top_level_equals(content: &str) -> Option<usize> {
     None
 }
 
-/// Walk one line and return what it leaves open.
+/// Walk one line and return what it leaves behind: the containers a later
+/// line may close, and whether one it may not was left open.
 ///
 /// The one place a line's containers are read, so no classification arm
-/// can drop them: an open string first, then the brackets and strings the
-/// rest of the line opens and closes. A `#` outside a string ends the
-/// line, and a stray `]` cannot take the depth below zero — an unbalanced
-/// file is not TOML, and underflowing here would read the whole rest of
-/// it as one value.
-pub(super) fn advance(content: &str, carry: Carry) -> Carry {
+/// can drop them: an open string first, then the brackets, braces and
+/// strings the rest of the line opens and closes. A `#` outside a string
+/// ends the line, and a stray `]` or `}` cannot take a depth below zero —
+/// an unbalanced file is not TOML, and underflowing here would read the
+/// whole rest of it as one value. A container left open at the end of the
+/// file simply never closes, which is what an unparseable file is.
+///
+/// Every delimited form in the grammar is opened here and closed here, so
+/// "was anything left open" is answered for all of them at once rather
+/// than for the ones somebody remembered. See the module doc's table.
+pub(super) fn advance(content: &str, carry: Carry) -> Ends {
     let mut carry = carry;
     let mut index = 0;
     if let Some(kind) = carry.string {
@@ -85,9 +114,15 @@ pub(super) fn advance(content: &str, carry: Carry) -> Carry {
                 carry.string = None;
                 index = end;
             }
-            None => return carry,
+            None => {
+                return Ends {
+                    carry,
+                    broken: false,
+                };
+            }
         }
     }
+    let mut string_broken = false;
     let bytes = content.as_bytes();
     while index < bytes.len() {
         match bytes[index] {
@@ -100,17 +135,31 @@ pub(super) fn advance(content: &str, carry: Carry) -> Carry {
                 carry.arrays = carry.arrays.saturating_sub(1);
                 index += 1;
             }
+            b'{' => {
+                carry.tables += 1;
+                index += 1;
+            }
+            b'}' => {
+                carry.tables = carry.tables.saturating_sub(1);
+                index += 1;
+            }
             b'"' | b'\'' => match string_at(content, index) {
                 Some(end) => index = end,
                 None => {
+                    // Opens a multiline, which carries — or a single-line
+                    // string that never closes, which cannot.
                     carry.string = opened_at(content, index);
+                    string_broken = carry.string.is_none();
                     break;
                 }
             },
             _ => index += 1,
         }
     }
-    carry
+    Ends {
+        carry,
+        broken: string_broken,
+    }
 }
 
 /// The byte just past the string starting at `index`, or `None` where it
