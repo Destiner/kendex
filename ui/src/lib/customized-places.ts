@@ -1,4 +1,10 @@
-import type { ItemKind, Scope, UpdateRow } from "@/bindings";
+import type {
+  ItemKind,
+  Scope,
+  ScopeSettings,
+  SettingsEdit,
+  UpdateRow,
+} from "@/bindings";
 import {
   customizedItems,
   type ItemCustomization,
@@ -6,9 +12,13 @@ import {
 } from "@/lib/customization";
 import type { Draft } from "@/lib/editor-draft";
 import { sameScope, scopeKey } from "@/lib/scope";
+import { settingsValues } from "@/lib/settings-rows";
 
-/** Why a place counts as customized, which decides where a click lands. */
-export type Why = "settings" | "edited" | "forked";
+/** Why a place counts as customized, which decides where a click lands.
+ *  `settings` is the manifest's overlay on the package; `values` is a
+ *  package setting whose value in this place's settings file is not the
+ *  package default. */
+export type Why = "settings" | "values" | "edited" | "forked";
 
 /** What one place holds for one package.
  *
@@ -40,6 +50,12 @@ export interface PlacesSource {
    *  manifest, and asking it per package per place walks every manifest
    *  again for every row on the Library. */
   settings: ReadonlySet<string>;
+  /** Where each place's skills stand against their package defaults, by
+   *  scope and by skill. A place absent here has not been read, and a
+   *  skill answering null is one nothing can tell about — both are a
+   *  third answer rather than a no, the same reason `manifests` is a
+   *  record. */
+  values: ReadonlyMap<string, ReadonlyMap<string, boolean | null>>;
 }
 
 const placeKey = (kind: ItemKind, name: string, scope: Scope): string =>
@@ -49,6 +65,12 @@ export function placesSource(
   manifests: Record<string, Draft>,
   rows: UpdateRow[],
   updatesLoaded: boolean,
+  settingsReads: Record<string, ScopeSettings>,
+  /** Unsaved settings edits by place, from the surface editing one.
+   *  The Library and the package header pass none: their manifest half
+   *  reads the saved manifest too, and a draft counting on one half of
+   *  a surface and not the other is the mismatch this answers. */
+  settingsEdits: Record<string, SettingsEdit[]> = {},
 ): PlacesSource {
   const byPlace = new Map<string, UpdateRow>();
   for (const row of rows)
@@ -57,7 +79,13 @@ export function placesSource(
   for (const [where, manifest] of Object.entries(manifests))
     for (const item of customizedItems(manifest))
       settings.add(`${where}|${item.kind}:${item.name}`);
-  return { manifests, rows: byPlace, updatesLoaded, settings };
+  return {
+    manifests,
+    rows: byPlace,
+    updatesLoaded,
+    settings,
+    values: settingsValues(settingsReads, settingsEdits),
+  };
 }
 
 /** The manifests a page editing one place reads: its open draft in place
@@ -80,6 +108,10 @@ export interface PlaceFacts {
   forked: boolean | null;
   settings: boolean | null;
   edited: boolean | null;
+  /** A package setting whose value here is not the package default.
+   *  Only skills ship settings, so every other kind is false once the
+   *  place has been read — and null before it has. */
+  values: boolean | null;
 }
 
 export function placeFacts(
@@ -111,7 +143,16 @@ export function placeFacts(
   // cannot speak about — a local source has no version to compare
   // against — so its hand-edit state stays unknown rather than false.
   const edited = source.updatesLoaded && row ? row.blockedByLocalEdit : null;
-  return { forked, settings, edited };
+  // A place that was read answers for every skill it installs; a kind
+  // that ships no settings, and a skill this place does not install,
+  // have nothing there to differ.
+  const answers = source.values.get(scopeKey(scope));
+  const answer = kind === "skill" ? answers?.get(name) : false;
+  // Absent is a skill this place does not install, and there is nothing
+  // there to differ; null is a skill nothing can tell about. Folding the
+  // second into the first is the early stock claim this fact refuses.
+  const values = !answers ? null : answer === undefined ? false : answer;
+  return { forked, settings, edited, values };
 }
 
 /** One word from three facts. Any of them makes the place theirs — the
@@ -120,11 +161,17 @@ export function placeFacts(
 export function standingOf(scope: Scope, facts: PlaceFacts): PlaceStanding {
   if (facts.forked) return { scope, standing: "customized", why: "forked" };
   if (facts.settings) return { scope, standing: "customized", why: "settings" };
+  if (facts.values) return { scope, standing: "customized", why: "values" };
   if (facts.edited) return { scope, standing: "customized", why: "edited" };
   // Every source has to have spoken before a place can be called stock.
   // One silent source is enough to leave the question open: the mark
   // that is missing is indistinguishable from the mark that is false.
-  if (facts.settings === null || facts.edited === null || facts.forked === null)
+  if (
+    facts.settings === null ||
+    facts.edited === null ||
+    facts.forked === null ||
+    facts.values === null
+  )
     return { scope, standing: "unknown", why: null };
   return { scope, standing: "stock", why: null };
 }
@@ -148,6 +195,8 @@ export interface CustomizedHere {
   name: string;
   edited: boolean;
   forked: boolean;
+  /** Some package setting of this skill is not the package default here. */
+  values: boolean;
   customization: ItemCustomization;
 }
 
@@ -170,6 +219,8 @@ export function customizedHere(
   for (const row of source.rows.values())
     if (sameScope(row.scope, scope) && (row.blockedByLocalEdit || row.forked))
       add(row.kind, row.name);
+  for (const [skill, differs] of source.values.get(scopeKey(scope)) ?? [])
+    if (differs) add("skill", skill);
   const out: CustomizedHere[] = [];
   for (const [kind, name] of candidates.values()) {
     const facts = placeFacts(source, kind, name, scope);
@@ -179,6 +230,7 @@ export function customizedHere(
       name,
       edited: facts.edited === true,
       forked: facts.forked === true,
+      values: facts.values === true,
       customization: itemCustomization(manifest, kind, name),
     });
   }

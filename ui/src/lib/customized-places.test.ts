@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { Scope, UpdateRow } from "@/bindings";
+import type {
+  Scope,
+  ScopeSettings,
+  SettingsEdit,
+  SettingsRow,
+  UpdateRow,
+} from "@/bindings";
 import { customizedLine } from "@/lib/copy-customize";
 import type { Draft } from "@/lib/editor-draft";
 import { packageMark } from "@/lib/place-marks";
@@ -45,16 +51,43 @@ function row(scope: Scope, over: Partial<UpdateRow> = {}): UpdateRow {
   } as UpdateRow;
 }
 
+const key = (over: Partial<SettingsRow> = {}): SettingsRow => ({
+  key: "GH_MODE",
+  explainer: ["what it does"],
+  default: "enforce",
+  current: { state: "value", value: "enforce", line: 3 },
+  ...over,
+});
+
+/** One place's read: every skill named here declaring one key, whose
+ *  value is the package default unless the row says otherwise. */
+const read = (skills: Record<string, SettingsRow[]>): ScopeSettings => ({
+  applies: true,
+  base: "b1",
+  skills: Object.entries(skills).map(([skill, rows]) => ({
+    skill,
+    template: { state: "rows", rows },
+  })),
+});
+
 function source({
   manifests = {},
   rows = [],
   updatesLoaded = true,
+  settings = Object.fromEntries(
+    Object.keys(manifests).map((at) => [at, read({})]),
+  ),
+  edits = {},
 }: {
   manifests?: Record<string, Draft>;
   rows?: UpdateRow[];
   updatesLoaded?: boolean;
+  /** Absent for a place means its read has not landed. */
+  settings?: Record<string, ScopeSettings>;
+  /** Unsaved settings edits, by place. */
+  edits?: Record<string, SettingsEdit[]>;
 } = {}) {
-  return placesSource(manifests, rows, updatesLoaded);
+  return placesSource(manifests, rows, updatesLoaded, settings, edits);
 }
 
 describe("placeStandings", () => {
@@ -134,6 +167,173 @@ describe("placeStandings", () => {
     expect(only.standing).toBe("unknown");
   });
 
+  /// A settings file answering a declared key off the package default is
+  /// this place's own customization, whatever the manifest says.
+  it("marks a place whose settings file answers a key off the default", () => {
+    const s = source({
+      manifests: { "/work/vg": empty() },
+      rows: [row(VG)],
+      settings: {
+        "/work/vg": read({
+          gh: [key({ current: { state: "value", value: "advise", line: 3 } })],
+        }),
+      },
+    });
+    const [only] = placeStandings(s, "skill", "gh", [VG]);
+    expect(only.standing).toBe("customized");
+    expect(only.why).toBe("values");
+  });
+
+  /// Only a `value` current is comparable with the default: an ambiguous
+  /// key says what is in the way, never what the value is. That is not a
+  /// no — nothing can call the place off the default OR on it, and the
+  /// standing has to say so rather than pick the flattering one.
+  it("leaves a place unknown over a key nothing can read a value from", () => {
+    const s = source({
+      manifests: { "/work/vg": empty() },
+      rows: [row(VG)],
+      settings: {
+        "/work/vg": read({
+          gh: [
+            key({
+              current: { state: "ambiguous", problem: "twice", lines: [3, 9] },
+            }),
+          ],
+        }),
+      },
+    });
+    const [only] = placeStandings(s, "skill", "gh", [VG]);
+    expect(only.standing).toBe("unknown");
+  });
+
+  /// The settings read is a fourth source, and a place it has not spoken
+  /// about is unknown rather than stock — the same rule the other three
+  /// answer to.
+  it("does not call a place stock before its settings read has landed", () => {
+    const s = source({
+      manifests: { "/work/vg": empty() },
+      rows: [row(VG)],
+      settings: {},
+    });
+    const [only] = placeStandings(s, "skill", "gh", [VG]);
+    expect(only.standing).toBe("unknown");
+  });
+
+  /// Global has no settings file, and `applies: false` with no skills is
+  /// the whole answer for it — a place that resolves the fact to false
+  /// rather than leaving every package there unknown forever.
+  it("resolves the fact to false on global's known-empty answer", () => {
+    const s = source({
+      manifests: { global: empty() },
+      rows: [row(GLOBAL)],
+      settings: { global: { applies: false, skills: [], base: null } },
+    });
+    const [only] = placeStandings(s, "skill", "gh", [GLOBAL]);
+    expect(only.standing).toBe("stock");
+  });
+
+  /// The page skips its reload while anything is unsaved, so an unsaved
+  /// value has to count where the saved one would: otherwise the marks
+  /// go on calling a package stock while the person looks at the edit
+  /// that made it theirs.
+  it("counts a value the person has typed but not yet saved", () => {
+    const s = source({
+      manifests: { "/work/vg": empty() },
+      rows: [row(VG)],
+      settings: { "/work/vg": read({ gh: [key()] }) },
+      edits: {
+        "/work/vg": [
+          {
+            skill: "gh",
+            key: "GH_MODE",
+            value: { kind: "set", value: "advise" },
+          },
+        ],
+      },
+    });
+    const [only] = placeStandings(s, "skill", "gh", [VG]);
+    expect(only.standing).toBe("customized");
+    expect(only.why).toBe("values");
+  });
+
+  /// And the other way: a reset in hand takes the mark off before the
+  /// save, the way removing a manifest setting does.
+  it("drops the mark for a value reset but not yet saved", () => {
+    const s = source({
+      manifests: { "/work/vg": empty() },
+      rows: [row(VG)],
+      settings: {
+        "/work/vg": read({
+          gh: [key({ current: { state: "value", value: "advise", line: 3 } })],
+        }),
+      },
+      edits: {
+        "/work/vg": [{ skill: "gh", key: "GH_MODE", value: { kind: "reset" } }],
+      },
+    });
+    const [only] = placeStandings(s, "skill", "gh", [VG]);
+    expect(only.standing).toBe("stock");
+  });
+
+  /// Read but undeterminable is not read and stock. A template the
+  /// strict reader refuses may already have seeded its keys into the
+  /// file, so a place holding one cannot be called as the author
+  /// shipped it.
+  it("leaves a place unknown where a skill's template cannot be read", () => {
+    const s = source({
+      manifests: { "/work/vg": empty() },
+      rows: [row(VG)],
+      settings: {
+        "/work/vg": {
+          applies: true,
+          base: "b1",
+          skills: [
+            {
+              skill: "gh",
+              template: { state: "invalid", findings: [] },
+            },
+          ],
+        },
+      },
+    });
+    const [only] = placeStandings(s, "skill", "gh", [VG]);
+    expect(only.standing).toBe("unknown");
+  });
+
+  /// A place that was read and does not install the package has nothing
+  /// there to differ, so it answers stock rather than staying unknown.
+  it("answers for a package the place does not install", () => {
+    const s = source({
+      manifests: { "/work/vg": empty() },
+      rows: [row(VG)],
+      settings: { "/work/vg": read({ zed: [key()] }) },
+    });
+    const [only] = placeStandings(s, "skill", "gh", [VG]);
+    expect(only.standing).toBe("stock");
+  });
+
+  /// A draft is not a read. Edits for a place whose settings read has
+  /// not landed leave that place unknown rather than inventing an
+  /// answer for a file nobody opened.
+  it("does not invent a place from edits alone", () => {
+    const s = source({
+      manifests: { "/work/vg": empty() },
+      rows: [row(VG)],
+      settings: {},
+      edits: {
+        "/work/vg": [
+          {
+            skill: "gh",
+            key: "GH_MODE",
+            value: { kind: "set", value: "advise" },
+          },
+        ],
+      },
+    });
+    const [only] = placeStandings(s, "skill", "gh", [VG]);
+    expect(only.standing).toBe("unknown");
+  });
+
   // The row is re-read with the write; the saved manifest is not. Reading
   // only the manifest loses the fork at the moment it is made.
   it("takes a fork the row knows about but the saved manifest predates", () => {
@@ -161,6 +361,23 @@ describe("customizedHere", () => {
     expect(mark?.why).toBe("edited");
     expect(customizedHere(s, VG)).toMatchObject([
       { kind: "skill", name: "gh", edited: true, forked: false },
+    ]);
+  });
+
+  /// The Library marks the place, so the index behind that mark has to
+  /// carry the row — a settings value is the only fact making it theirs.
+  it("lists a package the settings file alone makes theirs", () => {
+    const s = source({
+      manifests: { "/work/vg": empty() },
+      rows: [row(VG)],
+      settings: {
+        "/work/vg": read({
+          gh: [key({ current: { state: "value", value: "advise", line: 3 } })],
+        }),
+      },
+    });
+    expect(customizedHere(s, VG)).toMatchObject([
+      { kind: "skill", name: "gh", values: true, edited: false },
     ]);
   });
 
@@ -280,10 +497,9 @@ describe("manifestsForEditing", () => {
   it("reads the open draft in place of that place's saved manifest", () => {
     const saved = { "/work/vg": withSetting(), global: withSetting() };
     const manifests = manifestsForEditing(saved, empty(), VG);
-    expect(customizedHere(placesSource(manifests, [], true), VG)).toEqual([]);
-    expect(
-      customizedHere(placesSource(manifests, [], true), GLOBAL),
-    ).toHaveLength(1);
+    const places = source({ manifests });
+    expect(customizedHere(places, VG)).toEqual([]);
+    expect(customizedHere(places, GLOBAL)).toHaveLength(1);
   });
 
   it("leaves the saved manifests alone while there is no draft", () => {
