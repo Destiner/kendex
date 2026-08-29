@@ -5,6 +5,10 @@
 
 use std::fs;
 
+use std::os::unix::fs::PermissionsExt;
+
+use kendex_core::error::CoreError;
+
 use super::*;
 
 /// Claude states denies in `disallowedTools:`, a key the source form has
@@ -176,30 +180,25 @@ fn the_generated_sections_are_written_once_after_a_fork() {
     apply::execute(&w.env, &plan, None).unwrap();
     resettle(&w);
 
-    // The instruction sections are keyed by the agent's name and travel, so
-    // the fork writes them again and the captured prose must not hold a
-    // second copy. The skills section is the opposite case: a local agent's
-    // assignment is filtered to its own source, so a catalog skill is not
-    // coming back, and taking it out of the prose would delete it (KEN-777).
+    // Every generated section is keyed by the agent's name and travels
+    // into the manifest, the skill assignment included: the fork writes
+    // them all again, so the captured prose must hold none of them.
     let source = fs::read_to_string(captured(&w, "rev")).unwrap();
-    for section in ["## Launch Instructions", "## Additional Instructions"] {
+    for section in [
+        "## Launch Instructions",
+        "## Additional Instructions",
+        "## Required Skills",
+    ] {
         assert_eq!(
             times(&source, section),
             0,
             "the captured prose must not carry {section}, which the render writes: {source}"
         );
     }
-    assert_eq!(
-        times(&source, "## Required Skills"),
-        1,
-        "the fork will not write the skills back, so the capture keeps them: {source}"
-    );
-    assert!(source.contains("- recon: "), "{source}");
     assert!(source.contains("My body."), "{source}");
 
-    // Every section stands exactly once in the settled rendering: the two
-    // the fork writes because the prose no longer holds them, and the one
-    // the prose holds because the fork does not write it.
+    // Every section stands exactly once in the settled rendering, written
+    // from the manifest entries the fork carries.
     let text = fs::read_to_string(&file).unwrap();
     for section in [
         "## Launch Instructions",
@@ -208,8 +207,508 @@ fn the_generated_sections_are_written_once_after_a_fork() {
     ] {
         assert_eq!(times(&text, section), 1, "{section} count wrong: {text}");
     }
+    assert_eq!(text.matches("- recon: ").count(), 1, "{text}");
     assert_eq!(banners(&text), 1, "{text}");
     assert_eq!(times(&text, "My body."), 1, "{text}");
+}
+
+/// One TOML table taken out of a manifest, header through to the next
+/// header. Removing the header alone leaves the table's own keys behind,
+/// where they read as a duplicate of whatever table precedes them.
+#[allow(clippy::unwrap_used)]
+fn without_section(manifest: &str, header: &str) -> String {
+    let start = manifest.find(header).unwrap();
+    let end = manifest[start..]
+        .find("\n[")
+        .map(|at| start + at + 1)
+        .unwrap_or(manifest.len());
+    format!("{}{}", &manifest[..start], &manifest[end..])
+}
+
+/// What resolving a fork's assignment against the scope costs is a
+/// dependency the fork does not declare. The scope losing what supplied
+/// the skill is said out loud, naming the skill and no source: nothing
+/// records which source supplied it, and by the time a skill is
+/// unresolved none of them does, so an attribution could only be
+/// invented. What it must never do is take the section off in silence.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_fork_refuses_when_the_scope_loses_the_source_its_skill_came_from() {
+    let w = world();
+    write_skill(&w.upstream, "recon", "Recon.");
+    write_agent(&w.upstream, "rev", "Upstream body.");
+    fs::write(
+        w.upstream.join("kendex.toml"),
+        "[agent-skills]\nrev = [\"recon\"]\n",
+    )
+    .unwrap();
+    commit(&w.upstream, "one");
+    let path = manifest::manifest_path(&w.env, &w.scope);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        format!(
+            "schema = 6\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"gemini\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\n"
+        ),
+    )
+    .unwrap();
+    sync_and_apply(&w);
+    let file = rendered(&w, HarnessId::Gemini, "rev");
+    edit_body(&file);
+
+    let plan = fork::fork(&w.env, &w.scope, ItemKind::Agent, "rev", HarnessId::Gemini).unwrap();
+    apply::execute(&w.env, &plan, None).unwrap();
+    resettle(&w);
+    let text = fs::read_to_string(&file).unwrap();
+    assert_eq!(times(&text, "## Required Skills"), 1, "{text}");
+
+    // The catalog goes, and with it the only source offering `recon`. The
+    // assignment the fork carries stays exactly where it was.
+    let before = manifest_text(&w);
+    let after = without_section(&before, "[sources.cat]");
+    assert!(!after.contains("[sources.cat]"), "{after}");
+    assert!(after.contains("rev = [\"recon\"]"), "{after}");
+    fs::write(&path, after).unwrap();
+
+    match audit(&w.env, &w.scope) {
+        Err(CoreError::AgentSkillUnavailable { name, skill }) => {
+            assert_eq!((name.as_str(), skill.as_str()), ("rev", "recon"))
+        }
+        other => panic!("the render must refuse, naming the skill: {other:?}"),
+    }
+}
+
+/// The assignment resolves across every source, so the source that
+/// supplied a skill is not the fork's own and is recorded nowhere. The
+/// refusal names the skill alone. Destructuring the variant whole is what
+/// holds that: an attribution field added back stops this compiling
+/// instead of quietly sending someone to restore a source that still
+/// stands and never carried the skill.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_fork_refuses_without_blaming_a_source_that_never_supplied_the_skill() {
+    let w = world();
+    write_agent(&w.upstream, "rev", "Upstream body.");
+    commit(&w.upstream, "one");
+    // `recon` comes from a second source, never from the catalog `rev`
+    // itself was published in.
+    let other = w.home.join("other-catalog");
+    write_skill(&other, "recon", "Recon.");
+    let path = manifest::manifest_path(&w.env, &w.scope);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let sources = format!(
+        "[sources.cat]\nrepo = \"{REPO}\"\n\n[sources.extra]\npath = \"{}\"\n",
+        other.display()
+    );
+    fs::write(
+        &path,
+        format!(
+            "schema = 6\n\n{sources}\n[install]\nharnesses = [\"gemini\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\n\n[agent-skills]\nrev = [\"recon\"]\n"
+        ),
+    )
+    .unwrap();
+    sync_and_apply(&w);
+    let file = rendered(&w, HarnessId::Gemini, "rev");
+    assert_eq!(
+        times(&fs::read_to_string(&file).unwrap(), "## Required Skills"),
+        1
+    );
+    edit_body(&file);
+
+    let plan = fork::fork(&w.env, &w.scope, ItemKind::Agent, "rev", HarnessId::Gemini).unwrap();
+    apply::execute(&w.env, &plan, None).unwrap();
+    resettle(&w);
+
+    // The supplying source goes. `cat` stays, enabled, and never held it.
+    let before = manifest_text(&w);
+    let after = without_section(&before, "[sources.extra]");
+    assert!(!after.contains("[sources.extra]"), "{after}");
+    assert!(after.contains("[sources.cat]"), "{after}");
+    fs::write(&path, after).unwrap();
+
+    match audit(&w.env, &w.scope) {
+        Err(CoreError::AgentSkillUnavailable { name, skill }) => {
+            assert_eq!((name.as_str(), skill.as_str()), ("rev", "recon"))
+        }
+        other => panic!("the render must refuse, naming the skill: {other:?}"),
+    }
+}
+
+/// A skill adopted in place is supplied by the reserved `in-place` source,
+/// which no `[sources]` table lists. Left out of the scope's set, a fork
+/// carrying one is refused for a skill whose file is sitting in the tree.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_fork_keeps_a_skill_adopted_in_place() {
+    let w = world();
+    write_agent(&w.upstream, "rev", "Upstream body.");
+    commit(&w.upstream, "one");
+    write_skill(&w.home.join("app/.agents"), "recon", "Recon.");
+    let path = manifest::manifest_path(&w.env, &w.scope);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        format!(
+            "schema = 6\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"gemini\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\n\n[agent-skills]\nrev = [\"recon\"]\n"
+        ),
+    )
+    .unwrap();
+    sync_and_apply(&w);
+    let file = rendered(&w, HarnessId::Gemini, "rev");
+    let before = fs::read_to_string(&file).unwrap();
+    assert_eq!(times(&before, "## Required Skills"), 1, "{before}");
+    edit_body(&file);
+
+    let plan = fork::fork(&w.env, &w.scope, ItemKind::Agent, "rev", HarnessId::Gemini).unwrap();
+    apply::execute(&w.env, &plan, None).unwrap();
+    resettle(&w);
+
+    let text = fs::read_to_string(&file).unwrap();
+    assert_eq!(times(&text, "## Required Skills"), 1, "{text}");
+    assert_eq!(text.matches("- recon: ").count(), 1, "{text}");
+}
+
+/// The scope-wide scan is incidental to most of the work that triggers
+/// it. A source whose checkout has to be rebuilt and cannot be must read
+/// as supplying no skills, the way pending, disabled and missing ones
+/// already do — never as a reason to fail an audit that has no agents to
+/// resolve for and installs nothing from that source.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_source_that_will_not_resolve_does_not_fail_an_audit() {
+    let w = world();
+    write_skill(&w.upstream, "recon", "Recon.");
+    commit(&w.upstream, "one");
+    // A second subscription nothing in this scope installs from.
+    let spare = w.home.join("git/owner/spare");
+    fs::create_dir_all(&spare).unwrap();
+    git(&spare, &["init", "--quiet", "-b", "main"]);
+    write_skill(&spare, "idle", "Idle.");
+    commit(&spare, "one");
+    let path = manifest::manifest_path(&w.env, &w.scope);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        format!(
+            "schema = 6\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[sources.spare]\nrepo = \"owner/spare\"\n\n[install]\nharnesses = [\"gemini\"]\nmethod = \"symlink\"\n\n[skills.recon]\nsource = \"cat\"\n"
+        ),
+    )
+    .unwrap();
+    sync_and_apply(&w);
+
+    // Take the spare's checkout away and close the directory it would be
+    // rebuilt into. Its mirror still holds the commit, so resolution goes
+    // as far as rebuilding and fails there.
+    let commits = w.env.source_cache_dir().join("commits");
+    let spare_key = fs::read_dir(&commits)
+        .unwrap()
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .find(|key| !holds_recon(key))
+        .expect("two cached repositories, one of them the spare");
+    fs::remove_dir_all(&spare_key).unwrap();
+    let mode = fs::metadata(&commits).unwrap().permissions().mode();
+    fs::set_permissions(&commits, fs::Permissions::from_mode(0o500)).unwrap();
+    assert!(
+        fs::create_dir(commits.join("probe")).is_err(),
+        "the fixture cannot close the cache directory, so it proves nothing"
+    );
+
+    let report = audit(&w.env, &w.scope);
+    fs::set_permissions(&commits, fs::Permissions::from_mode(mode)).unwrap();
+    let report = report.unwrap();
+    assert!(
+        report.plan.is_empty(),
+        "the scope's own work is settled and must stay that way: {:?}",
+        report.plan.ops
+    );
+}
+
+/// Whether a cached repository is the one carrying `recon` — the scope's
+/// own source, which must keep resolving.
+#[allow(clippy::unwrap_used)]
+fn holds_recon(key: &std::path::Path) -> bool {
+    fs::read_dir(key).is_ok_and(|entries| {
+        entries
+            .filter_map(|entry| entry.ok())
+            .any(|entry| entry.path().join("skills/recon/SKILL.md").exists())
+    })
+}
+
+/// An item may pin its own revision, outranking the source's. A skill
+/// carried only at that pinned commit is planned and readable, so the scan
+/// has to read the pinned checkout too — reading the source's own revision
+/// alone calls the skill absent and refuses a fork assigned to it.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_skill_only_a_pin_carries_is_not_called_unavailable() {
+    let w = world();
+    write_skill(&w.upstream, "recon", "Recon.");
+    write_agent(&w.upstream, "rev", "Upstream body.");
+    fs::write(
+        w.upstream.join("kendex.toml"),
+        "[agent-skills]\nrev = [\"recon\"]\n",
+    )
+    .unwrap();
+    commit(&w.upstream, "one");
+    let pinned = head_commit(&w.upstream);
+    // Upstream drops the skill. Only the pin still carries it.
+    fs::remove_dir_all(w.upstream.join("skills/recon")).unwrap();
+    fs::write(w.upstream.join("kendex.toml"), "").unwrap();
+    commit(&w.upstream, "two");
+
+    let path = manifest::manifest_path(&w.env, &w.scope);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        format!(
+            "schema = 6\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"gemini\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\n\n[skills.recon]\nsource = \"cat\"\nrev = \"{pinned}\"\n\n[agent-skills]\nrev = [\"recon\"]\n"
+        ),
+    )
+    .unwrap();
+    sync_and_apply(&w);
+    let file = rendered(&w, HarnessId::Gemini, "rev");
+    let before = fs::read_to_string(&file).unwrap();
+    assert_eq!(times(&before, "## Required Skills"), 1, "{before}");
+    edit_body(&file);
+
+    let plan = fork::fork(&w.env, &w.scope, ItemKind::Agent, "rev", HarnessId::Gemini).unwrap();
+    apply::execute(&w.env, &plan, None).unwrap();
+    resettle(&w);
+
+    let text = fs::read_to_string(&file).unwrap();
+    assert_eq!(times(&text, "## Required Skills"), 1, "{text}");
+    assert_eq!(text.matches("- recon: ").count(), 1, "{text}");
+}
+
+/// A pin belongs in the inventory because a pinned skill outranks its
+/// source and still supplies what an agent reads. A pin on anything else
+/// reads no skill out of its revision, so an old commit's since-removed
+/// skills are not the scope's to offer: counted, a fork assigned one
+/// passes the refusal and renders a row pointing at a file no plan writes.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_pin_on_another_kind_does_not_supply_its_revisions_skills() {
+    let w = world();
+    write_skill(&w.upstream, "ghost", "Ghost.");
+    write_agent(&w.upstream, "rev", "Upstream body.");
+    write_agent(&w.upstream, "other", "Other body.");
+    commit(&w.upstream, "one");
+    let pinned = head_commit(&w.upstream);
+    // The skill goes; the agent the pin holds stays.
+    fs::remove_dir_all(w.upstream.join("skills/ghost")).unwrap();
+    commit(&w.upstream, "two");
+
+    let path = manifest::manifest_path(&w.env, &w.scope);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        format!(
+            "schema = 6\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"gemini\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\n\n[agents.other]\nsource = \"cat\"\nrev = \"{pinned}\"\n\n[agent-skills]\nrev = [\"ghost\"]\n"
+        ),
+    )
+    .unwrap();
+    sync_and_apply(&w);
+
+    let file = rendered(&w, HarnessId::Gemini, "rev");
+    let before = fs::read_to_string(&file).unwrap();
+    assert_eq!(times(&before, "## Required Skills"), 0, "{before}");
+    edit_body(&file);
+
+    match fork::fork(&w.env, &w.scope, ItemKind::Agent, "rev", HarnessId::Gemini) {
+        Err(CoreError::AgentSkillUnavailable { name, skill }) => {
+            assert_eq!((name.as_str(), skill.as_str()), ("rev", "ghost"))
+        }
+        other => panic!("a skill no plan installs must not pass the refusal: {other:?}"),
+    }
+}
+
+/// A set names its members; whether the catalog carries one is a separate
+/// question, and the planner asks it before installing any of them. Read
+/// without asking, a member nothing can install is offered to an agent's
+/// assignment — the inventory saying a skill is available when no plan
+/// will ever write it, which satisfies the refusal instead of raising it.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_set_member_the_catalog_lacks_is_not_offered() {
+    let w = world();
+    write_agent(&w.upstream, "rev", "Upstream body.");
+    // The set names `ghost`; the catalog has never carried it.
+    fs::write(
+        w.upstream.join("kendex.toml"),
+        "[bundles.kit]\ndescription = \"kit\"\nskills = [\"ghost\"]\n",
+    )
+    .unwrap();
+    commit(&w.upstream, "one");
+    let pinned = head_commit(&w.upstream);
+
+    let path = manifest::manifest_path(&w.env, &w.scope);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        format!(
+            "schema = 6\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"gemini\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\n\n[bundles.kit]\nsource = \"cat\"\nrev = \"{pinned}\"\n\n[agent-skills]\nrev = [\"ghost\"]\n"
+        ),
+    )
+    .unwrap();
+    sync_and_apply(&w);
+
+    let file = rendered(&w, HarnessId::Gemini, "rev");
+    let before = fs::read_to_string(&file).unwrap();
+    assert_eq!(times(&before, "## Required Skills"), 0, "{before}");
+    edit_body(&file);
+
+    // Said out loud, not passed over: the assignment names a skill nothing
+    // in this scope can install.
+    match fork::fork(&w.env, &w.scope, ItemKind::Agent, "rev", HarnessId::Gemini) {
+        Err(CoreError::AgentSkillUnavailable { name, skill }) => {
+            assert_eq!((name.as_str(), skill.as_str()), ("rev", "ghost"))
+        }
+        other => panic!("a set member nothing can install must not satisfy it: {other:?}"),
+    }
+}
+
+/// A declaration that lands on no tool is dropped from the plan, so what
+/// it names is never written. Offered anyway, it answers an agent's
+/// assignment with a file nothing installs — the same fail-open direction
+/// as a set member the catalog lacks, by a different route.
+///
+/// The fixture reaches "lands nowhere" through a declaration that targets
+/// no tool. Every tool holds a skill in a project, so a restricted
+/// declaration only lands nowhere in a global scope, and both spellings
+/// meet at the same empty answer from the planner.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_pinned_skill_that_lands_nowhere_is_not_offered() {
+    let w = pinned_only_world(
+        "[skills.recon]\nsource = \"cat\"\nrev = \"REV\"\nharnesses = []\n",
+        "",
+    );
+    let file = rendered(&w, HarnessId::Gemini, "rev");
+    let before = fs::read_to_string(&file).unwrap();
+    assert_eq!(times(&before, "## Required Skills"), 0, "{before}");
+    edit_body(&file);
+
+    match fork::fork(&w.env, &w.scope, ItemKind::Agent, "rev", HarnessId::Gemini) {
+        Err(CoreError::AgentSkillUnavailable { name, skill }) => {
+            assert_eq!((name.as_str(), skill.as_str()), ("rev", "recon"))
+        }
+        other => panic!("a skill no tool can hold must not satisfy it: {other:?}"),
+    }
+}
+
+/// The set branch answers the same question about its members: a set that
+/// lands on no tool installs none of them, so none of them is the scope's
+/// to offer.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_set_member_that_lands_nowhere_is_not_offered() {
+    let w = pinned_only_world(
+        "[bundles.kit]\nsource = \"cat\"\nrev = \"REV\"\nharnesses = []\n",
+        "[bundles.kit]\ndescription = \"kit\"\nskills = [\"recon\"]\n",
+    );
+    let file = rendered(&w, HarnessId::Gemini, "rev");
+    let before = fs::read_to_string(&file).unwrap();
+    assert_eq!(times(&before, "## Required Skills"), 0, "{before}");
+    edit_body(&file);
+
+    match fork::fork(&w.env, &w.scope, ItemKind::Agent, "rev", HarnessId::Gemini) {
+        Err(CoreError::AgentSkillUnavailable { name, skill }) => {
+            assert_eq!((name.as_str(), skill.as_str()), ("rev", "recon"))
+        }
+        other => panic!("a set member no tool can hold must not satisfy it: {other:?}"),
+    }
+}
+
+/// A settled scope where `recon` exists only at the pinned revision, so
+/// the pinned declaration is the whole of what could offer it. `REV` in
+/// `declaration` stands for that commit; `catalog` is the catalog's own
+/// `kendex.toml` at it.
+#[allow(clippy::unwrap_used)]
+fn pinned_only_world(declaration: &str, catalog: &str) -> World {
+    let w = world();
+    write_skill(&w.upstream, "recon", "Recon.");
+    write_agent(&w.upstream, "rev", "Upstream body.");
+    fs::write(w.upstream.join("kendex.toml"), catalog).unwrap();
+    commit(&w.upstream, "one");
+    let pinned = head_commit(&w.upstream);
+    fs::remove_dir_all(w.upstream.join("skills/recon")).unwrap();
+    fs::write(w.upstream.join("kendex.toml"), "").unwrap();
+    commit(&w.upstream, "two");
+
+    let path = manifest::manifest_path(&w.env, &w.scope);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        format!(
+            "schema = 6\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[install]\nharnesses = [\"gemini\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\n\n{}\n[agent-skills]\nrev = [\"recon\"]\n",
+            declaration.replace("REV", &pinned)
+        ),
+    )
+    .unwrap();
+    sync_and_apply(&w);
+    w
+}
+
+/// A fork made while the supplying source is already gone cannot wait for
+/// the renderer to catch it: nothing is a recorded fork until the fork is
+/// written. Left to the render it succeeds, keeps the section as prose,
+/// fails its next audit, and writes a second copy the day the source comes
+/// back. The capture refuses instead, and nothing is written.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_fork_refuses_at_capture_when_the_source_is_already_gone() {
+    let w = world();
+    write_skill(&w.upstream, "recon", "Recon.");
+    write_agent(&w.upstream, "rev", "Upstream body.");
+    fs::write(
+        w.upstream.join("kendex.toml"),
+        "[agent-skills]\nrev = [\"recon\"]\n",
+    )
+    .unwrap();
+    commit(&w.upstream, "one");
+    let other = w.home.join("other-catalog");
+    write_skill(&other, "recon", "Recon.");
+    let path = manifest::manifest_path(&w.env, &w.scope);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        format!(
+            "schema = 6\n\n[sources.cat]\nrepo = \"{REPO}\"\n\n[sources.extra]\npath = \"{}\"\n\n[install]\nharnesses = [\"gemini\"]\nmethod = \"symlink\"\n\n[agents.rev]\nsource = \"cat\"\n\n[agent-skills]\nrev = [\"recon\"]\n",
+            other.display()
+        ),
+    )
+    .unwrap();
+    sync_and_apply(&w);
+    let file = rendered(&w, HarnessId::Gemini, "rev");
+    assert_eq!(
+        times(&fs::read_to_string(&file).unwrap(), "## Required Skills"),
+        1
+    );
+    edit_body(&file);
+
+    // Both providers go before the fork is asked for.
+    fs::remove_dir_all(&other).unwrap();
+    fs::write(
+        &path,
+        without_section(&manifest_text(&w), "[sources.extra]"),
+    )
+    .unwrap();
+    fs::remove_dir_all(w.upstream.join("skills/recon")).unwrap();
+    fs::write(w.upstream.join("kendex.toml"), "").unwrap();
+    commit(&w.upstream, "two");
+    let loaded = manifest::load_for_mutation(&path).unwrap().unwrap();
+    remote::sync_sources(&w.env, &loaded).unwrap();
+
+    match fork::fork(&w.env, &w.scope, ItemKind::Agent, "rev", HarnessId::Gemini) {
+        Err(CoreError::AgentSkillUnavailable { name, skill }) => {
+            assert_eq!((name.as_str(), skill.as_str()), ("rev", "recon"))
+        }
+        other => panic!("the capture must refuse before writing: {other:?}"),
+    }
+    assert!(
+        !captured(&w, "rev").exists(),
+        "a refused capture writes nothing"
+    );
 }
 
 /// The capture takes the person's prose byte for byte. An indented code
