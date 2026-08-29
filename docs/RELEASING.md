@@ -11,8 +11,12 @@ per target (Linux x86_64 and aarch64, macOS aarch64 and x86_64, Windows
 x86_64; all free for a public repository) and publishes a **draft** GitHub
 Release with:
 
-- `kendex-<target>[.exe]` — the CLI binary, one per target. These are what
-  `kendex update` downloads.
+- `kendex-<target>[.exe]` — the CLI binary, one per target, and the
+  `<binary>.sig` a lane signs it into. These are what `kendex update`
+  downloads, and it installs neither without the other: a signature the
+  release key does not carry over those exact bytes is refused, so a lane
+  that produced none fails the tag instead of publishing a command no
+  client can verify.
 - The desktop app bundles Tauri produces per platform (deb/rpm/AppImage,
   dmg, NSIS installer), and the `.sig` Tauri writes beside each updater
   bundle. `kendex update` fetches `<AppImage>.sig` straight from the
@@ -29,6 +33,13 @@ Release with:
   unknown value. Keep these fields when adding data.
 
 Review the draft, then publish it. That is the release.
+
+`install.sh` is the exception and says so in its own comments: a machine
+with nothing installed has neither the release key nor minisign, so the
+script rests on TLS to kendex.ai and github.com. That is every run of it,
+not only the first, because the script is the upgrade path too and a re-run
+overwrites what is installed with another unchecked download. `kendex
+update` is the path held to the key.
 
 ## Pre-releases
 
@@ -73,9 +84,9 @@ revisit Intel support then.
   `plugins > updater > pubkey` in `crates/app/tauri.conf.json` and
   `UPDATER_PUBLIC_KEY` in `crates/core/src/update_feed.rs`, held equal by
   `crates/app/tests/tauri_config.rs`. A private key that does not match
-  builds a release the app refuses to install and that `kendex update`
-  refuses to install the desktop app from; the CLI binary half of
-  `kendex update` is unaffected.
+  signs every artifact of that release under a key nothing trusts, so the
+  app refuses to install it and `kendex update` refuses both halves, the
+  desktop app and the kendex command.
 - **macOS signing + notarization** (the seven `APPLE_*` repo secrets:
   certificate p12 + password, signing identity, team id, and the App
   Store Connect API issuer/key-id/key): all seven set, the two mac lanes
