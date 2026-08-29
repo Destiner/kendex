@@ -25,7 +25,7 @@ Wrappers run in the primary session: they own the user dialog and every tracker 
 ## Disposition
 
 - **Creation bar.** File an issue only when all three hold: it changes what a user or operator experiences, or blocks work that does; no open issue, active branch, or one-line fix already covers it; and someone could pick it up and finish it without a new investigation. A reproducible anomaly with evidence in hand passes all three as an investigation issue. Everything else is declined with one line in the report — no issue, no placeholder, no tracking artifact. A severe-sounding edge case that no real input reaches fails the first test, and so does a hypothetical of low severity, a coverage ask for a path that has not regressed, a refactor that neither changes behavior nor unblocks user-visible work, a guard for a race between two invocations on one machine or a crash between two writes, and a mechanism that itself came out of a review round. Two exceptions file at any likelihood: a security or data-loss defect a shipped path reaches, and an edge case whose failure is critical harm or financial loss.
-- **Burn down more than you create.** Any audit that proposes creations also sweeps its comparison set for issues the codebase has already satisfied, duplicated, or superseded, and proposes those for cancellation in the same pass, along with every active issue that fails the creation bar as it stands today. Report `created N / closed M`.
+- **Burn down more than you create.** Every audit that reads an issue backlog sweeps its comparison set for issues the codebase has already satisfied, duplicated, or superseded, and proposes those for cancellation in the same pass, along with every active issue that fails the creation bar as it stands today. Report `created N / closed M`. `project-order` reorders projects, reads no backlog, and does not sweep.
 - **Ask about work, never about mechanics.** The user decides what gets created, cancelled, and activated. Labels, priorities, relations, hierarchy, sort order, and project moves are corrections the workflow applies on its own authority.
 - **Research is part of planning, not a work item.** Gather prior art, vendor docs, and approach comparisons inline during planning as an artifact on disk that issues cite. A tracker research issue exists only when the research is delegated as standalone work — run by the researcher agent, or prepared for later pickup (`research-spike`).
 - **One approval per decision.** Ask the user to approve a body of work once — at the roadmap plan gate. Creation re-asks only what changed after that answer.
@@ -35,7 +35,7 @@ Wrappers run in the primary session: they own the user dialog and every tracker 
 | Command | Arguments | Workflow |
 |---------|-----------|----------|
 | `cycle-plan` | — | [cycle-plan](workflows/cycle-plan.md) |
-| `audit-issues` | `project` \| `project "Name"` \| `issue [IDs]` \| `--issues [file]` \| `--analyzed [file]` \| `project-order` | [audit-issues](workflows/audit-issues.md) |
+| `audit-issues` | `project` \| `project "Name"` \| `team` \| `issue [IDs]` \| `--issues [file]` \| `--analyzed [file]` \| `project-order` | [audit-issues](workflows/audit-issues.md) |
 | `roadmap plan` | `[feature]` \| `[feature] @[research-or-plan-path]` | [roadmap-plan](workflows/roadmap-plan.md) |
 | `roadmap create` | `@[plan-file]` | [roadmap-create](workflows/roadmap-create.md) |
 | `research-spike` | — | [research-spike](workflows/research-spike.md) |
@@ -46,16 +46,37 @@ Wrappers run in the primary session: they own the user dialog and every tracker 
 
 The `@[path]` given to `roadmap plan` may be research findings or a **finished plan** (a design the user has reviewed). A finished plan is the spec: derive issues from it instead of re-planning, and every issue cites it.
 
-TPM analysis workflows, each returning JSON per its schema: [tpm-cycle-plan](workflows/tpm-cycle-plan.md), [tpm-audit](workflows/tpm-audit.md) (project / issue / project-order modes), [tpm-roadmap-plan](workflows/tpm-roadmap-plan.md).
+TPM analysis workflows, each returning JSON per its schema: [tpm-cycle-plan](workflows/tpm-cycle-plan.md), [tpm-audit](workflows/tpm-audit.md) (project / team / issue / project-order modes), [tpm-roadmap-plan](workflows/tpm-roadmap-plan.md).
 
 ## Execution Rules
 
 - Run workflow sections in order. Skip only on an explicit **Skip if** condition, never on your own scope assessment.
 - `<delegation_format>` and `<output_format>` are literal templates: fill `[PLACEHOLDERS]`, drop lines whose placeholders are empty, add nothing.
 - Send a user-visible `<output_format>` report as a normal assistant message first, then invoke the question tool separately with only the question and short option labels. Never paste the report into question text or options.
+- The Linear cache holds the whole workspace: `sync` sends no team filter, and `cache issues list` neither filters by team nor returns one. The two analysis workflows resolve the configured team and scope their own cached reads to it (tpm-audit § 1.1.1, tpm-roadmap-plan § 1.1) — an issue outside it is never an input, a comparison, a duplicate, an obsolescence candidate, or a cancellation, and a project outside it is never a placement. Every other workflow reads the cache workspace-wide.
+- Every path's scope status is enumerated in § Scope by Path; a mode added later states its own row rather than inheriting silence.
+- Sync the Linear cache before a workflow's first cache read: `sync --reconcile` in a run that mutates the tracker, `sync --if-stale 15` in a read-only lookup. A cache read that comes back missing or stale after that halts the workflow and reports the sync failure — never a partial result, a live-only substitute, or a retry against the stale cache.
 - Resolve tracker context once per run (audit-issues § 1.2) and route every preflight, fetch, and mutation through it. A GitHub-tracked run must not require Linear installation, sync, or authentication; where GitHub lacks a Linear concept, degrade in a documented note, never silently.
 - Before any issue create or label update, run the label preflight in [references/labels.md](references/labels.md) against the live inventory and project taxonomy. Unknown labels, parent/group labels, missing required categories, and exclusivity violations halt before mutation.
 - In multi-issue analysis, keep verification context per issue. One issue's PR, branch, or resolved path set never scopes another's checks.
+
+## Scope by Path
+
+The Linear cache is workspace-wide, so each path states whether it resolves the team scope (tpm-audit § 1.1.1) and what it filters. Silence is not inheritance: a new mode adds its row.
+
+| Path | Resolves | Filters |
+|------|----------|---------|
+| tpm-audit `project`, `team` | yes | § 1.3 projects, § 1.4 input set, § 1.5 comparison set |
+| tpm-audit `issues`, Linear | yes | § 1.5 comparison set; a § 1.4 input issue outside scope halts |
+| tpm-audit `issues`, GitHub | n/a — reads no Linear cache | n/a |
+| tpm-audit `project-order` | yes | § 11 initiatives, projects, and per-project issues |
+| tpm-roadmap-plan | yes, § 1.1 | § 1.4 projects, § 1.5 comparison set |
+| tpm-cycle-plan | **no** | **no** — `session-status` picks the active project workspace-wide, and every later read is scoped to that pick |
+| audit-issues §§ 7.2-7.5 | inherits | reads rooted at an in-scope project or an issue this run mutated |
+| audit-issues § 1.2.2, § 3 | **no** | **no** — `session-status` selects projects workspace-wide |
+| cycle-plan, roadmap-plan, roadmap-create, research-spike | **no** | **no** — project, initiative, and label reads span the workspace |
+| research-complete | n/a | reads are rooted at the caller's issue identifier |
+| research-issue | n/a | reads rooted at the caller's identifiers; the project it creates into is the caller's pick |
 
 ## Hierarchy
 
