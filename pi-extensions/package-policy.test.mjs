@@ -14,13 +14,48 @@ function packages() {
 		.map((entry) => ({ ...entry, pkg: JSON.parse(readFileSync(entry.packagePath, "utf8")) }));
 }
 
-function tsFiles(dir) {
+const workflowPath = join(root, "..", ".github", "workflows", "skill-tests.yml");
+
+// The `if:` every per-package suite step carries. A step that has drifted off
+// it is skipped on the shard that runs these suites, which looks identical to
+// a step that runs and passes.
+const nodeShard = "matrix.shard == 'node'";
+
+// A package's CI entry point is `test:ci` when it declares one and `test`
+// otherwise. `test:ci` is how a package whose full `test` script cannot run on
+// a runner — pi-claude-bridge's needs API keys and a live provider — states the
+// subset CI does prove, so the exclusion is readable here instead of looking
+// like an uncovered package.
+function ciEntryPoint(pkg) {
+	if (pkg.scripts?.["test:ci"]) return "npm run test:ci";
+	if (pkg.scripts?.test) return "npm test";
+	return undefined;
+}
+
+// Steps are list items at a fixed indent, and a block scalar's body is the
+// lines indented under it — `#` lines are shell comments, not commands.
+function ciSteps() {
+	const workflow = readFileSync(workflowPath, "utf8");
+	return workflow.split(/\n(?= {6}- )/).flatMap((block) => {
+		const dir = block.match(/^ {8}working-directory: pi-extensions\/([\w.-]+)$/m)?.[1];
+		if (dir === undefined) return [];
+		const body = block.match(/^ {8}run: \|\n((?: {10}.*\n?)*)/m)?.[1] ?? block.match(/^ {8}run: (.+)$/m)?.[1] ?? "";
+		const commands = body.split("\n").map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
+		return [{ dir, condition: block.match(/^ {8}if: (.+)$/m)?.[1], commands }];
+	});
+}
+
+function suiteFiles(dir) {
+	return tsFiles(dir, /\.(?:ts|mts|mjs|cjs|js)$/).filter((file) => /(?:^|\/)(?:tests|test|__tests__)\//.test(file.slice(dir.length + 1)));
+}
+
+function tsFiles(dir, pattern = /\.ts$/) {
 	const out = [];
 	for (const entry of readdirSync(dir, { withFileTypes: true })) {
 		if (entry.name === "node_modules" || entry.name === "bundle") continue;
 		const path = join(dir, entry.name);
-		if (entry.isDirectory()) out.push(...tsFiles(path));
-		else if (entry.isFile() && entry.name.endsWith(".ts")) out.push(path);
+		if (entry.isDirectory()) out.push(...tsFiles(path, pattern));
+		else if (entry.isFile() && pattern.test(entry.name)) out.push(path);
 	}
 	return out;
 }
@@ -95,4 +130,44 @@ test("every Pi extension carries a consumer-facing CHANGELOG.md", () => {
 		const version = JSON.parse(readFileSync(join(root, dir, "package.json"), "utf8")).version;
 		assert.ok(changelog.split("\n").some((line) => line.trimEnd() === `### ${version}`), `${dir}: CHANGELOG.md has a "### ${version}" entry for the current package.json version — record consumer-impacting changes with the version bump that ships them`);
 	}
+});
+
+test("every Pi extension suite runs in CI under the package's own test script", () => {
+	const steps = ciSteps();
+	const dirs = packages().map(({ dir }) => dir);
+	const bearing = packages().filter(({ dir }) => suiteFiles(join(root, dir)).length > 0).map(({ dir }) => dir);
+	// Every side is derived from the tree and the workflow, so a reader that
+	// matched nothing would pass this case vacuously — which is the gap it
+	// exists to close. Floor each reader first; a zero here means the reader is
+	// broken, not that the repo is empty. `ciEntryPoint` needs no floor of its
+	// own: a reader that found no entry point fails the next assertion.
+	assert.ok(steps.length > 0, `no per-package steps found in ${workflowPath} — the workflow reader is broken`);
+	assert.ok(bearing.length > 0, "no package carries test files — the suite-file walker is broken");
+
+	assert.deepEqual(
+		packages().filter(({ dir, pkg }) => bearing.includes(dir) && !ciEntryPoint(pkg)).map(({ dir }) => dir),
+		[],
+		"packages carry test files but declare no `test` script, so CI has nothing to invoke — the suite ships unrun",
+	);
+
+	// Naming the working directory only proves a step exists. What proves the
+	// suite runs is the step invoking the entry point the package declares: a
+	// step that builds, or runs a subset under another script name, satisfies
+	// the directory and proves nothing.
+	assert.deepEqual(
+		packages().flatMap(({ dir, pkg }) => {
+			const invocation = ciEntryPoint(pkg);
+			if (invocation === undefined) return [];
+			const runs = steps.some((step) => step.dir === dir && step.condition === nodeShard && step.commands.includes(invocation));
+			return runs ? [] : [`${dir}: no enabled node-shard step runs \`${invocation}\``];
+		}),
+		[],
+		"packages declare a test entry point that no skill-tests.yml step invokes",
+	);
+
+	assert.deepEqual(
+		[...new Set(steps.map(({ dir }) => dir))].filter((dir) => !dirs.includes(dir)),
+		[],
+		"skill-tests.yml steps name a pi-extensions directory that is not a package",
+	);
 });
