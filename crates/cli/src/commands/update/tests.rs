@@ -1,5 +1,9 @@
 use super::*;
 
+#[path = "../../../fixture_url.rs"]
+mod fixture_url;
+use fixture_url::file_url;
+
 #[test]
 fn fetched_urls_are_always_positional_arguments() {
     assert_eq!(
@@ -39,7 +43,11 @@ fn a_command_that_would_not_move_says_whether_the_app_went_without_it() {
 /// run needs except who owns the bytes. What each arm did to that
 /// command is then the whole difference between them.
 fn a_release_is_out(dir: &tempfile::TempDir) -> (Env, String, PathBuf) {
-    let home = dir.path();
+    a_release_is_out_under(dir.path())
+}
+
+fn a_release_is_out_under(home: &Path) -> (Env, String, PathBuf) {
+    std::fs::create_dir_all(home).unwrap();
     let installed = home.join("kendex");
     std::fs::write(&installed, INSTALLED).unwrap();
     std::fs::write(home.join("new-command"), OFFERED).unwrap();
@@ -47,15 +55,15 @@ fn a_release_is_out(dir: &tempfile::TempDir) -> (Env, String, PathBuf) {
     std::fs::write(
         home.join("feed.json"),
         format!(
-            r#"{{"schema": 1, "version": "9.9.9", "assets": {{"{}": "file://{}/new-command"}}}}"#,
+            r#"{{"schema": 1, "version": "9.9.9", "assets": {{"{}": {}}}}}"#,
             target_triple(),
-            home.display()
+            serde_json::to_string(&file_url(&home.join("new-command"))).unwrap()
         ),
     )
     .unwrap();
     (
         Env::host_rooted(home),
-        format!("file://{}/feed.json", home.display()),
+        file_url(&home.join("feed.json")),
         installed,
     )
 }
@@ -105,6 +113,30 @@ fn a_direct_command_is_replaced_from_the_feed() {
 
     assert_eq!(std::fs::read(&installed).unwrap(), OFFERED);
     assert!(!staged_path(&installed).exists());
+}
+
+/// The same arm again with the release sitting under a directory whose
+/// name holds characters a URL reserves. A space and a `#` are ordinary in
+/// a Windows profile directory, and spelled into a URL rather than encoded
+/// they address a different file, or none — the fetch either brings back
+/// the wrong bytes or fails outright.
+#[test]
+fn a_release_under_a_name_a_url_reserves_is_still_fetched() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("my release #1");
+    let (env, feed_url, installed) = a_release_is_out_under(&home);
+
+    run_on(
+        &env,
+        false,
+        &feed_url,
+        &installed,
+        &InstallChannel::Direct,
+        TEST_KEY,
+    )
+    .unwrap();
+
+    assert_eq!(std::fs::read(&installed).unwrap(), OFFERED);
 }
 
 /// The whole point of signing the command half: the feed names a host, so
