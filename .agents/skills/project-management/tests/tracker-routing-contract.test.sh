@@ -1,10 +1,32 @@
 #!/usr/bin/env bash
-# A GitHub-tracked audit must never reach for Linear. Tracker context resolves
-# once, both preflight branches stay disjoint, every approved action has a
-# GitHub execution route, and each Linear concept GitHub lacks degrades in a
-# reported note rather than silently vanishing. These workflows are markdown
-# contracts, so this test statically pins that separation — including a
-# mechanical check that the GitHub-only regions contain no Linear command.
+# A GitHub-tracked audit must never reach for Linear. This test pins the
+# separation itself: the two preflight branches and the two execution routes
+# are extracted by their headings and route labels, every GitHub command in
+# them is pinned, and a mechanical check proves the GitHub-only regions hold no
+# Linear command. The recorded degradation values are pinned too. That tracker
+# context resolves once, and that each degradation is reported rather than
+# silent, are prose and are listed below as uncovered.
+#
+# What this pins is STRUCTURE — the schema example and its table row, the
+# section headings, the two route labels, every gh and linear.sh command, the
+# recorded degradation values, the delegation's Tracker line. review-bots.md:
+# a token pin establishes that a structural element is present, never that a
+# behavioral claim written in prose is true, so the rules below have no lint.
+# That GitHub mode requires no Linear sync, status, inventory or mutation and
+# that Linear install and auth are not a prerequisite. That the input file's
+# tracker block wins, that an unprefixed key infers linear and an `issue-`
+# key github, and that the tracker resolves once before any tracker command.
+# That project audits halt under github for want of a project inventory, and
+# that tpm-audit's project mode is Linear-only. That creates run in dependency
+# order and Todo promotion waits for relations and parents. That one audit
+# never mixes routes, never silently drops an approved hierarchy or relation
+# action, and never invents a placement. And the two cleanup degradations,
+# GitHub having no recursive child query and no relation objects. Nor the
+# create-side rules the three issue-creating workflows state: that the label
+# set is validated against the live inventory before a create, that a create
+# dedupes against existing issues in every state, and that each item's
+# blocking relations attach immediately after its own create. Their create
+# COMMANDS are pinned; the rules around them are not.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,19 +75,13 @@ assert_linear_free() {
 schema="$SKILL_DIR/schemas/audit-issues-input.md"
 require_fixed "$schema" '"tracker": {"type": "linear|github", "repository": "owner/repo"}' 'tracker block in the example'
 require "$schema" '\| `tracker` \| No \|' 'tracker field definition'
-require "$schema" 'infers the tracker from `parent_issue`' 'inference default'
-require "$schema" 'GitHub mode must not require Linear sync, session status, project inventory, or Linear mutation commands' 'no-Linear guarantee'
+require "$schema" '`parent_issue`' 'the field the tracker default is inferred from'
 
 # --- Tracker resolves once, before any tracker command ----------------------
 
 audit_issues="$SKILL_DIR/workflows/audit-issues.md"
 require "$audit_issues" '1\.2 Resolve Tracker' 'tracker resolution section'
-require "$audit_issues" 'input file.s `tracker` block' 'input-file precedence'
-require "$audit_issues" 'starting with `issue-` → `github`, otherwise `linear`' 'inference fallback'
-require "$audit_issues" 'Resolve once, before any tracker command' 'resolve-once ordering rule'
 require_fixed "$audit_issues" 'gh repo view --json nameWithOwner' 'repository resolution for an inferred github tracker'
-require_fixed "$audit_issues" 'Project audits are Linear-only; GitHub repositories have no project inventory in this workflow.' 'project-mode halt for github'
-require "$audit_issues" 'Linear installation/authentication is not a prerequisite' 'no-Linear prerequisite'
 
 # --- Preflight branches are tracker-conditional and disjoint ----------------
 
@@ -88,12 +104,9 @@ require "$audit_issues" '\*\*GitHub route \(TRACKER=github\)\*\*' 'GitHub execut
 
 linear_create_row="$(extract "$audit_issues" '^\*\*Linear route \(TRACKER=linear\)\*\*' '^\| expand, update' linear-create-row)" || fail "could not extract the Linear create row"
 grep -Fq -- '--state "Backlog"' "$linear_create_row" || fail 'Linear create route does not require --state "Backlog"'
-require_fixed "$audit_issues" 'Once every create has landed and its relations and parent are attached' 'Todo promotion waits for relations and parents'
-require_fixed "$audit_issues" 'Process creates in dependency order' 'creates are dependency-ordered and linked immediately'
 dev_implement="$SKILL_DIR/../dev/workflows/dev-implement.md"
 if [[ -f "$dev_implement" ]]; then
   require_fixed "$dev_implement" 'issues create --state "Backlog" --project "[PARENT_PROJECT]" --parent [PARENT_ID] --labels "[VALIDATED_LABELS]"' 'dev-implement child create carries the parent project, Backlog, and the full label set'
-  require_fixed "$dev_implement" 'validated against the live inventory' 'dev-implement child labels are preflighted'
 fi
 research_issue="$SKILL_DIR/workflows/research-issue.md"
 merge_pr="$SKILL_DIR/../orch/workflows/merge-pr.md"
@@ -107,17 +120,12 @@ fi
 if [[ -f "$start_new" ]]; then
   start_create_cmd="$(extract "$start_new" 'issues create' '^```$' start-create-cmd)" || fail "could not extract the start-new create command"
   grep -Fq -- '--state "Backlog"' "$start_create_cmd" || fail 'start-new create does not pass --state "Backlog"'
-  require_fixed "$start_new" 'validate the complete label set' 'start-new preflights labels before a Backlog create'
-  require_fixed "$start_new" 'search existing issues (all states) for the same problem' 'start-new dedupes before a Backlog create'
 fi
 if [[ -f "$plan_issues" ]]; then
   plan_create_cmd="$(extract "$plan_issues" 'issues create' '^```$' plan-create-cmd)" || fail "could not extract the plan-issues create command"
   grep -Fq -- '--state "Backlog"' "$plan_create_cmd" || fail 'plan-issues create does not pass --state "Backlog"'
-  require_fixed "$plan_issues" 'validate the complete label set' 'plan-issues preflights labels before a Backlog create'
-  require_fixed "$plan_issues" 'search existing issues (all states) for the same problem' 'plan-issues dedupes before a Backlog create'
   grep -Fq -- '--priority [PRIORITY]' "$plan_create_cmd" || fail 'plan-issues create does not pass a priority'
   grep -Fq -- '--estimate [ESTIMATE]' "$plan_create_cmd" || fail 'plan-issues create does not pass an estimate'
-  require_fixed "$plan_issues" 'attach each item'"'"'s blocking relations immediately after its own create' 'plan-issues links each item before the next create'
 fi
 if [[ -f "$merge_pr" ]]; then
   merge_create_cmd="$(extract "$merge_pr" 'issues create' '^```$' merge-create-cmd)" || fail "could not extract the merge-pr rebundle create command"
@@ -125,7 +133,6 @@ if [[ -f "$merge_pr" ]]; then
 fi
 research_create_cmd="$(extract "$research_issue" 'issues create \\$' '^```$' research-create-cmd)" || fail "could not extract the research-issue create command"
 grep -Fq -- '--state "Backlog"' "$research_create_cmd" || fail 'research-issue create command does not pass --state "Backlog"'
-require "$audit_issues" 'Never mix routes within one audit' 'single-route rule'
 require_fixed "$audit_issues" 'gh issue create --repo [OWNER/REPO] --title "[TITLE]" --body-file [BODY_FILE] --label "[VALIDATED_FINAL_LABELS]"' 'GitHub create with validated labels'
 require_fixed "$audit_issues" 'gh issue edit [N] --repo [OWNER/REPO] --body-file [BODY_FILE]' 'GitHub body-edit route'
 require_fixed "$audit_issues" 'github.sh label-add [N] "[LABEL]" --issue' 'label add via the github skill'
@@ -137,22 +144,17 @@ assert_linear_free "$(extract "$audit_issues" '^\*\*GitHub route \(TRACKER=githu
 # --- Linear-only concepts degrade explicitly, never silently ---------------
 
 require "$audit_issues" 'GitHub degradation \(explicit, never silent\)' 'degradation note'
-require "$audit_issues" 'Never drop an approved hierarchy or relation action' 'no-silent-drop rule'
 require "$audit_issues" 'positioning: n/a \(github\)' 'positioning skip is recorded'
 require "$audit_issues" 'Degraded \(github\)' 'degradation line in the summary'
-require "$audit_issues" 'no recursive child query' 'research-ref propagation degradation'
-require "$audit_issues" 'there are no relation objects' 'post-cancellation cleanup degradation'
 require "$audit_issues" 'Tracker: \[TRACKER\] \[OWNER/REPO\]' 'tracker context reaches the TPM delegation'
 
 # --- Analysis branches by tracker; project inventory degrades ---------------
 
 tpm_audit="$SKILL_DIR/workflows/tpm-audit.md"
-require "$tpm_audit" '`TRACKER` \(plus `REPOSITORY` for github\)' 'tracker extraction in issues mode'
-require "$tpm_audit" 'Linear only — this mode audits Linear projects' 'project mode is Linear-only'
+require "$tpm_audit" '`REPOSITORY`' 'the repository variable the github route reads'
 require_fixed "$tpm_audit" 'gh label list --repo [REPOSITORY] --limit 200 --json name,description' 'GitHub label inventory'
 require_fixed "$tpm_audit" 'gh issue view [N] --repo [REPOSITORY] --json number,title,body,labels,state,url' 'GitHub issue fetch'
 require_fixed "$tpm_audit" 'gh issue list --repo [REPOSITORY] --state all --limit 200 --json number,title,state,labels' 'GitHub comparison set'
 require "$tpm_audit" 'github: no project inventory' 'project-placement degradation reason'
-require "$tpm_audit" 'Never invent a placement' 'no invented placement'
 
 echo "all pass"

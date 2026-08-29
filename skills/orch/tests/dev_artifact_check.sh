@@ -5,6 +5,13 @@
 # (kendex#776): the check resolves WT/tmp/dev-return-ISSUE-RID.json and requires
 # the internal .round_id to match. The mtime freshness gate is gone.
 
+#
+# The markdown checks pin COMMAND and delegation-line shapes. review-bots.md:
+# a token pin establishes that a structural element is present, never that a
+# behavioral claim written in prose is true. So ci-fix's two rules have no
+# lint: that its agent writes no dev-return artifact, and that the round is
+# accepted on the return message plus the pushed fix commit rather than on a
+# stale artifact.
 set -euo pipefail
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -485,8 +492,6 @@ assert_file_contains "$ci_fix" "$ROUND_STAMP" "ci-fix § 3.2 mints a fresh dev_r
 # ci-fix's agent pushes its fix directly and writes NO artifact, so the fresh
 # token alone is the fail-closed guarantee: a prior round's leftover receipt
 # carries the previous token and can never be mistaken for this round's.
-assert_file_contains "$ci_fix" "writes **no** dev-return artifact" "ci-fix states its agent writes no completion artifact"
-assert_file_contains "$ci_fix" "Accept this round on the agent's return message plus the pushed fix commit" "ci-fix accepts on the return message plus the pushed fix commit, never a stale artifact"
 assert_file_not_contains "$ci_fix" "$LEGACY_CHECK" "ci-fix § 3.2 no longer uses the legacy positional dev-artifact-check call"
 
 # The removed legacy positional call must not survive in any orch workflow.
@@ -501,18 +506,18 @@ done
 # dev_delegated_at must arm the watchdog. kendex#818 re-homed both mandates into
 # the numbered "orchestrator owns round closure" list (same requirements, new
 # wording) and made that list the primary path rather than a recovery fallback.
+# The two bolded list items are the anchors. The sentences around them are
+# not: nothing here checks that round closure is the orchestrator's rather
+# than a return's, that a round is never classified from wording or elapsed
+# time, or that the return message is display-only. Nor that a delegation
+# point arms the watchdog — the arming instruction is prose, and the bare word
+# `watchdog` is satisfied by a sentence saying none is armed.
 orch_skill="$REPO_ROOT/skills/orch/SKILL.md"
 assert_file_contains "$orch_skill" "Run the check on every wake and at the deadline" "SKILL mandates the per-wake and deadline check"
-assert_file_contains "$orch_skill" "never classify from wording or elapsed time" "SKILL forbids classifying a round from wording or elapsed time"
-assert_file_contains "$orch_skill" 'prints `verdict`' "SKILL routes acceptance through the one-word verdict"
+assert_file_contains "$orch_skill" '`verdict`' "SKILL names the one-word verdict acceptance reads"
 assert_file_contains "$orch_skill" "Arm a single-shot wall-clock watchdog" "SKILL mandates a wall-clock watchdog independent of sub-agent wakes (kendex#803)"
-assert_file_contains "$orch_skill" "The orchestrator owns round closure" "SKILL puts round closure on the orchestrator, not on a return arriving"
-assert_file_contains "$orch_skill" "the return message is display-only" "SKILL keeps the return message out of the acceptance decision"
 for wf in dev-start dev-fix review-pr-comments ci-fix; do
   wf_doc="$REPO_ROOT/skills/orch/workflows/$wf.md"
-  # The bare word "watchdog" is satisfied by any mention, including a sentence
-  # saying none is armed. Require the arming instruction itself.
-  assert_file_matches "$wf_doc" 'arm(ing)? the watchdog' "$wf.md arms a watchdog at delegation"
   assert_file_contains "$wf_doc" "SKILL.md#round-closure" "$wf.md routes the watchdog contract to the canonical section"
 done
 

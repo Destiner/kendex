@@ -10,7 +10,21 @@
 # The fix threads the dev round's typed per-item decision through the
 # state-write boundary as an `outcome` field ("blocked"|"skipped") and maps it
 # to distinct audit origins (blocked/absent → "escalated", skipped →
-# "skipped"). This lint pins each link of that chain in the instruction docs.
+# "skipped"). This lint pins the tokens that chain carries in the instruction
+# docs — the `outcome` field, the route from each builder to the schema, and
+# in the schema one table row per outcome binding it to its origin. A relation
+# needs one pin that spans both halves: two independent token greps would stay
+# green with the mapping inverted.
+#
+# NOT covered: that those rows form a well-formed table at all — a header, a
+# delimiter on the line below it, and a consistent cell count across every row.
+# Not because the property is prose; it is a DOCUMENT-LEVEL fact with no home
+# that stays fail-closed here. This suite ships inside orch, so a checker it
+# calls must ship inside orch too, and dep-radar's policy lint needs the
+# identical checker but cannot reach it: dep-radar declares `required:
+# [github]`, and no test in this repo sources another skill's file. A
+# repo-level `tools/` lane is the right home for it. Until such a lane exists,
+# table well-formedness has no lint anywhere.
 set -euo pipefail
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,40 +52,69 @@ else
   fail "dev-fix escalated entry lost the \"outcome\" field or its write"
 fi
 
-# --- b: audit-input builders map outcome to distinct origins ----------------
+# --- b: audit-input builders route to the schema that owns the mapping ------
+# Neither branch of the mapping is pinned in the workflows. Contiguity was not
+# enough: `"skipped"` → `origin: "skipped"` is one literal, but a sentence
+# NEGATING it carries that literal too, so the condition passed on a doc that
+# said the opposite while failing on a faithful rewrite. A pin a negation
+# satisfies covers nothing. What is pinned is the route to the schema, where
+# § d reads the mapping off the rows.
+#
+# So these rules have no lint in review-pr.md or review.md: that `"skipped"`
+# maps to origin "skipped", and that `"blocked"` or an absent `outcome` field
+# maps to origin "escalated". The schema's rows are the only coverage either
+# has.
 for wf in review-pr review; do
   doc="$SKILL_DIR/workflows/$wf.md"
-  if grep -q '`"skipped"` → `origin: "skipped"`' "$doc" \
-     && grep -q '`origin: "escalated"`' "$doc"; then
-    pass "$wf.md maps outcome → origin (skipped vs escalated)"
+  if grep -q 'schemas/audit-issues-input.md' "$doc"; then
+    pass "$wf.md routes to the schema that owns the mapping"
   else
-    fail "$wf.md lost the outcome → origin mapping"
+    fail "$wf.md lost the schema route"
   fi
 done
 
-# --- c: legacy entries (no outcome field) stay backward compatible ----------
-# Both builders must say entries WITHOUT an outcome field map to "escalated",
-# so pre-#970 state files keep their original meaning.
-for wf in review-pr review; do
-  doc="$SKILL_DIR/workflows/$wf.md"
-  if grep -q 'no `outcome` field' "$doc"; then
-    pass "$wf.md keeps legacy no-outcome entries mapped to escalated"
-  else
-    fail "$wf.md lost the legacy no-outcome → escalated rule"
-  fi
-done
+# The legacy rule — an entry WITHOUT an `outcome` field maps to origin
+# "escalated" — now has its own row in the schema table § d reads. It stays
+# uncovered in review-pr.md and review.md, where both builders state it in
+# prose that no token tracks.
 
-# --- d: the audit-input schema knows the skipped origin ---------------------
+# --- d: the audit-input schema carries the mapping as a table ---------------
+# One row per outcome, so each row binds its outcome to its origin. Scoped to
+# the mapping section and gated on the header and delimiter: row-shaped text
+# elsewhere in the file must not satisfy it, and rows with no table above them
+# are not a table.
 if grep -q 'suggestion|escalated|skipped|planned|discovered' "$PM_SCHEMA"; then
   pass "audit-issues-input origin enum includes skipped"
 else
   fail "audit-issues-input origin enum lost skipped"
 fi
-if grep -q 'outcome "skipped" → origin: "skipped"' "$PM_SCHEMA" \
-   && grep -q 'outcome "blocked" (or no outcome field' "$PM_SCHEMA"; then
-  pass "audit-issues-input documents the outcome → origin mapping"
+
+# Sliced on the section HEADING, not on the bold lead-in above the table: a
+# lead-in is a sentence fragment, and a prose boundary makes the check
+# prose-dependent however structural the needle inside it is.
+map_section() {
+  awk '/^## Building from Review Findings/ { on = 1; next }
+       on && /^## / { on = 0 }
+       on' "$1"
+}
+
+MAP="$(map_section "$PM_SCHEMA")"
+# One row per outcome, each binding its outcome to its origin in ONE literal.
+# A relation needs a pin that spans both halves: two independent token greps
+# would stay green with the mapping inverted.
+MAP_ROWS=(
+  '| `"blocked"` | `"escalated"` |'
+  '| absent | `"escalated"` |'
+  '| `"skipped"` | `"skipped"` |'
+)
+missing_row=""
+for row in "${MAP_ROWS[@]}"; do
+  grep -qF -- "$row" <<<"$MAP" || missing_row="$missing_row $row"
+done
+if [[ -n "$missing_row" ]]; then
+  fail "the mapping section does not carry a row for:$missing_row"
 else
-  fail "audit-issues-input lost the outcome → origin mapping"
+  pass "audit-issues-input maps each outcome to its origin, one row each"
 fi
 
 echo

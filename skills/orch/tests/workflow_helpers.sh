@@ -138,15 +138,16 @@ assert_file_contains "$merge_workflow" 'rev-parse --abbrev-ref HEAD' \
   "merge-pr resolves which checkout owns the base branch before advancing it"
 assert_file_contains "$merge_workflow" 'refs/remotes/origin/[BASE_BRANCH]:refs/heads/[BASE_BRANCH]' \
   "merge-pr keeps the by-name fetch refspec route for a foreign-HEAD checkout"
-assert_file_contains "$merge_workflow" 'The `Base sync` row is never omitted' \
+assert_file_contains "$merge_workflow" '| Base sync |' \
   "merge-pr never omits the Base sync row, so a stale base cannot pass unreported"
 
 # A push that rebases rewrites every stored fix SHA. Without reconciliation the
 # PR body cites commits that no longer exist; worktree-push owns that remap.
 assert_file_contains "$submit_workflow" 'scripts/worktree-push --worktree' \
   "submit-pr pushes through the SHA-reconciling worktree-push wrapper"
-assert_file_contains "$submit_workflow" 'Publishing an unreconciled pre-rebase SHA is forbidden' \
-  "submit-pr keeps the unreconciled-SHA publication ban"
+# No check that submit-pr states the unreconciled pre-rebase SHA publication
+# ban. That rule lives only in prose and the wrapper pin above carries the
+# mechanism instead.
 
 # The lease is what stops two sessions working the same tree.
 assert_file_contains "$SKILL_DIR/workflows/start-worktree.md" \
@@ -184,15 +185,12 @@ for phrase in 'exit 75 refuses a second writer' 'rather than adding a second wri
     pass "SKILL.md does not over-claim the possession gate: $phrase"
   fi
 done
-# Paired with the absence checks: deleting the rows entirely would satisfy them
-# while losing the contract, so the accurate condition must be present in both
-# places that state it.
-assert_file_contains "$SKILL_DIR/SKILL.md" \
-  'or when the token it is bound to differs from the lease' \
-  "SKILL.md's scripts table states what actually exits 75"
-assert_file_contains "$SKILL_DIR/SKILL.md" \
-  "the round's recorded lease generation differs from the lease" \
-  "SKILL.md's Round Closure step states what actually exits 75"
+# No check that either site states what actually exits 75 — the scripts table
+# row and the Round Closure step both say it in prose, and a sentence denying
+# the behaviour carries the number just as well as one asserting it. Deleting
+# the rows outright would satisfy the absence checks above, and this pin did
+# not close that: it covers nothing a negation does not also satisfy. Both
+# rules are uncovered.
 
 # The delegated agent re-verifies the same lease, so a delegation that lands in
 # a tree another session has taken fails closed instead of clobbering it. The

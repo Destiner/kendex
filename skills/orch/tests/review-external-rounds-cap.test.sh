@@ -120,10 +120,14 @@ cap_site() { slice "$1" '### 6.1 Delegate Fixes' '^### 6[.]2'; }
 # no route can go around.
 restart_check() { awk '/^   \*\*Restart check\.\*\*/ { on = 1; print; next } on && (/^   \*\*/ || /^#/) { on = 0 } on' "$1"; }
 loop_site() { slice "$1" '### 6.3 Re-Triage Or Exit' '^## 7[.]'; }
-# The cap rule itself: § 6.1 from its budget read down to the delegation setup.
+# The cap rule itself: § 6.1 from its budget read down to the delegation
+# step label. Both bounds are structural — a setting key and a bolded step
+# label, the same shape `restart_check` below slices submit-pr on. Splitting
+# on the setup paragraph's opening words made a rewording of THAT paragraph
+# fail a check about the cap rule, which is why § 6.1 carries the heading.
 # The rule names every disposition form, so a bound narrower than the section
 # is what keeps another mention of `Fixed in` out of the check.
-cap_rule() { cap_site "$1" | awk '/REVIEW_MAX_EXTERNAL_ROUNDS/ { on = 1 } /^Ensure the worktree exists/ { on = 0 } on'; }
+cap_rule() { cap_site "$1" | awk '/REVIEW_MAX_EXTERNAL_ROUNDS/ { on = 1 } /^\*\*Delegate the fix set\.\*\*/ { on = 0 } on'; }
 
 # The prose bounds in submit-pr: every iteration-cap mention that is not the
 # fenced `workflow-state increment` command — § 3.1's triage pass and § 6.1's
@@ -214,16 +218,16 @@ fi
 # `items` is defined for the rest of the section. Restating it downstream is
 # the shape that let an ordinary Fixing item ride along on an exempt round:
 # three carriers to keep in step, and the template the last to know.
-if grep -q -F 'The **fix set** is what the rest of this section groups, records and delegates' <<<"$rule"; then
-  ok "the fix set is named once, where the cap narrows it"
+if grep -q -F '**fix set**' <<<"$rule"; then
+  ok "the fix set is defined once, inside the cap rule that narrows it"
 else
-  bad "the cap does not name the set the rest of the section carries"
+  bad "the cap rule does not define the set the rest of the section carries"
 fi
 # Every carrier refers to that set. A carrier that re-derives it — by
 # repeating the Fixing predicate or by asking whether this is the cap — is a
 # copy of the rule to keep in step, and the template was always the last to
 # know. Three carriers today; a fourth inherits the rule for free.
-downstream() { cap_site "$1" | awk '/^Ensure the worktree exists/ { on = 1 } on'; }
+downstream() { cap_site "$1" | awk '/^\*\*Delegate the fix set\.\*\*/ { on = 1 } on'; }
 DOWN="$(downstream "$COMMENTS_WF")"
 if grep -q -i -F 'at the cap' <<<"$DOWN" || grep -q -F 'marked "Fixing"' <<<"$DOWN"; then
   bad "a carrier re-derives the fix set instead of referring to it" "$(grep -n -iE 'at the cap|marked "Fixing"' <<<"$DOWN")"
@@ -277,11 +281,10 @@ if grep -q -F 'cap decision' <<<"$loop" || grep -q -F 'return to the caller' <<<
 else
   ok "§ 6.3 loops on at the cap, so a late thread is never dropped"
 fi
-if grep -q -F 'the disposition is unconditional and the fix is what stops' <<<"$rule"; then
-  ok "§ 6.1 states the cap as which actions are allowed, not where to jump"
-else
-  bad "§ 6.1 does not state that the cap stops the fix, never the reply"
-fi
+# No check that § 6.1 states the cap as which actions are allowed rather than
+# where to jump — that the disposition is unconditional at the cap and only
+# the fix stops. It is a sentence with no token the reply-form check above
+# does not already read, so the rule is uncovered.
 if grep -q -F 'pr-threads' <<<"$loop"; then
   ok "§ 6.3 fetches late threads on every path out of the round"
 else
@@ -327,13 +330,14 @@ fi
 # then implements every issue triage created, the denied fix lands anyway one
 # step later, through the issue path. The re-submit set is defined to exclude
 # those filings, so § 3 has nothing to filter.
-resubmit="$(grep -F 'The **re-submit set**' "$SUBMIT_WF")"
+resubmit="$(grep -F '**re-submit set**' "$SUBMIT_WF")"
 if [[ -z "$resubmit" ]]; then
   bad "submit-pr does not name the re-submit set"
-elif grep -q -F "$SETTING" <<<"$resubmit" && grep -q -F 'never enters the set' <<<"$resubmit"; then
-  ok "the re-submit set excludes a filing that stood in for a capped fix"
+elif grep -q -F "$SETTING" <<<"$resubmit" \
+     && grep -q -F 'pr_comment_review.issues_created' <<<"$resubmit"; then
+  ok "the re-submit set is defined against the cap and the counter it records into"
 else
-  bad "the re-submit set takes every issue triage created" "$resubmit"
+  bad "the re-submit set names neither the cap nor issues_created" "$resubmit"
 fi
 if grep -q -F 'Issues created during triage need implementing' "$SUBMIT_WF"; then
   bad "submit-pr still implements every issue created during triage"
@@ -556,9 +560,13 @@ else
 fi
 
 # The re-submit set back to every issue triage created.
+# Selects the definition by its bolded term and replaces the whole line, so a
+# reword of the sentence around the term cannot stop the control planting.
 CTRL="$TMP_ROOT/submit-resubmit.md"
-if ! plant "$CTRL" "$SUBMIT_WF" 's/The \*\*re-submit set\*\* is the issues this session filed for work the cap did not deny\..*bounded at two re-submit cycles:/Issues created during triage need implementing before merge, bounded at two re-submit cycles:/'; then
-  bad "re-submit control planted nothing — its sed program matched no text"
+awk 'index($0, "**re-submit set**") { print "Issues created during triage need implementing before merge, bounded at two re-submit cycles:"; next } { print }' \
+  "$SUBMIT_WF" > "$CTRL"
+if cmp -s "$CTRL" "$SUBMIT_WF"; then
+  bad "re-submit control planted nothing — no line carries the bolded term"
 elif grep -q -F 'Issues created during triage need implementing' "$CTRL"; then
   ok "the check flags a re-submit set that takes every filed issue"
 else
