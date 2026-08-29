@@ -34,3 +34,37 @@ fn the_app_and_the_cli_pin_one_updater_key() {
         Some(kendex_core::update_feed::UPDATER_PUBLIC_KEY)
     );
 }
+
+/// The app bundle and the CLI carry their versions in different files, and
+/// the release is held to one of them: the publish job reads the version
+/// back out of the built CLI and refuses a tag that names another. Left to
+/// drift, a tag matching the CLI would ship an app bundle of some other
+/// version, which the updater then reads as already current or as older
+/// than a release it cannot find.
+#[test]
+fn the_app_and_the_cli_ship_one_version() {
+    assert_eq!(
+        config()["version"].as_str(),
+        Some(env!("CARGO_PKG_VERSION"))
+    );
+}
+
+/// The plugin needs a configured endpoint, and the install hands it core's
+/// choice on top. The configured one is the release channel, so an install
+/// that ever stopped overriding it falls back to full releases rather than
+/// to whatever a stale edit left here — and a build that is not a release
+/// candidate finds the two already equal.
+#[test]
+fn the_configured_endpoint_is_the_release_channel() {
+    assert_eq!(
+        config()["plugins"]["updater"]["endpoints"][0].as_str(),
+        Some(kendex_core::update_channel::RELEASE_MANIFEST_URL)
+    );
+    assert_eq!(
+        config()["plugins"]["updater"]["endpoints"]
+            .as_array()
+            .map(Vec::len),
+        Some(1),
+        "a second endpoint the install does not choose is one nothing holds to a channel"
+    );
+}

@@ -13,8 +13,6 @@ use crate::error::{CoreError, Result};
 
 pub const FEED_SCHEMA: u32 = 1;
 pub const MAX_FEED_BYTES: usize = 64 * 1024;
-pub const RELEASE_FEED_URL: &str =
-    "https://github.com/vanillagreencom/kendex/releases/latest/download/feed.json";
 /// The minisign public key every kendex release is signed under, in the
 /// base64 shape `crates/app/tauri.conf.json` pins for the app's own
 /// updater. `crates/app/tests/tauri_config.rs` holds the two to one string,
@@ -295,6 +293,36 @@ mod tests {
             ReleaseFeed::parse(&feed("5.0.0"))
                 .unwrap()
                 .relation_to("5.0.1")
+                .unwrap(),
+            VersionRelation::Older
+        );
+        // A release candidate is behind the next candidate and behind the
+        // release it leads to. Plain text order puts 1.0.0 behind
+        // 1.0.0-rc1, which offers a downgrade as an update. Within the
+        // identifiers, though, text order is the rule: rc10 is behind rc2,
+        // because SemVer compares an identifier numerically only when it
+        // is all digits.
+        for latest in ["1.0.0-rc2", "1.0.0-rc10", "1.0.0"] {
+            assert_eq!(
+                ReleaseFeed::parse(&feed(latest))
+                    .unwrap()
+                    .relation_to("1.0.0-rc1")
+                    .unwrap(),
+                VersionRelation::Newer,
+                "{latest}"
+            );
+        }
+        assert_eq!(
+            ReleaseFeed::parse(&feed("1.0.0-rc1"))
+                .unwrap()
+                .relation_to("1.0.0")
+                .unwrap(),
+            VersionRelation::Older
+        );
+        assert_eq!(
+            ReleaseFeed::parse(&feed("1.0.0-rc10"))
+                .unwrap()
+                .relation_to("1.0.0-rc2")
                 .unwrap(),
             VersionRelation::Older
         );
