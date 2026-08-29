@@ -76,7 +76,6 @@ sync_issues() {
                 updatedAt
                 archivedAt
                 trashed
-                comments { nodes { id body createdAt updatedAt user { name } } }
                 relations { nodes { id type relatedIssue { id identifier title state { name type } } } }
                 inverseRelations { nodes { id type issue { id identifier title state { name type } } } }
             }
@@ -112,28 +111,113 @@ sync_issues() {
     echo "$all_nodes"
 }
 
-# Extract comments from synced issue nodes into per-issue files, then strip from issues
-extract_comments() {
-    local issues_file="$1"
+# Fetch comments as their own connection rather than nested inside an issue
+# page. Linear scores a query on the product of its requested connection
+# sizes, so a per-issue comment page multiplied by an issue page crosses the
+# complexity limit and the whole issues query is rejected. Nesting also caps a
+# thread at one page with no way to ask for the rest.
+#
+# Pages to completion or fails: a partial pull that still wrote files would
+# leave a truncated thread in the cache looking exactly like a whole one, and
+# every reader downstream would treat it as the whole one.
+sync_comments() {
+    local filter_json="$1"
+
+    local query='
+    query SyncComments($filter: CommentFilter, $first: Int, $after: String) {
+        comments(filter: $filter, first: $first, after: $after) {
+            pageInfo { hasNextPage endCursor }
+            nodes { id body createdAt updatedAt user { name } issue { identifier } }
+        }
+    }'
+
+    local all_nodes="[]"
+    local cursor="null"
+    local page=0
+    local max_pages=400
+
+    while true; do
+        # Checked rather than left to errexit: the callers invoke this as an
+        # `if !` condition, which suspends errexit for the whole body, so a
+        # failed query would otherwise fall through and the sync would stamp
+        # a complete pull over a cache that never received one.
+        local result
+        if ! result=$(graphql_query "$query" "{\"filter\": $filter_json, \"first\": 250, \"after\": $cursor}"); then
+            echo "Sync error: the comments query failed. Nothing was written; retry sync." >&2
+            return 1
+        fi
+
+        local nodes
+        nodes=$(echo "$result" | jq '.comments.nodes')
+        if [[ -z "$nodes" || "$nodes" == "null" ]]; then
+            echo "Sync error: the comments query returned no comments connection. Nothing was written; retry sync." >&2
+            return 1
+        fi
+        all_nodes=$(echo "$all_nodes" "$nodes" | jq -s 'add')
+
+        local has_next
+        has_next=$(echo "$result" | jq -r '.comments.pageInfo.hasNextPage')
+        page=$((page + 1))
+
+        [[ "$has_next" == "true" ]] || break
+
+        if (( page >= max_pages )); then
+            echo "Sync error: comments did not page to completion within $max_pages pages of 250. Writing them now would cache partial threads as whole ones, so nothing was written; retry sync." >&2
+            return 1
+        fi
+
+        cursor=$(echo "$result" | jq '.comments.pageInfo.endCursor')
+    done
+
+    echo "$all_nodes"
+}
+
+# A comment cache built before the paginated fetch holds first pages passed off
+# as whole threads. The cache is regenerable state, so it is discarded and
+# refetched rather than repaired: no conversion, no reader for the old shape.
+# meta.json carries the marker, and its absence forces one full comment pull
+# before any incremental sync is allowed to run.
+COMMENTS_SOURCE="paginated"
+
+comments_cache_is_current() {
+    [[ -f "$CACHE_DIR/meta.json" ]] || return 1
+    [[ "$(jq -r '.comments_source // empty' "$CACHE_DIR/meta.json")" == "$COMMENTS_SOURCE" ]]
+}
+
+# Rewrite the per-issue comment files from a complete comment pull. Every
+# issue in the pull's scope is rewritten or removed, so an issue whose last
+# comment was deleted loses its file instead of keeping a stale one.
+write_comments() {
+    local comments_file="$1" scope_issues_file="$2"
     cache_ensure_dir
 
-    # Write comment files for issues that have comments
-    jq -c '.[] | select(.comments.nodes | length > 0) | {id: .identifier, comments: .comments.nodes}' \
-        "$issues_file" 2>/dev/null | while IFS= read -r line; do
+    # The scope both halves below answer to, derived once. Stating it twice is
+    # what lets them disagree: a write side that ignores the scope the sweep
+    # respects recreates an archived issue's file in the same run that deleted
+    # it, and files an out-of-scope issue nothing will ever clean up.
+    local scope="$CACHE_DIR/.comment_scope"
+    jq -c '[.[].identifier] | unique' "$scope_issues_file" > "$scope"
+
+    local written="$CACHE_DIR/.comment_ids"
+    # The same connection carries project and initiative comments, which
+    # belong to no issue and have no per-issue file to land in.
+    jq -c --slurpfile scope "$scope" '
+        [.[] | select(.issue != null and (.issue.identifier | IN($scope[0][])))]
+        | group_by(.issue.identifier) | .[]
+        | {id: .[0].issue.identifier, comments: [.[] | del(.issue)]}' \
+        "$comments_file" | while IFS= read -r line; do
         local issue_id
         issue_id=$(echo "$line" | jq -r '.id')
         echo "$line" | jq '.comments' > "$CACHE_DIR/comments/$issue_id.json"
-    done
+        echo "$issue_id"
+    done > "$written"
 
-    # Remove stale comment files for issues with 0 comments
-    jq -r '.[] | select((.comments.nodes | length) == 0) | .identifier' \
-        "$issues_file" 2>/dev/null | while IFS= read -r issue_id; do
+    comm -23 <(jq -r '.[]' "$scope" | LC_ALL=C sort -u) \
+             <(LC_ALL=C sort -u "$written") | while IFS= read -r issue_id; do
         rm -f "$CACHE_DIR/comments/$issue_id.json" "$CACHE_DIR/comments/$issue_id.json.lock"
     done
 
-    # Strip comments from issues to keep issues.json lean
-    jq '[.[] | del(.comments)]' "$issues_file" > "$issues_file.tmp"
-    mv "$issues_file.tmp" "$issues_file"
+    rm -f "$written" "$scope"
 }
 
 sync_projects() {
@@ -570,7 +654,7 @@ main() {
     fi
 
     # Check if sync needed when --if-stale specified
-    if [[ -n "$if_stale" ]] && cache_is_fresh "$if_stale"; then
+    if [[ -n "$if_stale" ]] && cache_is_fresh "$if_stale" && comments_cache_is_current; then
         echo "Cache fresh (< ${if_stale}m), skipped" >&2
         if [[ "$show_stats" == true ]]; then
             cache_status
@@ -617,7 +701,13 @@ main() {
             summary_parts+=("filtered $trashed_count archived")
         fi
 
-        extract_comments "$CACHE_DIR/issues.json"
+        if ! sync_comments "{}" > "$CACHE_DIR/.comments.json"; then
+            rm -f "$CACHE_DIR/.comments.json"
+            cache_unlock
+            return 1
+        fi
+        write_comments "$CACHE_DIR/.comments.json" "$CACHE_DIR/issues.json"
+        rm -f "$CACHE_DIR/.comments.json"
         summary_parts+=("$issue_total issues")
 
         sync_projects "" > "$CACHE_DIR/projects.json"
@@ -666,17 +756,28 @@ main() {
                   | .title = ((.title // "") | gsub("[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]"; ""))]' \
                 "$CACHE_DIR/.delta_issues_raw.json" > "$CACHE_DIR/.delta_issues.json"
             delta_count=$(jq 'length' "$CACHE_DIR/.delta_issues.json")
-            extract_comments "$CACHE_DIR/.delta_issues.json"
+            # Scoped to the issues this delta touched, which is the set whose
+            # threads may have moved, and rewritten whole so a thread never
+            # ends up holding only its newest comments.
+            if ! sync_comments "{\"issue\": {\"updatedAt\": {\"gte\": \"$last_sync\"}}}" > "$CACHE_DIR/.delta_comments.json"; then
+                rm -f "$CACHE_DIR/.delta_issues.json" "$CACHE_DIR/.delta_issues_raw.json" "$CACHE_DIR/.delta_comments.json"
+                cache_unlock
+                return 1
+            fi
             # An aborted merge means the issues query returned less than the
             # cache holds — likely a transient/partial API result. Refusing
             # the overwrite is correct, but it must fail the sync loudly, not
             # end as "no changes" (#930).
             if ! cache_merge "issues.json" "$CACHE_DIR/.delta_issues.json"; then
-                rm -f "$CACHE_DIR/.delta_issues.json" "$CACHE_DIR/.delta_issues_raw.json"
+                rm -f "$CACHE_DIR/.delta_issues.json" "$CACHE_DIR/.delta_issues_raw.json" "$CACHE_DIR/.delta_comments.json"
                 cache_unlock
                 echo "Sync error: issues cache merge aborted — the merge result was smaller than the existing cache, which usually means the issues query returned an incomplete or empty result (transient API failure). Cache left unchanged; retry sync." >&2
                 return 1
             fi
+            # Held until the merge succeeded: this rewrites the live per-issue
+            # files, and an abort must leave them as they were.
+            write_comments "$CACHE_DIR/.delta_comments.json" "$CACHE_DIR/.delta_issues.json"
+            rm -f "$CACHE_DIR/.delta_comments.json"
             # Patch stale embedded relation snapshots for delta issues
             jq -c '.[]' "$CACHE_DIR/.delta_issues.json" 2>/dev/null | while IFS= read -r issue; do
                 cache_patch_relation_snapshots "$issue"
@@ -718,6 +819,25 @@ main() {
         sync_cycles > "$CACHE_DIR/cycles.json.tmp" && mv "$CACHE_DIR/cycles.json.tmp" "$CACHE_DIR/cycles.json"
         sync_initiatives > "$CACHE_DIR/initiatives.json.tmp" && mv "$CACHE_DIR/initiatives.json.tmp" "$CACHE_DIR/initiatives.json"
         sync_labels > "$CACHE_DIR/labels.json.tmp" && mv "$CACHE_DIR/labels.json.tmp" "$CACHE_DIR/labels.json"
+
+        # A comment cache built before the paginated fetch is rebuilt whole,
+        # as a precondition of the sync completing rather than as part of the
+        # delta. The legacy threads belong to issues that have not changed, so
+        # an empty delta is both the common upgrade case and the one a
+        # delta-borne rebuild would never reach. It runs last so that a merge
+        # that aborts above leaves the comment cache untouched, and it owns the
+        # whole post-merge issue set, which leaves no subset for a newly
+        # created issue's comments to fall out of.
+        if ! comments_cache_is_current; then
+            if ! sync_comments "{}" > "$CACHE_DIR/.comments.json"; then
+                rm -f "$CACHE_DIR/.comments.json"
+                cache_unlock
+                return 1
+            fi
+            write_comments "$CACHE_DIR/.comments.json" "$CACHE_DIR/issues.json"
+            rm -f "$CACHE_DIR/.comments.json"
+            summary_parts+=("comment cache rebuilt")
+        fi
     fi
 
     # Download file attachments/images from issue descriptions and comments
@@ -752,6 +872,9 @@ main() {
         reconciled_at=$(jq -r '.reconciled_at // empty' "$CACHE_DIR/meta.json" 2>/dev/null || echo "")
     fi
 
+    # Reaching here means the comment cache was built by the paginated fetch:
+    # a full sync pulls every comment, and an incremental sync either found the
+    # marker already set or rebuilt above, failing the sync if it could not.
     jq -n \
         --arg ts "$(date -Iseconds)" \
         --arg reconciled "${reconciled_at:-}" \
@@ -760,9 +883,11 @@ main() {
         --argjson cycles "$cycle_count" \
         --argjson initiatives "$initiative_count" \
         --argjson elapsed "$elapsed" \
+        --arg comments_source "$COMMENTS_SOURCE" \
         '{
             synced_at: $ts,
             reconciled_at: (if $reconciled != "" then $reconciled else null end),
+            comments_source: $comments_source,
             elapsed_seconds: $elapsed,
             stats: {issues: $issues, projects: $projects, cycles: $cycles, initiatives: $initiatives}
         }' \
