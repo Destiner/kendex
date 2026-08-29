@@ -84,9 +84,8 @@ fn write_then_rename(
     }
     drop(temp_file);
     fs::rename(&tmp, &path).map_err(|e| discard(e, &path))?;
-    #[cfg(unix)]
-    if durable && let Ok(dir) = fs::File::open(parent) {
-        let _ = dir.sync_all();
+    if durable {
+        sync_dir(parent);
     }
     Ok(())
 }
@@ -110,14 +109,92 @@ pub fn read_if_exists(path: &Path) -> Result<Option<String>> {
     }
 }
 
-pub(crate) fn sync_file(path: &Path) -> Result<()> {
-    fs::File::open(path)
-        .and_then(|f| f.sync_all())
-        .map_err(|e| CoreError::io(path, e))
+/// Reproduce a file at `to` and have it on disk before this returns.
+///
+/// The copy is the platform's own, because a pre-image has to come back
+/// carrying whatever the platform hangs off a file and a hand-rolled byte
+/// loop would reproduce the bytes alone. On Windows `fs::copy` is
+/// `CopyFileExW`, documented to preserve extended attributes, OLE
+/// structured storage, NTFS alternate data streams, security resource
+/// attributes and file attributes; on Unix it carries the mode, which a
+/// restored hook needs to still be executable. Neither carries the
+/// owner or the access-control list: a new file's ACLs are inherited
+/// from its parent directory, on both platforms and before this helper
+/// existed too.
+pub(crate) fn copy_file_durable(from: &Path, to: &Path) -> Result<()> {
+    fs::copy(from, to).map_err(|e| CoreError::io(from, e))?;
+    sync_written_file(to)
 }
 
-/// Directory fsync is a no-op on platforms where directories cannot be
-/// opened (Windows); rename durability there rides on the volume flush.
+/// Flush a file this process has just written, leaving its mode on disk
+/// alongside its bytes.
+///
+/// A read-only handle is enough on Unix and refused on Windows, whose
+/// `FlushFileBuffers` documents `GENERIC_WRITE` as a requirement, so the
+/// write handle is what this asks for. A file that came from a read-only
+/// source refuses one — `fs::copy` carries `FILE_ATTRIBUTE_READONLY`
+/// across on Windows and the mode on Unix — so a refusal relaxes the
+/// mode, flushes, puts the mode back through that same handle and
+/// flushes again. The second flush is what makes the restored mode
+/// durable; a chmod by path after the last flush would leave the file
+/// read-only to a reader and writable on disk.
+///
+/// On Ok, what is on disk is the bytes and the mode the copy carried
+/// over. The window this cannot close is between relaxing the mode and
+/// that second flush: a crash inside it leaves the copy owner-writable
+/// on disk, and the only way to avoid opening it would be a flush the
+/// platform refuses. Nothing reads a pre-image through that window — a
+/// journal whose `meta.json` was never written is swept rather than
+/// replayed, and a rollback a crash interrupts is re-run, laying the
+/// pre-image down again.
+fn sync_written_file(path: &Path) -> Result<()> {
+    let write_handle = || fs::OpenOptions::new().write(true).open(path);
+    let refused = match write_handle() {
+        Ok(file) => return file.sync_all().map_err(|e| CoreError::io(path, e)),
+        Err(refused) if refused.kind() == std::io::ErrorKind::PermissionDenied => refused,
+        Err(other) => return Err(CoreError::io(path, other)),
+    };
+    let Ok(mode) = fs::metadata(path).map(|meta| meta.permissions()) else {
+        return Err(CoreError::io(path, refused));
+    };
+    fs::set_permissions(path, writable(&mode)).map_err(|e| CoreError::io(path, e))?;
+    let flushed = write_handle().and_then(|file| {
+        file.sync_all()?;
+        file.set_permissions(mode.clone())?;
+        file.sync_all()
+    });
+    // The mode goes back whether any of that worked or not, and by path,
+    // because what failed may have been the handle itself. Where the
+    // block above reached its own restore this repeats a mode already on
+    // disk, so a crash losing this chmod cannot leave the file writable.
+    fs::set_permissions(path, mode).map_err(|e| CoreError::io(path, e))?;
+    flushed.map_err(|e| CoreError::io(path, e))
+}
+
+/// `mode` with this process able to write and nothing else relaxed.
+/// `Permissions::set_readonly(false)` sets every write bit on Unix, group
+/// and other along with owner, which is wider than a flush needs.
+fn writable(mode: &fs::Permissions) -> fs::Permissions {
+    let mut relaxed = mode.clone();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        relaxed.set_mode(mode.mode() | 0o200);
+    }
+    #[cfg(not(unix))]
+    {
+        relaxed.set_readonly(false);
+    }
+    relaxed
+}
+
+/// Persist a directory's own entries — the names in it, not the bytes of
+/// what they name. Unix only: Windows has no handle to a directory to
+/// flush, so there a new or renamed *name* rides on the volume flush
+/// while the *bytes* under it are already durable, through
+/// `copy_file_durable` or `atomic_write_durable`. That asymmetry is the
+/// whole of the platform gap — file contents are guaranteed on both,
+/// directory entries only on Unix.
 pub(crate) fn sync_dir(path: &Path) {
     #[cfg(unix)]
     if let Ok(dir) = fs::File::open(path) {
@@ -144,30 +221,6 @@ pub(crate) fn sync_dir_durable(path: &Path) -> Result<()> {
     }
 }
 
-/// Sync a tree's files and directories, a link treated as a leaf: the
-/// parent's sync persists the entry itself, and what it points at is not
-/// this tree's — following it would sync files outside the tree, or the
-/// same tree again through a link back into it until the kernel refuses
-/// the path. The same reading of a link as `hash_tree_as_is`.
-pub(crate) fn sync_tree(root: &Path) -> Result<()> {
-    let Ok(kind) = fs::symlink_metadata(root).map(|meta| meta.file_type()) else {
-        return Ok(());
-    };
-    if kind.is_symlink() {
-        return Ok(());
-    }
-    if kind.is_file() {
-        return sync_file(root);
-    }
-    if let Ok(entries) = fs::read_dir(root) {
-        for entry in entries.flatten() {
-            sync_tree(&entry.path())?;
-        }
-        sync_dir(root);
-    }
-    Ok(())
-}
-
 /// Remove whatever is at `path`, if anything is. A remove-if-present: the
 /// journal's restore of an absent pre-image asks for it on paths nothing
 /// ever wrote to, and failing there would strand the journal and take
@@ -181,7 +234,20 @@ pub(crate) fn remove_any(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn copy_tree(from: &Path, to: &Path) -> Result<()> {
+/// Reproduce a whole tree at `to`, with every file on disk before this
+/// returns: each file copied and flushed by `copy_file_durable`, each
+/// directory synced through `sync_dir_durable` once its entries are in
+/// it. A directory sync that fails stops the copy — the best-effort
+/// `sync_dir` would let this return Ok over a name that never reached
+/// disk, and the journal writes its meta on the strength of that Ok.
+/// Nothing outside the tree is opened — a link is reproduced as a link
+/// and never read through — so the sync reaches exactly what this copy
+/// created and nothing else.
+pub(crate) fn copy_tree_durable(from: &Path, to: &Path) -> Result<()> {
+    copy_tree_inner(from, to, true)
+}
+
+fn copy_tree_inner(from: &Path, to: &Path, durable: bool) -> Result<()> {
     fs::create_dir_all(to).map_err(|e| CoreError::io(to, e))?;
     // An entry the listing could not produce is an entry nothing was
     // proven about, so it stops the copy rather than dropping out of it —
@@ -193,7 +259,10 @@ pub(crate) fn copy_tree(from: &Path, to: &Path) -> Result<()> {
         let Some(name) = source.file_name() else {
             continue;
         };
-        copy_any(&source, &to.join(name))?;
+        copy_any_inner(&source, &to.join(name), durable)?;
+    }
+    if durable {
+        sync_dir_durable(to)?;
     }
     Ok(())
 }
@@ -207,11 +276,17 @@ pub(crate) fn copy_tree(from: &Path, to: &Path) -> Result<()> {
 /// link whose target is gone fails with the target's ENOENT under the
 /// link's name.
 pub(crate) fn copy_any(from: &Path, to: &Path) -> Result<()> {
+    copy_any_inner(from, to, false)
+}
+
+fn copy_any_inner(from: &Path, to: &Path, durable: bool) -> Result<()> {
     if from.is_symlink() {
         let target = fs::read_link(from).map_err(|e| CoreError::io(from, e))?;
         make_symlink(&target, to)
     } else if from.is_dir() {
-        copy_tree(from, to)
+        copy_tree_inner(from, to, durable)
+    } else if durable {
+        copy_file_durable(from, to)
     } else {
         fs::copy(from, to)
             .map(|_| ())
