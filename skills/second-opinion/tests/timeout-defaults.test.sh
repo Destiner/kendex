@@ -12,7 +12,14 @@ export SECOND_OPINION_CURRENT_MODEL=none
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 TMP_ROOT="$(mktemp -d)"
-trap 'rm -rf "$TMP_ROOT"' EXIT
+ABANDON_SESSION=""
+cleanup_abandon_session() {
+  if [[ -n "$ABANDON_SESSION" ]]; then
+    pkill -TERM -s "$ABANDON_SESSION" 2>/dev/null || true
+    wait "$ABANDON_SESSION" 2>/dev/null || true
+  fi
+}
+trap 'cleanup_abandon_session; rm -rf "$TMP_ROOT"' EXIT
 
 # --- Deterministic harness-free session -------------------------------------
 # A positively detected single-model harness now beats any contradicting
@@ -81,13 +88,18 @@ assert_contains() {
 }
 
 default_stderr="$TMP_ROOT/default.stderr"
+resolved_timeout="$(command -v timeout || command -v gtimeout || true)"
 PATH="$TMP_ROOT/bin:$PATH" \
   SECOND_OPINION_TARGET=codex \
   SECOND_OPINION_CODEX_CMD=codex \
   "$SECOND_OPINION" review --range HEAD --cwd "$WORK" >/dev/null 2>"$default_stderr"
 
 assert_contains "$default_stderr" "timeout=1080s" "default timeout resolves to documented 1080s"
-assert_contains "$default_stderr" "cmd: timeout -k 30 1080s codex" "launch log includes explicit default timeout"
+if [[ -n "$resolved_timeout" ]]; then
+  assert_contains "$default_stderr" "cmd: $resolved_timeout --foreground -k 30 1080s codex" "launch log includes resolved default timeout"
+else
+  assert_contains "$default_stderr" "cmd: direct codex" "launch log names direct default execution"
+fi
 
 override_stderr="$TMP_ROOT/override.stderr"
 PATH="$TMP_ROOT/bin:$PATH" \
@@ -97,7 +109,11 @@ PATH="$TMP_ROOT/bin:$PATH" \
   "$SECOND_OPINION" review --range HEAD --cwd "$WORK" >/dev/null 2>"$override_stderr"
 
 assert_contains "$override_stderr" "timeout=7s" "caller timeout override wins"
-assert_contains "$override_stderr" "cmd: timeout -k 30 7s codex" "launch log includes explicit override timeout"
+if [[ -n "$resolved_timeout" ]]; then
+  assert_contains "$override_stderr" "cmd: $resolved_timeout --foreground -k 30 7s codex" "launch log includes resolved override timeout"
+else
+  assert_contains "$override_stderr" "cmd: direct codex" "launch log names direct override execution"
+fi
 
 # GNU timeout reads 0 as "no limit at all", so --timeout 0 must be refused
 # rather than silently disabling the deadline.
@@ -134,4 +150,59 @@ PATH="$TMP_ROOT/bin:$NOTIMEOUT" \
   "$SECOND_OPINION" review --range HEAD --cwd "$WORK" >/dev/null 2>"$notimeout_stderr"
 
 assert_contains "$notimeout_stderr" "run without a time limit" "missing timeout binary warns instead of refusing"
+assert_contains "$notimeout_stderr" "cmd: direct codex" "missing timeout binary logs direct execution"
 assert_contains "$notimeout_stderr" "Response received" "review still runs without a timeout binary"
+
+# The caller owns the lane's lifetime. GNU timeout must not isolate the CLI
+# from a signal sent to second-opinion's process group.
+if [[ "$(uname -s)" != "Linux" ]] || ! command -v setsid >/dev/null 2>&1 || ! command -v pkill >/dev/null 2>&1; then
+  printf 'SKIP: process-group lifecycle control requires Linux, setsid, and pkill\n'
+  exit 0
+fi
+
+cat > "$TMP_ROOT/bin/sleeping-codex" <<'SH'
+#!/usr/bin/env bash
+on_term() {
+  printf 'terminated\n' > "$FAKE_CLI_TERM_FILE"
+  exit 0
+}
+trap on_term TERM
+printf 'ready\n' > "$FAKE_CLI_READY_FILE"
+while :; do sleep 1; done
+SH
+chmod +x "$TMP_ROOT/bin/sleeping-codex"
+
+sleeping_ready_file="$TMP_ROOT/sleeping-cli.ready"
+sleeping_term_file="$TMP_ROOT/sleeping-cli.terminated"
+abandon_stderr="$TMP_ROOT/abandon.stderr"
+PATH="$TMP_ROOT/bin:$PATH" \
+  SECOND_OPINION_TARGET=codex \
+  SECOND_OPINION_CODEX_CMD=sleeping-codex \
+  FAKE_CLI_READY_FILE="$sleeping_ready_file" \
+  FAKE_CLI_TERM_FILE="$sleeping_term_file" \
+  setsid "$SECOND_OPINION" review --range HEAD --cwd "$WORK" >/dev/null 2>"$abandon_stderr" &
+ABANDON_SESSION=$!
+
+for _attempt in {1..100}; do
+  [[ -s "$sleeping_ready_file" ]] && break
+  sleep 0.05
+done
+if [[ ! -s "$sleeping_ready_file" ]]; then
+  printf 'FAIL: sleeping CLI did not start\n' >&2
+  sed -n '1,80p' "$abandon_stderr" >&2 || true
+  exit 1
+fi
+
+kill -TERM -- "-$ABANDON_SESSION" 2>/dev/null || true
+wait "$ABANDON_SESSION" 2>/dev/null || true
+
+for _attempt in {1..100}; do
+  [[ -s "$sleeping_term_file" ]] && break
+  sleep 0.05
+done
+if [[ ! -s "$sleeping_term_file" ]]; then
+  printf 'FAIL: killing second-opinion process group left the CLI running\n' >&2
+  exit 1
+fi
+ABANDON_SESSION=""
+printf 'PASS: killing second-opinion process group stops the CLI\n'
