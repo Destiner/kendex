@@ -9,9 +9,21 @@
 # had already made. The rest of the stack disposes by rule and asks only about
 # product or experience.
 #
-# This lint pins the no-prompt shape at the one place it regressed, and pins
-# that the surviving user-facing gate (audit-issues' own approval step) is
-# still what governs issue creation.
+# This suite covers two things only, per review-bots.md.
+#
+# The absence of the menu shape, which is what a pattern can honestly decide: a
+# menu has to be written to be present, and no rephrasing hides one.
+#
+# And the presence of structural elements — the Declined heading, the metric
+# row, the audit-issues route. That a section or a route is THERE, never that
+# the prose around it says anything in particular.
+#
+# It does not cover the disposition rule or the decline-derivation rule
+# themselves. Those are claims written in prose, and prose negates or qualifies
+# around any literal: `mode-independent` was tried as a pin and a § 4 reading
+# "`mode-independent` only in `auto-recommended`" satisfied it while inverting
+# the rule. A substring pin cannot establish a claim, so those rules are
+# uncovered here rather than covered in appearance.
 set -euo pipefail
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -43,9 +55,12 @@ section_7() { awk '/^## 7\./{on=1;next} /^## 8\./{on=0} on' "$1"; }
 
 MENU_RE='(multi-select|Apply fixes\?|Create issues for these\?|items selected|Fix blockers\?|Apply fix suggestions\?|Ignore and proceed|resolve the decision mode|ORCH_DECISION_MODE ask)'
 
+has_menu() { grep -qEi "$MENU_RE" <<<"$(section_4 "$1")"; }
+s4_has()   { grep -qF -e "$2" <<<"$(section_4 "$1")"; }
+
 check_no_menu() {
   local doc="$1" label="$2"
-  if grep -qEi "$MENU_RE" <<<"$(section_4 "$doc")"; then
+  if has_menu "$doc"; then
     fail "$label"
     return 1
   fi
@@ -57,11 +72,7 @@ check_no_menu "$REVIEW_WF" "review.md § 4 presents no selection menu over findi
 # review-pr.md is the PR-gating twin: same findings, same reviewers, so the
 # same rule. § 4 handles review items, § 7 the QA items by explicit reference
 # to the § 4 pattern — both must stay menu-free.
-if grep -qEi "$MENU_RE" <<<"$(section_4 "$REVIEW_PR_WF")"; then
-  fail "review-pr.md § 4 presents a selection menu or gates fixes on a decision mode"
-else
-  pass "review-pr.md § 4 presents no selection menu over findings"
-fi
+check_no_menu "$REVIEW_PR_WF" "review-pr.md § 4 presents no selection menu over findings"
 
 if grep -qEi "$MENU_RE" <<<"$(section_7 "$REVIEW_PR_WF")"; then
   fail "review-pr.md § 7 presents a selection menu or gates QA fixes on a decision mode"
@@ -69,165 +80,134 @@ else
   pass "review-pr.md § 7 presents no selection menu over QA findings"
 fi
 
-if grep -q 'Disposition is by rule, not by prompt' <<<"$(section_4 "$REVIEW_PR_WF")"; then
-  pass "review-pr.md § 4 states the disposition-by-rule contract"
-else
-  fail "review-pr.md § 4 lost the disposition-by-rule contract"
-fi
-
-# EVERY decision mode, not just auto-recommended — the regression this pins is
-# a mode check creeping back in front of the fix round.
-if grep -q 'in EVERY decision mode' <<<"$(section_4 "$REVIEW_PR_WF")"; then
-  pass "review-pr.md § 4 binds the rule to every decision mode"
-else
-  fail "review-pr.md § 4 lost the every-decision-mode binding"
-fi
-
-# Declines must reach the report, and must be derivable from disk rather than
-# from a conversation a compaction can drop.
-if grep -q '^### 🚫 DECLINED$' "$REVIEW_PR_WF" \
-   && grep -q 'Declined items are re-derived, not remembered' "$REVIEW_PR_WF"; then
-  pass "review-pr.md § 8 reports declined items and derives them from artifacts"
-else
-  fail "review-pr.md § 8 lost the declined reporting or its artifact derivation"
-fi
-
 # The positive statement, so a future edit cannot quietly drop the rule and
 # leave only the absence of a menu (which a truncated file would also satisfy).
-if grep -q 'Disposition is by rule, not by prompt' "$REVIEW_WF"; then
-  pass "review.md § 4 states the disposition-by-rule contract"
+# The section where declines are reported must exist to report them into.
+if grep -q '^### 🚫 DECLINED$' "$REVIEW_PR_WF"; then
+  pass "review-pr.md § 8 carries the declined report section"
 else
-  fail "review.md § 4 lost the disposition-by-rule contract"
+  fail "review-pr.md § 8 lost the declined report section"
 fi
 
-# ORCH_DECISION_MODE must not be documented as a way back to the menu.
-if grep -q 'does not reintroduce the menu' "$REVIEW_WF"; then
-  pass "review.md § 4 excludes ORCH_DECISION_MODE from restoring the menu"
-else
-  fail "review.md § 4 lost the ORCH_DECISION_MODE exclusion"
-fi
-
-# Declines must still surface — dropping a finding silently is the failure
-# mode that makes an unattended disposition rule untrustworthy.
+# The metric row and the section a decline is reported into. Their presence is
+# what this establishes — whether a run fills them in is not a fact about text.
 if grep -q '^| Declined |' "$REVIEW_WF" && grep -q '^### Declined$' "$REVIEW_WF"; then
-  pass "review.md § 5 reports declined findings and their rationale"
+  pass "review.md § 5 carries the Declined metric row and report section"
 else
-  fail "review.md § 5 lost the declined reporting"
+  fail "review.md § 5 lost the Declined metric row or report section"
 fi
 
-# Issue creation keeps a real user gate — audit-issues' own approval step.
-if grep -q 'primary-session wrapper' "$REVIEW_WF"; then
-  pass "review.md routes issue creation through the audit-issues approval gate"
+# § 4 names the audit-issues route. A structural fact about the workflow, not a
+# claim that the routing behaves: what audit-issues does with its approval gate
+# is asserted where that gate lives, never from this file's text.
+if s4_has "$REVIEW_WF" 'workflows/audit-issues.md'; then
+  pass "review.md § 4 names the audit-issues route"
 else
-  fail "review.md lost the audit-issues approval-gate routing"
+  fail "review.md § 4 lost the audit-issues route"
 fi
 
 # --- planted controls: prove each check can fail ----------------------------
 echo
 echo "--- planted controls ---"
 
-# A sed program that matches nothing leaves the fixture identical to the
-# source, and the control then reports a lint miss for a guard that works. Say
-# so instead: the fixture, not the lint, is what broke. These run inside a
-# command substitution, where an increment to FAIL would be lost with the
-# subshell, so the note goes to a file the parent reads back below.
-UNPLANTED="$TMP_ROOT/unplanted"
-: > "$UNPLANTED"
-note_unplanted() { printf 'control %s planted nothing — its sed program matched no text\n' "$1" >> "$UNPLANTED"; }
+# Each planter writes $CTRL in the PARENT shell and returns whether it changed
+# anything: a program that matches nothing leaves the fixture identical to the
+# source, and the control would then report a lint miss for a guard that
+# works. Say so instead — the fixture, not the lint, is what broke.
 
-plant() {
-  # $1 = control name, $2 = sed program applied to review.md
-  local scratch="$TMP_ROOT/$1.md"
-  sed "$2" "$REVIEW_WF" > "$scratch"
-  cmp -s "$scratch" "$REVIEW_WF" && note_unplanted "$1"
-  printf '%s' "$scratch"
+MENU_LINE='Ask `Apply fixes?` as a multi-select over the blockers.'
+
+# $1 = source, $2 = control name, $3 = heading the menu is planted under.
+plant_menu() {
+  CTRL="$TMP_ROOT/$2.md"
+  awk -v anchor="$3" -v line="$MENU_LINE" '
+    { print }
+    index($0, anchor) == 1 && !done { print ""; print line; done = 1 }
+    END { exit(done ? 0 : 1) }
+  ' "$1" > "$CTRL"
 }
 
-plant_pr() {
-  # $1 = control name, $2 = sed program applied to review-pr.md
-  local scratch="$TMP_ROOT/pr-$1.md"
-  sed "$2" "$REVIEW_PR_WF" > "$scratch"
-  cmp -s "$scratch" "$REVIEW_PR_WF" && note_unplanted "$1"
-  printf '%s' "$scratch"
+# $1 = source, $2 = control name, $3 = fixed token whose lines are deleted.
+plant_drop() {
+  CTRL="$TMP_ROOT/$2.md"
+  awk -v tok="$3" '
+    index($0, tok) { hit = 1; next }
+    { print }
+    END { exit(hit ? 0 : 1) }
+  ' "$1" > "$CTRL"
 }
 
-CTRL="$(plant menu 's/^Omit empty categories\. \*\*Disposition is by rule.*$/Omit empty categories, then ask `Apply fixes?` as a multi-select over blockers and fix suggestions./')"
-if grep -qEi "$MENU_RE" <<<"$(section_4 "$CTRL")"; then
+
+if ! plant_menu "$REVIEW_WF" menu '## 4. Present And Fix'; then
+  fail "menu control planted nothing — its § 4 heading was not found"
+elif has_menu "$CTRL"; then
   pass "lint flags a reintroduced Apply fixes? multi-select"
 else
   fail "lint MISSED a reintroduced Apply fixes? multi-select"
 fi
 
-CTRL="$(plant contract 's/Disposition is by rule, not by prompt/Disposition is up to you/')"
-if grep -q 'Disposition is by rule, not by prompt' "$CTRL"; then
-  fail "lint MISSED a dropped disposition-by-rule contract"
-else
-  pass "lint flags a dropped disposition-by-rule contract"
-fi
 
-CTRL="$(plant declined '/^| Declined |/d')"
-if grep -q '^| Declined |' "$CTRL"; then
+if ! plant_drop "$REVIEW_WF" declined '| Declined |'; then
+  fail "declined control planted nothing — the metric row was not found"
+elif grep -q '^| Declined |' "$CTRL"; then
   fail "lint MISSED a dropped Declined metric row"
 else
   pass "lint flags a dropped Declined metric row"
 fi
 
+if ! plant_drop "$REVIEW_WF" audit 'workflows/audit-issues.md'; then
+  fail "audit control planted nothing — the workflow path was not found"
+elif s4_has "$CTRL" 'workflows/audit-issues.md'; then
+  fail "lint MISSED a dropped audit-issues route"
+else
+  pass "lint flags a dropped audit-issues route"
+fi
+
 # Scoping control: an ask OUTSIDE § 4 must not trip the lint, or ordinary
 # edits elsewhere in the workflow would fail it for the wrong reason.
-CTRL="$(plant scope 's/^## 5\. Summary$/## 5. Summary\n\nAsk `Keep going?` as a multi-select./')"
-if grep -qEi "$MENU_RE" <<<"$(section_4 "$CTRL")"; then
+if ! plant_menu "$REVIEW_WF" scope '## 5. Summary'; then
+  fail "scoping control planted nothing — its § 5 heading was not found"
+elif has_menu "$CTRL"; then
   fail "lint false-flagged a multi-select outside § 4"
 else
   pass "lint scopes the menu check to § 4"
 fi
 
-CTRL="$(plant_pr mode 's/^\*\*Disposition is by rule.*$/Resolve the decision mode with orch-env ORCH_DECISION_MODE ask, then ask `Fix blockers?`./')"
-if grep -qEi "$MENU_RE" <<<"$(section_4 "$CTRL")"; then
-  pass "lint flags a decision-mode gate reintroduced in review-pr § 4"
+if ! plant_menu "$REVIEW_PR_WF" pr-mode '## 4. Handle Review Items'; then
+  fail "review-pr menu control planted nothing — its § 4 heading was not found"
+elif has_menu "$CTRL"; then
+  pass "lint flags a menu reintroduced in review-pr § 4"
 else
-  fail "lint MISSED a decision-mode gate reintroduced in review-pr § 4"
+  fail "lint MISSED a menu reintroduced in review-pr § 4"
 fi
 
-CTRL="$(plant_pr qa 's/^When \*\*Converged\*\* below is false, follow the § 4 pattern .*$/When Converged below is false, resolve the decision mode, then delegate./')"
-if grep -qEi "$MENU_RE" <<<"$(section_7 "$CTRL")"; then
-  pass "lint flags a decision-mode gate reintroduced in review-pr § 7"
+if ! plant_menu "$REVIEW_PR_WF" pr-qa '## 7. Handle QA Items'; then
+  fail "review-pr QA control planted nothing — its § 7 heading was not found"
+elif grep -qEi "$MENU_RE" <<<"$(section_7 "$CTRL")"; then
+  pass "lint flags a menu reintroduced in review-pr § 7"
 else
-  fail "lint MISSED a decision-mode gate reintroduced in review-pr § 7"
+  fail "lint MISSED a menu reintroduced in review-pr § 7"
 fi
 
-CTRL="$(plant_pr every 's/in EVERY decision mode/under auto-recommended/')"
-if grep -q 'in EVERY decision mode' <<<"$(section_4 "$CTRL")"; then
-  fail "lint MISSED a narrowed decision-mode binding"
-else
-  pass "lint flags a narrowed decision-mode binding"
-fi
 
-CTRL="$(plant_pr declined '/^### 🚫 DECLINED$/d')"
-if grep -q '^### 🚫 DECLINED$' "$CTRL"; then
+if ! plant_drop "$REVIEW_PR_WF" pr-declined '### 🚫 DECLINED'; then
+  fail "review-pr declined control planted nothing — the heading was not found"
+elif grep -q '^### 🚫 DECLINED$' "$CTRL"; then
   fail "lint MISSED a dropped review-pr DECLINED section"
 else
   pass "lint flags a dropped review-pr DECLINED section"
 fi
 
-CTRL="$(plant_pr derive 's/Declined items are re-derived, not remembered/Declined items are whatever you recall/')"
-if grep -q 'Declined items are re-derived, not remembered' "$CTRL"; then
-  fail "lint MISSED a dropped artifact-derivation rule"
-else
-  pass "lint flags a dropped artifact-derivation rule"
-fi
 
 # Scoping control for review-pr: dev-fix's own standalone ask lives in a
 # different workflow and must not be dragged in by these checks.
-CTRL="$(plant_pr scope 's/^## 5\. Verdict Pass$/## 5. Verdict Pass\n\nAsk `Fix blockers?` here./')"
-if grep -qEi "$MENU_RE" <<<"$(section_4 "$CTRL")"; then
+if ! plant_menu "$REVIEW_PR_WF" pr-scope '## 5. Verdict Pass'; then
+  fail "review-pr scoping control planted nothing — its § 5 heading was not found"
+elif has_menu "$CTRL"; then
   fail "lint false-flagged a menu outside review-pr § 4"
 else
   pass "lint scopes the review-pr menu check to § 4"
 fi
-
-while IFS= read -r unplanted_note; do
-  [[ -n "$unplanted_note" ]] && fail "$unplanted_note"
-done < "$UNPLANTED"
 
 echo
 printf 'pass: %d   fail: %d\n' "$PASS" "$FAIL"
