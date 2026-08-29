@@ -54,7 +54,10 @@ fn path_sources_resolve_relative_to_scope_root() {
         root: project.clone(),
     };
     let source = require_ready(&env, &scope, "cat", &manifest).unwrap();
-    assert_eq!(source.root, project.join("catalog").canonicalize().unwrap());
+    assert_eq!(
+        source.root,
+        crate::paths::canonical(&project.join("catalog")).unwrap()
+    );
 
     let sealed = SealedSource::open(&source.root).unwrap();
     let config = source_config(&sealed, "catalog").unwrap();
@@ -206,7 +209,7 @@ fn an_explicit_catalog_does_not_list_names_it_cannot_install() {
 #[test]
 fn nested_and_plain_names_coexist_in_a_declared_layout() {
     let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path().canonicalize().unwrap();
+    let root = crate::paths::canonical(tmp.path()).unwrap();
     let root = root.as_path();
     std::fs::write(root.join("kendex.toml"), "is_source_catalog = true\n").unwrap();
     for rel in ["skills/plugin", "skills/plugin/item"] {

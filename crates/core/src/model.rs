@@ -126,11 +126,19 @@ impl Scope {
     /// scope lock and every derived path key off the canonical root. A root
     /// that cannot canonicalize (vanished mid-operation) keeps its given
     /// form; its operations then fail on their own terms.
+    ///
+    /// Through `crate::paths::canonical`, so that wherever a root's plain
+    /// spelling names the same path, the root is one other programs read
+    /// and `label` can print. Where it does not — a length or a component
+    /// with no plain equivalent — the verbatim form is kept, and identity
+    /// and message carry it alike: this one string is both the scope's
+    /// identity and what a message shows, and an identity that differs
+    /// from what is printed is its own trap.
     pub fn canonical(&self) -> Scope {
         match self {
             Scope::Global => Scope::Global,
             Scope::Project { root } => Scope::Project {
-                root: root.canonicalize().unwrap_or_else(|_| root.clone()),
+                root: crate::paths::canonical(root).unwrap_or_else(|_| root.clone()),
             },
         }
     }

@@ -181,7 +181,7 @@ mod tests {
             .settings;
         assert_eq!(
             settings.projects,
-            [tmp.path().join("dev/hyprtrade").canonicalize().unwrap()]
+            [kendex_core::paths::canonical(&tmp.path().join("dev/hyprtrade")).unwrap()]
         );
     }
 
@@ -199,7 +199,7 @@ mod tests {
             .settings;
         assert_eq!(
             settings.projects,
-            [tmp.path().join("dev/hyprtrade").canonicalize().unwrap()]
+            [kendex_core::paths::canonical(&tmp.path().join("dev/hyprtrade")).unwrap()]
         );
     }
 
@@ -212,9 +212,7 @@ mod tests {
         let found = discover_projects_at(&env, "~/dev").unwrap();
         assert_eq!(
             found,
-            [tmp.path()
-                .join("dev/app")
-                .canonicalize()
+            [kendex_core::paths::canonical(&tmp.path().join("dev/app"))
                 .unwrap()
                 .display()
                 .to_string()]
@@ -230,9 +228,7 @@ mod tests {
         let found = discover_projects_at(&env, "~/dev").unwrap();
         assert_eq!(
             found,
-            [tmp.path()
-                .join("dev/app")
-                .canonicalize()
+            [kendex_core::paths::canonical(&tmp.path().join("dev/app"))
                 .unwrap()
                 .display()
                 .to_string()]

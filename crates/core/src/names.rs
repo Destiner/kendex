@@ -15,10 +15,71 @@ const MAX_SEGMENT: usize = 100;
 
 /// Names Windows keeps for devices. A file with one of these stems is not
 /// created, it is written to the device, whatever extension it carries.
+///
+/// The membership is Win32's reserved-name set, not a judgement about what
+/// reads badly: an entry belongs here when the Win32 path parser resolves
+/// that stem to a device instead of a file, and nothing else belongs. The
+/// superscript `COM¹`, `COM²`, `COM³` and their `LPT` counterparts are
+/// reserved alongside the ASCII-digit forms and are as much a device as
+/// `COM1` is.
+///
+/// Load-bearing in two directions, so an addition is never only cosmetic:
+/// `segment_problem` refuses a declared name for being on it, and
+/// `paths::plain` consults it before deciding a verbatim root can be
+/// respelled — a stem missing from it lets a path be handed back plain
+/// that resolves to a device rather than the directory it named.
 const DEVICE_NAMES: &[&str] = &[
     "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
-    "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+    "com9", "com¹", "com²", "com³", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8",
+    "lpt9", "lpt¹", "lpt²", "lpt³",
 ];
+
+/// The characters no Win32 filename may hold: the ones its path grammar
+/// keeps for itself, and the control codes it refuses outright.
+///
+/// Read the same two ways `DEVICE_NAMES` is. `segment_problem` refuses a
+/// declared name for holding one; `win32_preserves` cannot prove a segment
+/// that holds one, because a component like that can only have been made
+/// through the extended namespace and so has no plain spelling at all.
+const RESERVED_CHARS: &str = "/\\:*?\"<>|";
+
+fn win32_reserved(c: char) -> bool {
+    c.is_control() || RESERVED_CHARS.contains(c)
+}
+
+/// Whether Windows resolves this segment to a device rather than a file.
+///
+/// The stem is what precedes the first dot, with trailing spaces taken off
+/// because Win32 takes them off before it tests the name — which is why
+/// `NUL .txt` is the NUL device and not a file called `NUL `.
+fn is_device(segment: &str) -> bool {
+    let stem = segment.split('.').next().unwrap_or(segment);
+    DEVICE_NAMES.contains(&stem.trim_end_matches(' ').to_ascii_lowercase().as_str())
+}
+
+/// Whether the Win32 path parser hands this segment back exactly as
+/// written — the proof `paths::plain` needs before it takes a prefix off.
+///
+/// Stated as what is proven rather than what is known to break, and
+/// deliberately: the parser rewrites more shapes than are worth listing,
+/// and the list was short three times. A segment nobody anticipated now
+/// reads as "cannot prove it", so the prefix stays and the path goes on
+/// naming what it named — a spelling left ugly, never one left wrong.
+///
+/// The proof is that every character is one the parser carries through, the
+/// segment is not one it trims, and its stem is not one it redirects. `.`
+/// and `..` are named too: verbatim takes them literally where Win32
+/// resolves them, so a segment that is either names a different place under
+/// the two spellings.
+pub(crate) fn win32_preserves(segment: &str) -> bool {
+    !segment.is_empty()
+        && segment != "."
+        && segment != ".."
+        && !segment.ends_with('.')
+        && !segment.ends_with(' ')
+        && !segment.chars().any(win32_reserved)
+        && !is_device(segment)
+}
 
 /// Why this one path segment cannot be a file or directory name.
 pub fn segment_problem(segment: &str) -> Option<String> {
@@ -34,10 +95,7 @@ pub fn segment_problem(segment: &str) -> Option<String> {
             shown(segment)
         ));
     }
-    if let Some(bad) = segment
-        .chars()
-        .find(|c| c.is_control() || "/\\:*?\"<>|".contains(*c))
-    {
+    if let Some(bad) = segment.chars().find(|c| win32_reserved(*c)) {
         let bad = shown(&bad.to_string());
         return Some(format!(
             "`{}` holds `{bad}`, which no filename may",
@@ -67,8 +125,7 @@ pub fn segment_problem(segment: &str) -> Option<String> {
             shown(segment)
         ));
     }
-    let stem = segment.split('.').next().unwrap_or(segment);
-    if DEVICE_NAMES.contains(&stem.to_ascii_lowercase().as_str()) {
+    if is_device(segment) {
         return Some(format!(
             "`{}` is a reserved device name on Windows",
             shown(segment)

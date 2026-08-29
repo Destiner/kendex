@@ -192,13 +192,13 @@ lives in one capability table read by core and UI.
     absolute path is used as written; a child process inherits this
     process's environment (`process/mod.rs`), so `npm` run for a Pi
     package sees the real home.
-17. One spelling per path, fixed once where the root enters: a scope root at
-    each derivation helper (`Scope::canonical` in `manifest_path`,
-    `lock_path`), a source root at `SealedSource::open`, a declared path at
-    `source::resolve`, a plan's targets at `Plan::landed`, which refuses an
-    inside spelling that lands outside the root and which every later use is
-    held to. No comparison meets two spellings of one file (macOS fronts
-    `/var` with `/private/var`), and git is handed the repository's own.
+17. One spelling per path, in and out (`paths.rs`). A root is fixed on entry —
+    `Scope::canonical` in `manifest_path`, `lock_path`, `SealedSource::open`,
+    `source::resolve`, `Plan::landed`, refusing an inside spelling landing
+    outside the root — and never re-spelled: no comparison meets two spellings
+    (macOS fronts `/var` with `/private/var`), git gets the repository's own.
+    `canonical` drops `\\?\` only where a plain spelling names the same file,
+    so a root may still carry one; `slashed` writes it with `/`.
 
 ## Decisions
 
