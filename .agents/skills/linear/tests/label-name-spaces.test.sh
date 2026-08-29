@@ -11,9 +11,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/assert.sh
+source "$SCRIPT_DIR/lib/assert.sh"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-TMP_ROOT="$(mktemp -d)"
-trap 'rm -rf "$TMP_ROOT"' EXIT
+assert_tmpdir TMP_ROOT
 
 mkdir -p "$TMP_ROOT/.agents/skills" "$TMP_ROOT/bin" "$TMP_ROOT/.cache/linear"
 cp -R "$SKILL_DIR" "$TMP_ROOT/.agents/skills/linear"
@@ -61,14 +62,12 @@ esac
 SH
 chmod +x "$TMP_ROOT/bin/curl"
 
-PASS=0
-FAIL=0
-pass() { PASS=$((PASS + 1)); printf '  ok    %s\n' "$1"; }
-fail() { FAIL=$((FAIL + 1)); printf '  FAIL  %s\n' "$1" >&2; [[ -n "${2:-}" ]] && printf '        %s\n' "$2" >&2; }
-
-# Runs linear.sh with the stub curl, logging every payload to $1.
+# Runs linear.sh with the stub curl, logging every payload to $1. Every action
+# driven here is a success path, and the status is asserted rather than
+# swallowed: a mutation that wrote the right payload and then exited nonzero
+# would otherwise leave the payload assertions green.
 run_linear() {
-  local payload_log="$1"
+  local payload_log="$1" rc=0
   shift
   : >"$payload_log"
   (
@@ -78,7 +77,9 @@ run_linear() {
         LINEAR_TEAM=Claude \
         CURL_PAYLOAD_LOG="$payload_log" \
         bash "$TMP_ROOT/.agents/skills/linear/scripts/linear.sh" "$@"
-  ) >/dev/null 2>&1 || true
+  ) >/dev/null 2>&1 || rc=$?
+
+  assert_eq "$* exits zero" "$rc" 0
 }
 
 # Asserts the logged payload for $mutation carries $field == $expected verbatim.
@@ -88,11 +89,7 @@ assert_field() {
   got="$(jq -s -r --arg m "$mutation" --arg f "$field" \
     'map(select(.query | contains($m))) | last | .variables.input[$f] // "<absent>"' \
     "$payload_log" 2>/dev/null || echo '<unparseable>')"
-  if [[ "$got" == "$expected" ]]; then
-    pass "$label"
-  else
-    fail "$label" "expected [$expected], payload carried [$got]"
-  fi
+  assert_eq "$label" "$got" "$expected"
 }
 
 log="$TMP_ROOT/payloads.jsonl"
@@ -137,6 +134,3 @@ run_linear "$log" projects post-update project-uuid --health on-track --body 'a 
 assert_field "projects post-update: spaced body reaches the payload intact" \
   "$log" projectUpdateCreate body 'a long body'
 
-echo
-printf 'pass: %d   fail: %d\n' "$PASS" "$FAIL"
-[[ "$FAIL" -eq 0 ]]

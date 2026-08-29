@@ -60,6 +60,23 @@ Projects are seeded with `kendex.settings.toml.example`, which `kendex add` / `k
 
 ```bash
 for t in skills/linear/tests/*.test.sh; do bash "$t" || echo "FAIL $t"; done
+skills/linear/tests/must-fail-controls.sh
 ```
 
 Each test stands up its own fixture root and a `curl` shim on `PATH`, so none reaches the network. `LINEAR_API_KEY_OVERRIDE` is the inline auth channel they use; `cache.sh` refuses to write when that override is paired with a cache dir inside a real checkout, so a test that forgets to isolate `PROJECT_ROOT` fails instead of polluting live cache data.
+
+### Assertions
+
+Every claim goes through `tests/lib/assert.sh`, which counts assertions and fails a suite that reaches its end without executing one: an exit code reports on the process, not on anything that was checked. Sourcing the library installs that verdict as an EXIT trap, so scratch directories come from `assert_tmpdir` and teardown from `assert_at_exit` — another `trap ... EXIT` replaces the verdict and disarms it. Helpers record a failure and return, so one run reports every failure.
+
+An assertion made in a subshell — a command substitution, a pipeline element, a backgrounded or parenthesised block — increments a counter the suite never sees and records a failure nobody reads, so the library refuses the shape rather than leaving authors to avoid it. Two things can go wrong and each has its own check: a subshell that finished is caught by the count, since every assertion also appends to a ledger file a subshell shares with its parent and a disagreement with the in-memory counter fails the suite naming how many were lost; a background job still running at the verdict is caught by its presence, because its record would land after the totals are computed and after the ledger is removed. The verdict refuses an outstanding job rather than waiting for it — waiting can hang forever on one that never exits, and a suite that never returns is worse than one that refuses. Capture the status in the suite and assert on it there.
+
+`set -e` is suspended for the whole body of a command whose status is being tested — an `if` condition, a `&&`/`||` operand, a `!` — and that suspension reaches into a shell function called there and every function it calls, so capture the subject's status instead of branching on it: `rc=0; cmd || rc=$?` where the subject is its own process and carries its own errexit, and `run_status rc func` / `run_output out rc func` where it is a shell function, which run it in a background subshell whose errexit was never suspended.
+
+The distinction is not a judgement call left to the author: `run_status` refuses a call site where errexit is not in force rather than reporting a status it cannot stand behind, and `tests/run-status-errexit.test.sh` pins both the property and that refusal.
+
+### Must-fail controls
+
+`tests/controls/<suite>.control.sh` breaks the one behaviour its suite covers, in a copy of the skill, and `tests/must-fail-controls.sh` requires the suite to go red naming the assertion that covers it. A suite with no control fails the run: an untested control is an untested suite.
+
+A control declares what it expects with `control_expect <assertion description>` and mutates with `control_replace <file> <count> <old line> <new line>` — whole-line and literal, so there is no pattern syntax to mis-escape. `control_replace` aborts unless it matches exactly `count` lines, and the runner refuses a control that changed nothing, so a mutation that failed to land can never be read as a passing control. It also refuses a stem that names no suite and a selection that matched none, because a run that measured nothing is not a run that passed.
