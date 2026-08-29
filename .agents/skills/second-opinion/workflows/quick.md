@@ -18,7 +18,7 @@ Answer concisely and directly. If you need to examine code in this project to an
 
 ## 2. Run Script
 
-The default timeout (`SECOND_OPINION_TIMEOUT`, 1080s) exceeds the ~600s ceiling a harness puts on a foreground shell call — on Claude Code use `run_in_background` (Pi: `bg_task`; Codex/OpenCode: scheduled re-entry), or pass `--timeout` at or below the foreground ceiling.
+Run `second-opinion …`; it backgrounds itself and prints when to check.
 
 Either pass the prompt file or the question inline:
 
@@ -26,14 +26,18 @@ Either pass the prompt file or the question inline:
 # With prompt file:
 .agents/skills/second-opinion/scripts/second-opinion quick \
   --prompt tmp/second-opinion-prompt.md \
-  --cwd [PROJECT_PATH]
+  --cwd [PROJECT_PATH] \
+  --foreground
 
 # Or inline (when no file context is needed):
 .agents/skills/second-opinion/scripts/second-opinion quick \
   "[QUESTION]" \
-  --cwd [PROJECT_PATH]
+  --cwd [PROJECT_PATH] \
+  --foreground
 ```
+
+Execute the exact command printed after `wait:`. Exit 75 means completion is still recoverable; do other event checks, then rerun the same command. Exit 124 is the supervisor's published terminal deadline result. When it succeeds, read the file printed after `artifact:` with `cat < [ARTIFACT_PATH]`.
 
 ## 3. Present Results
 
-Present the response directly — no additional framing.
+Present the artifact contents directly — no additional framing.

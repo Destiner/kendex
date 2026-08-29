@@ -27,14 +27,17 @@ Skip: style preferences, naming opinions, documentation gaps.
 
 ## 2. Run Script
 
-Run it **in the background**, never as a foreground shell call: the default timeout (`SECOND_OPINION_TIMEOUT`, 1080s) exceeds the ~600s ceiling a harness puts on a foreground call. On Claude Code use `run_in_background`; on Pi run it under `bg_task`; on Codex and OpenCode use scheduled re-entry, or pass `--timeout` at or below the foreground ceiling.
+Run `second-opinion …`; it backgrounds itself and prints when to check.
 
 ```bash
 .agents/skills/second-opinion/scripts/second-opinion audit \
   --prompt tmp/second-opinion-prompt.md \
   --cwd [PROJECT_PATH] \
-  --output tmp/audit-external-YYYYMMDD-HHMMSS.json
+  --output tmp/audit-external-YYYYMMDD-HHMMSS.json \
+  --foreground
 ```
+
+Execute the exact command printed after `wait:`. Exit 75 means completion is still recoverable; do other event checks, then rerun the same command. Exit 124 is the supervisor's published terminal deadline result. Continue until terminal before reading or validating the artifact.
 
 ## 3. Present Results
 

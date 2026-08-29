@@ -41,7 +41,9 @@ Cross-model second opinion via external AI CLI. Every mode walks the `SECOND_OPI
 - **Pass `--target`** when the user explicitly requests a specific model/CLI (e.g., "use Claude", "ask Codex"). Otherwise omit it — the script selects from the roster and the current session's model. A forced target that runs this session's model is refused; report the refusal, do not work around it.
 - **Do not pass `--timeout`** unless the user explicitly asks for a different value for this specific call — the script reads the default from project config.
 - **Always pass `--cwd`** with the absolute project root path. Never use `--cwd .`.
-- For `quick` mode, you can pass the question as an inline argument instead of writing a file: `second-opinion quick "your question here" --cwd /path`
+- Pass `--foreground` when the call can outlast the harness foreground cap. This detaches the run and prints its artifact, deadline, and wait command.
+- Execute the exact printed wait command until it returns a terminal status. Exit 75 means completion is still recoverable; do other event checks, then rerun the same command. Exit 124 is the supervisor's published terminal deadline result.
+- For `quick` mode, you can pass the question inline: `.agents/skills/second-opinion/scripts/second-opinion quick "your question here" --cwd /path --foreground`.
 
 ## Session identity
 
@@ -53,7 +55,7 @@ Cross-model is enforced in every mode: a run with no eligible target exits 1 nam
 
 ## Configuration
 
-Set non-sensitive defaults in `kendex.settings.toml` under `[env]`; `.env.local` wins over it, and a `.env` file is never read. The one exception is `SECOND_OPINION_CURRENT_MODEL` — export it in the environment of the session that needs it; a value in any project file (`kendex.settings.toml`, `.kendex/settings.toml`, `.env.local`) is refused. Project installs seed `kendex.settings.toml` from this skill's `kendex.settings.toml.example` when missing and merge only absent second-opinion keys into existing files. Keys, defaults, and the built-in `claude`/`codex` commands: `second-opinion --help`.
+Set non-sensitive defaults in `kendex.settings.toml` under `[env]`; `.env.local` wins over it, and a `.env` file is never read. `SECOND_OPINION_CURRENT_MODEL` and `SECOND_OPINION_FOREGROUND_CAP` are session-only; a project-file foreground-cap declaration is refused, and shipped workflows pass `--foreground` directly. Project installs seed `kendex.settings.toml` from this skill's `kendex.settings.toml.example` when missing and merge only absent second-opinion keys into existing files. Keys, defaults, and the built-in `claude`/`codex` commands: `second-opinion --help`.
 
 ## Error Handling
 
