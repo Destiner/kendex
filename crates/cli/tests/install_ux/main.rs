@@ -23,6 +23,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+#[path = "../../../test_util.rs"]
+mod test_util;
+use test_util::rooted;
+
 /// The binary, pointed at a fixture home it must treat as real — without
 /// `KENDEX_REAL_HOME` a debug build sandboxes itself into the dev home and
 /// every assertion below would be about the wrong machine.
@@ -96,13 +100,13 @@ impl World {
     /// `detected` names the harnesses whose global directory exists, which
     /// is what kendex's own detection reads.
     pub fn new(detected: &[&str]) -> World {
-        let tmp = tempfile::tempdir().unwrap();
         // Canonical once, where the fixture's root enters (invariant 17).
         // A temporary directory is routinely behind a symlink — macOS
         // fronts `/var` with `/private/var` — and every path kendex prints
         // comes back resolved, so a fixture holding the unresolved spelling
         // compares two names for one directory and reads them as two.
-        let home = tmp.path().canonicalize().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = rooted(&tmp);
         let catalog = home.join("catalog");
         write(
             &catalog.join("skills/deploy/SKILL.md"),

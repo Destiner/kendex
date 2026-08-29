@@ -161,6 +161,79 @@ done)
   say 'fixture HOME without KENDEX_REAL_HOME on the next line — that command would run in the dev sandbox'
 }
 
+# New integration-test temp roots take their canonical spelling immediately
+# through the shared rooted() helper. Older fixtures stay out of this
+# diff-scoped rule.
+if git cat-file -e 'HEAD^{commit}' 2>/dev/null; then
+  temp_fixture_diff=$(git diff --no-color --unified=100000 --no-ext-diff HEAD -- 'crates/*/tests/*.rs') ||
+    say "test fixture changes could not be read"
+else
+  temp_fixture_diff=$(git diff --cached --no-color --unified=100000 --no-ext-diff -- 'crates/*/tests/*.rs') ||
+    say "test fixture changes could not be read"
+fi
+if ! temp_fixture_hits=$(awk '
+  function flush() {
+    if (pending != "") print file ":" pending_line ": " pending_text
+    pending = ""
+  }
+  /^diff --git / {
+    flush()
+    for (name in guarded) delete guarded[name]
+    file = $4
+    sub(/^b\//, "", file)
+    next
+  }
+  /^@@ / {
+    flush()
+    spec = $3
+    sub(/^\+/, "", spec)
+    split(spec, at, ",")
+    new_line = at[1] - 1
+    next
+  }
+  /^--- / || /^\+\+\+ / { next }
+  /^[ +]/ {
+    prefix = substr($0, 1, 1)
+    line = substr($0, 2)
+    new_line++
+    if (pending != "") {
+      if (line ~ /^[[:space:]]*$/ || line ~ /^[[:space:]]*\/\//) next
+      rooted = "^[[:space:]]*let[[:space:]]+[A-Za-z][A-Za-z0-9_]*([[:space:]]*:[^=]+)?[[:space:]]*=[[:space:]]*&?[[:space:]]*rooted[[:space:]]*\\([[:space:]]*&[[:space:]]*" pending "[[:space:]]*\\)"
+      if (line !~ rooted) {
+        print file ":" pending_line ": " pending_text
+      } else {
+        guarded[pending] = 1
+      }
+      pending = ""
+    }
+    if (prefix == "+") {
+      for (name in guarded) {
+        raw = "(^|[^A-Za-z0-9_])" name "[[:space:]]*\\.(path|as_ref|into_path|keep)[[:space:]]*\\("
+        if (line ~ raw) print file ":" new_line ": " line
+      }
+    }
+    if (prefix == "+" && line ~ /^[[:space:]]*let[[:space:]]+(mut[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*([[:space:]]*:[^=]+)?[[:space:]]*=[[:space:]]*(tempfile::tempdir\(\)|(tempfile::)?TempDir::new\(\))/) {
+      declaration = line
+      sub(/^[[:space:]]*let[[:space:]]+/, "", declaration)
+      sub(/^mut[[:space:]]+/, "", declaration)
+      sub(/([[:space:]]*:[^=]+)?[[:space:]]*=.*/, "", declaration)
+      pending = declaration
+      pending_line = new_line
+      pending_text = line
+    }
+    next
+  }
+  /^-/ { next }
+  { flush() }
+  END { flush() }
+' <<<"$temp_fixture_diff"); then
+  say "temporary fixture declarations could not be checked"
+fi
+[ -n "$temp_fixture_hits" ] && {
+  echo "$temp_fixture_hits" | head -5
+  say 'temporary fixture bypasses rooted(): import crates/test_util.rs and bind the canonical root on the next source line'
+}
+
 # Structural invariants.
 [ "$(readlink .claude/CLAUDE.md 2>/dev/null)" = "../AGENTS.md" ] ||
   say ".claude/CLAUDE.md must be a symlink to ../AGENTS.md"
@@ -176,6 +249,17 @@ if [ -f Cargo.toml ]; then
     grep -A1 '^\[lints\]' "$m" | grep -q 'workspace *= *true' ||
       say "$m: missing [lints] workspace = true — workspace lints are not inherited"
   done
+  apple_target=aarch64-apple-darwin
+  if ! installed_targets=$(rustup target list --installed); then
+    say "rustup could not list installed targets: the Apple cross-target check could not run"
+  elif ! grep -Fxq "$apple_target" <<<"$installed_targets"; then
+    say "Rust target $apple_target is not installed: run rustup target add $apple_target"
+  else
+    # The app's Objective-C build dependencies require an Apple compiler.
+    # Core and CLI reach the portable Rust code and every one of their tests.
+    cargo check -p kendex-core -p kendex-cli --all-targets --target "$apple_target" ||
+      say "Apple core and CLI test targets failed to compile"
+  fi
   cargo fmt --check || say "cargo fmt --check failed"
   cargo clippy --workspace --quiet -- -D warnings || say "clippy failed"
   cargo doc --no-deps --document-private-items --workspace --quiet || say "cargo doc failed"
