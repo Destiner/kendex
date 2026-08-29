@@ -15,93 +15,104 @@
 #![cfg(unix)]
 
 use kendex_core::process::Hardened;
+use std::os::unix::fs::PermissionsExt;
+
+#[path = "../../test_util.rs"]
+mod test_util;
+use test_util::rooted;
 
 const INNER: &str = "KENDEX_TEST_GUARD_ENV_INNER";
+const INNER_PROOF: &str = "KENDEX_TEST_GUARD_ENV_PROOF";
 
-/// The redirect has to come from the parent's environment, which a test
-/// cannot set beside its siblings without racing them. The outer run
-/// re-enters this test binary with the variables set and judges the
-/// inner run's verdict.
+/// The redirect has to come from the parent's environment. The outer run
+/// re-enters this test binary with the variables set and judges the inner
+/// run before writing and executing the verdict fixture.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn a_guard_hook_sees_the_index_git_named() {
-    if std::env::var_os(INNER).is_none() {
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "a_guard_hook_sees_the_index_git_named",
-                "--nocapture",
-            ])
-            .env(INNER, "1")
-            .env("GIT_DIR", "/nowhere/.git")
-            .env("GIT_WORK_TREE", "/nowhere")
-            .env("GIT_INDEX_FILE", "/nowhere/index.tmp")
-            .status()
+fn guard_hook_preserves_hook_env_and_relays_verdict() {
+    if std::env::var_os(INNER).is_some() {
+        // The inner run only proves anything if the redirect is really set
+        // on this side of the spawn.
+        assert!(std::env::var_os("GIT_INDEX_FILE").is_some());
+
+        let tmp = tempfile::tempdir().unwrap();
+        let root = rooted(&tmp);
+        let script = root.join("pre-commit");
+        std::fs::write(&script, "#!/bin/sh\nenv > env.log\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let output = Hardened::guard_hook(&script, Vec::new(), &root)
+            .run()
             .unwrap();
-        assert!(
-            status.success(),
-            "the inner run failed; see its output above"
-        );
+        assert!(output.status.success());
+        let env = std::fs::read_to_string(root.join("env.log")).unwrap();
+        for variable in [
+            "GIT_DIR=/nowhere/.git",
+            "GIT_WORK_TREE=/nowhere",
+            "GIT_INDEX_FILE=/nowhere/index.tmp",
+        ] {
+            assert!(
+                env.contains(variable),
+                "{variable} did not reach the hook body:\n{env}"
+            );
+        }
+
+        // The management scripts are not hook bodies and get the scrub, so an
+        // inherited redirect cannot send an installer at another repository.
+        std::fs::remove_file(root.join("env.log")).unwrap();
+        let output = Hardened::guard_script(&script, Vec::new(), &root)
+            .run()
+            .unwrap();
+        assert!(output.status.success());
+        let env = std::fs::read_to_string(root.join("env.log")).unwrap();
+        for variable in ["GIT_DIR=", "GIT_WORK_TREE=", "GIT_INDEX_FILE="] {
+            assert!(
+                !env.contains(variable),
+                "{variable} reached the management script:\n{env}"
+            );
+        }
+        let proof = std::env::var_os(INNER_PROOF).unwrap();
+        std::fs::write(proof, "verified").unwrap();
         return;
     }
-    // The inner run only proves anything if the redirect is really set
-    // on this side of the spawn.
-    assert!(std::env::var_os("GIT_INDEX_FILE").is_some());
 
     let tmp = tempfile::tempdir().unwrap();
-    let script = tmp.path().join("pre-commit");
-    std::fs::write(&script, "#!/bin/sh\nenv > env.log\n").unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-
-    let output = Hardened::guard_hook(&script, Vec::new(), tmp.path())
-        .run()
+    let root = rooted(&tmp);
+    let proof = root.join("inner-proof");
+    let status = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "guard_hook_preserves_hook_env_and_relays_verdict",
+            "--nocapture",
+        ])
+        .env(INNER, "1")
+        .env(INNER_PROOF, &proof)
+        .env("GIT_DIR", "/nowhere/.git")
+        .env("GIT_WORK_TREE", "/nowhere")
+        .env("GIT_INDEX_FILE", "/nowhere/index.tmp")
+        .status()
         .unwrap();
-    assert!(output.status.success());
-    let env = std::fs::read_to_string(tmp.path().join("env.log")).unwrap();
-    for variable in [
-        "GIT_DIR=/nowhere/.git",
-        "GIT_WORK_TREE=/nowhere",
-        "GIT_INDEX_FILE=/nowhere/index.tmp",
-    ] {
-        assert!(
-            env.contains(variable),
-            "{variable} did not reach the hook body:\n{env}"
-        );
-    }
+    assert!(
+        status.success(),
+        "the inner run failed; see its output above"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&proof).unwrap_or_default(),
+        "verified",
+        "the exact inner test did not run to completion"
+    );
 
-    // The management scripts are not hook bodies and get the scrub, so an
-    // inherited redirect cannot send an installer at another repository.
-    std::fs::remove_file(tmp.path().join("env.log")).unwrap();
-    let output = Hardened::guard_script(&script, Vec::new(), tmp.path())
-        .run()
-        .unwrap();
-    assert!(output.status.success());
-    let env = std::fs::read_to_string(tmp.path().join("env.log")).unwrap();
-    for variable in ["GIT_DIR=", "GIT_WORK_TREE=", "GIT_INDEX_FILE="] {
-        assert!(
-            !env.contains(variable),
-            "{variable} reached the management script:\n{env}"
-        );
-    }
-}
-
-/// The chain's own words come back whole, on both streams, with the
-/// package's exit status relayed rather than reinterpreted.
-#[test]
-#[allow(clippy::unwrap_used)]
-fn a_guard_hook_relays_its_verdict() {
-    let tmp = tempfile::tempdir().unwrap();
-    let script = tmp.path().join("pre-commit");
+    // The chain's own words come back whole, on both streams, with the
+    // package's exit status relayed rather than reinterpreted.
+    let script = root.join("pre-commit");
     std::fs::write(
         &script,
         "#!/bin/sh\necho 'todo-ban FAIL'\necho 'note on stderr' >&2\nexit 1\n",
     )
     .unwrap();
-    use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-    let output = Hardened::guard_hook(&script, Vec::new(), tmp.path())
+    let output = Hardened::guard_hook(&script, Vec::new(), &root)
         .run()
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
