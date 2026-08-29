@@ -3,8 +3,11 @@ import { commands, type EditorInventory, type Scope } from "@/bindings";
 import { type Draft, emptyDraft, toDraft } from "@/lib/editor-draft";
 import { sameScope, scopeKey } from "@/lib/scope";
 import { useAuditStore } from "./audit";
+import { manifestsOf, recorded } from "./editor-cache";
 import { useScanStore } from "./scan";
 import { useSettingsStore } from "./settings";
+
+export { openInventory } from "./editor-cache";
 
 interface EditorState {
   /** The single scope being edited — deliberately not the sidebar filter. */
@@ -14,11 +17,16 @@ interface EditorState {
    *  with every save, so a copy of a file something else has since written
    *  is refused instead of putting the older file back. */
   base: string | null;
-  inventory: EditorInventory | null;
   /** Every scope's saved manifest, keyed by scope. What the Library and the
    *  Customize index read to mark what has been customized; `draft` above is
    *  the one copy being edited. */
   saved: Record<string, Draft>;
+  /** Every scope's editor inventory, keyed by scope. Keyed rather than
+   *  held loose beside `scope`, so a read belonging to one place cannot be
+   *  served as another's answer: read it through {@link openInventory},
+   *  which finds nothing for a place that was never read or whose read
+   *  failed. */
+  inventories: Record<string, EditorInventory>;
   dirty: boolean;
   loading: boolean;
   saving: boolean;
@@ -32,6 +40,11 @@ interface EditorState {
   load: () => Promise<void>;
   /** Read every scope's manifest, for the marks drawn outside the editor. */
   loadAll: () => Promise<void>;
+  /** Read the manifests of named places only, merged into what is already
+   *  read. A page about one package needs the places that package sits in
+   *  and nothing else — asking for every scope would put the machine's
+   *  whole project list behind one package's mark. */
+  loadPlaces: (scopes: Scope[]) => Promise<void>;
   edit: (change: (draft: Draft) => Draft) => void;
   save: () => Promise<void>;
 }
@@ -51,13 +64,18 @@ export const useEditorStore = create<EditorState>((set, get) => {
       set({ loading: false });
     }
     if (manifest.status === "error") {
-      set({
+      set((state) => ({
         draft: null,
         base: null,
+        // This place has stopped reading, so what it last said goes with
+        // it. Left in place, the mark would keep answering for this
+        // package here out of a manifest that can no longer be read.
+        saved: recorded(state.saved, scope, null),
+        inventories: recorded(state.inventories, scope, null),
         dirty: false,
         stale: false,
         error: manifest.error,
-      });
+      }));
       return;
     }
     // With no manifest here yet the editor still opens, on an empty one:
@@ -69,8 +87,16 @@ export const useEditorStore = create<EditorState>((set, get) => {
     set((state) => ({
       draft,
       base: manifest.data.base,
-      inventory: inventory.status === "ok" ? inventory.data : state.inventory,
-      saved: { ...state.saved, [scopeKey(scope)]: draft },
+      saved: recorded(state.saved, scope, draft),
+      // An inventory that failed to read leaves this place without one,
+      // rather than leaving the last place's on screen: the Skills section
+      // would otherwise offer another place's assignment as this one's,
+      // and a pick made from it writes a declaration nobody meant.
+      inventories: recorded(
+        state.inventories,
+        scope,
+        inventory.status === "ok" ? inventory.data : null,
+      ),
       dirty: false,
       stale: false,
       error: inventory.status === "ok" ? null : inventory.error,
@@ -115,8 +141,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
     scope: { scope: "global" },
     draft: null,
     base: null,
-    inventory: null,
     saved: {},
+    inventories: {},
     dirty: false,
     loading: false,
     saving: false,
@@ -153,17 +179,19 @@ export const useEditorStore = create<EditorState>((set, get) => {
         { scope: "global" },
         ...projects.map((root) => ({ scope: "project" as const, root })),
       ];
-      const loaded = await Promise.all(
-        scopes.map((scope) => commands.getManifest(scope)),
-      );
-      const saved: Record<string, Draft> = {};
-      for (const [index, response] of loaded.entries()) {
-        if (response.status !== "ok") continue;
-        saved[scopeKey(scopes[index])] = response.data.manifest
-          ? toDraft(response.data.manifest)
-          : emptyDraft();
-      }
-      set({ saved });
+      // Replaced, not merged: this is the whole list, so a scope that has
+      // gone leaves with it.
+      set({ saved: await manifestsOf(scopes) });
+    },
+
+    loadPlaces: async (scopes) => {
+      const read = await manifestsOf(scopes);
+      set((state) => ({
+        saved: scopes.reduce(
+          (saved, scope) => recorded(saved, scope, read[scopeKey(scope)]),
+          state.saved,
+        ),
+      }));
     },
 
     edit: (change) => {

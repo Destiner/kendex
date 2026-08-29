@@ -11,7 +11,6 @@ use crate::render::agent::{
 use crate::render::permission::PermissionIntent;
 use crate::render::validate::validate_agent;
 
-use super::agent_skills::declared_skills;
 use super::desired::{Artifact, Desired, DesiredState, ItemCtx, native_dir};
 
 /// The agent as this tool will know it, or `None` where that is the agent
@@ -307,7 +306,7 @@ fn from_manifest<'a>(manifest: &'a Manifest, harness: HarnessId, name: &str) -> 
             .agent_frontmatter
             .get(harness.name())
             .and_then(|by_agent| by_agent.get(name)),
-        skills: declared_skills(manifest, name).cloned(),
+        skills: crate::mapping::declared_skills(manifest, name).map(|(list, _)| list.clone()),
         custom_hooks: manifest
             .custom_hooks
             .iter()
@@ -351,7 +350,7 @@ fn gathered<'a>(
         // Still the project's contribution or nothing: with no declaration
         // to read, the source's own assignment is the publisher's and is
         // not folded in here.
-        skills: declared_skills(ctx.manifest, ctx.name).map(|_| effective.to_vec()),
+        skills: crate::mapping::declared_skills(ctx.manifest, ctx.name).map(|_| effective.to_vec()),
         ..from_manifest(ctx.manifest, harness, ctx.name)
     }
 }

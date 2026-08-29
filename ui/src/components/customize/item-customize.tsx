@@ -5,10 +5,12 @@ import { ItemSkills } from "@/components/customize/item-skills";
 import { StaleNote } from "@/components/customize/stale-note";
 import { Pill } from "@/components/pill";
 import { Section } from "@/components/section";
+import { StatusDot } from "@/components/status-dot";
 import { StatusNote } from "@/components/status-note";
 import {
   ADDITIONAL_HELP,
   ADDITIONAL_LABEL,
+  CUSTOMIZED_MARK,
   LAUNCH_HELP,
   LAUNCH_LABEL,
   SAVE_FIRST,
@@ -19,10 +21,16 @@ import {
   WRITTEN_INTO,
 } from "@/lib/copy-customize";
 import { itemCustomization, sharedCustomization } from "@/lib/customization";
+import {
+  manifestsForEditing,
+  placeStandings,
+  placesSource,
+} from "@/lib/customized-places";
 import { setInstruction } from "@/lib/editor-draft";
 import { scopeName } from "@/lib/labels";
 import { scopeKey } from "@/lib/scope";
-import { useEditorStore } from "@/stores/editor";
+import { openInventory, useEditorStore } from "@/stores/editor";
+import { useUpdatesStore } from "@/stores/updates";
 
 /** Everything kendex lets a person change about one installed package,
  *  on that package's own page. The same manifest the Customize page edits,
@@ -39,13 +47,47 @@ export function ItemCustomize({
   scopes: Scope[];
   harnesses: HarnessId[];
 }) {
-  const { scope, draft, inventory, dirty, error, stale, setScope, load, edit } =
+  const { scope, draft, saved, dirty, error, stale, setScope, load, edit } =
     useEditorStore();
+  const inventory = useEditorStore(openInventory);
+  const rows = useUpdatesStore((s) => s.rows);
+  const updatesLoaded = useUpdatesStore((s) => s.loaded);
 
   const mine = itemCustomization(draft, kind, name);
+  // The row this agent renders with when it has none of its own, resolved
+  // by the engine and read here already answered: which agents inherit
+  // from which is the engine's rule, and a copy of it here is a copy that
+  // drifts. `under` naming another agent is what makes it inherited.
+  const declared = inventory?.declaredSkillRows[name];
+  const inheritedSkills = declared && declared.under !== name ? declared : null;
+  // An inherited row is named here and is not marked above. The chip and
+  // the Library row answer "did you change this agent here?", and nobody
+  // changed this one — the row is set on another agent, and the Remove on
+  // this page writes this agent's name, so a mark here would point at a
+  // change the reader cannot find or undo. This section answers the other
+  // question: what the agent gets, and which agent it is set on.
   const shared = sharedCustomization(draft);
   const tools = (inventory?.harnesses ?? []).filter((id) =>
     harnesses.includes(id),
+  );
+  // The chips answer the same question the Library row does, by the same
+  // rule: a tab whose places all look alike makes "which of these three is
+  // mine" a matter of opening each one and reading four sections. The open
+  // draft stands in for its saved manifest, so a change made here marks
+  // its chip before it is saved.
+  const customizedIn = new Set(
+    placeStandings(
+      placesSource(
+        manifestsForEditing(saved, draft, scope),
+        rows,
+        updatesLoaded,
+      ),
+      kind,
+      name,
+      scopes,
+    )
+      .filter((standing) => standing.standing === "customized")
+      .map((standing) => scopeKey(standing.scope)),
   );
 
   return (
@@ -67,6 +109,13 @@ export function ItemCustomize({
               onClick={() => void setScope(where)}
             >
               {scopeName(where)}
+              {customizedIn.has(scopeKey(where)) ? (
+                <>
+                  <StatusDot tone="customized" className="size-1.5" />
+                  {/* Colour is never the only carrier of the fact. */}
+                  <span className="sr-only">{CUSTOMIZED_MARK}</span>
+                </>
+              ) : null}
             </Pill>
           ))}
         </div>
@@ -129,6 +178,7 @@ export function ItemCustomize({
             <ItemSkills
               agent={name}
               chosen={mine.skills}
+              inherited={inheritedSkills}
               inventory={inventory}
               onChange={edit}
             />

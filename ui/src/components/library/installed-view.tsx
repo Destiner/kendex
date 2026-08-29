@@ -27,7 +27,7 @@ import {
 import { PAGE_GUTTER, WIDE_CONTENT_WIDTH } from "@/lib/layout";
 import { isNarrowed, UNFILTERED } from "@/lib/library-handoff";
 import { useLibraryStandings } from "@/lib/library-standings";
-import { libraryMark } from "@/lib/place-marks";
+import { packageMark } from "@/lib/place-marks";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor";
 import {
@@ -115,14 +115,21 @@ export function InstalledView() {
     );
   }, [result, scope, kind, harness, tag, from, search, provenance]);
 
+  // Every group the scan holds, before any narrowing.
+  const everywhere = useMemo(
+    () => (result ? groupItems(result.items) : []),
+    [result],
+  );
+  // Read from those, never from the filtered set: a mark answers for the
+  // package, so narrowing the table to one project must not change what it
+  // says. Read from `groups`, a package customized in two projects said
+  // "Customized in vg" here and named both on its own page — the same
+  // contradiction, arriving through the Where filter.
+  const standingsFor = useLibraryStandings(everywhere);
   // The count the filtered total is measured against: every row the table
   // could show, not the ones left after the current narrowing. Shared with
   // Home's Installed tile so the two can never disagree.
-  const standingsFor = useLibraryStandings(groups);
-  const total = useMemo(
-    () => (result ? installedCount(groupItems(result.items)) : 0),
-    [result],
-  );
+  const total = useMemo(() => installedCount(everywhere), [everywhere]);
   // The filter's vocabulary is what the join actually says, so a value
   // is never offered that no row carries.
   const fromOptions = useMemo(
@@ -166,7 +173,7 @@ export function InstalledView() {
             ref={scroller}
             className="min-w-0 flex-1 overflow-y-auto pr-2 [scrollbar-gutter:stable]"
           >
-            {groups.some((g) => libraryMark(standingsFor(g))) ? (
+            {groups.some((g) => packageMark(standingsFor(g))) ? (
               <LibraryLegend />
             ) : null}
             <Table>
@@ -195,7 +202,7 @@ export function InstalledView() {
                         group.name,
                         groupScopes(group),
                       )}
-                      mark={libraryMark(standingsFor(group))}
+                      mark={packageMark(standingsFor(group))}
                       forkedIn={standingsFor(group)
                         .filter((s) => s.why === "forked")
                         .map((s) => s.scope)}
