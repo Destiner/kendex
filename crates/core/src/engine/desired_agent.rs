@@ -5,12 +5,13 @@ use crate::manifest::{CustomHook, FrontmatterOverrides, HookAgents, Manifest, Me
 use crate::mapping::EffectiveSkills;
 use crate::model::{HarnessId, ItemKind};
 use crate::render::agent::{
-    EffectiveAgent, RenderedAgent, Role, SourceAgent, file_name, generate, hooks_for_agent,
-    merge_overrides, merged_instructions, parse_source_agent,
+    EffectiveAgent, RenderedAgent, Selects, SourceAgent, file_name, generate, hooks_for_agent,
+    merge_overrides, merged_instructions, parse_source_agent, selects,
 };
 use crate::render::permission::PermissionIntent;
 use crate::render::validate::validate_agent;
 
+use super::agent_skills::declared_skills;
 use super::desired::{Artifact, Desired, DesiredState, ItemCtx, native_dir};
 
 /// The agent as this tool will know it, or `None` where that is the agent
@@ -315,26 +316,13 @@ fn from_manifest<'a>(manifest: &'a Manifest, harness: HarnessId, name: &str) -> 
     }
 }
 
-/// The `[agent-skills]` entry this agent reads, found by the same lookup
-/// the mapping uses: a reviewer agent falls back to its base agent's entry.
-/// Asking for the exact name alone would call a real assignment absent and
-/// render the upstream list over the top of it, which is the removal the
-/// person made coming back.
-fn declared_skills<'a>(manifest: &'a Manifest, name: &str) -> Option<&'a Vec<String>> {
-    manifest.agent_skills.get(name).or_else(|| {
-        manifest
-            .agent_skills
-            .get(crate::mapping::skill_match_prefix(name))
-    })
-}
-
 /// Whether a custom hook's agent selector could reach this agent. `all` and
 /// a role name are resolved by the render path, which has the parsed agent
 /// and its role; here — where the question is whether this project touches
 /// this agent at all — they count as reaching it, since a reading that has
 /// to guess guesses toward saying so.
 fn targets(agents: &HookAgents, name: &str) -> bool {
-    let reaches = |sel: &String| sel == "all" || sel == name || Role::parse(sel).is_some();
+    let reaches = |sel: &String| !matches!(selects(sel), Selects::Named) || sel == name;
     match agents {
         HookAgents::One(sel) => reaches(sel),
         HookAgents::Many(list) => list.iter().any(reaches),

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use super::{SKILL_NAME_FILES, local_item, named_bytes, vacant_name};
 use crate::apply::{Op, Plan, PlannedOp, Pre};
+use crate::engine::agent_carry::{OldName, rekey_agent_tables};
 use crate::engine::ops::manifest_for_mutation;
 use crate::env::Env;
 use crate::error::{CoreError, Result};
@@ -32,7 +33,7 @@ pub fn rename_fork(env: &Env, scope: &Scope, kind: ItemKind, old: &str, new: &st
             name: old.to_owned(),
         });
     };
-    vacant_name(env, scope, &manifest, kind, &decl, new)?;
+    vacant_name(env, scope, &manifest, kind, &decl, old, new)?;
     let lock = crate::lock::load(&crate::lock::lock_path(env, scope))?;
     let depended_on = lock
         .entries
@@ -94,6 +95,11 @@ pub fn rename_fork(env: &Env, scope: &Scope, kind: ItemKind, old: &str, new: &st
     {
         forks.insert(new.to_owned(), provenance);
     }
+    // An agent's configuration goes with it. Nothing reads the old name
+    // after this, so leaving it behind would render the fork without the
+    // project's tool denies, without its instructions, and outside its own
+    // hooks.
+    rekey_agent_tables(&mut manifest, kind, old, new, OldName::Gone);
     let manifest_path = manifest::manifest_path(env, scope);
     ops.push(PlannedOp {
         description: format!("record the rename to {new} in kendex.toml"),

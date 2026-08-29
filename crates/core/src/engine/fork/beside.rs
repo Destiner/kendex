@@ -5,10 +5,11 @@
 //! the user chose.
 
 use super::{
-    Capture, capture, capture_ops, carries_name, edited_rendering, named_bytes, provenance,
+    Capture, ForkOf, capture, capture_ops, carries_name, edited_rendering, named_bytes, provenance,
     vacant_name,
 };
 use crate::apply::{Op, Plan, PlannedOp, Pre};
+use crate::engine::agent_carry::{OldName, rekey_agent_tables};
 use crate::engine::ops::manifest_for_mutation;
 use crate::env::Env;
 use crate::error::{CoreError, Result};
@@ -45,7 +46,7 @@ pub fn fork_beside(
             name: name.to_owned(),
         });
     };
-    vacant_name(env, scope, &manifest, kind, &decl, new_name)?;
+    vacant_name(env, scope, &manifest, kind, &decl, name, new_name)?;
     let hold = match rev {
         Some(selector) => Some(crate::package::resolve_hold(
             env, &manifest, kind, name, selector,
@@ -56,9 +57,31 @@ pub fn fork_beside(
         }
     };
     let edited = edited_rendering(env, scope, kind, name, harness)?;
-    let captured = named(capture(kind, &edited)?, new_name)?;
-    let mut ops = capture_ops(env, scope, kind, new_name, &edited, captured)?;
+    let captured = capture(
+        &ForkOf {
+            env,
+            scope,
+            manifest: &manifest,
+            decl: &decl,
+            kind,
+            name,
+            installed_as: new_name,
+            harness,
+        },
+        &edited,
+    )?;
+    let files = named(captured.files, new_name)?;
+    let mut ops = capture_ops(env, scope, kind, new_name, &edited, files)?;
     let provenance = provenance(env, scope, kind, name, harness, &manifest, &decl)?;
+    // An agent's configuration is keyed by its installed name, so a copy
+    // under a new one reads none of it: it would render without the
+    // project's tool denies, without its instructions, and outside its own
+    // hooks. The original keeps its own — it stays declared from its source
+    // and goes on rendering under the name it always had.
+    rekey_agent_tables(&mut manifest, kind, name, new_name, OldName::Kept);
+    if let Some(carry) = captured.carry {
+        carry.apply(&mut manifest, new_name);
+    }
 
     let mut own = decl;
     own.source = LOCAL_SOURCE_NAME.to_owned();

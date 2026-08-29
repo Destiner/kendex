@@ -27,12 +27,15 @@ use crate::model::{HarnessId, ItemKind, Scope};
 /// ways, renders to one path on a case- or composition-folding filesystem,
 /// where the planner would refuse both and sweep the one that was there;
 /// each tool's rendered name and a local-source sibling fold the same way.
+/// `from` is the name being left, whose configuration has to be writable
+/// under `new` for the move to mean what it says.
 pub(super) fn vacant_name(
     env: &Env,
     scope: &Scope,
     manifest: &Manifest,
     kind: ItemKind,
     decl: &ItemDecl,
+    from: &str,
     new: &str,
 ) -> Result<()> {
     // Shown, not raw: the name reaches a terminal in the refusal, and an
@@ -81,6 +84,26 @@ pub(super) fn vacant_name(
         .any(|entry| entry.kind == kind && same_slot(&entry.name, new))
     {
         return Err(collision("this scope's installed items"));
+    }
+    // An agent answers to its name in the manifest's own tables as well as
+    // in its declaration. A name already carrying configuration someone
+    // wrote is not free: the copy's own configuration is written under it,
+    // and merging the two would invent a policy nobody asked for.
+    if kind == ItemKind::Agent
+        && let Some(entry) = crate::engine::agent_carry::configured_as(manifest, from, new)
+    {
+        return Err(unusable(format!(
+            "this scope already configures that agent in {entry} — pick another name, or clear that entry first"
+        )));
+    }
+    // And the mirror of it: the configuration that has to travel from the
+    // old name has to be writable under the new one. A spelling some reader
+    // takes for a population cannot hold one agent's, and the operation is
+    // declined here rather than writing a key that means something wider.
+    if kind == ItemKind::Agent
+        && let Some(problem) = crate::engine::agent_carry::unwritable_under(manifest, from, new)
+    {
+        return Err(unusable(problem));
     }
     let slot = local_item(env, scope, kind, new);
     if fs::symlink_metadata(&slot).is_ok() || crate::names::folding_sibling(&slot).is_some() {
