@@ -15,6 +15,32 @@ import { relativeTime } from "@/lib/relative-time";
 // reads whole — so the partial read is named as a skill's.
 export const SAFETY_CAVEAT =
   "An automated check for risky patterns, not a review. It can miss things, and a package too large to read is not checked at all.";
+
+// The package page's own tab for the reading. The score follows these
+// words on the tab itself, so the tab never says the number twice.
+export const SAFETY_TAB = "Safety score";
+// What the tab's figure is when a reading outlives the check meant to
+// replace it. Short enough to sit on a tab, and it is the accessible name
+// for the mark beside it: a colour and an icon alone would leave a kept
+// number reading as a current one.
+export const SAFETY_TAB_STALE = "the last reading kendex could check";
+// The same job where the failure left nothing behind it. Overview is the
+// tab a page opens on, so without this the only sign of a check that never
+// ran is a dash — which is also what pending and unscored show.
+export const SAFETY_TAB_FAILED = "the check couldn't run";
+// The audit is the slowest thing the app does, so the tab opens before it
+// has answered. A wait is not an outcome, and this says which it is.
+export const SAFETY_CHECKING = "Checking this package…";
+// Content a tool ships itself is never scored: the audit skips it, because
+// the reader did not choose it and cannot change it. That is a settled
+// answer rather than a reading still to come, so the tab says which — the
+// unscored state's retry would ask for a check that is not coming.
+export const SAFETY_VENDOR = "Shipped with the harness";
+// The audit answered and had no reading for this package. Nothing found and
+// nothing read are different claims, and only the second one is true here.
+export const SAFETY_NOT_READ = "This package hasn't been scored";
+export const SAFETY_NOT_READ_BODY =
+  "The last check answered without a reading for it. Ask for a new check to get one.";
 const SEVERITY_ORDER: Severity[] = ["critical", "high", "medium", "low"];
 
 /** How bad the worst finding is, as a number that only ever gets compared:

@@ -18,6 +18,7 @@ import { NO_PER_PACKAGE_UPDATE_NOTE } from "@/lib/copy-updates";
 import { groupItems, groupScopes, installationAt } from "@/lib/derive";
 import { packageDisplayName } from "@/lib/labels";
 import { usePackageMark } from "@/lib/package-mark";
+import { vendorAt } from "@/lib/package-places";
 import { sameScope } from "@/lib/scope";
 import {
   canUpdatePackage,
@@ -217,7 +218,9 @@ export function PackagePage() {
       <PackageTabs
         kind={group.kind}
         name={group.name}
+        scope={ref.scope}
         scopes={groupScopes(group)}
+        vendor={vendorAt(group.installations, ref.scope)}
         harnesses={group.harnesses as HarnessId[]}
         busy={mutating}
         onDelete={() => setConfirmDelete(true)}
