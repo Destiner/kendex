@@ -18,8 +18,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::lock::SettingsSeed;
+use crate::settings_toml::{Line, Row};
 
+mod env;
 mod refresh;
+pub use env::{EnvBlocked, env_blocked};
 pub use refresh::refresh_comments;
 
 pub const SETTINGS_FILE: &str = "kendex.settings.toml";
@@ -100,33 +103,55 @@ fn trim_blank_edges(lines: &[String]) -> &[String] {
     &lines[lo..hi]
 }
 
-fn is_table_header(line: &str) -> bool {
-    let trimmed = line.trim();
-    trimmed.starts_with('[') && trimmed.ends_with(']')
+/// MEMBERSHIP — whether the shell loaders read the assignments under this
+/// header. They match a lone `[env]`, and the grammar corpus records that
+/// they refuse a whole file holding any other shape
+/// (`header-with-comment`), so a key under one is a key nothing reads.
+/// Never the answer to where a table's text ends.
+pub(crate) fn loaders_read_env(line: &str) -> bool {
+    crate::settings_toml::header_of(line).is_some_and(|header| header.opens("env") && header.lone)
 }
 
-fn is_env_header(line: &str) -> bool {
-    line.trim() == "[env]"
+/// BOUNDARY — whether this row opens the `env` table, as TOML reads it.
+/// What a splice is measured against, so it must not inherit the loaders'
+/// blind spots: missing `[env] # note` here would send a seed past it and
+/// append a second `[env]`, turning a file with a typo in its header into
+/// one with two of the same table, which no reader survives.
+pub(crate) fn opens_env(row: &Row) -> bool {
+    table_row(row) && crate::settings_toml::header_of(row.text).is_some_and(|h| h.opens("env"))
 }
 
-fn assignment_key(line: &str) -> Option<String> {
-    let trimmed = line.trim();
-    if trimmed.starts_with('#') || trimmed.is_empty() || is_table_header(trimmed) {
-        return None;
-    }
-    trimmed
-        .split_once('=')
-        .map(|(key, _)| key.trim().trim_matches('"').to_owned())
-        .filter(|k| !k.is_empty())
+/// The name one row's assignment declares, by the spelling every reading
+/// of it shares. That name is what blocks a seed: inserting beside
+/// `'MODE'` because the bare spelling was not found would put one key in
+/// the file twice and stop it loading at all. A dotted key declares its
+/// first segment as a table, so `MODE.part` occupies `MODE` and blocks a
+/// seed of it exactly as a plain `MODE` would.
+pub(crate) fn assignment_key(row: &Row) -> Option<String> {
+    let (key, _, _) = row.assignment()?;
+    crate::settings_toml::key_of(key).map(|key| key.name)
+}
+
+/// Whether this row is a table header the section walk ends on. The
+/// reader's own answer: a line only reads as a table where nothing is
+/// open above it, so a bracket nested in an array is not one, and a
+/// header carrying a trailing comment still is.
+pub(crate) fn table_row(row: &Row) -> bool {
+    row.kind == Line::Table
 }
 
 pub fn extract_env_entries(template: &str) -> Vec<EnvEntry> {
     let mut entries = Vec::new();
     let mut in_env = false;
     let mut pending: Vec<String> = Vec::new();
-    for line in template.lines() {
-        if is_table_header(line) {
-            if is_env_header(line) {
+    for row in crate::settings_toml::rows(template) {
+        // A value's own lines are the value: read as structure they seed
+        // keys the template never declared.
+        if row.kind == Line::InValue {
+            continue;
+        }
+        if table_row(&row) {
+            if opens_env(&row) {
                 in_env = true;
                 pending.clear();
                 continue;
@@ -138,49 +163,37 @@ pub fn extract_env_entries(template: &str) -> Vec<EnvEntry> {
         if !in_env {
             continue;
         }
-        if line.trim().is_empty() {
-            pending.clear();
-            continue;
-        }
-        if line.trim().starts_with('#') {
-            pending.push(line.to_owned());
-            continue;
-        }
-        if let Some(key) = assignment_key(line) {
-            let mut lines = std::mem::take(&mut pending);
-            lines.push(line.to_owned());
-            entries.push(EnvEntry { key, lines });
+        match row.kind {
+            Line::Blank => pending.clear(),
+            Line::Comment => pending.push(row.text.to_owned()),
+            _ => {
+                if let Some(key) = assignment_key(&row) {
+                    let mut lines = std::mem::take(&mut pending);
+                    lines.push(row.text.to_owned());
+                    entries.push(EnvEntry { key, lines });
+                }
+            }
         }
     }
     entries
 }
 
+/// Every key the file assigns anywhere, which is the presence check
+/// seeding is held to — deliberately wider than what the loaders read.
 pub fn assigned_keys(text: &str) -> Vec<String> {
-    text.lines().filter_map(assignment_key).collect()
-}
-
-/// One line of the original with its terminator kept — the unit the
-/// byte-faithful editors splice between. Untouched lines are re-emitted
-/// exactly as read, terminator included, so CRLF files and a final line
-/// with no terminator survive every edit they are not part of.
-fn lines_keepends(text: &str) -> Vec<&str> {
-    text.split_inclusive('\n').collect()
-}
-
-/// A line's content without its terminator.
-fn content_of(line: &str) -> &str {
-    line.strip_suffix('\n')
-        .map(|line| line.strip_suffix('\r').unwrap_or(line))
-        .unwrap_or(line)
+    crate::settings_toml::rows(text)
+        .iter()
+        .filter_map(assignment_key)
+        .collect()
 }
 
 /// The terminator new lines are written with: whatever the file's first
 /// terminated line uses, `\n` where it has nothing to say.
-fn file_eol(lines: &[&str]) -> &'static str {
-    match lines
+fn file_eol(rows: &[Row]) -> &'static str {
+    match rows
         .iter()
-        .find(|line| line.ends_with('\n'))
-        .is_some_and(|line| line.ends_with("\r\n"))
+        .find(|row| row.raw.ends_with('\n'))
+        .is_some_and(|row| row.raw.ends_with("\r\n"))
     {
         true => "\r\n",
         false => "\n",
@@ -191,16 +204,14 @@ fn file_eol(lines: &[&str]) -> &'static str {
 /// the first line after the section (the next table header, or the end
 /// of the file). `None` = no `[env]` header. Seeding and refresh both
 /// splice inside this span, so they cannot disagree about where it ends.
-fn env_section(lines: &[&str]) -> Option<(usize, usize)> {
-    let start = lines
-        .iter()
-        .position(|line| is_env_header(content_of(line)))?;
-    let end = lines
+fn env_section(rows: &[Row]) -> Option<(usize, usize)> {
+    let start = rows.iter().position(opens_env)?;
+    let end = rows
         .iter()
         .enumerate()
         .skip(start + 1)
-        .find_map(|(index, line)| is_table_header(content_of(line)).then_some(index))
-        .unwrap_or(lines.len());
+        .find_map(|(index, row)| table_row(row).then_some(index))
+        .unwrap_or(rows.len());
     Some((start, end))
 }
 
@@ -223,6 +234,10 @@ fn render_entries(entries: &[&SeededEnv], eol: &str) -> String {
 /// terminator. `None` = nothing to add. Returns the new text plus the keys
 /// that were added.
 pub fn merge(original: Option<&str>, entries: &[SeededEnv]) -> Option<(String, Vec<String>)> {
+    // Nowhere to write: the plan reports the shape, and no byte moves.
+    if original.is_some_and(|text| env_blocked(text).is_some()) {
+        return None;
+    }
     let mut existing: BTreeSet<String> = original
         .map(assigned_keys)
         .unwrap_or_default()
@@ -246,45 +261,44 @@ pub fn merge(original: Option<&str>, entries: &[SeededEnv]) -> Option<(String, V
         return Some((out, added));
     };
 
-    let lines = lines_keepends(original);
-    let eol = file_eol(&lines);
-    let env = env_section(&lines);
+    let rows = crate::settings_toml::rows(original);
+    let eol = file_eol(&rows);
+    let env = env_section(&rows);
     // Where the new block lands: the end of the `[env]` section, or the end
     // of the file (with a header) when there is none.
-    let insert_at = env.map_or(lines.len(), |(_, end)| end);
+    let insert_at = env.map_or(rows.len(), |(_, end)| end);
 
     let mut block = String::new();
     // A final line with no terminator gets one — the once-only repair that
     // makes inserting after it possible at all.
-    if insert_at == lines.len()
-        && lines
+    if insert_at == rows.len()
+        && rows
             .last()
-            .is_some_and(|line| content_of(line).len() == line.len() && !line.is_empty())
+            .is_some_and(|row| row.text.len() == row.raw.len() && !row.raw.is_empty())
     {
         block.push_str(eol);
     }
     if env.is_none() {
-        if !lines.is_empty() && insert_at > 0 && !content_of(lines[insert_at - 1]).trim().is_empty()
-        {
+        if !rows.is_empty() && insert_at > 0 && !rows[insert_at - 1].text.trim().is_empty() {
             block.push_str(eol);
         }
         block.push_str("[env]");
         block.push_str(eol);
-    } else if insert_at > 0 && !content_of(lines[insert_at - 1]).trim().is_empty() {
+    } else if insert_at > 0 && !rows[insert_at - 1].text.trim().is_empty() {
         block.push_str(eol);
     }
     block.push_str(&render_entries(&missing, eol));
-    if insert_at < lines.len() && !content_of(lines[insert_at]).trim().is_empty() {
+    if insert_at < rows.len() && !rows[insert_at].text.trim().is_empty() {
         block.push_str(eol);
     }
 
     let mut out = String::with_capacity(original.len() + block.len());
-    for line in &lines[..insert_at] {
-        out.push_str(line);
+    for row in &rows[..insert_at] {
+        out.push_str(row.raw);
     }
     out.push_str(&block);
-    for line in &lines[insert_at..] {
-        out.push_str(line);
+    for row in &rows[insert_at..] {
+        out.push_str(row.raw);
     }
     Some((out, added))
 }

@@ -42,6 +42,8 @@ mod planned;
 pub mod posture;
 mod removal;
 mod scope_writes;
+mod settings_scan;
+pub use settings_scan::settings_templates;
 mod scoring;
 mod set_change;
 mod stale;
@@ -159,7 +161,8 @@ fn plan_scope_once(
     // Notes about the scope rather than about any one item: what the
     // settings seed found, what the reserved-name move did, what the git
     // posture changed.
-    let mut scope_notes = plan_settings_seed(scope, &state, &mut new_lock, &mut ops, &mut drift)?;
+    let mut scope_notes =
+        plan_settings_seed(scope, &state, options, &mut new_lock, &mut ops, &mut drift)?;
 
     // Trash ops all pass one guard: writes for this pass are already
     // planned, so anything still wanted is known, and no path goes to the

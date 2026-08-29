@@ -121,11 +121,18 @@ impl Op {
     pub(super) fn run(&self, env: &Env) -> Result<()> {
         match self {
             Op::WriteFile { path, bytes, pre } => {
-                pre.check(path)?;
-                if let Some(parent) = path.parent() {
-                    fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
+                // A precondition that names the file's kind is checked and
+                // written through one handle; every other one keeps the
+                // ordinary check-then-write, because `HashIs` deliberately
+                // follows a link a person set up themselves.
+                match super::plain::open(path, pre)? {
+                    Some(plain) => plain.write(path, bytes),
+                    None => {
+                        pre.check(path)?;
+                        super::plain::ensure_parent(path)?;
+                        fs::write(path, bytes).map_err(|e| CoreError::io(path, e))
+                    }
                 }
-                fs::write(path, bytes).map_err(|e| CoreError::io(path, e))
             }
             Op::WriteTree { root, files, pre } => write_tree(root, files, pre),
             Op::Symlink { link, target, pre } => {
@@ -162,8 +169,20 @@ impl Op {
                 absent_is_done,
             } => trash(env, path, pre, *absent_is_done),
             Op::EditFile { path, edits, pre } => {
-                pre.check(path)?;
-                let current = crate::fs::read_if_exists(path)?.unwrap_or_default();
+                // The same one-handle rule, and here it covers the read
+                // too: an edit that read the name a second time could
+                // apply its edits to somebody else's file.
+                let plain = super::plain::open(path, pre)?;
+                let current = match &plain {
+                    // Strictly, as `read_if_exists` reads: a lossy decode
+                    // would put U+FFFD where somebody's bytes were and
+                    // write the replacement back over them.
+                    Some(plain) => plain.text(path)?,
+                    None => {
+                        pre.check(path)?;
+                        crate::fs::read_if_exists(path)?.unwrap_or_default()
+                    }
+                };
                 let mut updated = current.clone();
                 for edit in edits {
                     updated = edit
@@ -173,13 +192,16 @@ impl Op {
                             message,
                         })?;
                 }
-                if updated != current {
-                    if let Some(parent) = path.parent() {
-                        fs::create_dir_all(parent).map_err(|e| CoreError::io(parent, e))?;
-                    }
-                    fs::write(path, updated).map_err(|e| CoreError::io(path, e))?;
+                if updated == current {
+                    return Ok(());
                 }
-                Ok(())
+                match plain {
+                    Some(plain) => plain.write(path, updated.as_bytes()),
+                    None => {
+                        super::plain::ensure_parent(path)?;
+                        fs::write(path, updated).map_err(|e| CoreError::io(path, e))
+                    }
+                }
             }
             Op::WriteLock { path, lock, pre } => {
                 pre.check(path)?;

@@ -442,3 +442,180 @@ fn catalog_text_reaches_a_note_escaped() {
     assert!(!notes[0].contains('\u{1b}'), "{notes:?}");
     assert!(notes[0].contains("\\u{1b}[31m"), "{notes:?}");
 }
+
+/// A container the reader does not track ends the `[env]` section where
+/// no table starts, and the seed lands inside somebody's value. Both
+/// shapes: a nested `[` taken for a header, and a header the boundary
+/// test failed to recognise.
+#[test]
+fn a_seed_lands_after_the_env_table_and_never_inside_a_value() {
+    let seeded = [SeededEnv {
+        entry: EnvEntry {
+            key: "DEPTH".to_owned(),
+            lines: vec!["# How deep.".to_owned(), "DEPTH = \"2\"".to_owned()],
+        },
+        owner: "review".to_owned(),
+    }];
+
+    // A nested array bracket is not a table header.
+    let nested = "[env]\nLIST = [\n  []\n]\n";
+    let (text, added) = merge(Some(nested), &seeded).expect("DEPTH is missing");
+    assert_eq!(added, vec!["DEPTH".to_owned()]);
+    assert!(
+        text.starts_with("[env]\nLIST = [\n  []\n]\n"),
+        "the array must come through whole:\n{text}"
+    );
+    assert!(text.contains("DEPTH = \"2\""), "{text}");
+
+    // And a header the boundary test used to miss ends the section.
+    let commented = "[env]\nMODE = \"a\"\n\n[other] # note\nKEEP = \"b\"\n";
+    let (text, _) = merge(Some(commented), &seeded).expect("DEPTH is missing");
+    let depth = text.find("DEPTH").expect("seeded");
+    let other = text.find("[other]").expect("kept");
+    assert!(
+        depth < other,
+        "the seed belongs to [env], not [other]:\n{text}"
+    );
+}
+
+/// Where a table ENDS is TOML's answer, not the loaders'. A header the
+/// loaders refuse is still that table to TOML, so a seed belongs inside
+/// it: missing it appends a second `[env]`, and a file with a typo in one
+/// header becomes a file with two of the same table, which nothing reads
+/// at all.
+#[test]
+fn a_header_the_loaders_refuse_is_still_the_table_a_seed_lands_in() {
+    let seeded = [SeededEnv {
+        entry: EnvEntry {
+            key: "DEPTH".to_owned(),
+            lines: vec!["# How deep.".to_owned(), "DEPTH = \"2\"".to_owned()],
+        },
+        owner: "review".to_owned(),
+    }];
+    let file = "[env] # the table\nMODE = \"a\"\n\n[other]\nKEEP = \"b\"\n";
+    let (text, _) = merge(Some(file), &seeded).expect("DEPTH is missing");
+
+    // Counted through the reader rather than by string, because what
+    // matters is how many rows OPEN the table, not how the header reads.
+    assert_eq!(
+        crate::settings_toml::rows(&text)
+            .iter()
+            .filter(|row| opens_env(row))
+            .count(),
+        1,
+        "a second [env] would stop the file loading at all:\n{text}"
+    );
+    let depth = text.find("DEPTH").expect("seeded");
+    let other = text.find("[other]").expect("kept");
+    assert!(depth < other, "the seed belongs to [env]:\n{text}");
+}
+
+/// And the other half of the pair stays the loaders': a key under a header
+/// they refuse is a key nothing reads, which is what the view reports.
+#[test]
+fn membership_tracks_the_loaders_where_the_boundary_tracks_toml() {
+    assert!(loaders_read_env("[env]"));
+    for refused in ["[env] # the table", "[other]", "[envx]", "[ env ]"] {
+        assert!(!loaders_read_env(refused), "{refused}");
+    }
+    let sites = crate::settings_file::sites("[env] # the table\nMODE = \"a\"\n");
+    assert!(
+        matches!(
+            crate::settings_file::current_of(&sites, "MODE"),
+            crate::settings_file::Current::Ambiguous { .. }
+        ),
+        "a key no loader reads is not a value to compare with a default"
+    );
+}
+
+/// Every spelling TOML gives the env table is the table a seed lands in.
+/// Missing one appends a second `[env]`, which is the duplicate-table
+/// corruption this has now been fixed for three spellings running.
+#[test]
+fn any_spelling_of_the_env_header_is_the_table_a_seed_lands_in() {
+    let seeded = [SeededEnv {
+        entry: EnvEntry {
+            key: "DEPTH".to_owned(),
+            lines: vec!["# How deep.".to_owned(), "DEPTH = \"2\"".to_owned()],
+        },
+        owner: "review".to_owned(),
+    }];
+    for header in ["[env]", "[env] # note", "[ env ]", "[\"env\"]", "['env']"] {
+        let file = format!("{header}\nMODE = \"a\"\n\n[other]\nKEEP = \"b\"\n");
+        let (text, _) = merge(Some(&file), &seeded).expect("DEPTH is missing");
+        assert_eq!(
+            crate::settings_toml::rows(&text)
+                .iter()
+                .filter(|row| opens_env(row))
+                .count(),
+            1,
+            "{header}: a second env table would stop the file loading:\n{text}"
+        );
+        let depth = text.find("DEPTH").expect("seeded");
+        let other = text.find("[other]").expect("kept");
+        assert!(depth < other, "{header}: the seed belongs to env:\n{text}");
+    }
+}
+
+/// `[[env]]` declares `env` as an array of tables, and TOML lets one name
+/// be a table or an array of tables, never both. So there is nowhere a
+/// seed can go: writing `[env]` beside it declares `env` twice and the
+/// file stops loading, and writing inside it puts a setting where no
+/// loader looks. The file is left exactly as it was.
+#[test]
+fn an_env_declared_as_an_array_of_tables_is_refused_rather_than_seeded() {
+    let seeded = [SeededEnv {
+        entry: EnvEntry {
+            key: "DEPTH".to_owned(),
+            lines: vec!["# How deep.".to_owned(), "DEPTH = \"2\"".to_owned()],
+        },
+        owner: "review".to_owned(),
+    }];
+    let file = "[[env]]\nMODE = \"a\"\n";
+    assert_eq!(env_blocked(file), Some(EnvBlocked::Array(1)));
+    assert_eq!(
+        merge(Some(file), &seeded),
+        None,
+        "nothing may be written into a file with nowhere to write"
+    );
+}
+
+/// A top-level assignment of `env` declares the name the seeded table
+/// would open. `env = "a"` makes it a value; `env.MODE = "a"` makes it a
+/// table by dotted key, which a `[env]` header may not reopen. Either way
+/// appending `[env]` defines `env` twice and the file stops parsing, so
+/// the shape is refused where `[[env]]` already is.
+#[test]
+fn a_top_level_env_assignment_is_refused_rather_than_seeded() {
+    let seeded = [SeededEnv {
+        entry: EnvEntry {
+            key: "DEPTH".to_owned(),
+            lines: vec!["# How deep.".to_owned(), "DEPTH = \"2\"".to_owned()],
+        },
+        owner: "review".to_owned(),
+    }];
+    for (file, line) in [
+        ("env.MODE = \"a\"\n", 1),
+        ("env = \"a\"\n", 1),
+        ("# note\nenv.\"MODE\" = \"a\"\n[other]\nX = \"y\"\n", 2),
+    ] {
+        assert_eq!(
+            env_blocked(file),
+            Some(EnvBlocked::Assigned(line)),
+            "{file}"
+        );
+        assert_eq!(
+            merge(Some(file), &seeded),
+            None,
+            "{file}: nothing may be written into a file with nowhere to write"
+        );
+    }
+    // Under a header the name belongs to that table, not the top level,
+    // so the `[env]` a seed opens is still free.
+    let nested = "[other]\nenv.MODE = \"a\"\n";
+    assert_eq!(env_blocked(nested), None);
+    assert!(
+        merge(Some(nested), &seeded).is_some(),
+        "another table's env is not this file's env"
+    );
+}
