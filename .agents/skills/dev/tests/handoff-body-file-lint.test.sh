@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vacuous-suite-scan: absence-subject
 # Regression lint: reject multiline inline --body in dev workflow docs.
 #
 # A `linear.sh comments create ... --body "` whose opening quote does NOT close
@@ -19,8 +20,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKFLOWS_DIR="$(cd "$SCRIPT_DIR/../workflows" && pwd)"
 
 offenders=0
+scanned=0
 
 while IFS= read -r -d '' file; do
+  scanned=$((scanned + 1))
   lineno=0
   while IFS= read -r line; do
     lineno=$((lineno + 1))
@@ -42,6 +45,13 @@ done < <(find "$WORKFLOWS_DIR" -type f -name '*.md' -print0)
 
 if (( offenders > 0 )); then
   echo "FAIL: $offenders multiline inline --body occurrence(s) found"
+  exit 1
+fi
+
+# An absent offender means nothing when there was nothing to read: a
+# workflows/ holding no markdown reports every line clean.
+if (( scanned == 0 )); then
+  echo "FAIL: no markdown found under $WORKFLOWS_DIR, so this lint read nothing" >&2
   exit 1
 fi
 
