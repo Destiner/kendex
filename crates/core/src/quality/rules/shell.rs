@@ -49,6 +49,14 @@ struct SafetyBypass;
 /// finding blocks an install by itself — so precision is what the tier is
 /// worth. Destructive commands are covered by `dangerous-commands`, which
 /// looks at what is being done rather than which flag turns off a prompt.
+///
+/// The same calibration settles where on a line a switch counts. Reading a
+/// document's every mention as a use rated the guard skill that exists to
+/// stop `--no-verify` at Critical for the sentence that warns about it.
+/// A switch a document writes inside a code span is that document naming
+/// the switch; a switch standing as code is a switch, in whatever language
+/// the file is written. Every needle goes through [`Line::counts_at`],
+/// which answers that and nothing else.
 impl AuditRule for SafetyBypass {
     fn id(&self) -> &'static str {
         "safety-bypass"
@@ -56,13 +64,18 @@ impl AuditRule for SafetyBypass {
 
     fn check(&self, prepared: &Prepared) -> Outcome {
         scan_docs(prepared, AUTHORED, |doc, line, findings| {
+            let counts = |needle: &str| {
+                line.occurrences(needle)
+                    .into_iter()
+                    .any(|at| line.counts_at(at))
+            };
             for (needle, what) in BYPASS {
-                if line.has(needle) {
+                if counts(needle) {
                     findings.push(self.finding(doc, line, needle, what, Severity::Critical));
                 }
             }
             for (needle, what) in BYPASS_PROSE {
-                if line.has(needle) {
+                if counts(needle) {
                     findings.push(self.finding(doc, line, needle, what, Severity::High));
                 }
             }

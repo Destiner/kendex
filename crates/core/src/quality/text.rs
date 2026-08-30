@@ -78,6 +78,12 @@ pub struct Line {
     /// skill's supporting files. A code fence is not one of these: see
     /// `lines`.
     pub describing: bool,
+    /// This line's inline code spans, as byte ranges into `lower`. Only a
+    /// prose line has any — inside a code block, and in a file that is not
+    /// markdown at all, a backtick is the code's own character. A span may
+    /// open on one line and close on a later one, so these are read for the
+    /// whole document at once: see `lines`.
+    pub spans: Vec<(usize, usize)>,
 }
 
 impl Line {
@@ -130,6 +136,28 @@ impl Line {
             false => base,
         }
     }
+
+    /// Whether what stands at `at` counts as code, or is a document naming
+    /// it.
+    ///
+    /// A markdown code span is the one quotation read here. A README
+    /// writing `--no-verify` in backticks is naming the switch; the same
+    /// characters standing in the open are the switch. Everything else
+    /// counts — a `#` comment, a `case` arm's pattern, a string in a
+    /// language this does not parse — because each of those is a switch
+    /// written into a file a harness loads, and no reading of what the
+    /// file would then do with it holds for every shape a file takes.
+    ///
+    /// The spans are markdown's own, already read into `spans`: a run of
+    /// backticks closes only on a run of its own length, one that never
+    /// meets its match quotes nothing, and a run reaches no further than
+    /// the block it opened in.
+    pub fn counts_at(&self, at: usize) -> bool {
+        !self
+            .spans
+            .iter()
+            .any(|(start, end)| at >= *start && at < *end)
+    }
 }
 
 /// Deobfuscate every text this input carries and split it into lines.
@@ -149,7 +177,7 @@ pub fn prepare(input: AuditInput) -> Prepared {
             docs.push(Doc {
                 location: input.location.clone(),
                 role: super::DocRole::Text,
-                lines: lines(&text),
+                lines: lines(&text, is_markdown(&input.location)),
             });
             Content::Document { text }
         }
@@ -208,10 +236,11 @@ fn tree_docs(
             let location = format!("{root}/{}", crate::paths::slashed(&file.path));
             let supporting = is_supporting(&file.path);
             let text = clean(location.clone(), &text);
+            let split = lines(&text, is_markdown(&location));
             docs.push(Doc {
                 lines: match supporting {
-                    true => lines(&text).into_iter().map(Line::as_description).collect(),
-                    false => lines(&text),
+                    true => split.into_iter().map(Line::as_description).collect(),
+                    false => split,
                 },
                 role: super::DocRole::Text,
                 location,
@@ -271,7 +300,7 @@ fn hook_docs(
     docs.push(Doc {
         location: format!("{root} (command)"),
         role: super::DocRole::Text,
-        lines: lines(&command),
+        lines: lines(&command, false),
     });
     // What the harness stores beside the command, not what it runs: one
     // value per line, one document, for the rules about values.
@@ -280,7 +309,7 @@ fn hook_docs(
         docs.push(Doc {
             location: format!("{root} (entry)"),
             role: super::DocRole::Values,
-            lines: lines(&values),
+            lines: lines(&values, false),
         });
         values
     });
@@ -289,31 +318,64 @@ fn hook_docs(
         docs.push(Doc {
             location: root.to_owned(),
             role: super::DocRole::Text,
-            lines: lines(&body),
+            lines: lines(&body, false),
         });
         body
     });
     (command, values, script)
 }
 
-/// Split into lines, marking the ones that are quoting somebody else.
+/// Split into lines, marking the ones that are quoting somebody else and
+/// reading the code spans of the ones that are prose.
 ///
-/// A code fence is deliberately *not* one of those marks. A fenced `sh`
-/// block in a SKILL.md is not an illustration of the instruction, it is the
-/// instruction — it is the shape every real skill writes its commands in,
-/// and exempting it would mean the gate blocks the unnatural spelling of an
-/// attack and waves the natural one through. A blockquote is different: it
-/// is markdown's way of saying "these are someone else's words".
-pub fn lines(text: &str) -> Vec<Line> {
-    text.lines()
+/// A code fence is deliberately *not* one of the quoting marks. A fenced
+/// `sh` block in a SKILL.md is not an illustration of the instruction, it
+/// is the instruction — it is the shape every real skill writes its
+/// commands in, and exempting it would mean the gate blocks the unnatural
+/// spelling of an attack and waves the natural one through. A blockquote is
+/// different: it is markdown's way of saying "these are someone else's
+/// words".
+///
+/// What a fence does decide is which marks quote *inside* the line. A
+/// markdown document has prose to tell from its blocks at all; every other
+/// file is code from its first byte, and `markdown` says which this is.
+///
+/// The code spans come from here rather than from a line: a run of
+/// backticks may close on a later line, so only something holding the
+/// whole document can say which of them ever meet a match.
+pub fn lines(text: &str, markdown: bool) -> Vec<Line> {
+    let raw: Vec<&str> = text.lines().collect();
+    let lower: Vec<String> = raw.iter().map(|line| flatten(line)).collect();
+    let prose = match markdown {
+        true => crate::render::prose_lines(text),
+        false => vec![false; raw.len()],
+    };
+    let spans = crate::render::code_spans_by_line(&lower, &prose);
+    raw.iter()
+        .zip(lower)
+        .zip(spans)
         .enumerate()
-        .map(|(index, raw)| Line {
+        .map(|(index, ((raw, lower), spans))| Line {
             number: index + 1,
-            lower: flatten(raw),
+            lower,
             describing: raw.trim_start().starts_with('>'),
-            text: raw.to_owned(),
+            spans,
+            text: (*raw).to_owned(),
         })
         .collect()
+}
+
+/// Whether this document is markdown, the one language whose quotation
+/// these rules read.
+///
+/// The parked suffix comes off first. `SKILL.md.disabled` is the same
+/// markdown as `SKILL.md` and the audit reads it as one, so judging it by
+/// the trailing extension would make switching an item off turn its code
+/// spans back into findings.
+fn is_markdown(location: &str) -> bool {
+    let lower = location.to_ascii_lowercase();
+    let base = lower.strip_suffix(".disabled").unwrap_or(&lower);
+    base.ends_with(".md") || base.ends_with(".markdown")
 }
 
 /// ASCII-lowercase with every whitespace byte turned into a space. Both
