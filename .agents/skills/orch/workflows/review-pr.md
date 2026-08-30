@@ -138,6 +138,7 @@ Decisions:
 [For each decision whose path failed verification: "- decision index lookup failed for [DECISION_ID]"]
 [If none: "- No linked decisions found."]
 <if re-review cycle>
+Diff-range: [a § 4 or § 7 re-entry only — `[PRE_SHA]...HEAD` when that section's `pre_delegate_sha` read returned a sha, the bare word `unavailable` when it returned `null` or nothing; omit the line on a § 1 entry]
 Re-review cycle [N]. Already resolved — do NOT re-report the entries listed below, unless you check a Fixed entry against the current diff and the defect is still there: report that one again, copying that entry's location and description verbatim and naming its recorded commit sha in your recommendation, or saying it was recorded then dropped in a rebase when the entry carries no sha, so the stale entry can be superseded. A Fixed entry you did not check, and every Escalated entry, stays suppressed.
 - Fixed: [For each fixed_item: "[LOCATION] | [DESCRIPTION] — fixed in [COMMIT_SHA]"; an entry whose commit is a `dropped:<sha>` marker prints "recorded, then dropped in a rebase" in place of the sha]
 - Escalated: [For each escalated_item: "[LOCATION] | [DESCRIPTION] — [REASON]"]
@@ -149,12 +150,12 @@ Fresh session — you have no memory of earlier cycles. Read your prior report [
 
 `[PRIOR_REPORT_PATH]` is that reviewer's most recent `review-[AGENT]-*.json` from state `json_paths`.
 
-**External review** (only when requested). Run `second-opinion …`; it backgrounds itself and prints when to check.
+**External review** (only when requested). Run `second-opinion …`; it backgrounds itself and prints when to check. `[RANGE_FLAG]` is `--range [PRE_SHA]...HEAD` on a re-entry whose `pre_delegate_sha` read returned a sha, and empty otherwise, leaving the script's own `origin/BASE...HEAD` default: the external lane sits in the scoped panel and takes the panel's boundary.
 
 ```bash
 mkdir -p [WORKTREE_PATH]/tmp
 .agents/skills/orch/scripts/git-context timestamp compact
-.agents/skills/second-opinion/scripts/second-opinion review --cwd [WORKTREE_PATH] --output [WORKTREE_PATH]/tmp/review-external-[TIMESTAMP_FROM_PREVIOUS_COMMAND].json --foreground
+.agents/skills/second-opinion/scripts/second-opinion review --cwd [WORKTREE_PATH] --output [WORKTREE_PATH]/tmp/review-external-[TIMESTAMP_FROM_PREVIOUS_COMMAND].json --foreground [RANGE_FLAG]
 ```
 
 Execute the exact command printed after `wait:`. Exit 75 means completion is still recoverable; process other reviewer events, then rerun the same command. Exit 124 is the supervisor's published terminal deadline result. When terminal, validate its artifact like a reviewer JSON, with `review_delegated_at` as the freshness boundary (the § 3.1 sweep covers a silent finisher):
@@ -269,13 +270,10 @@ Omit empty categories. Decline any item that cannot affect real usage with a one
 
 ### At The Cap
 
-The cap decides before any delegation. Read the re-review cycles already entered:
+The cap decides before any delegation. Read the re-review cycles already entered and the cap they are measured against:
 
 ```bash
 .agents/skills/orch/scripts/workflow-state get [ISSUE_ID] '{rereview_cycles: (.rereview_cycles // 0)}'
-```
-
-```bash
 .agents/skills/orch/scripts/orch-env REVIEW_MAX_CYCLES 4
 ```
 
