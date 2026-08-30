@@ -96,6 +96,68 @@ and a repository keeping one entry per file names that tree instead
 An empty list is a config error; the way to switch the check off is to drop
 it from `GROWTH_GUARDS_CHECKS`.
 
+## prose
+
+Instruction markdown states the rule that holds now. A history reference in
+a file an agent loads fails: a calendar date (`20YY-MM-DD`), a three- or
+four-digit issue number after `#`, or one of the words `previously`,
+`used to`, `no longer`, `reverted`, `an earlier`, `earlier round`,
+`incident`, `historically`, `originally`, `at the time`. An agent acts on
+the rule, and a rule wrapped in the story of how it got there costs every
+reader the same paragraph to discard — so the story goes in the commit that
+made the change, where it stays readable and stops being reread.
+
+Matching is case-insensitive (the banned strings are words, and a
+sentence-initial capital is the same word) and whole-word, so `incidental`
+and `unreverted` never fire. The issue-number shape takes no leading
+boundary — a reference glued to a filename (`spec.md#1204`) is the same
+reference — and the character after the digit run must be neither a digit
+nor a hex letter, which is what keeps a longer token out: `#12345`,
+`#1234ab` and `#0088cc` all pass. Three- and four-digit shorthand still
+fires: `#900` is also how issue 900 is written, and no boundary can tell the
+two apart.
+
+Scope is the whole rule. `GROWTH_GUARDS_PROSE_PATHS` is a space-separated
+list of shell globs matched against the full repo-relative path, `*`
+crossing `/` as in the excludes lists, and it REPLACES the default rather
+than adding to it. The default names what an agent harness loads on its own
+— a skill's entry point and its workflows, an agent definition, and the
+repo-level instruction files — each name spelled twice because `*` crosses
+`/` but never stands in for the separator itself, the second spelling also
+reaching a rendered copy under `.claude/` or `.agents/`:
+
+```
+SKILL.md */SKILL.md AGENTS.md */AGENTS.md CLAUDE.md */CLAUDE.md workflows/*.md */workflows/*.md agents/*.md */agents/*.md
+```
+
+Everything else keeps its history: a README, a reference doc under a skill,
+a changelog, a design record. There is no excludes list — narrowing the path
+list is the one control, and an empty list is a config error (the way to
+switch the check off is to drop it from `GROWTH_GUARDS_CHECKS`). A list
+matching no tracked file is a clean pass that scans nothing.
+
+`git grep --cached` drops three shapes at a configured path with no status
+and no stderr — a symlink entry, a submodule gitlink, and a blob it calls
+binary — so the walk classifies every matched record itself before the scan.
+
+A **symlink**, a **gitlink**, and a blob carrying a **NUL byte** in its
+leading bytes are each named as unmeasured and counted apart from the clean
+total, the way `changelog-entries` names one. The lane measures the file at
+the path it was pointed at and does not read through a link, so the standard
+dual-harness shape — a root `CLAUDE.md` tracked as a link to `AGENTS.md`,
+a rendered `.claude/CLAUDE.md` linking back to it — is a pass that names
+both links and measures the one tracked file there is. A tally line carries
+the count, and the clean `no tracked file matches` verdict is printed only
+when nothing was skipped: a path that matched and was named would otherwise
+send its reader to widen a glob that was already right.
+
+That NUL sample is the whole binary rule here: git's own is taken from the
+path's userdiff driver, so `*.md -diff` would make it call a plain text file
+binary, and the scan therefore runs with `--text` — the walk has already
+removed everything this lane considers unreadable, so nothing is left for
+git to drop. A blob the walk cannot read is a collection error, never a
+skip.
+
 ## commit-msg
 
 Conventional-commit gate over one message, shaped for the git `commit-msg`

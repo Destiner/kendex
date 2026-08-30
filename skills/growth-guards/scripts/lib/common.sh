@@ -19,6 +19,13 @@ set -euo pipefail
 # with the source unfound, rather than quietly resolving somewhere else.
 # shellcheck source=paths.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/paths.sh"
+# The configured-path-list concept, whole: the glob list, the walk, and what
+# a lane may measure at a matched path. Its helpers call back into this file,
+# which is why it is sourced here rather than by each lane — resolution is at
+# call time, so the order of the two is free.
+# not-a-path: same bootstrap as above; the idiom it loads is not available yet.
+# shellcheck source=configured-paths.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/configured-paths.sh"
 
 GG_TAB="$(printf '\t')"
 GG_VIOLATIONS=0
@@ -31,6 +38,12 @@ GG_SETTINGS_INDEX_OWNED=0
 # In-flight staging file for gg_install_file, so an interrupt between its
 # creation and its rename leaves nothing beside the destination.
 GG_INSTALL_TMP=""
+# Extra `git grep` flags for gg_grep_lane, set by a check before it calls the
+# lane and empty for every check that does not. Case sensitivity is the one
+# thing it carries: a lane banning comment markers or lint pragmas matches
+# their exact spelling, while a lane banning WORDS wants -i, where a
+# sentence-initial capital is the same word.
+GG_GREP_LANE_FLAGS=()
 
 gg_config_error() {
   echo "::error::${GG_CHECK:-growth-guards}: $*" >&2
@@ -307,12 +320,12 @@ gg_grep_lane() { # LABEL ERE REMEDY PATHSPEC... — numbered violations on stdou
   local label="$1" ere="$2" remedy="$3" status=0 f hit_status hit
   shift 3
   gg_require_merged_index "$@"
-  LC_ALL=C git grep --cached -lIzE "$ere" -- "$@" >"$GG_TMP/lane.z" 2>"$GG_TMP/lane.err" || status=$?
+  LC_ALL=C git grep --cached -lIzE ${GG_GREP_LANE_FLAGS[@]+"${GG_GREP_LANE_FLAGS[@]}"} "$ere" -- "$@" >"$GG_TMP/lane.z" 2>"$GG_TMP/lane.err" || status=$?
   gg_grep_guard "$status" "$GG_TMP/lane.err" "scanning tracked files for $label"
   while IFS= read -r -d '' f; do
     gg_is_excluded "$f" && continue
     hit_status=0
-    LC_ALL=C git grep --cached -nIE "$ere" -- ":(literal)$f" >"$GG_TMP/lane.hits" 2>"$GG_TMP/lane.err" || hit_status=$?
+    LC_ALL=C git grep --cached -nIE ${GG_GREP_LANE_FLAGS[@]+"${GG_GREP_LANE_FLAGS[@]}"} "$ere" -- ":(literal)$f" >"$GG_TMP/lane.hits" 2>"$GG_TMP/lane.err" || hit_status=$?
     gg_grep_guard "$hit_status" "$GG_TMP/lane.err" "detailing the $label hits in '$f'"
     # This file just listed as containing hits; anything but a clean re-scan
     # (including "no matches") means the measurement is broken.
