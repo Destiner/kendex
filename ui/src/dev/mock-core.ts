@@ -57,11 +57,36 @@ export const coreHandlers: Record<string, Handler> = {
   app_update_channel: () => {
     switch (wanted("update")) {
       case "managed":
-        return { kind: "managed", command: "paru -S kendex-bin" };
+        return {
+          kind: "managed",
+          manager: "an AUR helper",
+          command: "paru -S kendex-bin",
+        };
       case "unknown":
         return { kind: "unknown" };
       default:
         return { kind: "direct" };
+    }
+  },
+  // What the card owes a person about the `kendex` command beside the app.
+  // Null is the ordinary machine: no command here, or one Update now
+  // carries across itself.
+  app_update_command_channel: () => {
+    switch (wanted("update")) {
+      case "commandManaged":
+        return {
+          kind: "managed",
+          manager: "Homebrew",
+          command: "brew upgrade kendex-cli",
+        };
+      case "commandPrivilege":
+        return {
+          kind: "needsPrivilege",
+          path: "/usr/local/bin/kendex",
+          command: "sudo kendex update",
+        };
+      default:
+        return null;
     }
   },
   // The mock browser harness has no install to replace, so the successful

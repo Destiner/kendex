@@ -17,14 +17,69 @@ export const commands = {
 	 */
 	appUpdateChannel: () => typedError<InstallChannel, string>(__TAURI_INVOKE("app_update_channel")),
 	/**
-	 *  Replace this install with the latest release and relaunch into it. The
-	 *  manifest names a download and the signature over it; the release's own
-	 *  digests document names which download this release published for this
-	 *  target, and the bytes are held to both before anything is installed.
-	 *  The discovery feed never supplies an install URL. A failure leaves the
-	 *  running app untouched and usable.
+	 *  What the card has to say about the `kendex` command beside this app:
+	 *  the channel that owns it where another installer does, the one command
+	 *  that moves it where it is kendex's own but sits where this app cannot
+	 *  write, and nothing where there is none or where Update now carries it
+	 *  across itself.
+	 * 
+	 *  Without this the app replaces itself, restarts, and clears its card
+	 *  while the terminal command stays on the old release with nothing on
+	 *  screen having said so — the silent divergence this issue was written
+	 *  about, arrived at from the other side.
 	 */
-	appUpdateInstall: () => typedError<null, string>(__TAURI_INVOKE("app_update_install")),
+	appUpdateCommandChannel: () => typedError<
+/**
+ *  Another installer owns the command; `manager` names it and
+ *  `command` brings it current.
+ */
+{ kind: "managed"; manager: string; command: string } | 
+/**
+ *  Nothing names an owner and no record proves the file is kendex's,
+ *  so there is no name to print and no command to offer.
+ */
+{ kind: "unknown" } | 
+/**
+ *  Kendex's own command, where this app cannot write. `command` is
+ *  what carries it across with the privilege the app lacks.
+ */
+{ kind: "needsPrivilege"; path: string; command: string } | null, string>(__TAURI_INVOKE("app_update_command_channel")),
+	/**
+	 *  Replace this install with the latest release and relaunch into it,
+	 *  carrying across a `kendex` command that is kendex's to replace. One
+	 *  another installer owns stays where it is, named on the card before this
+	 *  runs; `shown` is what that card said, so a command that changed since is
+	 *  refused rather than acted on in silence. The manifest names a download
+	 *  and the signature over it, the release's own digests document names what
+	 *  this release published for this target, and the app's bytes are held to
+	 *  both. The discovery feed never supplies an install URL, and the command's
+	 *  bytes are held to the key the CLI holds them to. A failure leaves the
+	 *  running app untouched and usable.
+	 * 
+	 *  The command moves first. What this flow's notice card reads is the
+	 *  app's own baked version, so the app is the state marker here and is
+	 *  written last — the mirror of `kendex update`, where the command's baked
+	 *  version is the marker and the command is written last. A command that
+	 *  will not move therefore leaves both halves where they were and the card
+	 *  still offering the release, where an app already replaced and relaunched
+	 *  would report itself current and never come back for the command.
+	 */
+	appUpdateInstall: (shown: 
+/**
+ *  Another installer owns the command; `manager` names it and
+ *  `command` brings it current.
+ */
+{ kind: "managed"; manager: string; command: string } | 
+/**
+ *  Nothing names an owner and no record proves the file is kendex's,
+ *  so there is no name to print and no command to offer.
+ */
+{ kind: "unknown" } | 
+/**
+ *  Kendex's own command, where this app cannot write. `command` is
+ *  what carries it across with the privilege the app lacks.
+ */
+{ kind: "needsPrivilege"; path: string; command: string } | null) => typedError<null, string>(__TAURI_INVOKE("app_update_install", { shown })),
 	scanMachine: () => typedError<ScanResult, string>(__TAURI_INVOKE("scan_machine")),
 	getSettings: () => typedError<SettingsRead, string>(__TAURI_INVOKE("get_settings")),
 	/**
@@ -805,6 +860,33 @@ export type CatalogSummary = {
 };
 
 /**
+ *  What the sidebar card says about the `kendex` command beside the app,
+ *  before Update now is pressed — afterwards the app has restarted and
+ *  there is no card left to say it on. `None` where there is nothing to
+ *  say: no command here, or one Update now carries across itself.
+ * 
+ *  Every string is fixed text decided by which arm ran, save the path,
+ *  which names one file to a person who may have several — the rule the
+ *  [`InstallChannel`] command strings already live under.
+ */
+export type CommandNotice = 
+/**
+ *  Another installer owns the command; `manager` names it and
+ *  `command` brings it current.
+ */
+{ kind: "managed"; manager: string; command: string } | 
+/**
+ *  Nothing names an owner and no record proves the file is kendex's,
+ *  so there is no name to print and no command to offer.
+ */
+{ kind: "unknown" } | 
+/**
+ *  Kendex's own command, where this app cannot write. `command` is
+ *  what carries it across with the privilege the app lacks.
+ */
+{ kind: "needsPrivilege"; path: string; command: string };
+
+/**
  *  A package whose presence changes what this one does, and whether it is
  *  installed in this scope.
  */
@@ -1465,10 +1547,17 @@ export type InstallChannel =
 /**  The running install is ours to replace. */
 { kind: "direct" } | 
 /**
- *  A system package manager owns these bytes; `command` brings them
- *  current and is the only thing to offer.
+ *  A system package manager owns these bytes. `manager` names it and
+ *  `command` brings them current; both are decided where the manager
+ *  is detected, so nothing downstream has to read a name back out of
+ *  the command string and guess.
+ * 
+ *  `manager` is not optional. Every branch that reaches here knows
+ *  which installer it found, and a detection that could not say who
+ *  owns a path is [`InstallChannel::Unknown`] — which names nobody and
+ *  offers nothing, and is where the honest degradation already lives.
  */
-{ kind: "managed"; command: string } | 
+{ kind: "managed"; manager: string; command: string } | 
 /**
  *  Not recognised: say a release is out, never replace anything, never
  *  invent a command.

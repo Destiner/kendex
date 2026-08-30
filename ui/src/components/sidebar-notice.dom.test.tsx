@@ -6,15 +6,18 @@
 import userEvent from "@testing-library/user-event";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppUpdateView, InstallChannel } from "@/bindings";
+import type { AppUpdateView, CommandNotice, InstallChannel } from "@/bindings";
 import { commands } from "@/bindings";
 import {
+  APP_UPDATE_COMMAND_UNKNOWN_NOTE,
   APP_UPDATE_DISMISS_LABEL,
   APP_UPDATE_INSTALL_LABEL,
   APP_UPDATE_INSTALLING_LABEL,
   APP_UPDATE_NOTES_LABEL,
   APP_UPDATE_TITLE,
   APP_UPDATE_UNKNOWN_NOTE,
+  appUpdateCommandManagedNote,
+  appUpdateCommandPrivilegeNote,
 } from "@/lib/copy";
 import { useNoticeStore } from "@/stores/notice";
 import { mount, settle } from "@/test/dom";
@@ -26,6 +29,7 @@ vi.mock("@/bindings", async (importOriginal) => ({
     appVersion: vi.fn(),
     appUpdateCheck: vi.fn(),
     appUpdateChannel: vi.fn(),
+    appUpdateCommandChannel: vi.fn(),
     appUpdateInstall: vi.fn(),
     getSettings: vi.fn(),
     updateSettings: vi.fn(),
@@ -63,10 +67,17 @@ const available = (muted = false): { status: "ok"; data: AppUpdateView } =>
   });
 
 /** Load the store as the startup fan-out does, then put the card on screen. */
-async function show(channel: InstallChannel = { kind: "direct" }) {
+async function show(
+  channel: InstallChannel = { kind: "direct" },
+  commandChannel: CommandNotice | null = null,
+) {
   vi.mocked(commands.appUpdateChannel).mockResolvedValue({
     status: "ok",
     data: channel,
+  });
+  vi.mocked(commands.appUpdateCommandChannel).mockResolvedValue({
+    status: "ok",
+    data: commandChannel,
   });
   await useNoticeStore.getState().load();
   const container = mount(<SidebarNotice />);
@@ -180,6 +191,7 @@ describe("the action each channel allows", () => {
   it("shows a package manager's command and offers no replacement", async () => {
     const container = await show({
       kind: "managed",
+      manager: "an AUR helper",
       command: "paru -S kendex-bin",
     });
     expect(container.textContent).toContain("paru -S kendex-bin");
@@ -192,12 +204,94 @@ describe("the action each channel allows", () => {
     expect(container.textContent).not.toContain(APP_UPDATE_INSTALL_LABEL);
   });
 
+  // Update now replaces the app and restarts into it, so anything the
+  // person needs to know about the command it leaves behind has to be on
+  // the card before the button is pressed. Afterwards there is no card.
+  it("names the installer that owns the command, and how to move it", async () => {
+    const container = await show(
+      { kind: "direct" },
+      {
+        kind: "managed",
+        manager: "Homebrew",
+        command: "brew upgrade kendex-cli",
+      },
+    );
+    expect(container.textContent).toContain(APP_UPDATE_INSTALL_LABEL);
+    expect(container.textContent).toContain(
+      appUpdateCommandManagedNote("Homebrew"),
+    );
+    expect(container.textContent).toContain("brew upgrade kendex-cli");
+  });
+
+  // The name comes from the channel, so a different installer reads as
+  // itself rather than as whatever the first case happened to be.
+  it("names whichever installer the channel carries", async () => {
+    const container = await show(
+      { kind: "direct" },
+      {
+        kind: "managed",
+        manager: "an AUR helper",
+        command: "paru -S kendex",
+      },
+    );
+    expect(container.textContent).toContain(
+      appUpdateCommandManagedNote("an AUR helper"),
+    );
+    expect(container.textContent).not.toContain("Homebrew");
+  });
+
+  // The command is kendex's own and the app cannot write where it sits,
+  // which is neither of the two answers above: there is an owner, and one
+  // command moves it. Said with the path, because a person may have more
+  // than one kendex and only one of them is the file this is about.
+  it("names the command that moves one only privilege withholds", async () => {
+    const container = await show(
+      { kind: "direct" },
+      {
+        kind: "needsPrivilege",
+        path: "/usr/local/bin/kendex",
+        command: "sudo kendex update",
+      },
+    );
+    expect(container.textContent).toContain(
+      appUpdateCommandPrivilegeNote("/usr/local/bin/kendex"),
+    );
+    expect(container.textContent).toContain("sudo kendex update");
+    // Not the answer for a command nothing could place: that one names
+    // nothing to run, and this one does.
+    expect(container.textContent).not.toContain(
+      APP_UPDATE_COMMAND_UNKNOWN_NOTE,
+    );
+  });
+
+  // Nothing kendex could name owns it, so the card says the command is
+  // left behind and stops there rather than inventing a way to move it.
+  it("names no installer where nothing could tell who owns it", async () => {
+    const container = await show({ kind: "direct" }, { kind: "unknown" });
+    expect(container.textContent).toContain(APP_UPDATE_COMMAND_UNKNOWN_NOTE);
+    // No half-written sentence, and no invented owner.
+    expect(container.textContent).not.toContain("installed by");
+    expect(container.textContent).not.toContain("update it with:");
+  });
+
+  // The two cases with nothing to say: no command beside the app, and one
+  // Update now will carry across itself.
+  it("says nothing about the command where it is not left behind", async () => {
+    const container = await show({ kind: "direct" }, null);
+    expect(container.textContent).toContain(APP_UPDATE_INSTALL_LABEL);
+    expect(container.textContent).not.toContain("updates the app only");
+  });
+
   // A channel read that failed is the same offer as one nothing
   // recognised: never a replacement built on a guess.
   it("falls back to no action when the channel could not be read", async () => {
     vi.mocked(commands.appUpdateChannel).mockResolvedValue({
       status: "error",
       error: "the running app's own path is unreadable",
+    });
+    vi.mocked(commands.appUpdateCommandChannel).mockResolvedValue({
+      status: "ok",
+      data: null,
     });
     await useNoticeStore.getState().load();
     const container = mount(<SidebarNotice />);
@@ -208,6 +302,49 @@ describe("the action each channel allows", () => {
 });
 
 describe("a replacement that did not happen", () => {
+  // The engine refuses an install whose command changed since the card was
+  // drawn, and it can only tell that if it is handed what the card said.
+  // Handing it nothing would leave every such install going ahead on an
+  // answer the person never saw.
+  it("hands the engine the note the card is showing", async () => {
+    vi.mocked(commands.appUpdateInstall).mockResolvedValue({
+      status: "ok",
+      data: null,
+    });
+    const showing: CommandNotice = {
+      kind: "managed",
+      manager: "Homebrew",
+      command: "brew upgrade kendex-cli",
+    };
+    const container = await show({ kind: "direct" }, showing);
+    await press(container, APP_UPDATE_INSTALL_LABEL);
+    expect(commands.appUpdateInstall).toHaveBeenCalledWith(showing);
+  });
+
+  // The refusal tells the person the notice now says what is there, so the
+  // card has to read again — otherwise the sentence is false and pressing
+  // Update now again meets the same refusal forever.
+  it("reads the command again after a refusal, so the note is true", async () => {
+    vi.mocked(commands.appUpdateInstall).mockResolvedValue({
+      status: "error",
+      error:
+        "the kendex command beside this app is no longer the one the notice described",
+    });
+    const changed: CommandNotice = { kind: "unknown" };
+    const container = await show({ kind: "direct" }, null);
+    vi.mocked(commands.appUpdateCommandChannel).mockResolvedValue({
+      status: "ok",
+      data: changed,
+    });
+
+    await press(container, APP_UPDATE_INSTALL_LABEL);
+    await settle();
+
+    expect(useNoticeStore.getState().commandChannel).toEqual(changed);
+    expect(container.textContent).toContain(APP_UPDATE_COMMAND_UNKNOWN_NOTE);
+    expect(container.textContent).toContain("no longer the one the notice");
+  });
+
   it("says why on the card and leaves the action to try again", async () => {
     vi.mocked(commands.appUpdateInstall).mockResolvedValue({
       status: "error",

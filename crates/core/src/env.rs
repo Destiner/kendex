@@ -183,6 +183,19 @@ impl Env {
         self.cache_dir.join(APP_DIR).join("app-update.lock")
     }
 
+    /// Where an installer records the `kendex` command it installed: one
+    /// absolute path, then the SHA-256 of the bytes it put there, a line
+    /// each.
+    ///
+    /// Being executable and being named `kendex` is not being kendex, so
+    /// the desktop app carries a command across only when it is the file
+    /// written here — the path says where and the digest says which, since
+    /// a name outlives whatever answered to it. `install.sh` writes both,
+    /// and every replacement rewrites them for the bytes that landed.
+    pub fn installed_command_file(&self) -> PathBuf {
+        self.data_dir.join(APP_DIR).join("installed-command")
+    }
+
     /// The Linux desktop AppImage `install.sh` writes — the one copy of the
     /// app the CLI is allowed to replace.
     pub fn app_image_file(&self) -> PathBuf {

@@ -1,3 +1,5 @@
+use kendex_core::install_channel::HostProbe as _;
+
 use super::*;
 
 #[test]
@@ -187,6 +189,12 @@ fn the_approved_path_reaches_whatever_will_replace_it() {
 struct OnlyWritable(&'static str);
 
 impl kendex_core::install_channel::HostProbe for OnlyWritable {
+    /// Nothing routed through this fake asks; `for_app` and `for_cli`
+    /// judge a path they were handed rather than looking one up.
+    fn is_command(&self, path: &Path) -> bool {
+        self.exists(path)
+    }
+
     fn replaceable(&self, path: &std::path::Path) -> bool {
         path == std::path::Path::new(self.0)
     }
@@ -197,6 +205,12 @@ impl kendex_core::install_channel::HostProbe for OnlyWritable {
 
     fn resolve(&self, path: &std::path::Path) -> std::path::PathBuf {
         path.to_owned()
+    }
+
+    /// Nothing routed through this fake asks either: `for_app` judges a
+    /// path, never the bytes at it.
+    fn digest(&self, _: &std::path::Path) -> Option<String> {
+        None
     }
 
     fn on_path(&self, _: &str) -> bool {
@@ -245,4 +259,173 @@ fn the_plugin_derives_the_unit_for_app_approved() {
     // Where the derivation runs for real it lands on the bundle exactly.
     #[cfg(target_os = "macos")]
     assert_eq!(derived, std::path::Path::new(bundle));
+}
+
+/// The two sentences a failed app half gets, and the difference between
+/// them. A command already across has to be named — the machine is split,
+/// and the card is the only place that can say so — while a command that
+/// never moved leaves nothing to report but the app's own failure.
+#[test]
+fn a_failed_app_half_says_whether_the_command_went_ahead_of_it() {
+    let split = app_half_failed("5.1.0", CommandHalf::Moved, "permission denied");
+    assert!(split.contains("the kendex command is on 5.1.0"), "{split}");
+    assert!(split.contains("permission denied"), "{split}");
+    assert!(split.contains("press Update now again"), "{split}");
+
+    let neither = app_half_failed("5.1.0", CommandHalf::Untouched, "permission denied");
+    assert!(!neither.contains("kendex command"), "{neither}");
+    assert!(neither.contains("permission denied"), "{neither}");
+}
+
+/// The command this app would carry across is looked for beside the app,
+/// never inside it. Read as a difference rather than an absolute, because
+/// the candidate list ends with a system path this machine may well have a
+/// kendex in.
+#[test]
+fn the_app_s_own_image_is_never_the_command_it_carries() {
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let image = bin.join("kendex");
+    std::fs::write(&image, b"the running AppImage").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&image, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let env = Env::host_rooted(dir.path());
+    let path_var = std::ffi::OsString::from(&bin);
+    let ours = CommandBeside::Ours(Host.resolve(&image));
+
+    assert_ne!(
+        command_beside(
+            &env,
+            &AppInstall::AppImage(Some(image.clone())),
+            Some(&path_var)
+        ),
+        ours
+    );
+
+    // The same file with nothing claiming it as the app, and an installer's
+    // record behind it: the exclusion above is what answered, and not a
+    // search that never reached it or a command nothing vouched for.
+    // `AppImage(None)` rather than `WindowsInstaller`, because on Windows
+    // this process's own executable is excluded too and a test binary is
+    // not the app.
+    kendex_core::command_update::record_installed(&env, &image).unwrap();
+    assert_eq!(
+        command_beside(&env, &AppInstall::AppImage(None), Some(&path_var)),
+        ours
+    );
+}
+
+/// The two paths a family update must never write over, and why naming one
+/// is not enough. An AppImage's executable lives inside a mount that is not
+/// the image the updater judged, so the judged path is needed; the Windows
+/// installer judges no path at all while the desktop executable carries the
+/// command's own name, so the running executable is needed. Excluded by the
+/// judged path alone, a Windows install on `PATH` would replace itself with
+/// the CLI binary.
+#[test]
+fn the_running_executable_is_excluded_where_the_updater_names_no_path() {
+    let exe = PathBuf::from("C:/Program Files/kendex/kendex.exe");
+    assert_eq!(
+        not_the_command(&AppInstall::WindowsInstaller, Some(exe.clone())),
+        vec![exe.clone()],
+        "the updater judges no path on Windows, so nothing else excludes the app"
+    );
+
+    let image = PathBuf::from("/home/pat/Apps/kendex.AppImage");
+    let inside = PathBuf::from("/tmp/.mount_kendex/usr/bin/kendex-app");
+    assert_eq!(
+        not_the_command(
+            &AppInstall::AppImage(Some(image.clone())),
+            Some(inside.clone())
+        ),
+        vec![inside, image],
+        "neither the mounted executable nor the image it came from is the command"
+    );
+}
+
+/// One machine with a `kendex` command an installer recorded, and the
+/// notice the card would have drawn for it.
+#[allow(clippy::unwrap_used)]
+fn a_recorded_command(dir: &tempfile::TempDir) -> (Env, std::ffi::OsString, PathBuf) {
+    let bin = dir.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let command = bin.join("kendex");
+    std::fs::write(&command, b"the kendex command an installer put here").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let env = Env::host_rooted(dir.path());
+    kendex_core::command_update::record_installed(&env, &command).unwrap();
+    (env, std::ffi::OsString::from(&bin), command)
+}
+
+/// A card is on screen for as long as a person leaves it there, and what
+/// is at a path in that time is not this app's to control. The lookup runs
+/// again when Update now is pressed, so it can answer differently from the
+/// card — and going ahead on the new answer replaces the app, restarts it,
+/// and takes away the only surface that could have said the command was
+/// left behind. So the install is refused instead, before anything is
+/// written.
+///
+/// Driven through the real lookup rather than a described state: the file
+/// at the recorded path is replaced between the two reads, which is the
+/// finding's own scenario.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_command_that_changed_under_the_card_refuses_the_install() {
+    let dir = tempfile::tempdir().unwrap();
+    let (env, path_var, command) = a_recorded_command(&dir);
+    let install = AppInstall::AppImage(None);
+    let drawn = command_beside(&env, &install, Some(&path_var));
+    let card = CommandNotice::for_card(&drawn);
+
+    // The control: unchanged, the install goes ahead exactly as before.
+    assert_eq!(card, None, "a recorded command is the app's to carry");
+    still_as_shown(&drawn, card.as_ref()).unwrap();
+
+    // Someone replaces the recorded binary with a wrapper of their own.
+    std::fs::write(&command, b"#!/bin/sh\nexec /opt/kendex/kendex \"$@\"\n").unwrap();
+    let now = command_beside(&env, &install, Some(&path_var));
+    assert_eq!(
+        CommandNotice::for_card(&now),
+        Some(CommandNotice::Unknown),
+        "the fixture only means something if the answer actually changed"
+    );
+
+    let refused = still_as_shown(&now, card.as_ref()).unwrap_err();
+    assert!(
+        refused.contains("no longer the one the notice"),
+        "{refused}"
+    );
+    assert!(refused.contains("nothing was updated"), "{refused}");
+}
+
+/// The other direction, and why it is refused too: the card said the app
+/// moves alone, and the command has since become one this app would
+/// replace. Going ahead would write over a file the person was told would
+/// be left where it is.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn a_command_that_became_ours_under_the_card_refuses_too() {
+    let dir = tempfile::tempdir().unwrap();
+    let (env, path_var, command) = a_recorded_command(&dir);
+    let install = AppInstall::AppImage(None);
+    // Nothing recorded yet, as far as this card knows.
+    let card = Some(CommandNotice::Unknown);
+
+    let now = command_beside(&env, &install, Some(&path_var));
+
+    assert_eq!(
+        now,
+        CommandBeside::Ours(Host.resolve(&command)),
+        "the fixture only means something if the answer actually changed"
+    );
+    let refused = still_as_shown(&now, card.as_ref()).unwrap_err();
+    assert!(refused.contains("nothing was updated"), "{refused}");
 }

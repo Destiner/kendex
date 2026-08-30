@@ -1,6 +1,7 @@
 import { Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
+  APP_UPDATE_COMMAND_UNKNOWN_NOTE,
   APP_UPDATE_DISMISS_LABEL,
   APP_UPDATE_INSTALL_LABEL,
   APP_UPDATE_INSTALLING_LABEL,
@@ -8,6 +9,8 @@ import {
   APP_UPDATE_NOTES_LABEL,
   APP_UPDATE_TITLE,
   APP_UPDATE_UNKNOWN_NOTE,
+  appUpdateCommandManagedNote,
+  appUpdateCommandPrivilegeNote,
   appUpdateVersionsLabel,
 } from "@/lib/copy";
 import { useNoticeStore } from "@/stores/notice";
@@ -22,6 +25,7 @@ import { useNoticeStore } from "@/stores/notice";
 export function SidebarNotice() {
   const notice = useNoticeStore((s) => s.notice);
   const channel = useNoticeStore((s) => s.channel);
+  const commandChannel = useNoticeStore((s) => s.commandChannel);
   const installing = useNoticeStore((s) => s.installing);
   const error = useNoticeStore((s) => s.error);
   const install = useNoticeStore((s) => s.install);
@@ -61,21 +65,47 @@ export function SidebarNotice() {
       </p>
 
       {channel.kind === "direct" ? (
-        <Button
-          size="sm"
-          className="mt-2.5 w-full"
-          disabled={installing}
-          onClick={() => void install()}
-        >
-          {installing ? (
-            <>
-              <Loader2 className="animate-spin" />
-              {APP_UPDATE_INSTALLING_LABEL}
-            </>
+        <>
+          <Button
+            size="sm"
+            className="mt-2.5 w-full"
+            disabled={installing}
+            onClick={() => void install()}
+          >
+            {installing ? (
+              <>
+                <Loader2 className="animate-spin" />
+                {APP_UPDATE_INSTALLING_LABEL}
+              </>
+            ) : (
+              APP_UPDATE_INSTALL_LABEL
+            )}
+          </Button>
+          {/* The app is kendex's to replace and the command beside it is
+              not, so Update now moves one and leaves the other. Said
+              before the button is pressed, because afterwards the app has
+              restarted and the card is gone. */}
+          {commandChannel === null ? null : commandChannel.kind ===
+            "unknown" ? (
+            // Nothing named the installer, so there is no name to print
+            // and no command to run: the card says the app moves alone and
+            // stops, rather than leaving a gap where a name would go.
+            <p className="mt-2 text-xs text-muted-foreground">
+              {APP_UPDATE_COMMAND_UNKNOWN_NOTE}
+            </p>
           ) : (
-            APP_UPDATE_INSTALL_LABEL
+            <>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {commandChannel.kind === "managed"
+                  ? appUpdateCommandManagedNote(commandChannel.manager)
+                  : appUpdateCommandPrivilegeNote(commandChannel.path)}
+              </p>
+              <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words rounded bg-foreground/[0.05] px-2 py-1.5 font-mono text-[11px] leading-5">
+                {commandChannel.command}
+              </pre>
+            </>
           )}
-        </Button>
+        </>
       ) : channel.kind === "managed" ? (
         <>
           <p className="mt-2.5 text-xs text-muted-foreground">

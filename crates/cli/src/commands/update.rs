@@ -1,10 +1,9 @@
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
+use kendex_core::command_update::{fetch, record_command, record_installed, replace_executable};
 use kendex_core::env::Env;
 use kendex_core::install_channel::{Host, HostProbe, InstallChannel, for_cli};
 use kendex_core::names::shown;
-use kendex_core::process::Hardened;
 use kendex_core::release_digests::{ReleaseDigests, release_digests_url};
 use kendex_core::update_channel::feed_url_for;
 use kendex_core::update_feed::{
@@ -47,37 +46,6 @@ fn target_triple() -> &'static str {
     env!("KENDEX_TARGET")
 }
 
-fn fetch(url: &str) -> Result<Vec<u8>, String> {
-    // This fetches release binaries as well as the small feed, so it needs
-    // room for a slow download.
-    let output = Hardened::curl(&curl_args(url))
-        .timeout(Duration::from_secs(600))
-        .run()
-        .map_err(|e| format!("curl unavailable: {e}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "fetching {url} failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    Ok(output.stdout)
-}
-
-fn curl_args(url: &str) -> [&str; 10] {
-    [
-        "-fsS",
-        "--location",
-        "--max-redirs",
-        "3",
-        "--proto",
-        "=https,file",
-        "--proto-redir",
-        "=https",
-        "--",
-        url,
-    ]
-}
-
 pub fn run(env: &Env, force: bool) -> CliResult {
     // One resolve for the whole run: the path that decides which channel
     // this is has to be the path that gets written, or a command reached
@@ -112,8 +80,10 @@ fn run_on(
     public_key: &str,
     target: &str,
 ) -> CliResult {
-    if let InstallChannel::Managed { command } = channel {
-        out("a package manager owns this install; update it with:");
+    if let InstallChannel::Managed { manager, command } = channel {
+        out(&format!(
+            "this install came from {manager}; update it with:"
+        ));
         out(&format!("  {command}"));
         return Ok(());
     }
@@ -121,6 +91,16 @@ fn run_on(
     // code of zero. What is left here is Direct, which passes, or Unknown,
     // whose refusal core words for both shells.
     channel.allow_replacement()?;
+    // The running command is at this path and is one of ours, which is the
+    // one thing no lookup by name can establish. Recorded before anything
+    // is fetched, so a machine that installed before this record existed
+    // gains it from any run — including one that finds nothing to do — and
+    // the desktop app can carry the command across from then on.
+    if let Err(why) = record_installed(env, current_exe) {
+        say(&format!(
+            "the desktop app will not update this command until it can be recorded: {why}"
+        ));
+    }
     let feed_bytes = fetch(feed_url)?;
     let feed = ReleaseFeed::parse(&feed_bytes)?;
     let latest = feed.version.as_str();
@@ -178,6 +158,15 @@ fn run_on(
     });
     if let Err(error) = installed {
         return Err(command_failure(latest, app_replaced, &error).into());
+    }
+    // The record above named the bytes that were here; these are the bytes
+    // that replaced them. Left stale it stops matching, and the app then
+    // refuses a command it does own — the safe direction, and one the next
+    // run of this command undoes either way.
+    if let Err(why) = record_command(env, current_exe, &binary) {
+        say(&format!(
+            "the desktop app will not update this command until it can be recorded: {why}"
+        ));
     }
     out(&format!("updated to {latest}"));
     Ok(())
@@ -318,33 +307,6 @@ fn app_refused(latest: &str, why: &str) -> String {
     )
 }
 
-/// Write `bytes` over an executable that may be running: the replacement
-/// lands beside it whole and takes its place by rename, which every target
-/// OS allows on a running file.
-fn replace_executable(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let staged = staged_path(path);
-    match stage(&staged, bytes).and_then(|()| std::fs::rename(&staged, path)) {
-        Ok(()) => Ok(()),
-        Err(error) => {
-            // Nobody else writes a file named for this process, so a run
-            // that failed takes its own away instead of leaving one behind
-            // per process id.
-            let _ = std::fs::remove_file(&staged);
-            Err(error)
-        }
-    }
-}
-
-fn stage(staged: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    std::fs::write(staged, bytes)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(staged, std::fs::Permissions::from_mode(0o755))?;
-    }
-    Ok(())
-}
-
 fn missing_asset_message(
     relation: VersionRelation,
     latest: &str,
@@ -365,18 +327,6 @@ fn missing_asset_message(
             "release {latest} has no asset for {target}; installed {current} is newer; release notes: {notes}"
         ),
     })
-}
-
-/// The process id keeps two concurrent runs off one staged file. Without
-/// it they share a name, and what the rename installs is whatever the other
-/// run last wrote there rather than the bytes this one verified.
-fn staged_path(current: &std::path::Path) -> PathBuf {
-    let mut name = current
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "kendex".to_owned());
-    name.push_str(&format!(".update.{}", std::process::id()));
-    current.with_file_name(name)
 }
 
 #[cfg(test)]

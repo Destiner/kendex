@@ -6,8 +6,12 @@
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+#[path = "../../test_util.rs"]
+mod test_util;
+use test_util::rooted;
 
 #[allow(clippy::unwrap_used)]
 fn write_exe(path: &Path, body: &str) {
@@ -31,7 +35,37 @@ fn requested_urls(os: &str, arch: &str) -> String {
 #[allow(clippy::unwrap_used)]
 fn run_install(os: &str, arch: &str, fail: Option<(&str, i32)>) -> (std::process::Output, String) {
     let tmp = tempfile::tempdir().unwrap();
-    let home = tmp.path();
+    run_install_in(os, arch, fail, tmp.path())
+}
+
+/// The same run against a home the caller keeps, for a test that reads what
+/// the script left behind rather than only what it fetched.
+#[allow(clippy::unwrap_used)]
+fn run_install_at(os: &str, arch: &str, home: &Path) -> (std::process::Output, String) {
+    run_install_in(os, arch, None, home)
+}
+
+/// What `uname -s` answers on the machine running these tests.
+///
+/// A test that reads back what the script wrote has to drive the script as
+/// this host: `install.sh` picks its data directory from `uname`, `Env`
+/// picks the same one from the target it was built for, and told `Linux` on
+/// a mac the script writes under `.local/share` while the resolver reads
+/// `Library/Application Support`. One finds nothing there and reads it as a
+/// script that recorded nothing; the other finds nothing there and reads it
+/// as the record correctly withheld.
+const HOST_UNAME: &str = match cfg!(target_os = "macos") {
+    true => "Darwin",
+    false => "Linux",
+};
+
+#[allow(clippy::unwrap_used)]
+fn run_install_in(
+    os: &str,
+    arch: &str,
+    fail: Option<(&str, i32)>,
+    home: &Path,
+) -> (std::process::Output, String) {
     let fake = home.join("fake-bin");
     let bindir = home.join(".local/bin");
     fs::create_dir_all(&fake).unwrap();
@@ -175,4 +209,189 @@ fn a_network_failure_does_not_blame_the_release() {
     );
     assert!(!stderr.contains("may have no build"), "{stderr}");
     assert!(!stderr.contains("chmod"), "{stderr}");
+}
+
+/// Every directory `install.sh` can install the command into, read out of
+/// the script's own selection rather than restated here. A shape this
+/// cannot parse fails the same way a changed destination does, because a
+/// silent no-match would be the drift it exists to catch.
+#[allow(clippy::unwrap_used)]
+fn installer_bin_dirs(script: &str) -> Vec<String> {
+    let chosen_from = script
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("for candidate in ")?
+                .strip_suffix("; do")
+        })
+        .expect("install.sh picks its bindir from a `for candidate in ...; do` list");
+    // The fallback when none of them is on PATH. Written as its own
+    // assignment, so it is read as its own line.
+    let fallback = script
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix(r#"[ -n "$bindir" ] || bindir=""#)?
+                .strip_suffix('"')
+        })
+        .expect("install.sh falls back to a bindir when none is on PATH");
+    let mut dirs: Vec<String> = chosen_from
+        .split_whitespace()
+        .chain(std::iter::once(fallback))
+        .map(|dir| dir.trim_matches('"').to_owned())
+        .collect();
+    dirs.dedup();
+    assert!(!dirs.is_empty(), "install.sh named no bindir");
+    dirs
+}
+
+/// The one fact `install.sh` and `kendex_core::command_update` both hold:
+/// where the command is installed. The app looks the command up to carry
+/// it across, and a launcher's `PATH` need not carry the installer's
+/// directory, so the fallback roots are what finds it there. If the
+/// installer moves its destination and this list does not follow, an
+/// app-driven update stops finding the command and moves the app alone.
+///
+/// Read against the script itself, so the divergence fails here rather
+/// than on a machine.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn every_directory_the_installer_can_choose_is_a_candidate() {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../install.sh");
+    let home = Path::new("/home/pat");
+    // No PATH, so what comes back is the fallback list and nothing else —
+    // the case this contract is about.
+    let candidates = kendex_core::command_update::command_candidates(home, None);
+
+    for dir in installer_bin_dirs(&fs::read_to_string(&script).unwrap()) {
+        let expanded = PathBuf::from(dir.replace("$HOME", &home.display().to_string()));
+        assert!(
+            candidates
+                .iter()
+                .any(|found| found.parent() == Some(&expanded)),
+            "install.sh can install into {}, which no candidate covers: {candidates:?}",
+            expanded.display()
+        );
+    }
+}
+
+/// The same contract from the other end, run rather than read: install.sh
+/// performs a real install and says where it put the command, and that
+/// directory is one the lookup would reach.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn where_a_real_install_puts_the_command_is_a_candidate() {
+    let (output, _) = run_install("Linux", "x86_64", None);
+    let said = String::from_utf8_lossy(&output.stdout);
+    let installed = said
+        .lines()
+        .find_map(|line| line.strip_prefix("Installed the kendex command to "))
+        .unwrap_or_else(|| panic!("install.sh did not say where it installed:\n{said}"));
+    let home = PathBuf::from(installed)
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_owned();
+
+    assert!(
+        kendex_core::command_update::command_candidates(&home, None)
+            .contains(&PathBuf::from(installed)),
+        "install.sh installed {installed}, which no candidate under {} covers",
+        home.display()
+    );
+}
+
+/// The desktop app carries the command across only when an installer said
+/// which file it is, so `install.sh` has to leave that record where the
+/// app's own resolver looks — at the path it actually installed, and with
+/// the digest of the bytes it put there. A script that installs and
+/// records nothing leaves every app-driven update refusing a command it
+/// really does own; one that records a path alone leaves the app judging
+/// by a name, which the next file to arrive under that name inherits.
+///
+/// Read back through the resolver rather than by hand: what shape the
+/// record takes is core's to say, and a second spelling here agrees until
+/// it does not.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn install_sh_records_the_command_it_installed() {
+    let tmp = tempfile::tempdir().unwrap();
+    // The canonical root, and the same one handed to the script: install.sh
+    // writes under the HOME it was given, and a resolver asked about a
+    // different spelling of that directory reads an empty one.
+    let home = rooted(&tmp);
+    let (output, _) = run_install_at(HOST_UNAME, "x86_64", &home);
+    assert!(
+        output.status.success(),
+        "install.sh failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let said = String::from_utf8_lossy(&output.stdout);
+    let installed = said
+        .lines()
+        .find_map(|line| line.strip_prefix("Installed the kendex command to "))
+        .unwrap_or_else(|| panic!("install.sh did not say where it installed:\n{said}"));
+
+    // Asked of the resolver rather than spelled a second time: the data
+    // directory differs by platform and a second spelling agrees until it
+    // does not.
+    let env = kendex_core::env::Env::host_rooted(&home);
+    let recorded = kendex_core::command_update::recorded_command(&env).unwrap_or_else(|| {
+        panic!(
+            "install.sh recorded nothing this build can read at {}",
+            env.installed_command_file().display()
+        )
+    });
+    assert_eq!(recorded.path, PathBuf::from(installed));
+    assert_eq!(
+        recorded.digest,
+        kendex_core::hash::sha256_hex(&fs::read(installed).unwrap()),
+        "the record names bytes other than the ones install.sh left at {installed}"
+    );
+}
+
+/// No way to compute a digest is a record this build could not check, so
+/// the script writes none and says so. A path on its own is exactly the
+/// record this change exists to stop being enough: written anyway, it
+/// would put the app back to judging a command by its name.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn install_sh_records_nothing_it_cannot_take_a_digest_for() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = rooted(&tmp);
+    // Every spelling of the digest, ahead of the real ones on `PATH` and
+    // failing. `command -v` finds each, so the script reaches one and gets
+    // nothing back rather than falling through to a tool that works.
+    let fake = home.join("fake-bin");
+    fs::create_dir_all(&fake).unwrap();
+    for tool in ["sha256sum", "shasum", "openssl"] {
+        write_exe(&fake.join(tool), "#!/bin/sh\nexit 1\n");
+    }
+
+    let (output, _) = run_install_at(HOST_UNAME, "x86_64", &home);
+
+    assert!(
+        output.status.success(),
+        "a missing digest tool costs the record, never the install:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("could not record the command's identity"),
+        "the run said nothing about the record it did not write:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let env = kendex_core::env::Env::host_rooted(&home);
+    assert_eq!(
+        kendex_core::command_update::recorded_command(&env),
+        None,
+        "a record with no digest is one the app would judge by name alone"
+    );
+    assert!(
+        !env.installed_command_file().exists(),
+        "nothing half-written at {}",
+        env.installed_command_file().display()
+    );
 }

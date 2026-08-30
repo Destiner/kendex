@@ -1,27 +1,12 @@
+use std::path::PathBuf;
+
+use kendex_core::command_update::staged_path;
+
 use super::*;
 
-#[path = "../../../fixture_url.rs"]
+#[path = "../../../../fixture_url.rs"]
 mod fixture_url;
 use fixture_url::file_url;
-
-#[test]
-fn fetched_urls_are_always_positional_arguments() {
-    assert_eq!(
-        curl_args("--output=/tmp/owned"),
-        [
-            "-fsS",
-            "--location",
-            "--max-redirs",
-            "3",
-            "--proto",
-            "=https,file",
-            "--proto-redir",
-            "=https",
-            "--",
-            "--output=/tmp/owned",
-        ]
-    );
-}
 
 /// The one skew this order can still leave is an app already across
 /// and a command that would not move. It is not a dead end — the
@@ -95,6 +80,7 @@ fn a_package_managed_command_is_left_for_its_package_manager() {
     let dir = tempfile::tempdir().unwrap();
     let (env, feed_url, installed) = a_release_is_out(&dir);
     let brew = InstallChannel::Managed {
+        manager: "Homebrew".to_owned(),
         command: "brew upgrade kendex-cli".to_owned(),
     };
 
@@ -450,4 +436,119 @@ fn missing_asset_message_never_calls_current_or_older_available() {
     assert!(current.contains("unchanged") && !current.contains("is available"));
     assert!(older.contains("is newer") && !older.contains("is available"));
     assert!(newer.contains("is available"));
+}
+
+/// The running command is at a path nothing else can vouch for: a lookup
+/// by name cannot tell this binary from a wrapper someone wrote, and this
+/// run is the one place that knows. So it records the path, on a run that
+/// updated and on one that found nothing to do, which is how an install
+/// made before the record existed gains one.
+///
+/// And it records what is at that path, not only the path: a name outlives
+/// whatever answered to it, so the digest is what tells this binary from
+/// the next file to arrive under its name. Which means the record has to
+/// follow the write — left naming the bytes this run replaced, it would
+/// refuse the app the command it just brought current.
+#[test]
+fn an_update_records_the_command_it_is_running_as() {
+    for force in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let (env, feed_url, installed) = a_release_is_out(&dir);
+
+        run_on(
+            &env,
+            force,
+            &feed_url,
+            &installed,
+            &InstallChannel::Direct,
+            TEST_KEY,
+            TEST_TARGET,
+        )
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read(&installed).unwrap(),
+            OFFERED,
+            "force: {force}"
+        );
+        assert_eq!(
+            kendex_core::command_update::recorded_command(&env),
+            Some(kendex_core::command_update::InstalledCommand {
+                path: installed.clone(),
+                digest: kendex_core::hash::sha256_hex(OFFERED),
+            }),
+            "force: {force}"
+        );
+        assert_ne!(
+            kendex_core::hash::sha256_hex(OFFERED),
+            kendex_core::hash::sha256_hex(INSTALLED),
+            "the two digests have to differ or the assertion above proves nothing"
+        );
+    }
+}
+
+/// A run that finds nothing to do still records, and records the bytes
+/// that are there — the path is what an install made before this record
+/// existed is missing, and the digest is what makes it usable.
+#[test]
+fn a_run_with_nothing_to_do_records_the_bytes_already_installed() {
+    let dir = tempfile::tempdir().unwrap();
+    let (env, _, installed) = a_release_is_out(&dir);
+    // A feed offering exactly what is running: nothing to fetch, nothing
+    // to write.
+    let feed = dir.path().join("current.json");
+    std::fs::write(
+        &feed,
+        format!(
+            r#"{{"schema": 1, "version": "{}", "assets": {{}}}}"#,
+            env!("CARGO_PKG_VERSION")
+        ),
+    )
+    .unwrap();
+
+    run_on(
+        &env,
+        false,
+        &file_url(&feed),
+        &installed,
+        &InstallChannel::Direct,
+        TEST_KEY,
+        TEST_TARGET,
+    )
+    .unwrap();
+
+    assert_eq!(std::fs::read(&installed).unwrap(), INSTALLED);
+    assert_eq!(
+        kendex_core::command_update::recorded_command(&env),
+        Some(kendex_core::command_update::InstalledCommand {
+            path: installed,
+            digest: kendex_core::hash::sha256_hex(INSTALLED),
+        })
+    );
+}
+
+/// A package manager's copy is not ours to record. The run says whose it
+/// is and stops before anything is written, and a record left here would
+/// tell the app to replace bytes the CLI just refused to touch.
+#[test]
+fn a_package_managed_run_records_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (env, feed_url, installed) = a_release_is_out(&dir);
+    let brew = InstallChannel::Managed {
+        manager: "Homebrew".to_owned(),
+        command: "brew upgrade kendex-cli".to_owned(),
+    };
+
+    run_on(
+        &env,
+        false,
+        &feed_url,
+        &installed,
+        &brew,
+        TEST_KEY,
+        TEST_TARGET,
+    )
+    .unwrap();
+
+    assert_eq!(kendex_core::command_update::recorded_command(&env), None);
 }

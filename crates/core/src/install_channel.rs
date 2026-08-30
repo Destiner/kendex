@@ -19,6 +19,15 @@ const BREW_PREFIXES: [&str; 3] = [
 /// Where the AUR `kendex-bin` package puts the desktop app.
 const PACKAGED_APP_IMAGE: &str = "/usr/lib/kendex/kendex.AppImage";
 
+/// What to call the installer that owns a path. Fixed text, decided by
+/// which branch of the detection ran, so no value read off the machine
+/// ever reaches it — the rule the command string already lives under.
+const HOMEBREW: &str = "Homebrew";
+/// Every Arch arm gets the class, never the tool. `paru` sitting on `PATH`
+/// today says nothing about what fetched the package, so naming it would
+/// be inventing the one fact this build does not have.
+const AUR_HELPER: &str = "an AUR helper";
+
 /// How the running install may be brought up to date.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(
@@ -29,9 +38,16 @@ const PACKAGED_APP_IMAGE: &str = "/usr/lib/kendex/kendex.AppImage";
 pub enum InstallChannel {
     /// The running install is ours to replace.
     Direct,
-    /// A system package manager owns these bytes; `command` brings them
-    /// current and is the only thing to offer.
-    Managed { command: String },
+    /// A system package manager owns these bytes. `manager` names it and
+    /// `command` brings them current; both are decided where the manager
+    /// is detected, so nothing downstream has to read a name back out of
+    /// the command string and guess.
+    ///
+    /// `manager` is not optional. Every branch that reaches here knows
+    /// which installer it found, and a detection that could not say who
+    /// owns a path is [`InstallChannel::Unknown`] — which names nobody and
+    /// offers nothing, and is where the honest degradation already lives.
+    Managed { manager: String, command: String },
     /// Not recognised: say a release is out, never replace anything, never
     /// invent a command.
     Unknown,
@@ -43,8 +59,8 @@ impl InstallChannel {
     pub fn allow_replacement(&self) -> Result<(), String> {
         match self {
             Self::Direct => Ok(()),
-            Self::Managed { command } => Err(format!(
-                "a package manager owns this install; update it with: {command}"
+            Self::Managed { manager, command } => Err(format!(
+                "this install came from {manager}; update it with: {command}"
             )),
             Self::Unknown => Err(
                 "kendex cannot tell how this copy was installed, so it will not replace it"
@@ -151,12 +167,23 @@ pub trait HostProbe {
     /// Whether a path is present on this machine.
     fn exists(&self, path: &Path) -> bool;
 
+    /// Whether a path is a command this machine would run: a regular file
+    /// with an execute bit. Presence is a weaker question — a directory, or
+    /// a data file, can carry a command's name and still never run — and
+    /// answering the weaker one is how a search settles on a path a shell
+    /// would have passed over.
+    fn is_command(&self, path: &Path) -> bool;
+
     /// The path with every symlink followed, or the path itself where it
     /// cannot be resolved. Which install owns a file is a fact about the
     /// file, never about the name it was reached by: a Homebrew formula
     /// links its prefix's `bin/` at the Cellar, and macOS hands a process
     /// the path it was exec'd with, symlinks intact.
     fn resolve(&self, path: &Path) -> PathBuf;
+
+    /// The plain SHA-256 of a file's bytes, absent where it cannot be read.
+    /// A name kendex once answered to says nothing about what answers now.
+    fn digest(&self, path: &Path) -> Option<String>;
 
     /// Whether a command is on `PATH`.
     fn on_path(&self, command: &str) -> bool;
@@ -191,8 +218,18 @@ impl HostProbe for Host {
         path.exists()
     }
 
+    fn is_command(&self, path: &Path) -> bool {
+        crate::fs::is_executable(path)
+    }
+
     fn resolve(&self, path: &Path) -> PathBuf {
         std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned())
+    }
+
+    fn digest(&self, path: &Path) -> Option<String> {
+        std::fs::read(path)
+            .ok()
+            .map(|b| crate::hash::sha256_hex(&b))
     }
 
     fn on_path(&self, command: &str) -> bool {
@@ -235,19 +272,29 @@ pub fn for_app(install: &AppInstall, probe: &dyn HostProbe) -> InstallChannel {
 /// call, once, on the path it will also write to. Resolving here instead
 /// would decide about the file while the caller still held the link.
 pub fn for_cli(exe: &Path, probe: &dyn HostProbe) -> InstallChannel {
+    package_owner(exe, probe).unwrap_or_else(|| replaceable_or_unknown(exe, probe))
+}
+
+/// The package manager whose prefix `exe` sits under, where one does.
+///
+/// Split from [`for_cli`], whose `Unknown` is both "a manager this build
+/// cannot name owns it" and "nobody owns it and we cannot write it" —
+/// opposites, to a caller holding proof the file is kendex's.
+pub fn package_owner(exe: &Path, probe: &dyn HostProbe) -> Option<InstallChannel> {
     if starts_with_any(exe, &BREW_PREFIXES) {
-        return InstallChannel::Managed {
+        return Some(InstallChannel::Managed {
+            manager: HOMEBREW.to_owned(),
             command: "brew upgrade kendex-cli".to_owned(),
-        };
+        });
     }
     if system_owned(exe) {
         let package = match probe.exists(Path::new(PACKAGED_APP_IMAGE)) {
             true => ArchPackage::Bin,
             false => ArchPackage::Cli,
         };
-        return arch_channel(package, probe);
+        return Some(arch_channel(package, probe));
     }
-    replaceable_or_unknown(exe, probe)
+    None
 }
 
 /// The two AUR packages that carry kendex. The name comes from where the
@@ -283,7 +330,10 @@ fn arch_channel(package: ArchPackage, probe: &dyn HostProbe) -> InstallChannel {
     } else {
         format!("update {name} with your AUR helper")
     };
-    InstallChannel::Managed { command }
+    InstallChannel::Managed {
+        manager: AUR_HELPER.to_owned(),
+        command,
+    }
 }
 
 fn replaceable_or_unknown(path: &Path, probe: &dyn HostProbe) -> InstallChannel {

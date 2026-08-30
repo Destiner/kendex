@@ -60,6 +60,17 @@ base="https://github.com/$repo/releases/download/$version"
 work="$(mktemp -d)" || { echo "install.sh: nowhere to download to" >&2; exit 1; }
 trap 'rm -rf "$work"' EXIT
 
+# Where kendex keeps its own state, spelled the way the app's resolver
+# spells it — `dirs::data_dir()`, which is XDG on Linux and Application
+# Support on macOS. Both ends have to agree or the app reads an empty
+# directory and decides the command is nobody's.
+kendex_data() {
+  case "$kind" in
+    macos) printf '%s' "$HOME/Library/Application Support/kendex" ;;
+    *) printf '%s' "${XDG_DATA_HOME:-$HOME/.local/share}/kendex" ;;
+  esac
+}
+
 # Pick a bin dir already on PATH; prefer a writable user dir over sudo.
 bindir=""
 for candidate in "$HOME/.local/bin" "/usr/local/bin"; do
@@ -106,6 +117,43 @@ install_cli() {
     sudo install -D -m 0755 "$work/kendex" "$bindir/kendex"
   fi
   echo "Installed the kendex command to $bindir/kendex"
+  # What this script installed, so the desktop app can tell this file from
+  # any other executable someone has named `kendex` — a wrapper script in a
+  # writable directory answers every other test the same way, and the app
+  # would otherwise write a release binary over it. Failing to record it
+  # costs the app-side update, never the install, so it is reported and the
+  # run continues.
+  #
+  # The path and the digest of the bytes at it, one per line. A path is a
+  # name, and the file behind a name can be replaced: without the digest a
+  # wrapper written where this command used to be reads as this command.
+  state="$(kendex_data)"
+  digest="$(sha256_of "$bindir/kendex")" || digest=""
+  if [ -n "$digest" ] && mkdir -p "$state" 2>/dev/null \
+     && printf '%s\n%s\n' "$bindir/kendex" "$digest" > "$state/installed-command"; then
+    :
+  else
+    echo "install.sh: could not record the command's identity in $state; the desktop app will not update it." >&2
+  fi
+}
+
+# The SHA-256 of a file, hex and nothing else, however this machine spells
+# it. Linux ships `sha256sum` with coreutils — which this script already
+# needs for `install` — and macOS ships `shasum`; `openssl` covers a machine
+# with neither. Every one of them prints the digest first and the filename
+# after, so one `cut` reads all three. No tool means no digest, which the
+# caller reports rather than recording a line the app cannot check.
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | cut -d' ' -f1
+  elif command -v openssl >/dev/null 2>&1; then
+    # `-r` for the same "digest filename" shape the other two print.
+    openssl dgst -sha256 -r "$1" | cut -d' ' -f1
+  else
+    return 1
+  fi
 }
 
 # One icon size into the theme directory it belongs to.
@@ -172,7 +220,7 @@ desktop_arg() {
 install_app_linux() {
   local data libdir
   data="${XDG_DATA_HOME:-$HOME/.local/share}"
-  libdir="$data/kendex"
+  libdir="$(kendex_data)"
   echo "Downloading the desktop app…"
   if ! curl -fSL --proto '=https' -o "$work/kendex.AppImage" \
       "$base/kendex_${plain}_${appimage_arch}.AppImage"; then

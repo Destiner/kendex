@@ -1,4 +1,10 @@
+use std::path::{Path, PathBuf};
+
 use kendex_core::app_update::AppUpdateView;
+use kendex_core::command_update::{
+    CommandBeside, CommandHalf, CommandNotice, bring_command_across, command_beside_app,
+    command_candidates, recorded_command,
+};
 use kendex_core::env::Env;
 use kendex_core::install_channel::{AppInstall, Host, InstallChannel};
 use kendex_core::registry::{Fetch, ReleaseFeedFetch};
@@ -91,6 +97,24 @@ pub fn app_update_channel() -> Result<InstallChannel, String> {
         &app_install()?,
         &Host,
     ))
+}
+
+/// What the card has to say about the `kendex` command beside this app:
+/// the channel that owns it where another installer does, the one command
+/// that moves it where it is kendex's own but sits where this app cannot
+/// write, and nothing where there is none or where Update now carries it
+/// across itself.
+///
+/// Without this the app replaces itself, restarts, and clears its card
+/// while the terminal command stays on the old release with nothing on
+/// screen having said so — the silent divergence this issue was written
+/// about, arrived at from the other side.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn app_update_command_channel() -> Result<Option<CommandNotice>, String> {
+    let env = Env::detect().map_err(|error| error.to_string())?;
+    let beside = command_beside(&env, &app_install()?, std::env::var_os("PATH").as_deref());
+    Ok(CommandNotice::for_card(&beside))
 }
 
 /// Somewhere to put the path kendex approved, on whatever will perform the
@@ -198,15 +222,134 @@ fn read_published(
         .map_err(|error| error.to_string())
 }
 
-/// Replace this install with the latest release and relaunch into it. The
-/// manifest names a download and the signature over it; the release's own
-/// digests document names which download this release published for this
-/// target, and the bytes are held to both before anything is installed.
-/// The discovery feed never supplies an install URL. A failure leaves the
+/// The `kendex` command this app would carry across with it, if there is
+/// one. `install.sh` puts the two side by side, so an app that moved alone
+/// would leave every terminal on the old release; a dmg or msi that
+/// installed no command has nothing to carry, which is an answer rather
+/// than a failure.
+fn command_beside(
+    env: &Env,
+    install: &AppInstall,
+    path_var: Option<&std::ffi::OsStr>,
+) -> CommandBeside {
+    command_beside_app(
+        &Host,
+        &command_candidates(&env.home, path_var),
+        &not_the_command(install, std::env::current_exe().ok()),
+        recorded_command(env).as_ref(),
+    )
+}
+
+/// What this process is, and what it is about to replace. Neither is ever
+/// the command it carries across, and neither stands in for the other: an
+/// AppImage's executable lives inside a mount that is not the image the
+/// updater judged, and the Windows installer judges no path at all while
+/// the desktop executable is `kendex.exe`, the name the command carries
+/// too. Excluded only by the updater's path, a Windows install whose
+/// directory is on `PATH` would take its own executable for the command.
+fn not_the_command(install: &AppInstall, running: Option<PathBuf>) -> Vec<PathBuf> {
+    running
+        .into_iter()
+        .chain(install.judged_path().map(Path::to_owned))
+        .collect()
+}
+
+/// Run the command half off the async runtime: it downloads a release
+/// binary over the network, which is not work to hold a runtime worker on.
+///
+/// `shown` is what the card said about this command when it was drawn, and
+/// the lookup runs again here, so the two can disagree: a card is on screen
+/// for as long as a person leaves it there, and what is at a path in that
+/// time is not this app's to control. Disagreeing, nothing is written —
+/// see [`still_as_shown`].
+async fn move_the_command(
+    install: AppInstall,
+    release: String,
+    shown: Option<CommandNotice>,
+) -> Result<CommandHalf, String> {
+    let feed = feed_url();
+    tauri::async_runtime::spawn_blocking(move || {
+        let env = Env::detect().map_err(|error| error.to_string())?;
+        let beside = command_beside(&env, &install, std::env::var_os("PATH").as_deref());
+        still_as_shown(&beside, shown.as_ref())?;
+        bring_command_across(
+            &env,
+            &beside,
+            &feed,
+            &release,
+            env!("KENDEX_TARGET"),
+            UPDATER_PUBLIC_KEY,
+        )
+    })
+    .await
+    .map_err(|error| format!("the kendex command half did not run: {error}"))?
+}
+
+/// Whether the command beside the app is still the one the card described.
+///
+/// The card is the whole of what a person is told about that command,
+/// because Update now restarts the app and takes the card with it. A
+/// disposition that changed while the card sat on screen is therefore a
+/// sentence that was never said: an app that went ahead anyway would
+/// replace itself, restart, and leave behind a command nothing had warned
+/// about — the silent split this flow exists to prevent, reached by
+/// another road.
+///
+/// Compared as what was *said*, not as what was found. Two `Ours` at
+/// different paths say the same nothing to a person and are the same
+/// answer here; `Ours` become `NotOurs` says something new, and so does
+/// the reverse, which would touch a file the card promised to leave alone.
+///
+/// Refused before the app half runs, so nothing is written and the card is
+/// still on screen to carry the refusal.
+fn still_as_shown(beside: &CommandBeside, shown: Option<&CommandNotice>) -> Result<(), String> {
+    if CommandNotice::for_card(beside).as_ref() == shown {
+        return Ok(());
+    }
+    Err(
+        "the kendex command beside this app is no longer the one the notice \
+         described, so nothing was updated; the notice now says what is there"
+            .to_owned(),
+    )
+}
+
+/// What to say when the app half would not land. A command already across
+/// leaves the machine split, but the app's own version is unchanged, so
+/// the card still offers the release and pressing it again repeats both
+/// halves rather than stopping at already-current.
+fn app_half_failed(release: &str, half: CommandHalf, error: &str) -> String {
+    match half {
+        CommandHalf::Moved => format!(
+            "the kendex command is on {release} and the desktop app is not: {error}; press Update now again to bring the app across"
+        ),
+        CommandHalf::Untouched => format!("the desktop app could not be replaced: {error}"),
+    }
+}
+
+/// Replace this install with the latest release and relaunch into it,
+/// carrying across a `kendex` command that is kendex's to replace. One
+/// another installer owns stays where it is, named on the card before this
+/// runs; `shown` is what that card said, so a command that changed since is
+/// refused rather than acted on in silence. The manifest names a download
+/// and the signature over it, the release's own digests document names what
+/// this release published for this target, and the app's bytes are held to
+/// both. The discovery feed never supplies an install URL, and the command's
+/// bytes are held to the key the CLI holds them to. A failure leaves the
 /// running app untouched and usable.
+///
+/// The command moves first. What this flow's notice card reads is the
+/// app's own baked version, so the app is the state marker here and is
+/// written last — the mirror of `kendex update`, where the command's baked
+/// version is the marker and the command is written last. A command that
+/// will not move therefore leaves both halves where they were and the card
+/// still offering the release, where an app already replaced and relaunched
+/// would report itself current and never come back for the command.
 #[tauri::command]
 #[specta::specta]
-pub async fn app_update_install(app: tauri::AppHandle) -> Result<(), String> {
+pub async fn app_update_install(
+    app: tauri::AppHandle,
+    shown: Option<CommandNotice>,
+) -> Result<(), String> {
     // The notice offers this on no other channel; the command asks anyway,
     // so nothing a caller gets wrong can overwrite a package manager's files.
     let install = app_install()?;
@@ -223,19 +366,25 @@ pub async fn app_update_install(app: tauri::AppHandle) -> Result<(), String> {
         .await
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "this build is already the latest release".to_owned())?;
+    let half = move_the_command(install, update.version.clone(), shown).await?;
     // Downloaded, then judged, then installed: the plugin's own check runs
-    // on the way down, and what this release published for this target is
-    // what says those bytes are the ones the version being installed
-    // names. The read is blocking, so it runs off the async runtime.
+    // on the way down, and what this release published for this target says
+    // those bytes are the version being installed. The read is blocking, so
+    // it runs off the async runtime. Every failure from here names the
+    // command half too — it has moved by now, and a bare app error would
+    // report no update while the terminal answers the new version.
     let bytes = update
         .download(|_chunk, _total| {}, || {})
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| app_half_failed(&update.version, half, &error.to_string()))?;
     let offered = update.version.clone();
-    let digests = tauri::async_runtime::spawn_blocking(move || published_for_this_target(&offered))
+    let read = tauri::async_runtime::spawn_blocking(move || published_for_this_target(&offered))
         .await
-        .map_err(|error| format!("kendex could not read what this release published: {error}"))??;
-    install_published(&digests, bytes, &update)?;
+        .map_err(|error| format!("kendex could not read what this release published: {error}"))
+        .and_then(|published| published);
+    let digests = read.map_err(|error| app_half_failed(&update.version, half, &error))?;
+    install_published(&digests, bytes, &update)
+        .map_err(|error| app_half_failed(&update.version, half, &error))?;
     app.restart()
 }
 
