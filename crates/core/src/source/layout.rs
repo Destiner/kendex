@@ -141,8 +141,10 @@ pub(super) fn stored_in_slot(
     let Some(occupant) = occupant else {
         return Ok(None);
     };
+    // Text, not a path handed back to the operating system, so
+    // `paths::slashed` spells it rather than the platform's separator.
     let occupant = sealed.relative(&occupant).unwrap_or(&occupant);
-    Ok(Some(crate::names::shown(&occupant.display().to_string())))
+    Ok(Some(crate::names::shown(&crate::paths::slashed(occupant))))
 }
 
 pub(super) fn agent_stems(sealed: &SealedSource, dir: &str) -> Vec<String> {
