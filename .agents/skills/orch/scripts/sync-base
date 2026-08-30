@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Fetch and fast-forward the local branch selected as this repository's base.
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+usage: sync-base [REPOSITORY]
+
+Resolves the repository's base branch, fetches that branch from origin, and
+fast-forwards the checkout that owns it or the local branch ref. Prints only
+the base branch name on success. Tracked dirtiness, any untracked collision,
+or a divergent base fails closed. Unrelated untracked files are preserved.
+EOF
+}
+
+case "${1:-}" in -h|--help) usage; exit 0 ;; esac
+[[ $# -le 1 ]] || { usage >&2; exit 2; }
+
+SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPOSITORY="${1:-.}"
+REPO_ROOT="$(git -C "$REPOSITORY" rev-parse --show-toplevel 2>/dev/null)" \
+  || { echo "sync-base: not inside a git work tree: $REPOSITORY" >&2; exit 1; }
+BASE_BRANCH="$("$SCRIPT_DIR/resolve-base-branch" "$REPO_ROOT")" \
+  || { echo "sync-base: could not resolve the base branch" >&2; exit 1; }
+git check-ref-format --branch "$BASE_BRANCH" >/dev/null 2>&1 \
+  || { echo "sync-base: invalid base branch: $BASE_BRANCH" >&2; exit 1; }
+
+GIT_AUTH="$SCRIPT_DIR/../../github/scripts/git-https-auth"
+[[ -x "$GIT_AUTH" ]] || { echo "sync-base: git auth helper is missing or not executable: $GIT_AUTH" >&2; exit 1; }
+"$GIT_AUTH" -C "$REPO_ROOT" fetch --prune origin \
+  "+refs/heads/$BASE_BRANCH:refs/remotes/origin/$BASE_BRANCH"
+
+git -C "$REPO_ROOT" worktree prune
+BASE_WORKTREE=""
+CURRENT_PATH=""
+while IFS= read -r -d '' line; do
+  case "$line" in
+    worktree\ *) CURRENT_PATH="${line#worktree }" ;;
+    "branch refs/heads/$BASE_BRANCH")
+      if [[ -n "$CURRENT_PATH" && -d "$CURRENT_PATH" ]]; then
+        BASE_WORKTREE="$(cd -- "$CURRENT_PATH" && pwd -P)"
+      fi
+      ;;
+    '') CURRENT_PATH="" ;;
+  esac
+done < <(git -C "$REPO_ROOT" worktree list --porcelain -z)
+
+if [[ -n "$BASE_WORKTREE" ]]; then
+  DIRTY="$(git -C "$BASE_WORKTREE" status --porcelain --untracked-files=no)"
+  if [[ -n "$DIRTY" ]]; then
+    echo "sync-base: base checkout is dirty: $BASE_WORKTREE" >&2
+    printf '%s\n' "$DIRTY" >&2
+    exit 1
+  fi
+  COLLISION_DIR="$(mktemp -d)" || { echo "sync-base: cannot create collision scratch" >&2; exit 1; }
+  trap 'rm -rf "$COLLISION_DIR"' EXIT
+  INCOMING_PATHS="$COLLISION_DIR/incoming"
+  LOCAL_PATHS="$COLLISION_DIR/local"
+  git -C "$BASE_WORKTREE" diff --no-renames --name-only -z --diff-filter=A \
+    HEAD "origin/$BASE_BRANCH" -- > "$INCOMING_PATHS" \
+    || { echo "sync-base: cannot enumerate incoming paths" >&2; exit 1; }
+  : > "$LOCAL_PATHS"
+  git -C "$BASE_WORKTREE" ls-files --others --exclude-standard -z >> "$LOCAL_PATHS" \
+    || { echo "sync-base: cannot enumerate untracked paths" >&2; exit 1; }
+  git -C "$BASE_WORKTREE" ls-files --others --ignored --exclude-standard --directory -z >> "$LOCAL_PATHS" \
+    || { echo "sync-base: cannot enumerate ignored untracked paths" >&2; exit 1; }
+  COLLISION=""
+  INCOMING_COLLISION=""
+  while IFS= read -r -d '' incoming; do
+    while IFS= read -r -d '' local_path; do
+      local_root="${local_path%/}"
+      if [[ "$incoming" == "$local_root" || "$incoming" == "$local_root/"* || "$local_root" == "$incoming/"* ]]; then
+        COLLISION="$local_path"
+        INCOMING_COLLISION="$incoming"
+        break 2
+      fi
+    done < "$LOCAL_PATHS"
+  done < "$INCOMING_PATHS"
+  [[ -z "$COLLISION" ]] || {
+    printf 'sync-base: incoming path %s collides with untracked path %s\n' "$INCOMING_COLLISION" "$COLLISION" >&2
+    exit 1
+  }
+  git -C "$BASE_WORKTREE" merge --ff-only --no-overwrite-ignore "origin/$BASE_BRANCH" >&2
+  LOCAL_SHA="$(git -C "$BASE_WORKTREE" rev-parse "refs/heads/$BASE_BRANCH")" \
+    || { echo "sync-base: cannot resolve local $BASE_BRANCH after fast-forward" >&2; exit 1; }
+  ORIGIN_SHA="$(git -C "$BASE_WORKTREE" rev-parse "refs/remotes/origin/$BASE_BRANCH")" \
+    || { echo "sync-base: cannot resolve origin/$BASE_BRANCH after fast-forward" >&2; exit 1; }
+  [[ "$LOCAL_SHA" == "$ORIGIN_SHA" ]] || {
+    printf 'sync-base: base mismatch after fast-forward: local %s, origin %s\n' "$LOCAL_SHA" "$ORIGIN_SHA" >&2
+    exit 1
+  }
+else
+  git -C "$REPO_ROOT" fetch . \
+    "refs/remotes/origin/$BASE_BRANCH:refs/heads/$BASE_BRANCH" >&2
+fi
+printf '%s\n' "$BASE_BRANCH"

@@ -66,7 +66,21 @@ Reruns re-execute the workflow definition and verifier state pinned at the origi
 
 ## Container close
 
-`merge-pr.md` § 5 step 2's container-close sequence — the per-parent lock, the canceled-child snapshot, validation, completion, and cascade repair — is agent-interpreted prose rather than a helper script. Every step is lock-guarded and fail-closed, and each exit path names its cleanup. Mechanizing it into a tested helper is the intended evolution; grow that helper from this sequence rather than re-deriving it.
+`container-close` derives the shared main checkout, waits up to 120 seconds for
+the per-parent lock, and owns the completion gate and bundle summary. Pending or
+canceled descendants return `deferred [CHILD_IDS...]` before parent mutation;
+the helper never infers that a later child completion came from a parent
+cascade. Completion validation must provide Boolean `all_ok`, exactly one typed
+parent result, and Boolean `has_summary`. A retry with validated summary evidence
+calls `issues complete` without summary flags so it does not post the bundle
+comment twice. Exit zero prints one `closed [PARENT_ID]` or deferred line to
+stdout. A closed result may include completion diagnostics on stderr; consumers
+preserve them all. Any incomplete read, summary, or completion exits nonzero.
+`sync-base`
+likewise owns base resolution, fetch, checkout ownership, and the fast-forward.
+It preserves unrelated untracked paths and refuses incoming collisions with
+untracked paths, including ignored ones. The fast-forward itself uses Git's
+no-overwrite-ignore rule, so a writer after the diagnostic scan still fails.
 
 ## Codex app worktree routing
 
