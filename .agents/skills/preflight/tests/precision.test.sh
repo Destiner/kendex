@@ -40,7 +40,7 @@ seed() { # NAME — fixture in $R: committed baseline, origin/main, feature bran
   printf '# Guide\n' >"$R/docs/guide.md"
   printf '#!/usr/bin/env bash\nset -euo pipefail\necho hook\n' >"$R/hooks/real.sh"
   # Pre-existing violations, committed: untouched lines must stay invisible.
-  printf '# Legacy\n\nTODO: ancient and unreferenced.\n' >"$R/docs/legacy.md"
+  printf '# Legacy\n\nSee `docs/gone.md` for background.\n' >"$R/docs/legacy.md"
   printf '# History\n\nClamped in review (qodo PR #431).\n' >"$R/docs/history.md"
   printf '#!/usr/bin/env bash\necho old\nTMP="$(mktemp -d)"\n' >"$R/scripts/old.sh"
   printf '#!/usr/bin/env bash\nset -euo pipefail\n# See docs/gone.md for background.\necho old\n' >"$R/scripts/pointer.sh"
@@ -504,7 +504,6 @@ fires "the benign temp-path fixture was not clean because nothing ran" "src/crea
 
 echo "=== violations on lines this diff did not touch stay invisible ==="
 seed untouched
-printf '# Legacy\n\nTODO: ancient and unreferenced.\n\nA new paragraph.\n' >"$R/docs/legacy.md"
 printf '# History\n\nClamped in review (qodo PR #431).\n\nMore history.\n' >"$R/docs/history.md"
 printf '#!/usr/bin/env bash\necho old\nTMP="$(mktemp -d)"\necho "$TMP"\n' >"$R/scripts/old.sh"
 printf '#!/usr/bin/env bash\nset -euo pipefail\n# See docs/gone.md for background.\necho old\necho more\n' >"$R/scripts/pointer.sh"
@@ -513,13 +512,11 @@ run_pf
 clean "appending to files whose older lines violate three lanes reports nothing"
 
 echo "=== control: touching those same lines makes them this diff's problem ==="
-printf '# Legacy\n\nTODO: ancient, reworded, still unreferenced.\n\nA new paragraph.\n' >"$R/docs/legacy.md"
 printf '# History\n\nReworked in review (qodo PR #431).\n\nMore history.\n' >"$R/docs/history.md"
 printf '#!/usr/bin/env bash\necho old\nTMP="$(mktemp -d -t x)"\necho "$TMP"\n' >"$R/scripts/old.sh"
 printf '#!/usr/bin/env bash\nset -euo pipefail\n# See docs/gone.md for background, still.\necho old\necho more\n' >"$R/scripts/pointer.sh"
 git -C "$R" add -A
 run_pf
-fires "the reworded TODO line fires" "docs/legacy.md:3: [todo-links]"
 fires "the reworded attribution line fires" "docs/history.md:3: [reviewer-attribution]"
 fires "the reworked mktemp line fires" "scripts/old.sh:3: [fail-open] unchecked mktemp"
 fires "the reworked dead-citation line fires" "scripts/pointer.sh:3: [docs-cited-paths] cites a path that does not exist: docs/gone.md"
@@ -617,14 +614,11 @@ grep -q x -- "$D" || true
 f
 EOF
 printf '#!/usr/bin/env bash\nset -euo pipefail\necho vendored\n' >"$R/.agents/skills/foo/tests/foo.test.sh"
-# Upstream work markers ride along in vendored source; they are upstream's
-# backlog, not this repo's.
-printf '# Notes\n\nTODO: upstream backlog, no local issue.\n' >"$R/.agents/skills/foo/NOTES.md"
 # kendex's own render dir under .pi is a managed mirror like the rest.
 mkdir -p "$R/.pi/kendex/hooks"
 printf '#!/usr/bin/env bash\nD="$(mktemp -d)"\necho hook\n' >"$R/.pi/kendex/hooks/guard.sh"
 run_pf
-clean "a vendored skill's strict mode, scratch cleanup, masked returns, suite wiring and work markers are upstream's to fix"
+clean "a vendored skill's strict mode, scratch cleanup, masked returns and suite wiring are upstream's to fix"
 
 echo "=== control: the same bytes this repo authors itself still fail ==="
 cp "$R/.agents/skills/foo/scripts/run" "$R/scripts/run.sh"

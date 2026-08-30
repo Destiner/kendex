@@ -110,6 +110,14 @@ jobs:
         if: matrix.shard == 'shell'
         run: skills/size-ratchet/scripts/size-ratchet
 
+      # The queue-side half of the work-marker gate: the preflight job runs
+      # only on pull_request, so without this a merge group never scans the
+      # index it is about to merge. The commit lane judges only what a commit
+      # adds; this scan takes the rest, in every blob git reads as text.
+      - name: todo-ban (index-wide work-marker scan)
+        if: matrix.shard == 'shell'
+        run: skills/growth-guards/scripts/todo-ban
+
       # Every skill must route problem reports through `kendex report`. The
       # ownership guard is a backstop for issues that bypassed it, so a skill
       # carrying only a `bugs:` URL sends agents to hand-file in this repo
@@ -417,9 +425,9 @@ jobs:
     # Dogfoods the preflight skill on this repo's own PR diffs. PR-time on
     # purpose despite the fast/full split: the whole run is seconds of
     # diff-scoped checks, and its findings (fail-open bash, dead doc
-    # citations, stray work markers, broken JSON/TOML) are exactly the classes
-    # that otherwise surface as bot-review round-trips. Not a required
-    # context; merge-group correctness is owned by the sharded suites.
+    # citations, broken JSON/TOML) are exactly the classes that otherwise
+    # surface as bot-review round-trips. Not a required context; merge-group
+    # correctness is owned by the sharded suites.
     name: Preflight (diff-scoped deterministic checks)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -437,6 +445,10 @@ jobs:
       # + tools/size-ratchet-excludes; reads tracked files at HEAD only.
       - name: size-ratchet (tighten-only file-size gate)
         run: skills/size-ratchet/scripts/size-ratchet
+      # The commit lane runs todo-ban --staged and judges only what a commit
+      # adds; a marker already in a blob git reads as text is this scan's.
+      - name: todo-ban (index-wide work-marker scan)
+        run: skills/growth-guards/scripts/todo-ban
 
   cargo-tests:
     name: Cargo (workspace tests)

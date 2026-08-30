@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Pins for scripts/todo-ban: both marker shapes fire, prose that quotes or
-# names a marker word does not, excludes need reasons, and a broken scan is
-# a collection error — never a pass. Every green assertion is paired with a
-# control that proves it can fail.
+# names a marker word does not, excludes need reasons, --staged judges the
+# lines the commit ADDS while the default scope judges the whole index, and
+# a broken scan is a collection error — never a pass. Every green assertion
+# is paired with a control that proves it can fail.
 #
 # Marker words are assembled from split tokens throughout so this test
 # file never contains a marker shape itself — the kendex repo runs
@@ -254,6 +255,486 @@ git -C "$R" add tools/growth-guards-todo-excludes
 OUT="$(cd "$R" && GROWTH_GUARDS_TODO_EXCLUDES=tools/growth-guards-todo-excludes "$TB" 2>&1)" && RC=0 || RC=$?
 [ "$RC" -eq 1 ] && ok "control: staging the emptied list re-exposes the marker" \
   || bad "control: staging the emptied list re-exposes the marker" "rc=$RC out=$OUT"
+
+echo "=== --staged judges the lines the commit adds, not the whole index ==="
+new_repo stagedscope
+printf 'fn main() {}\n' >"$R/ok.rs"
+git -C "$R" add -A
+git -C "$R" commit -qm seed
+# Someone else's marker, committed and untouched by the commit under judgement.
+printf '// %s: left in a fixture\n' "$TD" >"$R/fixture.rs"
+git -C "$R" add -A
+git -C "$R" commit -qm fixture
+printf 'fn other() {}\n' >>"$R/ok.rs"
+git -C "$R" add ok.rs
+run_tb --staged
+[ "$RC" -eq 0 ] && case "$OUT" in *"the staged diff adds no work markers"*) true ;; *) false ;; esac \
+  && ok "a commit that adds no marker passes on a repo whose index holds one" \
+  || bad "a commit adding no marker passes" "rc=$RC out=$OUT"
+run_tb
+[ "$RC" -eq 1 ] && case "$OUT" in *"work marker: fixture.rs:1:"*) true ;; *) false ;; esac \
+  && ok "control: the index scan (CI) still refuses that same marker" \
+  || bad "control: the index scan refuses the marker" "rc=$RC out=$OUT"
+
+# The same commit, now adding a marker of its own.
+printf '// %s: added by this commit\n' "$FX" >>"$R/ok.rs"
+git -C "$R" add ok.rs
+run_tb --staged
+[ "$RC" -eq 1 ] && case "$OUT" in *"work marker: ok.rs:3:"*) true ;; *) false ;; esac \
+  && ok "a marker the staged diff adds is refused, at the line it lands on" \
+  || bad "a staged marker is refused" "rc=$RC out=$OUT"
+case "$OUT" in
+  *"fixture.rs"*) bad "the untouched fixture must stay out of the commit-scope verdict" "$OUT" ;;
+  *) ok "and the untouched fixture is not in that verdict" ;;
+esac
+
+echo "=== --staged reads the index, not the work tree ==="
+new_repo stagedbytes
+printf 'fn main() {}\n' >"$R/ok.rs"
+git -C "$R" add -A
+git -C "$R" commit -qm seed
+printf '// %s: staged\n' "$TD" >>"$R/ok.rs"
+git -C "$R" add ok.rs
+printf 'fn main() {}\n' >"$R/ok.rs" # the work tree walks it back; the index still carries it
+run_tb --staged
+[ "$RC" -eq 1 ] && ok "staged bytes decide, whatever the work tree says now" \
+  || bad "staged bytes decide" "rc=$RC out=$OUT"
+# Control: staging the walked-back file clears the verdict.
+git -C "$R" add ok.rs
+run_tb --staged
+[ "$RC" -eq 0 ] && ok "control: staging the walked-back file clears it" \
+  || bad "control: staging the walked-back file clears it" "rc=$RC out=$OUT"
+
+echo "=== --staged on a repository's first commit diffs against the empty tree ==="
+new_repo firstcommit
+printf '// %s: in the very first commit\n' "$TD" >"$R/a.rs"
+git -C "$R" add -A
+run_tb --staged
+[ "$RC" -eq 1 ] && case "$OUT" in *"work marker: a.rs:1:"*) true ;; *) false ;; esac \
+  && ok "with no HEAD to diff against, the whole staged tree reads as added" \
+  || bad "the first commit is judged" "rc=$RC out=$OUT"
+# Control: the same repository with no marker staged passes rather than
+# erroring on the missing HEAD.
+printf 'fn main() {}\n' >"$R/a.rs"
+git -C "$R" add -A
+run_tb --staged
+[ "$RC" -eq 0 ] && case "$OUT" in *"the staged diff adds no work markers"*) true ;; *) false ;; esac \
+  && ok "control: a clean first commit passes, not exit 2 for want of a HEAD" \
+  || bad "control: a clean first commit passes" "rc=$RC out=$OUT"
+
+echo "=== --staged honours the exclusion list ==="
+new_repo stagedexc
+printf 'fn main() {}\n' >"$R/ok.rs"
+mkdir -p "$R/vendor" "$R/tools"
+git -C "$R" add -A
+git -C "$R" commit -qm seed
+printf '// %s: vendored upstream marker\n' "$TD" >"$R/vendor/lib.rs"
+git -C "$R" add -A
+run_tb --staged
+[ "$RC" -eq 1 ] && ok "control: the staged vendored marker fails without an excludes row" \
+  || bad "control: staged vendored marker fails" "rc=$RC out=$OUT"
+printf 'vendor/*\tvendored third-party code\n' >"$R/tools/todo-ban-excludes"
+git -C "$R" add -A
+run_tb --staged
+[ "$RC" -eq 0 ] && ok "the excludes row silences the staged vendored tree too" \
+  || bad "excludes row silences the staged tree" "rc=$RC out=$OUT"
+
+echo "=== a .gitattributes rule cannot hide staged content from the lane ==="
+new_repo stagedattr
+printf 'fn main() {}\n' >"$R/ok.rs"
+git -C "$R" add -A
+git -C "$R" commit -qm seed
+# A committed '-diff' rule makes git call every .rs file binary: the plain
+# staged diff then carries no hunks at all, and the index scan skips the blob
+# unless both are forced to text. That is the shape a whole extension could
+# be hidden behind by committing one attributes line.
+printf '*.rs -diff\n' >"$R/.gitattributes"
+git -C "$R" add -A
+git -C "$R" commit -qm attrs
+printf '// %s: behind an attributes rule\n' "$TD" >>"$R/ok.rs"
+git -C "$R" add ok.rs
+case "$(git -C "$R" diff --cached -- ok.rs)" in
+  *"Binary files"*) ok "fixture: the rule does suppress the unforced staged diff" ;;
+  *) bad "fixture: the rule suppresses the unforced staged diff" "the attributes rule did not take" ;;
+esac
+run_tb --staged
+[ "$RC" -eq 1 ] && case "$OUT" in *"work marker: ok.rs:2:"*) true ;; *) false ;; esac \
+  && ok "a marker added under a non-diffable path is refused, at its own line" \
+  || bad "a marker under a non-diffable path is refused" "rc=$RC out=$OUT"
+
+# Control: the same rule still in force, over an addition that carries no
+# marker — forcing text reads real content, it does not fail everything it
+# forces through. Committing the marker first is what makes this arm reach
+# that read: the index blob goes on carrying a marker, so the pre-filter
+# lists the path and the --text diff really runs over it, and the verdict
+# is decided by the one line THIS commit adds.
+git -C "$R" commit -qm "the marker, now committed"
+printf 'fn clean() {}\n' >>"$R/ok.rs"
+git -C "$R" add ok.rs
+case "$(git -C "$R" diff --cached -- ok.rs)" in
+  *"Binary files"*) ok "fixture: the rule still suppresses the unforced staged diff" ;;
+  *) bad "fixture: the rule still suppresses the unforced staged diff" "the attributes rule lapsed" ;;
+esac
+run_tb --staged
+[ "$RC" -eq 0 ] && case "$OUT" in *"the staged diff adds no work markers"*) true ;; *) false ;; esac \
+  && ok "a clean addition to a marker-carrying file under the same rule passes" \
+  || bad "a clean addition under the rule passes" "rc=$RC out=$OUT"
+case "$OUT" in
+  *"ok.rs"*) bad "the committed marker was attributed to the commit that only added a clean line" "$OUT" ;;
+  *) ok "and the marker it already carried stays out of this commit's verdict" ;;
+esac
+
+echo "=== content decides what is scanned, never an attribute ==="
+new_repo binaryblob
+printf 'fn main() {}\n' >"$R/ok.rs"
+git -C "$R" add -A
+git -C "$R" commit -qm seed
+# A real asset whose bytes happen to spell a marker. The pre-filter forces
+# every blob to text, so this path IS listed; what keeps it out of the
+# verdict is the content sniff — a NUL in the first block, git's own test —
+# and nothing about how the path is named or attributed. Without the sniff
+# the raw bytes reach awk and the commit is blocked by a garbled record.
+printf '\211PNG\r\n\032\n\000\000 %s: in the pixels\n' "$TD" >"$R/asset.png"
+git -C "$R" add asset.png
+run_tb --staged
+[ "$RC" -eq 0 ] && case "$OUT" in *"the staged diff adds no work markers"*) true ;; *) false ;; esac \
+  && ok "a genuinely binary blob whose bytes spell a marker does not fire" \
+  || bad "a binary blob does not fire" "rc=$RC out=$OUT"
+
+# The must-fail control: the same bytes with the NULs taken out are a text
+# file, and a text file is read whatever it is called.
+printf '\211PNG\r\n\032\n %s: in the pixels\n' "$TD" >"$R/asset.png"
+git -C "$R" add asset.png
+run_tb --staged
+[ "$RC" -eq 1 ] && case "$OUT" in *"work marker: asset.png:"*) true ;; *) false ;; esac \
+  && ok "control: the same bytes without a NUL are text, and fire" \
+  || bad "control: the NUL-free bytes fire" "rc=$RC out=$OUT"
+
+# The window is git's, 8000 bytes, and the arms above only pin it from
+# below. A NUL past 8000 leaves git calling the blob text — `git diff
+# --numstat` counts its lines rather than printing '-' — so the sniff must
+# read it too. A wider read here answers "binary", the file is skipped, and
+# a marker that fails the index scan passes the commit.
+{
+  head -c 8050 /dev/zero | LC_ALL=C tr '\000' 'x'
+  printf '\000\n// %s: past the 8000-byte window\n' "$TD"
+} >"$R/late-nul.rs"
+git -C "$R" reset -q -- asset.png
+git -C "$R" add late-nul.rs
+[ "$(git -C "$R" diff --cached --numstat -- late-nul.rs | cut -f1)" = 2 ] \
+  || bad "fixture: git does not call the late-NUL blob text" "$(git -C "$R" diff --cached --numstat -- late-nul.rs)"
+run_tb --staged
+[ "$RC" -eq 1 ] && case "$OUT" in *"work marker: late-nul.rs:2:"*) true ;; *) false ;; esac \
+  && ok "a NUL past git's 8000-byte window leaves the blob text, and it fires" \
+  || bad "a late NUL leaves the blob text" "rc=$RC out=$OUT"
+
+echo "=== a type change emits two diff sections, neither header an added line ==="
+new_repo typechange
+printf 'fn main() {}\n' >"$R/ok.rs"
+# The path itself carries a marker shape, so a '+++ b/<path>' header read as
+# content fires. A symlink-to-file change emits a deletion section and a
+# creation section for the one path, and the creation section's header sits
+# between them at the deletion hunk's numbering.
+ln -s ok.rs "$R/a $TD: x.md"
+git -C "$R" add -A
+git -C "$R" commit -qm seed
+rm -- "$R/a $TD: x.md"
+printf 'fn clean() {}\n' >"$R/a $TD: x.md"
+git -C "$R" add -A
+run_tb --staged
+# The pre-filter matches CONTENT, never path names, so a clean file at a
+# path shaped like a marker is never listed and the run ends before the
+# parser. That is the whole of what this arm pins; the parser is the pair
+# below.
+[ "$RC" -eq 0 ] \
+  && ok "a type change to a clean regular file passes: a marker shape in the PATH is not content" \
+  || bad "a clean type change passes" "rc=$RC out=$OUT"
+
+# The same type change, its new regular file carrying a marker on one line
+# and clean content on the next. This is the arm that reaches the parser:
+# the path is listed, both diff sections are read, and only the line the
+# file actually carries may be named — not the creation section's header,
+# and not the clean line beside it.
+printf '// %s: added with the regular file\nfn clean() {}\n' "$FX" >"$R/a $TD: x.md"
+git -C "$R" add -A
+run_tb --staged
+[ "$RC" -eq 1 ] && case "$OUT" in *"x.md:1:"*) true ;; *) false ;; esac \
+  && ok "a marker in the new regular file fires at its own line" \
+  || bad "the marker in the new regular file fires" "rc=$RC out=$OUT"
+case "$OUT" in *":0:"*) bad "the creation section's header rode along as line 0" "$OUT" ;; *) ok "and the section header is not a record" ;; esac
+case "$OUT" in *"x.md:2:"*) bad "the clean line beside the marker was judged a marker" "$OUT" ;; *) ok "and the clean line beside it is judged on its own" ;; esac
+
+echo "=== rename detection is held to EXACT content ==="
+new_repo renamed
+i=1
+: >"$R/old.rs"
+while [ "$i" -le 40 ]; do
+  printf 'fn f%s() {}\n' "$i" >>"$R/old.rs"
+  i=$((i + 1))
+done
+git -C "$R" add -A
+git -C "$R" commit -qm seed
+# Moved AND edited: at 100% it does not pair, so it arrives as an addition
+# and is read whole. At any lower threshold it pairs as R, is dropped by
+# --diff-filter=AMT, and the marker below is never judged.
+git -C "$R" mv old.rs new.rs
+printf '// %s: added in the move\n' "$TD" >>"$R/new.rs"
+git -C "$R" add new.rs
+run_tb --staged
+[ "$RC" -eq 1 ] && case "$OUT" in *"work marker: new.rs:41:"*) true ;; *) false ;; esac \
+  && ok "a file that moved and gained a marker is read whole, at its new path" \
+  || bad "a moved-and-edited file is read whole" "rc=$RC out=$OUT"
+
+# The counterpart the same threshold buys: a pure move adds no line, so a
+# marker someone else committed does not become this commit's.
+new_repo renamepure
+printf '// %s: committed long ago\n' "$TD" >"$R/legacy.rs"
+git -C "$R" add -A
+git -C "$R" commit -qm seed
+git -C "$R" mv legacy.rs moved.rs
+run_tb --staged
+[ "$RC" -eq 0 ] && ok "a pure move of a committed marker adds no line, so it passes" \
+  || bad "a pure move passes" "rc=$RC out=$OUT"
+run_tb
+[ "$RC" -eq 1 ] && case "$OUT" in *"work marker: moved.rs:1:"*) true ;; *) false ;; esac \
+  && ok "control: the index scan still refuses that marker at its new path" \
+  || bad "control: the index scan refuses the moved marker" "rc=$RC out=$OUT"
+
+echo "=== fail-closed: a broken staged scan terminates, never passes ==="
+new_repo stagedfail
+printf 'fn main() {}\n' >"$R/ok.rs"
+git -C "$R" add -A
+git -C "$R" commit -qm seed
+printf 'fn other() {}\n' >>"$R/ok.rs"
+git -C "$R" add ok.rs
+run_tb --staged
+[ "$RC" -eq 0 ] && ok "shim-free control: the fixture passes with the real git" \
+  || bad "shim-free control passes" "rc=$RC out=$OUT"
+
+# One shim per collection step, so each error path is proven on its own: the
+# change-set collection, then the per-file read of the added lines.
+make_diff_shim() { # DIR MATCH — a git whose `diff` fails when MATCH is in argv
+  mkdir -p "$1"
+  cat >"$1/git" <<EOF
+#!/usr/bin/env bash
+saw_diff=0
+saw_match=0
+for a in "\$@"; do
+  [ "\$a" = "diff" ] && saw_diff=1
+  [ "\$a" = "$2" ] && saw_match=1
+done
+if [ "\$saw_diff" = 1 ] && [ "\$saw_match" = 1 ]; then
+  echo "git diff: simulated execution failure" >&2
+  exit 128
+fi
+exec "$REAL_GIT" "\$@"
+EOF
+  chmod +x "$1/git"
+}
+
+make_diff_shim "$TMP/raw-shim" --raw
+OUT="$(cd "$R" && PATH="$TMP/raw-shim:$PATH" "$TB" --staged 2>&1)" && RC=0 || RC=$?
+[ "$RC" -eq 2 ] && case "$OUT" in *"could not collect the staged changes"*) true ;; *) false ;; esac \
+  && ok "a failed change-set collection is exit 2, never OK" \
+  || bad "failed change-set collection is exit 2" "rc=$RC out=$OUT"
+case "$OUT" in *"todo-ban: OK"*) bad "no OK verdict may accompany a broken collection" "$OUT" ;; *) ok "no OK verdict accompanies the broken collection" ;; esac
+
+# The per-file read is reached only for a path the index scan named, so this
+# case stages a marker to give the shim a file to fail on.
+printf '// %s: staged for the per-file read\n' "$TD" >>"$R/ok.rs"
+git -C "$R" add ok.rs
+make_diff_shim "$TMP/hunk-shim" -U0
+OUT="$(cd "$R" && PATH="$TMP/hunk-shim:$PATH" "$TB" --staged 2>&1)" && RC=0 || RC=$?
+[ "$RC" -eq 2 ] && case "$OUT" in *"could not read the staged additions in 'ok.rs'"*) true ;; *) false ;; esac \
+  && ok "a file whose added lines cannot be read is exit 2, naming it" \
+  || bad "unreadable added lines are exit 2" "rc=$RC out=$OUT"
+case "$OUT" in *"todo-ban: OK"*) bad "no OK verdict may accompany an unread file" "$OUT" ;; *) ok "no OK verdict accompanies the unread file" ;; esac
+
+echo "=== fail-closed: a hunk parser that cannot run is a collection error ==="
+new_repo hunkparse
+printf 'fn main() {}\n' >"$R/ok.rs"
+git -C "$R" add -A
+git -C "$R" commit -qm seed
+printf '// %s: staged for the parser to read\n' "$TD" >>"$R/ok.rs"
+git -C "$R" add ok.rs
+run_tb --staged
+[ "$RC" -eq 1 ] && ok "shim-free control: the staged marker fires with the real awk" \
+  || bad "shim-free control fires" "rc=$RC out=$OUT"
+
+# The shim exits 1 on purpose: 1 is this family's "violations", so a parser
+# status read as the lane's own would fold a measurement that never ran into
+# a violation verdict, with no line saying so.
+REAL_AWK="$(command -v awk)"
+AWK_SHIM="$TMP/awk-shim"
+mkdir -p "$AWK_SHIM"
+cat >"$AWK_SHIM/awk" <<EOF
+#!/usr/bin/env bash
+for a in "\$@"; do
+  case "\$a" in
+    *hunk*)
+      echo "awk: simulated hunk-parser failure" >&2
+      exit 1
+      ;;
+  esac
+done
+exec "$REAL_AWK" "\$@"
+EOF
+chmod +x "$AWK_SHIM/awk"
+OUT="$(cd "$R" && PATH="$AWK_SHIM:$PATH" "$TB" --staged 2>&1)" && RC=0 || RC=$?
+[ "$RC" -eq 2 ] && case "$OUT" in *"could not parse the staged additions in 'ok.rs'"*) true ;; *) false ;; esac \
+  && ok "a hunk parser that fails is exit 2, naming the file" \
+  || bad "a failed hunk parser is exit 2" "rc=$RC out=$OUT"
+case "$OUT" in *"work marker:"*) bad "a scan that never ran may not produce a violation" "$OUT" ;; *) ok "and no violation verdict comes with it" ;; esac
+case "$OUT" in *"todo-ban: OK"*) bad "no OK verdict may accompany a broken parse" "$OUT" ;; *) ok "no OK verdict accompanies the broken parse" ;; esac
+
+echo "=== fail-closed: the staged pre-filter is guarded like the index scan ==="
+# The staged lane runs a git grep of its own — the carriers pre-filter — and
+# it is the lane's newest fail-open path: an empty carriers list filters
+# every staged path out and the lane prints OK at exit 0. Both arms the
+# index lane already has are repeated here in --staged form, each over a
+# fixture that stages a marker so neither can be clean by construction.
+new_repo stagedgrepfail
+printf 'fn main() {}\n' >"$R/ok.rs"
+git -C "$R" add -A
+git -C "$R" commit -qm seed
+printf '// %s: staged for the pre-filter to find\n' "$HK" >>"$R/ok.rs"
+git -C "$R" add ok.rs
+run_tb --staged
+[ "$RC" -eq 1 ] && ok "shim-free control: the staged marker fires with the real git" \
+  || bad "shim-free control fires" "rc=$RC out=$OUT"
+
+OUT="$(cd "$R" && PATH="$GIT_SHIM:$PATH" "$TB" --staged 2>&1)" && RC=0 || RC=$?
+[ "$RC" -eq 2 ] \
+  && case "$OUT" in *"git grep failed listing the staged files that carry a work marker"*) true ;; *) false ;; esac \
+  && ok "a git grep execution failure in the staged pre-filter is exit 2, never OK" \
+  || bad "a broken staged pre-filter is exit 2" "rc=$RC out=$OUT"
+case "$OUT" in *"todo-ban: OK"*) bad "no OK verdict may accompany a broken staged pre-filter" "$OUT" ;; *) ok "no OK verdict accompanies the broken staged pre-filter" ;; esac
+
+# The other arm: the scan runs and reports on stderr instead. git spends no
+# error status on a blob it cannot read, so the `error:` line is the only
+# thing separating that from a clean scan.
+new_repo stagedunreadable
+printf 'fn main() {}\n' >"$R/ok.rs"
+git -C "$R" add -A
+git -C "$R" commit -qm seed
+printf '// %s: staged over a blob about to vanish\n' "$TD" >>"$R/ok.rs"
+git -C "$R" add ok.rs
+run_tb --staged
+[ "$RC" -eq 1 ] && ok "control: the staged marker trips while its blob is readable" \
+  || bad "control: readable staged blob trips" "rc=$RC out=$OUT"
+OID="$(git -C "$R" rev-parse :ok.rs)"
+[ -f "$R/.git/objects/${OID:0:2}/${OID:2}" ] \
+  || bad "fixture: the staged blob is not a loose object at the expected path" "$OID"
+rm -f -- "$R/.git/objects/${OID:0:2}/${OID:2}"
+run_tb --staged
+[ "$RC" -eq 2 ] && case "$OUT" in *"error: "*"unable to read"*) true ;; *) false ;; esac \
+  && ok "a vanished staged blob is exit 2 carrying git's own error line" \
+  || bad "a vanished staged blob is exit 2 with git's error line" "rc=$RC out=$OUT"
+case "$OUT" in *"todo-ban: OK"*) bad "no OK verdict may accompany an unread staged blob" "$OUT" ;; *) ok "no OK verdict accompanies the unread staged blob" ;; esac
+
+# The content sniff reads the blob itself, so it answers for its own
+# failure: a cat-file that cannot run is a collection error, never a file
+# skipped as unscannable and folded into a clean verdict.
+new_repo sniffail
+printf 'fn main() {}\n' >"$R/ok.rs"
+git -C "$R" add -A
+git -C "$R" commit -qm seed
+printf '// %s: staged for the sniff to read\n' "$TD" >>"$R/ok.rs"
+git -C "$R" add ok.rs
+CATFILE_SHIM="$TMP/catfile-shim"
+mkdir -p "$CATFILE_SHIM"
+cat >"$CATFILE_SHIM/git" <<EOF
+#!/usr/bin/env bash
+for a in "\$@"; do
+  if [ "\$a" = "cat-file" ]; then
+    echo "git cat-file: simulated execution failure" >&2
+    exit 128
+  fi
+done
+exec "$REAL_GIT" "\$@"
+EOF
+chmod +x "$CATFILE_SHIM/git"
+OUT="$(cd "$R" && PATH="$CATFILE_SHIM:$PATH" "$TB" --staged 2>&1)" && RC=0 || RC=$?
+[ "$RC" -eq 2 ] && case "$OUT" in *"could not read the staged blob"*) true ;; *) false ;; esac \
+  && ok "a content sniff that cannot read the blob is exit 2, never OK" \
+  || bad "a broken content sniff is exit 2" "rc=$RC out=$OUT"
+case "$OUT" in *"todo-ban: OK"*) bad "no OK verdict may accompany a broken content sniff" "$OUT" ;; *) ok "no OK verdict accompanies the broken content sniff" ;; esac
+
+# The sniff's two byte counts are effectful calls, and a count that fails
+# silently must not be allowed to decide the verdict. Each arm below breaks
+# exactly one of them, so each pins its own guard: with the first count
+# broken the second still succeeds, and with the second broken the first
+# still succeeds. Both must terminate the run rather than fold the file
+# into a clean pass.
+new_repo sniffcount
+printf 'fn main() {}\n' >"$R/ok.rs"
+git -C "$R" add -A
+git -C "$R" commit -qm seed
+printf '// %s: staged for the counts to read\n' "$TD" >>"$R/ok.rs"
+git -C "$R" add ok.rs
+run_tb --staged
+[ "$RC" -eq 1 ] && ok "shim-free control: the staged marker fires with the real counts" \
+  || bad "shim-free control fires with the real counts" "rc=$RC out=$OUT"
+
+# The first count only: the shim fails once per run, so the size of the
+# block fails while the NUL-free count that follows it succeeds.
+COUNT_SHIM="$TMP/count-shim"
+mkdir -p "$COUNT_SHIM"
+cat >"$COUNT_SHIM/wc" <<EOF
+#!/usr/bin/env bash
+if [ ! -e "$TMP/wc-fired" ]; then
+  : >"$TMP/wc-fired"
+  echo "wc: simulated execution failure" >&2
+  exit 1
+fi
+exec "$(command -v wc)" "\$@"
+EOF
+chmod +x "$COUNT_SHIM/wc"
+rm -f "$TMP/wc-fired"
+OUT="$(cd "$R" && PATH="$COUNT_SHIM:$PATH" "$TB" --staged 2>&1)" && RC=0 || RC=$?
+[ "$RC" -eq 2 ] && case "$OUT" in *"could not size the first block of the staged blob"*) true ;; *) false ;; esac \
+  && ok "a first block that cannot be sized is exit 2, never OK" \
+  || bad "an unsized first block is exit 2" "rc=$RC out=$OUT"
+case "$OUT" in *"todo-ban: OK"*) bad "no OK verdict may accompany an unsized first block" "$OUT" ;; *) ok "no OK verdict accompanies the unsized first block" ;; esac
+
+# The second count only: the NUL strip fails inside a pipeline, which is
+# the dangerous direction — a zero there reads as "every byte was a NUL".
+TR_SHIM="$TMP/tr-shim"
+mkdir -p "$TR_SHIM"
+cat >"$TR_SHIM/tr" <<'EOF'
+#!/usr/bin/env bash
+echo "tr: simulated execution failure" >&2
+exit 1
+EOF
+chmod +x "$TR_SHIM/tr"
+OUT="$(cd "$R" && PATH="$TR_SHIM:$PATH" "$TB" --staged 2>&1)" && RC=0 || RC=$?
+[ "$RC" -eq 2 ] && case "$OUT" in *"could not count the NUL-free bytes of the staged blob"*) true ;; *) false ;; esac \
+  && ok "a NUL-free count that cannot run is exit 2, never OK" \
+  || bad "a broken NUL-free count is exit 2" "rc=$RC out=$OUT"
+case "$OUT" in *"todo-ban: OK"*) bad "no OK verdict may accompany a broken NUL-free count" "$OUT" ;; *) ok "no OK verdict accompanies the broken NUL-free count" ;; esac
+
+echo "=== the carriers pre-filter is chunked, and every chunk survives ==="
+# The chunk size is 256, so a change set larger than that is the only shape
+# that runs the loop more than once. A chunk that overwrites its
+# predecessors instead of appending drops the carrier named by an earlier
+# one, and the lane prints OK: this repository's own render-propagation
+# commits stage several hundred files at a time, so the shape is routine.
+new_repo chunking
+printf 'fn main() {}\n' >"$R/seed.rs"
+git -C "$R" add -A
+git -C "$R" commit -qm seed
+printf '// %s: in the first chunk\n' "$TD" >"$R/a000.rs"
+i=1
+while [ "$i" -lt 300 ]; do
+  printf 'fn f%s() {}\n' "$i" >"$R/$(printf 'a%03d' "$i").rs"
+  i=$((i + 1))
+done
+git -C "$R" add -A
+run_tb --staged
+[ "$RC" -eq 1 ] && case "$OUT" in *"work marker: a000.rs:1:"*) true ;; *) false ;; esac \
+  && ok "a marker in the first of 300 staged paths survives every later chunk" \
+  || bad "the first chunk's carrier survives" "rc=$RC out=$OUT"
+case "$OUT" in *"todo-ban: OK"*) bad "no OK verdict may accompany a chunked carrier" "$OUT" ;; *) ok "no OK verdict accompanies the chunked scan" ;; esac
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
