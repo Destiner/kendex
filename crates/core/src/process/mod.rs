@@ -41,6 +41,16 @@ const GROUP_GRACE: Duration = Duration::from_millis(100);
 /// Environment that points git at a different repository than the caller
 /// named — inherited from whatever launched the app, including another
 /// harness mid-operation.
+///
+/// `GIT_ATTR_SOURCE` is here rather than beside the materialising settings
+/// because redirecting git's input is the whole of what it does, which is
+/// what this list is: it names a treeish to read `.gitattributes` from
+/// instead of the tree in hand, so it is neither the repository's answer
+/// nor the user's configuration but a redirect the ambient environment
+/// supplies. On the write it would convert a checkout past every setting
+/// below; on a read it would have `status` judge a working tree against
+/// some other commit's rules. The second is the worse of the two and only
+/// scrubbing everywhere prevents it.
 const GIT_REDIRECTS: &[&str] = &[
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -49,6 +59,68 @@ const GIT_REDIRECTS: &[&str] = &[
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
     "GIT_COMMON_DIR",
     "GIT_NAMESPACE",
+    "GIT_ATTR_SOURCE",
+];
+
+/// Configuration every git call settles on its own command line, where no
+/// gitconfig — the host's, the user's, or one a downloaded repository ships
+/// — can reopen it.
+///
+/// The `ext::` transport runs a shell command named in the URL, and a
+/// manifest's `repo` string is what reaches `git clone`.
+const PINNED: &[&str] = &["protocol.ext.allow=never"];
+
+/// Settled on top of [`PINNED`], for the one call that writes catalog
+/// content this machine then reads.
+///
+/// The rule is what the operation does, not which constructor it came
+/// through: git converts as it writes a working tree, so an operation that
+/// writes one is what needs this and nothing else does. `git_into` is
+/// where the only such operation kendex runs lives, `checkout-index` out
+/// of the mirror. A later call that writes a working tree owes them too,
+/// wherever it is built.
+///
+/// What the host's git is configured to do to line endings must not decide
+/// what a catalog checks out. Both settings tell git to rewrite them as it
+/// writes a working tree, and Git for Windows' installer puts
+/// `autocrlf=true` in the system config — which is what the GitHub Actions
+/// Windows runner carries — so the same catalog gave one set of bytes
+/// there and another on Linux. Settled here, that configuration no longer
+/// reaches the write. Both rather than one, because `core.eol` decides for
+/// a repository that marks its files as text and `core.autocrlf` for one
+/// that does not.
+///
+/// Attributes outrank configuration, and the host can supply those too: a
+/// global attributes file, named by `core.attributesFile` or found at its
+/// default path, and a system-wide one. Either holding `* text eol=crlf`
+/// converts the checkout with the settings above already in place. So
+/// `core.attributesFile` is emptied here, which is git's documented unset,
+/// and `GIT_ATTR_NOSYSTEM` in the environment takes the system file out.
+///
+/// That is the boundary, and it is the line worth holding rather than
+/// narrowing the claim again: what the *host* says is silenced, what the
+/// *catalog* says is not. A repository's own committed `.gitattributes`
+/// still decides — `* text eol=crlf` still gets CRLF, and an attribute
+/// selecting `filter=<driver>` still reaches for a `smudge` command that
+/// lives in configuration, so one commit can land differently on a host
+/// defining that driver. Neither is bypassed, because whose intent wins
+/// between a catalog author and the machine reading them is a product
+/// question rather than this module's. KEN-850 owns it.
+///
+/// It goes nowhere else, and the reach is the point rather than an
+/// oversight. A call that only *inspects* a repository is asking what that
+/// repository thinks, and its own normalisation is part of the answer:
+/// `git status` compares the working tree against the index through it, so
+/// forcing the conversion off there reports a line-ending-only change
+/// nobody made and the submit preflight refuses a clean tree. That is a
+/// repository the person in front of kendex owns, not one kendex
+/// downloaded.
+const MATERIALISING: &[&str] = &[
+    "core.autocrlf=false",
+    "core.eol=lf",
+    // An empty value is how git spells "no attributes file", and it
+    // displaces the default path as well as any the host configured.
+    "core.attributesFile=",
 ];
 
 mod programs;
@@ -132,19 +204,25 @@ impl Hardened {
     }
 
     fn git_command(args: Vec<OsString>, cwd: Option<&Path>) -> Hardened {
-        // The `ext::` transport runs a shell command named in the URL. A
-        // manifest's `repo` string is what reaches `git clone`, so it is
-        // shut on the command line, where a gitconfig cannot reopen it.
-        let mut hardened = Hardened::new(
-            "git",
-            [
-                OsString::from("-c"),
-                OsString::from("protocol.ext.allow=never"),
-            ]
-            .into_iter()
-            .chain(args)
-            .collect(),
-        );
+        Hardened::git_settled(PINNED, args, cwd)
+    }
+
+    /// The same, for the call that writes catalog content — see
+    /// [`MATERIALISING`].
+    fn git_materialising_command(args: Vec<OsString>, cwd: Option<&Path>) -> Hardened {
+        let settled: Vec<&str> = PINNED.iter().chain(MATERIALISING).copied().collect();
+        let mut hardened = Hardened::git_settled(&settled, args, cwd);
+        // The system attributes file has no config key to empty, so the
+        // one switch git offers for it is this.
+        hardened.command.env("GIT_ATTR_NOSYSTEM", "1");
+        hardened
+    }
+
+    fn git_settled(settings: &[&str], args: Vec<OsString>, cwd: Option<&Path>) -> Hardened {
+        let settled = settings
+            .iter()
+            .flat_map(|setting| [OsString::from("-c"), OsString::from(*setting)]);
+        let mut hardened = Hardened::new("git", settled.chain(args).collect());
         hardened.scrub_git_redirects();
         let inherited = std::env::var("GIT_SSH_COMMAND").ok();
         hardened

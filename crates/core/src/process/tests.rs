@@ -29,10 +29,307 @@ fn git_runs_without_redirecting_environment_and_without_prompts() {
             .ends_with("-oBatchMode=yes")
     );
     let args: Vec<_> = hardened.command.get_args().collect();
+    let settled: Vec<_> = PINNED
+        .iter()
+        .flat_map(|setting| [OsStr::new("-c"), OsStr::new(setting)])
+        .collect();
+    assert_eq!(&args[..settled.len()], settled.as_slice());
+}
+
+/// A repository holding `one\ntwo\n` that asks for CRLF in its working
+/// tree, by the config `asked` sets and the `attributes` it ships. The host
+/// that asks by default is Windows, but neither setting is Windows-only, so
+/// the arrangement that host makes is built here, in a place that outranks
+/// everything but the command line.
+fn asking_repository(dir: &Path, attributes: Option<&str>, asked: &[&str]) {
+    if let Some(attributes) = attributes {
+        fs::write(dir.join(".gitattributes"), attributes).unwrap();
+    }
+    fs::write(dir.join("SKILL.md"), "one\ntwo\n").unwrap();
+    for args in [
+        vec!["init", "--quiet", "-b", "main"],
+        asked.to_vec(),
+        vec!["add", "-A"],
+        vec![
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "--quiet",
+            "-m",
+            "one",
+        ],
+    ] {
+        let run = Hardened::git(&args, Some(dir)).run().unwrap();
+        assert!(run.status.success(), "git {args:?}");
+    }
+}
+
+/// The two doors. `core.autocrlf=true` is what Git for Windows' installer
+/// writes into the system config, and it decides for a repository that says
+/// nothing about its own files; `core.eol` decides for one that marks them
+/// as text.
+const ASKING: [(Option<&str>, &[&str]); 2] = [
+    (None, &["config", "core.autocrlf", "true"]),
+    (Some("* text\n"), &["config", "core.eol", "crlf"]),
+];
+
+/// Content is materialised the way `remote::store` materialises it, and
+/// what lands is what was committed however the repository asks for it to
+/// be written.
+#[test]
+fn catalog_content_is_written_as_committed_whatever_the_repository_asks() {
+    for (attributes, asked) in ASKING {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        let into = tmp.path().join("into");
+        fs::create_dir_all(&repo).unwrap();
+        fs::create_dir_all(&into).unwrap();
+        asking_repository(&repo, attributes, asked);
+
+        let git_dir = repo.join(".git");
+        assert!(
+            Hardened::git_bare(&git_dir, &["read-tree", "HEAD"])
+                .run()
+                .unwrap()
+                .status
+                .success()
+        );
+        let written = Hardened::git_into(&git_dir, &into, &["checkout-index", "--all", "--force"])
+            .run()
+            .unwrap();
+        assert!(written.status.success(), "{asked:?}");
+        assert_eq!(
+            fs::read_to_string(into.join("SKILL.md")).unwrap(),
+            "one\ntwo\n",
+            "{asked:?} reached the content kendex reads"
+        );
+    }
+}
+
+/// The host can supply attributes as well as configuration, and attributes
+/// outrank it. A global attributes file converts the checkout with the
+/// line-ending settings already in place, so it is taken out of the
+/// materialising call too — and this repository commits none of its own,
+/// so the rule under test is the host's alone.
+///
+/// Both places a host keeps one. `core.attributesFile` names a file, and
+/// the same setting emptied is what displaces it; the default path is
+/// `git/attributes` under the config directory, reached here by giving the
+/// child a home of its own. Both `HOME` and `XDG_CONFIG_HOME` are set,
+/// because git resolves the default through the second where it is
+/// present and a suite that set only the first would be reading whatever
+/// the machine running it happens to have. The third source, the
+/// system-wide file, has no path a test host can write, so what is
+/// asserted for it is that the switch git offers reaches the child.
+#[test]
+fn a_host_attributes_file_does_not_reach_the_content_kendex_reads() {
+    for named in [true, false] {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        let into = tmp.path().join("into");
+        let home = tmp.path().join("home");
+        fs::create_dir_all(&repo).unwrap();
+        fs::create_dir_all(&into).unwrap();
+        fs::create_dir_all(home.join("git")).unwrap();
+        let attributes = match named {
+            true => tmp.path().join("host-attributes"),
+            false => home.join("git/attributes"),
+        };
+        fs::write(&attributes, "* text eol=crlf\n").unwrap();
+        asking_repository(&repo, None, &["config", "core.autocrlf", "false"]);
+        if named {
+            let set = Hardened::git(
+                &[
+                    "config",
+                    "core.attributesFile",
+                    &attributes.display().to_string(),
+                ],
+                Some(&repo),
+            )
+            .run()
+            .unwrap();
+            assert!(set.status.success());
+        }
+
+        let git_dir = repo.join(".git");
+        assert!(
+            Hardened::git_bare(&git_dir, &["read-tree", "HEAD"])
+                .run()
+                .unwrap()
+                .status
+                .success()
+        );
+        let written = Hardened::git_into(&git_dir, &into, &["checkout-index", "--all", "--force"])
+            .env("HOME", home.to_str().unwrap())
+            .env("XDG_CONFIG_HOME", home.to_str().unwrap())
+            .run()
+            .unwrap();
+        assert!(written.status.success(), "named={named}");
+        assert_eq!(
+            fs::read_to_string(into.join("SKILL.md")).unwrap(),
+            "one\ntwo\n",
+            "named={named}: a host attributes file reached the checkout"
+        );
+    }
+
     assert_eq!(
-        &args[..2],
-        [OsStr::new("-c"), OsStr::new("protocol.ext.allow=never")]
+        child_env(&Hardened::git_into(
+            Path::new("/nowhere/.git"),
+            Path::new("/nowhere/into"),
+            &["checkout-index", "--all"],
+        ))[OsStr::new("GIT_ATTR_NOSYSTEM")],
+        Some(OsStr::new("1"))
     );
+}
+
+/// `GIT_ATTR_SOURCE` names a treeish to read `.gitattributes` from instead
+/// of the tree in hand, so a host exporting one that says `* text eol=crlf`
+/// converts a checkout past every setting there is. It is scrubbed from
+/// every git call rather than answered on the materialising one, because
+/// what it does is redirect git's input: on a read it would have `status`
+/// judge a working tree against some other commit's rules, and only
+/// scrubbing everywhere prevents that.
+///
+/// Two halves, and they prove different things. That the variable really
+/// does convert is shown end to end, by handing it to the child on purpose.
+/// That it never gets there is a named assertion on the command, which is
+/// the same shape the rest of `GIT_REDIRECTS` is held to — and it has to
+/// name the variable rather than loop over the list, or removing the entry
+/// would take the check with it.
+#[test]
+fn an_attribute_source_from_the_environment_reaches_no_git_call() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    let into = tmp.path().join("into");
+    fs::create_dir_all(&repo).unwrap();
+    fs::create_dir_all(&into).unwrap();
+    asking_repository(&repo, None, &["config", "core.autocrlf", "false"]);
+
+    // A second tree holding nothing but the rule, so the attributes come
+    // from somewhere other than the commit being written out.
+    fs::remove_file(repo.join("SKILL.md")).unwrap();
+    fs::write(repo.join(".gitattributes"), "* text eol=crlf\n").unwrap();
+    for args in [
+        vec!["checkout", "--quiet", "-b", "attrs"],
+        vec!["add", "-A"],
+        vec![
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "--quiet",
+            "-m",
+            "attrs",
+        ],
+    ] {
+        let run = Hardened::git(&args, Some(&repo)).run().unwrap();
+        assert!(run.status.success(), "git {args:?}");
+    }
+
+    let git_dir = repo.join(".git");
+    let materialise = |source: Option<&str>| {
+        assert!(
+            Hardened::git_bare(&git_dir, &["read-tree", "main"])
+                .run()
+                .unwrap()
+                .status
+                .success()
+        );
+        let mut call = Hardened::git_into(&git_dir, &into, &["checkout-index", "--all", "--force"]);
+        if let Some(source) = source {
+            call = call.env("GIT_ATTR_SOURCE", source);
+        }
+        assert!(call.run().unwrap().status.success());
+        fs::read_to_string(into.join("SKILL.md")).unwrap()
+    };
+
+    // The threat is real: handed the variable, git reads the other tree's
+    // rule and converts. This is what the scrub exists to stop.
+    assert_eq!(materialise(Some("attrs")), "one\r\ntwo\r\n");
+    assert_eq!(materialise(None), "one\ntwo\n");
+
+    // And it never arrives on its own: an exported one is dropped from
+    // every call, the write and the reads alike.
+    for hardened in [
+        Hardened::git(&["status"], None),
+        Hardened::git_in(Path::new("/nowhere"), &["status"]),
+        Hardened::git_bare(Path::new("/nowhere/.git"), &["for-each-ref"]),
+        Hardened::git_into(
+            Path::new("/nowhere/.git"),
+            Path::new("/nowhere/into"),
+            &["checkout-index", "--all"],
+        ),
+    ] {
+        assert_eq!(
+            child_env(&hardened).get(OsStr::new("GIT_ATTR_SOURCE")),
+            Some(&None),
+            "{} keeps an inherited attribute source",
+            hardened.label()
+        );
+    }
+}
+
+/// The settings go no further than that. A call that inspects a repository
+/// somebody owns asks what that repository thinks, and its own line-ending
+/// rule is part of the answer.
+///
+/// The working copy here is the one that rule produces, written by an
+/// ordinary checkout rather than by hand, and then touched so the index's
+/// stat cache no longer vouches for it and `status` has to hash the file
+/// again. Reading it under the repository's own rule finds no change.
+/// Reading it with the conversion forced off finds a modification nobody
+/// made, and `author::preflight` then refuses to submit a tree that is in
+/// fact clean. `--no-optional-locks` is what `author::status` passes, so
+/// the read cannot quietly refresh the index and hide the question.
+///
+/// Only the `core.autocrlf` door is exercised, and that is the whole of
+/// it: a repository that marks its files as text is normalised on the way
+/// in whatever the configuration says, so the conversion settings cannot
+/// change what `status` sees there. Where they can is a repository that
+/// ships no attributes and leans on `core.autocrlf`, which is the Git for
+/// Windows default and what an author's own checkout looks like.
+#[test]
+fn a_status_read_honours_the_line_endings_the_repository_asked_for() {
+    let (attributes, asked) = ASKING[0];
+    {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        asking_repository(repo, attributes, asked);
+        let file = repo.join("SKILL.md");
+
+        fs::remove_file(&file).unwrap();
+        let restored = Hardened::git(&["checkout", "--", "SKILL.md"], Some(repo))
+            .run()
+            .unwrap();
+        assert!(restored.status.success(), "{asked:?}");
+        assert_eq!(
+            fs::read(&file).unwrap(),
+            b"one\r\ntwo\r\n",
+            "{asked:?}: the rule was ignored"
+        );
+        // The index's stat cache vouches for the file git just wrote, and a
+        // read that trusts it never looks at the bytes. Moving the
+        // modification time off what the index recorded is what makes
+        // `status` hash the file again, which is the moment the conversion
+        // rule decides the answer.
+        let handle = fs::OpenOptions::new().write(true).open(&file).unwrap();
+        handle
+            .set_times(fs::FileTimes::new().set_modified(std::time::UNIX_EPOCH))
+            .unwrap();
+
+        let status = Hardened::git_in(repo, &["--no-optional-locks", "status", "--porcelain"])
+            .run()
+            .unwrap();
+        assert!(status.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&status.stdout),
+            "",
+            "{asked:?}: a working copy the repository itself wrote reads as modified"
+        );
+    }
 }
 
 /// A user whose catalog needs a specific key sets `GIT_SSH_COMMAND`.
@@ -82,6 +379,12 @@ fn errors_name_the_call_the_caller_asked_for_not_the_pinning() {
 /// A cached repository whose own config points its working tree at a
 /// sibling directory. Un-pinned, `git reset --hard` here overwrites the
 /// sibling's files with the repository's; pinned, it cannot see them.
+///
+/// `reset --hard` writes a working tree, so the host's line-ending
+/// configuration reaches it — this is not the call that settles that, and
+/// widening the settings to cover it would put them back on every
+/// inspection. The fixture answers for its own line endings instead, which
+/// is what a test about containment should be holding constant.
 #[test]
 fn a_hostile_core_worktree_cannot_reach_outside_the_cache() {
     let tmp = tempfile::tempdir().unwrap();
@@ -92,6 +395,7 @@ fn a_hostile_core_worktree_cannot_reach_outside_the_cache() {
     fs::write(cache.join("skills/gh/SKILL.md"), "from the catalog\n").unwrap();
     for args in [
         vec!["init", "--quiet", "-b", "main"],
+        vec!["config", "core.autocrlf", "false"],
         vec!["add", "."],
         vec![
             "-c",
