@@ -8,6 +8,9 @@
 //! And what catalog text looks like on its way out: `shown` for a screen,
 //! `quoted` for a command a person is going to paste.
 
+mod stored;
+pub use stored::folding_sibling;
+
 /// Room for the separator a namespaced name expands to, the `.disabled`
 /// parking suffix, and Copilot's `.agent.md` — inside the 255-byte
 /// component limit every filesystem kendex installs to shares.
@@ -241,27 +244,6 @@ pub fn fold(name: &str) -> String {
         .map(|segment| segment.trim_end_matches(['.', ' ']).to_owned())
         .collect::<Vec<_>>()
         .join("/")
-}
-
-/// An entry beside `target` whose name folds to the target's leaf without
-/// being that exact leaf — the neighbour a case- or composition-folding
-/// filesystem would hand the same file to. The one reading of "does a
-/// sibling occupy this slot", shared by every preflight that scans a
-/// directory before writing into it.
-pub fn folding_sibling(target: &std::path::Path) -> Option<std::path::PathBuf> {
-    let parent = target.parent()?;
-    let leaf = target.file_name()?.to_str()?;
-    let folded = fold(leaf);
-    for entry in std::fs::read_dir(parent).ok()?.flatten() {
-        let sibling = entry.file_name();
-        let Some(sibling) = sibling.to_str() else {
-            continue;
-        };
-        if sibling != leaf && fold(sibling) == folded {
-            return Some(parent.join(sibling));
-        }
-    }
-    None
 }
 
 #[cfg(test)]

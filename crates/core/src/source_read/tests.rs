@@ -80,7 +80,9 @@ fn tree_budgets_bound_hostile_catalogs() {
 }
 
 /// The bound is a ceiling, not a wall one short of it: a directory
-/// holding exactly the limit is inside it and must still read.
+/// holding exactly the limit is inside it and must still read. Both
+/// readings stop at it — the bound is a refusal to do the work, which is
+/// the whole answer either way, not one row a listing can go on without.
 #[test]
 fn the_directory_bound_admits_exactly_the_limit() {
     let (_tmp, sealed) = fixture();
@@ -89,11 +91,53 @@ fn the_directory_bound_admits_exactly_the_limit() {
     for n in 0..MAX_DIR_ENTRIES {
         std::fs::write(dir.join(format!("f{n}")), "x").expect("write");
     }
-    assert_eq!(sealed.list_dir(&dir).expect("list").len(), MAX_DIR_ENTRIES);
+    assert_eq!(
+        sealed.all_entries(&dir).expect("list").len(),
+        MAX_DIR_ENTRIES
+    );
+    assert_eq!(
+        sealed.readable_entries(&dir).expect("list").len(),
+        MAX_DIR_ENTRIES
+    );
 
     std::fs::write(dir.join("one-too-many"), "x").expect("write");
     assert!(matches!(
-        sealed.list_dir(&dir),
+        sealed.all_entries(&dir),
+        Err(CoreError::SourceEscape { .. })
+    ));
+    assert!(matches!(
+        sealed.readable_entries(&dir),
+        Err(CoreError::SourceEscape { .. })
+    ));
+}
+
+/// The two readings differ over one entry the directory will not hand
+/// over, and over nothing else. A healthy directory reads the same both
+/// ways, and a directory that cannot be opened at all is the whole answer
+/// rather than one row — so the partial reading refuses it too, and the
+/// surface above decides what that costs it.
+#[test]
+fn the_partial_reading_gives_up_a_row_and_never_a_directory() {
+    let (tmp, sealed) = fixture();
+    let dir = sealed.root().join("skills");
+    assert_eq!(
+        sealed.readable_entries(&dir).expect("list"),
+        sealed.all_entries(&dir).expect("list")
+    );
+
+    let absent = sealed.root().join("nowhere");
+    assert!(sealed.all_entries(&absent).is_err());
+    assert!(sealed.readable_entries(&absent).is_err());
+
+    // Containment is not an entry either: a path outside the root is
+    // refused before anything is read, whichever reading asked.
+    let outside = tmp.path().to_path_buf();
+    assert!(matches!(
+        sealed.readable_entries(&outside),
+        Err(CoreError::SourceEscape { .. })
+    ));
+    assert!(matches!(
+        sealed.all_entries(&outside),
         Err(CoreError::SourceEscape { .. })
     ));
 }
@@ -146,4 +190,60 @@ fn skipped_names_are_pruned_from_trees() {
     let files = sealed.collect_tree(&pkg, &["node_modules"]).expect("tree");
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].0, PathBuf::from("index.js"));
+}
+
+/// The probe surface keeps three answers apart where a boolean keeps two.
+/// A directory that can be listed but not traversed answers neither yes nor
+/// no about what is inside it, and a caller deciding what a write would
+/// destroy has to see that difference; a caller drawing rows reads it as a
+/// no, because it cannot draw what it cannot read either way.
+#[test]
+fn a_probe_says_yes_no_or_that_it_cannot_tell() {
+    let (_tmp, sealed) = fixture();
+    let file = sealed.root().join("skills/gh/SKILL.md");
+    let dir = sealed.root().join("skills/gh");
+    assert!(sealed.file_at(&file).expect("probe"));
+    assert!(!sealed.dir_at(&file).expect("probe"));
+    assert!(sealed.dir_at(&dir).expect("probe"));
+    assert!(!sealed.file_at(&dir).expect("probe"));
+
+    // Absent, said two ways. A name nothing holds, and a name built under
+    // a file — which is what a probe for `<entry>/SKILL.md` is whenever the
+    // entry beside an item is an ordinary file. Neither is a refused read,
+    // and calling either one an error would refuse every ordinary slot.
+    assert!(
+        sealed
+            .entry_at(&dir.join("nowhere"))
+            .expect("probe")
+            .is_none()
+    );
+    assert!(
+        sealed
+            .entry_at(&file.join("SKILL.md"))
+            .expect("probe")
+            .is_none()
+    );
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o000)).expect("chmod");
+        // Root traverses any directory whatever its mode, so there the
+        // denial under test does not exist and the file is simply there.
+        let denied = std::fs::metadata(&file).is_err();
+        let probed = sealed.file_at(&file);
+        let collapsed = sealed.is_file(&file);
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+
+        match denied {
+            true => {
+                assert!(matches!(probed, Err(CoreError::Io { .. })), "{probed:?}");
+                assert!(!collapsed, "the tolerant reading answers no");
+            }
+            false => {
+                assert!(probed.expect("probe"));
+                assert!(collapsed);
+            }
+        }
+    }
 }

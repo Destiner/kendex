@@ -3,6 +3,7 @@ use std::fs;
 use super::*;
 
 mod links;
+mod slots;
 
 /// Nothing has been moved into the trash. Its directory is created on
 /// demand, so an absent one counts.

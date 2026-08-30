@@ -315,6 +315,12 @@ fn catalog_file(sealed: &SealedSource, dir: &str, file: &str) -> Option<PathBuf>
     sealed.is_file(&path).then_some(path)
 }
 
+/// What a catalog offers of one kind: the names its surfaces draw rows for,
+/// its `add --all` adds, and its place resolution picks a source by. A
+/// directory that will not list contributes none, and its readable siblings
+/// still contribute theirs. Nothing deciding what a write would destroy asks
+/// this — what a slot already holds is read off the disk, not off a listing
+/// whose job is what the source offers.
 pub fn list_items(sealed: &SealedSource, config: &SourceConfig, kind: ItemKind) -> Vec<String> {
     if config.mode == CatalogMode::Unusable {
         return Vec::new();

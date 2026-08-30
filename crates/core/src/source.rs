@@ -94,10 +94,19 @@ pub(crate) fn slot_unreachable(
         return Ok(None);
     }
     let sealed = crate::source_read::SealedSource::open(&root)?;
-    let config = source_config_for(&sealed, LOCAL_SOURCE_NAME)?;
     let Some((plugin, _)) = crate::names::split(name) else {
-        return Ok(None);
+        // The same nesting from the other side, and the direction that
+        // deletes: a plain `plugin`'s slot IS the directory `plugin/item`
+        // is stored in, so a capture written there takes the namespaced
+        // item with it. The slot itself is asked, through the reader the
+        // rest of the engine resolves this source with — what a listing
+        // would say the source offers is a different question, answered
+        // for surfaces that draw rows.
+        return Ok(layout::stored_in_slot(&sealed, kind, slot)?.map(|held| {
+            format!("`{held}` is stored here, and this name would be written over it")
+        }));
     };
+    let config = source_config_for(&sealed, LOCAL_SOURCE_NAME)?;
     // Nesting is a fact about the two paths, not about the plugin half
     // naming something. A skill's package IS the directory `plugin`, so a
     // `plugin/item` slot sits inside it. An agent's package is the file
