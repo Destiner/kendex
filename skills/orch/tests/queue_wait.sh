@@ -89,11 +89,11 @@ git -C "$TMP_ROOT/repo" init -q
 git -C "$TMP_ROOT/repo" config user.email test@example.com
 git -C "$TMP_ROOT/repo" config user.name Test
 
-# Sequenced `gh` stub. Each poll of queue-wait makes exactly one
-# `gh pr view --json state,mergedAt` call and one queue-membership
-# `gh api graphql` call, so independent counters replay a per-poll script of
-# fixtures, routed by query content so guard traffic never shifts the queue
-# sequence:
+# Sequenced `gh` stub. Each poll makes one `gh pr view --json
+# state,mergedAt,mergeable` call, that field list matched EXACTLY by the
+# router below, and one queue-membership `gh api graphql` call; independent
+# counters replay a per-poll script of fixtures, routed by query content so
+# guard traffic never shifts the queue sequence:
 #   $STUB_SEQ_DIR/state-<n>.json   PR state for poll n
 #   $STUB_SEQ_DIR/queue-<n>.json   queue-membership GraphQL body for poll n
 #   $STUB_SEQ_DIR/threads-<n>.json reviewThreads body for guard probe n
@@ -228,7 +228,7 @@ case "${1:-}" in
   pr)
     if [[ "${2:-}" == "view" ]]; then
       _stub_auth_ok || { echo "HTTP 401: Bad credentials" >&2; exit 1; }
-      if _args_have "state,mergedAt" "$@"; then
+      if _args_have "state,mergedAt,mergeable" "$@"; then  # EXACT: a substring match serves this fixture whatever fields were asked for, so a dropped field would read as empty with the suite green
         _emit_fixture state "$(_next prview)"
       fi
       if _args_have "headRefOid" "$@"; then
@@ -345,7 +345,7 @@ run_queue_wait() {
            QUEUE_WAIT_CONFIRM_POLLS=2 \
            QUEUE_WAIT_ARM_GRACE=120 \
            QUEUE_WAIT_PROBE_INTERVAL=0 \
-           "${env_args[@]}" \
+           ${env_args[@]+"${env_args[@]}"} \
            .agents/skills/orch/scripts/queue-wait "$@")
 }
 
@@ -387,9 +387,9 @@ assert_eq "$(jq -r .was_queued <<<"$out")" "true" "ejected records WAS_QUEUED" "
 assert_eq "$(jq -r .was_in_merge_queue <<<"$out")" "true" "ejected records queue membership" "$err"
 assert_eq "$(jq -r .cause <<<"$out")" "merge_group_failed" "ejected cause" "$err"
 
-# 3b. a single out-of-queue blip does not eject on its own: with the
-# confirmation raised past the poll budget the wait keeps running and the
-# deadline still reports the candidate, never a silent "queued".
+# 3b. a single out-of-queue blip does not eject on its own: seeing the PR
+# back in the queue clears the candidate, and a candidate that never reached
+# the confirmation count carries no verdict's name, the deadline included.
 new_case ejected_single_blip
 write_fixture state last "$pr_open"
 write_fixture queue 1 "$q_in_queue"

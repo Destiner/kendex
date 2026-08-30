@@ -144,17 +144,21 @@ Use the output as `MAIN_REPO_ROOT`.
    .agents/skills/orch/scripts/queue-wait [PR_NUMBER] 30 2400 --json
    ```
 
-   Never poll `gh pr view --json mergeable`. Each session's own watch owns its recovery; parallel sessions never coordinate.
+   Never poll `gh pr view --json mergeable` yourself — queue-wait reads it and reports `conflicting`. Each session's own watch owns its recovery; parallel sessions never coordinate.
 
    | `verdict` | Meaning | Action |
    |-----------|---------|--------|
    | `merged` | Merge landed | → step 2 |
+   | `conflicting` | GitHub reports the head in conflict with the base (`cause: base_conflict`). The queue rejects it and an armed merge never fires | Restack cycle below |
    | `ejected` | The merge-group CI run failed and GitHub removed this PR from the queue | Recovery cycle below |
    | `disarmed` | Auto-merge cleared, or a required check failed (`cause` says which) | Recovery cycle below |
    | `dequeued` | The late-findings guard saw a NEW unresolved review thread while queued/armed and pulled the arming (`cause: late_findings`) — or tried and failed (`cause: late_findings_dequeue_failed`: the PR is STILL queued and the merge may fire; dequeue manually before triage) | Late-findings triage below |
    | `closed` | The PR was closed out from under the merge | Skip steps 2-4 and hand back |
-   | `queued` | Deadline reached, still armed. `cause: still_progressing` = queue-entry or check-run movement within the last 3 polls, or a check-run still running on the merge-group head; `stalled` = neither (`progressing` is `null` when unobservable) | Not a failure — never re-arm or recover on `still_progressing`. Re-run the same `queue-wait` on it. Only when the session cannot keep waiting: skip steps 2-4 and note in § 6 that sync and cleanup need `merge-pr [PR_NUMBER]` re-run once merged |
+   | `queued` | Deadline reached, still armed. `cause: still_progressing` = queue-entry or check-run movement within the last 3 polls, or a check-run still running on the merge-group head; `stalled` = neither (`progressing` is `null` when unobservable). `unconfirmed_verdict` names a conflict, ejection or disarm the last poll saw that never held long enough to route; a re-run re-observes a conflict but not an ejection or disarm, so read the queue state before acting on `not_queued` | Not a failure — never re-arm or recover on `still_progressing`. Re-run the same `queue-wait` on it. Only when the session cannot keep waiting: skip steps 2-4 and note in § 6 that sync and cleanup need `merge-pr [PR_NUMBER]` re-run once merged |
    | `not_queued` | The `--auto` merge never armed | Re-run `pr-merge [PR_NUMBER] --auto` once; still unarmed → surface and hand back |
+   | `unknown` | `status: error` — the queue state could not be read at all (`gh` missing, no auth, repo unresolvable, or GitHub rejected the query). The `stderr` line says which | Surface and hand back. Never re-arm: nothing read the queue state, so an arming already live would be re-armed blind |
+
+   A verdict with no row above is never re-armed: surface it and hand it back.
 
    **Recovery cycle** — route the failure back into ci-fix, never fix CI by hand:
 
@@ -173,9 +177,30 @@ Use the output as `MAIN_REPO_ROOT`.
 
    3. Re-run `pr-merge [PR_NUMBER] --auto`, then `queue-wait` with a fresh poll budget.
 
+   **Restack cycle** — the base, not CI, is the blocker; never route a conflict into ci-fix:
+
+   1. **Unarmed, then out of the queue, before anything is pushed.** A queued PR rejects the push, and an arming that survives the restack fires on the new head as soon as its checks clear — before step 4 re-confirms the gate. The order is the one queue-wait's own guard enforces: disarm BEFORE dequeuing, because an armed PR re-enqueues itself the moment requirements go green and a bare dequeue can be raced straight back into the queue. From the verdict JSON: `auto_merge_enabled` true → disable auto-merge first; then `in_merge_queue` true → dequeue (GraphQL `dequeuePullRequest`, whose `id` input takes the PR node id — read it with `gh pr view [PR_NUMBER] --json id`; no verdict JSON carries it). Re-read both and confirm they are off; either still set → hand back rather than push.
+   2. Bind `[WT_PATH]`, then run the guarded rebase:
+
+      ```bash
+      [MAIN_REPO_ROOT]/.agents/skills/worktree/scripts/worktree path [ISSUE]
+      ```
+      ```bash
+      [MAIN_REPO_ROOT]/.agents/skills/worktree/scripts/worktree create [ISSUE] --restack
+      ```
+
+      It pauses in the conflict state. Resolve each file it lists, stage it with `git -C [WT_PATH] add [FILE]`, then `worktree restack continue [ISSUE]`, repeating while it stops. No worktree for `[ISSUE]`, or a rebase that cannot be resolved → surface the conflicting paths and hand back; never force-push over the base.
+   3. Push the restacked branch:
+
+      ```bash
+      [MAIN_REPO_ROOT]/.agents/skills/orch/scripts/worktree-push --worktree [WT_PATH] --issue [ISSUE]
+      ```
+
+   4. The restack moved the head: re-confirm the gate exactly as recovery step 2 above, then re-run `pr-merge [PR_NUMBER] --auto` and `queue-wait` with a fresh poll budget — the re-arm step 1 undid.
+
    **Late-findings triage** — the findings, not CI, are the blocker:
 
-   1. On `cause: late_findings_dequeue_failed` first confirm the dequeue by hand (GraphQL `dequeuePullRequest` — its `id` input takes the PR node id) or disable auto-merge; the PR must be out of the queue before triage pushes.
+   1. On `cause: late_findings_dequeue_failed` first confirm the dequeue by hand, in the restack cycle's step 1 order and with the PR node id read the way it says: disable auto-merge, then `dequeuePullRequest`. The PR must be out of the queue before triage pushes.
    2. `⤵ workflows/review-pr-comments.md [PR_NUMBER] § 1-8 → § 5 step 1` with managed context — every new thread replied to and resolved.
    3. Triage may have pushed a new head: re-confirm the gate exactly as recovery step 2 above, then re-run `pr-merge [PR_NUMBER] --auto` and `queue-wait` with a fresh poll budget.
 
