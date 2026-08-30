@@ -8,7 +8,9 @@ mod ui;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use kendex_core::command_update::record_first_run;
 use kendex_core::env::Env;
+use kendex_core::install_channel::{Host, HostProbe};
 
 use commands::project::ProjectCommand;
 use flags::{AddFlags, ReportFlags};
@@ -200,6 +202,13 @@ enum Command {
 /// would do anywhere — and only the second one belongs in a repository's CI.
 #[allow(clippy::too_many_arguments)]
 pub fn main() -> ExitCode {
+    // Ahead of the parse. `--version` and `--help` are answered by clap and
+    // never reach dispatch, and they are what a person runs when the app's
+    // card has just told them their command is behind — which is exactly
+    // the install this record is missing from.
+    if let Ok(env) = Env::detect() {
+        bootstrap_the_command_record(&env);
+    }
     let cli = Cli::parse();
     // The machine check's whole contract is its exit code: 1 means "drift,
     // report on stdout". A failure before the check could run — settings
@@ -240,6 +249,31 @@ pub fn main() -> ExitCode {
             }
         }
     }
+}
+
+/// Tell the desktop app which file the `kendex` command is, once, from
+/// whichever verb a person happens to run first.
+///
+/// An install made before this record existed has none, so the app finds a
+/// command it cannot prove is kendex's, updates alone, and never gains a
+/// record of its own — the app writes one only where it already had one to
+/// match. Any run of this binary settles it, because the path a process is
+/// running from is the one thing no search by name can establish.
+///
+/// Run before the arguments are parsed, because clap answers `--version`
+/// and `--help` itself and exits without reaching dispatch. Those are the
+/// two a person reaches for when the app's card says their command is
+/// behind, so a bootstrap that skipped them would miss the run most likely
+/// to be the first one.
+///
+/// Nothing is said when it fails. This is opportunistic and every run pays
+/// for it; the command that needs the record is `kendex update`, and that
+/// one records the binary itself and reports when it cannot.
+fn bootstrap_the_command_record(env: &Env) {
+    let Ok(running) = std::env::current_exe() else {
+        return;
+    };
+    let _ = record_first_run(env, &Host.resolve(&running));
 }
 
 /// The bare form: `kendex <source> [flags]` maps to `add`.
