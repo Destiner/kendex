@@ -8,7 +8,7 @@ use crate::env::Env;
 use crate::manifest::Method;
 use crate::model::{HarnessId, ItemKind, Scope};
 
-/// Current lock version. Versions 1 (v0.1) through 6 still load — the
+/// Current lock version. Versions 1 (v0.1) through 7 still load — the
 /// shapes are compatible and the next lock write records the current
 /// version. A lock newer than this build refuses to load. Version 3 added
 /// `source_commit` and `rendered_hash`; version 4 added `settings-seeds`;
@@ -16,18 +16,22 @@ use crate::model::{HarnessId, ItemKind, Scope};
 /// a recorded registration for hooks with a script of their own; version
 /// 6 added `bundles`; version 7 dropped the scope an install reason
 /// recorded, which was always the scope holding the lock and spelled a
-/// project's root as an absolute path.
+/// project's root as an absolute path; version 8 added `root`, the
+/// project a record was written under.
 /// Each bump is what stops an older build from reading the lock, dropping
 /// the newer record on its next write, and erasing evidence — of which
 /// bytes are whose, of which comment blocks seeding wrote, of a move out
-/// of the directory pi reserved being over, or of where an installed set
-/// sits. Two of those are why a bump is not optional: a build that
-/// dropped the pi record would read a finished move as unfinished and
-/// reclaim what the person has since put under the reserved name, and one
-/// that dropped a set's commit would leave a set whose members have come
-/// apart placeable at nothing, so the next update of anything else takes
-/// its other members current.
-pub const LOCK_VERSION: u32 = 7;
+/// of the directory pi reserved being over, of where an installed set
+/// sits, or of which project wrote the record. Three of those are why a
+/// bump is not optional: a build that dropped the pi record would read a
+/// finished move as unfinished and reclaim what the person has since put
+/// under the reserved name; one that dropped a set's commit would leave a
+/// set whose members have come apart placeable at nothing, so the next
+/// update of anything else takes its other members current; and one that
+/// dropped `root` would refresh a project holding a nested checkout's
+/// lock without the ownership check, taking that checkout's files, then
+/// write the record back with nothing left to catch it.
+pub const LOCK_VERSION: u32 = 8;
 
 /// The lock file a project scope carries. The global lock is `lock.json`
 /// under the app's own directory ([`Env::global_lock_file`]).
@@ -36,6 +40,20 @@ pub const LOCK_FILE: &str = ".kendex-lock.json";
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
 pub struct Lock {
     pub version: u32,
+    /// The project root this record was written under.
+    ///
+    /// Containment answers whether a claimed path is under the root
+    /// reading the lock; it cannot answer whose record this is, because a
+    /// second checkout nested below that root sits inside it and so does
+    /// every path a lock carried out of it names. This says which root
+    /// wrote the record, and the read holds it against the root reading.
+    ///
+    /// `None` on the global lock, which has no single root — each harness
+    /// owns a directory of its own. `None` on a project lock is a record
+    /// from a build that did not write it down: it parses so the read can
+    /// refuse it by name, never so a project can adopt it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<PathBuf>,
     #[serde(default)]
     pub entries: BTreeMap<String, LockEntry>,
     /// The commit each declared source resolved to, by source name.
