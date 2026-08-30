@@ -9,7 +9,7 @@
 use std::fs;
 
 use crate::test_util::rooted;
-use crate::{run_script, step, workflow};
+use crate::{concurrency_group, job, job_declaring, job_names, run_script, step, workflow};
 
 /// Whether core sends a build of this version to the pre-release channel.
 /// Every claim below about what the workflow should do is written against
@@ -100,9 +100,14 @@ fn eval_flag(expression: &str, prerelease: &str) -> bool {
     let (read, want) = body
         .split_once("==")
         .unwrap_or_else(|| panic!("not a comparison: {expression}"));
-    assert_eq!(
-        read.trim(),
-        "steps.tag.outputs.prerelease",
+    // The classifier's output, read inside its own job or passed out of it to
+    // the channel job. Anything else is a value this test cannot fill in.
+    assert!(
+        [
+            "steps.tag.outputs.prerelease",
+            "needs.publish.outputs.prerelease"
+        ]
+        .contains(&read.trim()),
         "this test only evaluates the classifier's output; rewrite it for: {expression}"
     );
     prerelease == want.trim().trim_matches('\'')
@@ -168,7 +173,7 @@ fn the_workflow_and_the_build_agree_on_what_a_candidate_is() {
 /// pre-release identifier with a leading zero, an empty identifier, and an
 /// empty build. Published, each would name a manifest version every
 /// candidate then fails to read.
-const REFUSED_VERSIONS: [&str; 6] = [
+pub(crate) const REFUSED_VERSIONS: [&str; 6] = [
     "01.0.0",
     "1.0.0-01",
     "1.0.0-alpha..1",
@@ -197,7 +202,7 @@ fn core_refuses_the_versions_a_regex_would_wave_through() {
 /// What a candidate reading the channel's manifest makes of a version:
 /// `ReleaseFeed::parse` is what runs on it on every machine, and a version
 /// it refuses stops that install from seeing any update at all.
-fn core_can_read(version: &str) -> bool {
+pub(crate) fn core_can_read(version: &str) -> bool {
     let feed = format!(r#"{{"schema":1,"version":"{version}","assets":{{}}}}"#);
     kendex_core::update_feed::ReleaseFeed::parse(feed.as_bytes()).is_ok()
 }
@@ -289,11 +294,21 @@ fn a_candidate_publishes_and_a_full_release_stays_a_draft() {
 #[test]
 fn the_channel_is_repointed_for_a_candidate_and_no_other_tag() {
     let workflow = workflow();
-    let guard = step(&workflow, "name: Point the pre-release channel at this tag")
+    let repointing = job_declaring(&workflow, "name: Point the pre-release channel at this tag");
+    let guard = job(&workflow, repointing)
         .iter()
         .find_map(|l| l.trim().strip_prefix("if: "))
-        .expect("the channel step runs unconditionally")
+        .expect("the channel job runs unconditionally")
         .to_owned();
+    // The value that `if:` reads has to be one the publish job passes out.
+    // Named but never declared, it is empty on every tag and the channel is
+    // never repointed at all — which reads to a candidate as up to date.
+    assert!(
+        job(&workflow, "publish")
+            .iter()
+            .any(|l| l.trim() == "prerelease: ${{ steps.tag.outputs.prerelease }}"),
+        "the publish job does not pass the classifier's verdict out"
+    );
     for tag in ["v1.0.0-rc1", "v1.0.0-rc2", "v1.0.0", "v1.0.0+build-1"] {
         let (code, prerelease) = classify(tag);
         assert_eq!(code, 0, "{tag} did not classify");
@@ -307,7 +322,7 @@ fn the_channel_is_repointed_for_a_candidate_and_no_other_tag() {
 
 /// One value of the pre-release channel step's `env:` block.
 #[allow(clippy::unwrap_used)]
-fn channel_step_env(name: &str) -> String {
+pub(crate) fn channel_step_env(name: &str) -> String {
     let workflow = workflow();
     step(&workflow, "name: Point the pre-release channel at this tag")
         .iter()
@@ -316,327 +331,89 @@ fn channel_step_env(name: &str) -> String {
         .to_owned()
 }
 
-/// What one run of the channel step did.
-#[cfg(unix)]
-struct Pointed {
-    code: i32,
-    calls: Vec<String>,
-}
-
-#[cfg(unix)]
-impl Pointed {
-    fn ran(&self, verb: &str) -> Option<&String> {
-        self.calls.iter().find(|c| c.starts_with(verb))
+/// What a burst of tags does to one job, under GitHub's concurrency rules:
+/// one run of a group executes, one waits, and a third arrival replaces the
+/// one that was waiting rather than joining a queue behind it — the same
+/// behaviour `.github/workflows/review-gate-writer.yml` is written around.
+/// Returns, per tag in push order, whether that tag's job got to run at all.
+/// The burst is the worst case a group has to answer for: every tag arrives
+/// while the first is still executing.
+fn burst(group: Option<&str>, tags: usize) -> Vec<bool> {
+    let mut ran = vec![group.is_none(); tags];
+    if group.is_none() {
+        return ran;
     }
-}
-
-/// The state of the pre-release channel a run finds.
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug)]
-enum Channel<'a> {
-    /// No channel release published yet.
-    Absent,
-    /// Published, with nothing uploaded to it — the one state that leaves
-    /// the guard with no version to compare and lets the write through.
-    Empty,
-    /// Published, its manifest naming this version.
-    Carrying(&'a str),
-    /// Published, with a manifest that names no version at all.
-    Unreadable,
-}
-
-/// Runs the pre-release channel step with `gh` stubbed. `fail` is a
-/// fragment of the one `gh` call that should fail, standing in for the
-/// transient errors every read here has to tell apart from an answer.
-#[cfg(unix)]
-#[allow(clippy::unwrap_used)]
-fn point_channel(channel: Channel, new_version: &str, fail: Option<&str>) -> Pointed {
-    use std::os::unix::fs::PermissionsExt;
-    let dir = tempfile::tempdir().unwrap();
-    let root = rooted(&dir);
-    let dist = root.join("dist");
-    fs::create_dir_all(&dist).unwrap();
-    for name in ["latest.json", "feed.json"] {
-        fs::write(dist.join(name), "{}").unwrap();
+    let mut waiting = None;
+    for (arrival, slot) in ran.iter_mut().enumerate() {
+        if arrival == 0 {
+            *slot = true; // Nothing holds the group yet.
+        } else {
+            waiting = Some(arrival); // Replaces whatever was waiting.
+        }
     }
-    let bin = root.join("bin");
-    fs::create_dir_all(&bin).unwrap();
-    let log = root.join("gh.log");
-    // Records every call and answers the three the run reads: whether the
-    // channel is among the repository's releases, whether it carries a
-    // manifest, and what those manifests say. `--dir` and `--pattern` are
-    // honoured rather than assumed, so a step that downloaded somewhere
-    // else, or stopped asking for one of the two manifests, has nothing on
-    // disk to read back or to put back.
-    fs::write(
-        bin.join("gh"),
-        "#!/bin/sh\n\
-         printf '%s\\n' \"$*\" >> \"$GH_LOG\"\n\
-         if [ -n \"$GH_FAIL\" ]; then\n\
-           case \"$*\" in *\"$GH_FAIL\"*) exit 1 ;; esac\n\
-         fi\n\
-         case \"$2\" in\n\
-           */releases)\n\
-             [ -n \"$GH_EXISTS\" ] && printf '%s\\n' \"$CHANNEL\"\n\
-             exit 0\n\
-             ;;\n\
-           */releases/tags/*)\n\
-             [ -n \"$GH_HAS_MANIFEST\" ] && printf 'latest.json\\n'\n\
-             exit 0\n\
-             ;;\n\
-         esac\n\
-         if [ \"$1 $2\" = \"release download\" ]; then\n\
-           while [ $# -gt 0 ]; do\n\
-             [ \"$1\" = \"--dir\" ] && dir=$2\n\
-             [ \"$1\" = \"--pattern\" ] && want=\"$want $2\"\n\
-             shift\n\
-           done\n\
-           [ -n \"$dir\" ] || exit 1\n\
-           mkdir -p \"$dir\"\n\
-           for name in $want; do\n\
-             case \"$name\" in\n\
-               latest.json) printf '%s\\n' \"$GH_MANIFEST\" > \"$dir/latest.json\" ;;\n\
-               feed.json) printf '%s\\n' \"$GH_FEED\" > \"$dir/feed.json\" ;;\n\
-             esac\n\
-           done\n\
-         fi\n\
-         exit 0\n",
-    )
-    .unwrap();
-    fs::set_permissions(bin.join("gh"), fs::Permissions::from_mode(0o755)).unwrap();
-
-    let (exists, has_manifest, manifest) = match channel {
-        Channel::Absent => ("", "", String::new()),
-        Channel::Empty => ("1", "", String::new()),
-        Channel::Carrying(version) => ("1", "1", format!(r#"{{"version":"{version}"}}"#)),
-        Channel::Unreadable => ("1", "1", "{}".to_owned()),
-    };
-
-    let workflow = workflow();
-    let script = run_script(&step(
-        &workflow,
-        "name: Point the pre-release channel at this tag",
-    ));
-    // `shell: bash` on a runner is `bash -e`, so a failed `gh` fails the
-    // step. Without it the exit code below is the last command's alone and
-    // an upload that never landed would read as a run that worked.
-    let run = std::process::Command::new("bash")
-        .arg("-e")
-        .arg("-c")
-        .arg(&script)
-        .current_dir(&root)
-        .env_clear()
-        .env(
-            "PATH",
-            format!(
-                "{}:{}",
-                bin.display(),
-                std::env::var("PATH").unwrap_or_default()
-            ),
-        )
-        .env("GH_LOG", &log)
-        .env("GH_EXISTS", exists)
-        .env("GH_HAS_MANIFEST", has_manifest)
-        .env("GH_MANIFEST", &manifest)
-        .env(
-            "GH_FEED",
-            r#"{"schema":1,"version":"published","assets":{}}"#,
-        )
-        .env("GH_FAIL", fail.unwrap_or_default())
-        .env("GITHUB_REPOSITORY", "vanillagreencom/kendex")
-        .env("CHANNEL", channel_step_env("CHANNEL"))
-        .env("NEW_VERSION", new_version)
-        .env("GH_TOKEN", "token")
-        .output()
-        .unwrap();
-    let calls = fs::read_to_string(&log)
-        .unwrap_or_default()
-        .lines()
-        .map(str::to_owned)
-        .collect();
-    Pointed {
-        code: run.status.code().unwrap_or(-1),
-        calls,
+    // Whatever still waits when the burst ends runs once the group frees.
+    if let Some(last) = waiting {
+        ran[last] = true;
     }
+    ran
 }
 
-/// A read that failed is not an empty channel. Every one of these leaves
-/// the guard unable to say what the channel carries, and a run that
-/// treated that as "nothing there" would upload over whatever is — which
-/// is the rollback the guard exists to prevent, reached through a lost
-/// connection instead of a stale tag.
-#[cfg(unix)]
+/// Candidates cut close enough together that the later ones reach this
+/// workflow while the first is still publishing. Each has to end in a release
+/// or in a visible failure: a run cancelled while it waited for a concurrency
+/// group is neither, and answers its tag with nothing at all. So the job that
+/// publishes the release holds no group, at any size of burst.
 #[test]
-fn a_read_it_could_not_make_stops_the_write() {
-    for (state, failing) in [
-        (Channel::Carrying("2.0.0-rc1"), "/releases --paginate"),
-        (Channel::Carrying("2.0.0-rc1"), "/releases/tags/"),
-        (Channel::Carrying("2.0.0-rc1"), "release download"),
-    ] {
-        let run = point_channel(state, "1.0.0-rc1", Some(failing));
-        assert_ne!(run.code, 0, "{failing} was survivable: {:?}", run.calls);
+fn overlapping_tags_each_publish_their_release() {
+    let workflow = workflow();
+    let publishing = job_declaring(&workflow, "uses: softprops/action-gh-release@v2");
+    let group = concurrency_group(&job(&workflow, publishing));
+    for tags in 2..=6 {
         assert!(
-            run.ran("release upload").is_none(),
-            "{failing} still uploaded: {:?}",
-            run.calls
+            burst(group, tags).iter().all(|&ran| ran),
+            "the {publishing} job is in {group:?}, which loses a tag in a burst of {tags}"
         );
     }
-
-    // A manifest that names no version is the same answer: nothing here
-    // can tell whether this tag is ahead of what is published.
-    let run = point_channel(Channel::Unreadable, "1.0.0-rc1", None);
-    assert_ne!(run.code, 0, "an unreadable manifest was survivable");
-    assert!(run.ran("release upload").is_none(), "{:?}", run.calls);
-}
-
-/// Both manifests reach the channel whether or not the release behind it
-/// exists yet, and the upload replaces what is there. Without `--clobber`
-/// the first candidate's manifests stay and every later one is refused, so
-/// the channel would freeze on rc1 while reporting success.
-#[cfg(unix)]
-#[test]
-fn every_candidate_replaces_both_manifests_on_the_channel() {
-    for state in [
-        Channel::Absent,
-        Channel::Empty,
-        Channel::Carrying("1.0.0-rc1"),
-    ] {
-        let run = point_channel(state, "1.0.0-rc2", None);
-        assert_eq!(run.code, 0, "{state:?}: {:?}", run.calls);
-        assert_eq!(
-            run.ran("release create").is_some(),
-            matches!(state, Channel::Absent),
-            "{state:?}: {:?}",
-            run.calls
+    // The claim above is only worth making if the model can see tags lost. A
+    // group keeps the first arrival and the last however many arrive, so what
+    // a burst drops is every repoint in between, not one.
+    for tags in 2..=6 {
+        let ran = burst(Some("held"), tags);
+        assert!(
+            ran[0] && ran[tags - 1],
+            "a burst of {tags} dropped an end: {ran:?}"
         );
-        let upload = run
-            .ran("release upload")
-            .unwrap_or_else(|| panic!("{state:?} uploaded nothing: {:?}", run.calls));
-        // Named from the URLs rather than by hand: a manifest renamed on
-        // one side and not the other publishes to a name nothing reads.
-        for url in [
-            kendex_core::update_channel::PRERELEASE_FEED_URL,
-            kendex_core::update_channel::PRERELEASE_MANIFEST_URL,
-        ] {
-            let file = url.rsplit('/').next().unwrap_or_default();
-            assert!(
-                upload.contains(&format!("dist/{file}")),
-                "dist/{file} missing from {upload}"
-            );
-        }
-        assert!(upload.contains("--clobber"), "{upload}");
+        assert!(
+            ran[1..tags - 1].iter().all(|&ran| !ran),
+            "a burst of {tags} kept a repoint in the middle: {ran:?}"
+        );
     }
 }
 
-/// `gh release upload --clobber` deletes an asset before uploading its
-/// replacement, and says in its own help that a failed upload loses the
-/// original. A candidate reading a channel with no `latest.json` sees no
-/// update at all, so an upload that fell over halfway would break every
-/// candidate machine until somebody re-ran a tag. What came down goes back
-/// up. Not an atomic swap — there is no such thing here — but a failure
-/// that leaves the channel as it found it.
-#[cfg(unix)]
+/// Two runs interleaving a read and a write of the channel would leave the
+/// older manifests on it however carefully each one compares, so the job that
+/// writes the channel is serialized — and it is the only one, because the
+/// group costs a run in a burst and nothing else here is worth that. Cancelling
+/// the run in progress instead would answer a candidate with a channel written
+/// halfway.
 #[test]
-fn a_failed_upload_puts_back_what_the_channel_had() {
-    let run = point_channel(
-        Channel::Carrying("1.0.0-rc1"),
-        "1.0.0-rc2",
-        Some("dist/latest.json"),
-    );
-    assert_ne!(
-        run.code, 0,
-        "a failed upload was survivable: {:?}",
-        run.calls
-    );
-    let restored = run
-        .calls
-        .iter()
-        .filter(|c| c.starts_with("release upload"))
-        .nth(1)
-        .unwrap_or_else(|| panic!("nothing was put back: {:?}", run.calls));
-    // Both names, and from the copies on disk: the shell expanded the glob
-    // against what the download actually wrote, so a manifest that never
-    // came down could not appear here.
-    for name in ["saved/latest.json", "saved/feed.json"] {
-        assert!(restored.contains(name), "{name} not restored: {restored}");
-    }
-    assert!(restored.contains("--clobber"), "{restored}");
-}
-
-/// Whether core reads `latest` as ahead of `running` — the same comparison
-/// the running build makes of the channel it is pointed at, and what the
-/// step in the workflow has to arrive at from bash.
-#[allow(clippy::unwrap_used)]
-fn core_reads_as_newer(latest: &str, running: &str) -> bool {
-    let feed =
-        format!(r#"{{"schema":1,"version":"{latest}","assets":{{"t":"https://example.test/k"}}}}"#);
-    kendex_core::update_feed::ReleaseFeed::parse(feed.as_bytes())
-        .unwrap()
-        .relation_to(running)
-        .unwrap()
-        == kendex_core::update_feed::VersionRelation::Newer
-}
-
-/// The channel only moves forward. A tag re-run after a later one would
-/// otherwise put its own older manifests back, and every candidate machine
-/// would quietly drop to that release and stop being offered anything —
-/// which on this channel is indistinguishable from the update path being
-/// broken, the very thing the channel exists to test.
-///
-/// The step's bash and core have to reach one answer, so the expectation
-/// is asked of core rather than written out: whatever a build would call
-/// newer is what the channel is allowed to move to.
-#[cfg(unix)]
-#[test]
-fn a_tag_behind_the_channel_leaves_it_alone() {
-    let versions = [
-        "1.0.0-rc1",
-        "1.0.0-rc2",
-        "1.0.0-rc9",
-        "1.0.0-rc10",
-        "1.0.0-beta.1",
-        "1.1.0-rc1",
-        "2.0.0-rc1",
-        "1.0.0-rc2+build",
-    ];
-    for carried in versions {
-        for tagged in versions {
-            let run = point_channel(Channel::Carrying(carried), tagged, None);
-            assert_eq!(run.code, 0, "{carried} -> {tagged}: {:?}", run.calls);
-            // Equal versions re-run the same tag, which refreshes rather
-            // than rolls back, so only a strictly newer carried version
-            // holds the channel.
-            let refused = core_reads_as_newer(carried, tagged);
-            assert_eq!(
-                run.ran("release upload").is_none(),
-                refused,
-                "channel carries {carried}, tag is {tagged}: {:?}",
-                run.calls
-            );
-        }
-    }
-}
-
-/// Two tag runs that interleave a read and a write would leave the older
-/// manifests on the channel however carefully each one compares, so the
-/// job that owns the channel takes a concurrency group and the runs queue.
-/// Cancelling instead would answer a tag with no release at all.
-#[test]
-fn two_publishes_cannot_interleave_their_writes_to_the_channel() {
+fn the_channel_write_is_the_only_thing_a_group_holds() {
     let workflow = workflow();
-    let publish: Vec<&str> = workflow
-        .lines()
-        .skip_while(|l| l.trim() != "publish:")
-        .take_while(|l| l.trim() != "steps:")
-        .collect();
-    let value = |key: &str| {
-        publish
+    let writing = job_declaring(&workflow, "name: Point the pre-release channel at this tag");
+    for name in job_names(&workflow) {
+        let group = concurrency_group(&job(&workflow, name));
+        assert_eq!(
+            group.is_some(),
+            name == writing,
+            "the {name} job is in {group:?}"
+        );
+    }
+    assert!(
+        job(&workflow, writing)
             .iter()
-            .find_map(|l| l.trim().strip_prefix(&format!("{key}: ")))
-            .unwrap_or_else(|| panic!("the publish job declares no {key}:\n{publish:#?}"))
-    };
-    assert!(!value("group").is_empty());
-    assert_eq!(value("cancel-in-progress"), "false");
+            .any(|l| l.trim() == "cancel-in-progress: false"),
+        "the {writing} job cancels a channel write in progress"
+    );
 }
 
 /// The channel tag in the workflow and the URLs core sends a candidate to

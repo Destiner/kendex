@@ -61,20 +61,42 @@ nothing. Being marked pre-release is what keeps it to candidates, since
 GitHub resolves `releases/latest` past every one of them.
 
 That same resolution is why a candidate cannot reach the next one through
-`releases/latest`. The publish job therefore also overwrites `latest.json`
+`releases/latest`. A `channel` job therefore overwrites `latest.json`
 and `feed.json` on a fixed `prerelease` release, and a build whose own
 version is a candidate reads its updates from there
 (`update_channel::feed_url_for`, which the app and `kendex update` both
 call with their baked version). A shipped `1.0.0` is on the release channel
 and is never offered a candidate; nothing on the machine selects this.
 
-The channel only ever moves forward: the publish job reads the version it
-already carries and leaves it alone when that is ahead of the tag being
-published, so re-running an older tag cannot roll every candidate back to
-it. Two tag runs are queued rather than interleaved by the `publish` job's
-concurrency group, which is what keeps that read and its write together.
+The channel only ever moves forward: `tools/release-channel-point` reads the
+version it already carries and leaves it alone when that is ahead of the tag
+being published, so re-running an older tag cannot roll every candidate back
+to it. Nothing it could not establish counts as permission to write — a
+listing it could not make, a manifest naming no version, a version that is
+not SemVer — each of those stops the job with the channel as it was.
 
-The channel keeps whatever the last candidate left on it, so a machine on
+An upload that fails partway is the one case where something did change, and
+the job puts the channel back: the manifests it found go up again, anything
+it added comes off, and a channel this run created is deleted outright. When
+it cannot finish that, it says so and names what the channel carries, because
+a half-written channel reporting itself as repaired is what stops anyone
+looking at it. Either way the job fails and the fix is to re-run the tag.
+
+That guard is a job of its own, and the only one holding a concurrency group,
+so two candidates cut close together cannot interleave their read and write of
+the channel. The group is not a queue: it holds one run and one pending slot,
+and each arrival replaces whatever is waiting in that slot. A burst therefore
+costs every repoint but two. The first arrival runs, each one after it takes
+the pending slot and loses it to the next, and the last is still waiting when
+the group frees. Arrival order decides which two survive, not version order: a
+`channel` job reaches the group only after its own build and publish, so a
+slower older candidate arriving last takes the slot from a higher version
+already waiting, and the channel is left behind a candidate that is already
+published. Push the newest tag again to move it; the forward-only rule above
+makes that safe. What a burst never costs is a release: every tag publishes
+its own, outside the group, and a repoint takes seconds.
+
+The channel keeps whatever the last repoint left on it, so a machine on
 a candidate stays on candidates until it is moved to a full release by
 hand. Cutting candidates for a release means cutting one more when the
 final ships, or reinstalling those machines.
