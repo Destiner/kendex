@@ -45242,6 +45242,21 @@ var SDK_TO_PI_TOOL_NAME = {
   edit: "edit",
   bash: "bash"
 };
+var BRIDGED_TOOL_PREFIXES = [
+  MCP_TOOL_PREFIX,
+  `mcp__${MCP_SERVER_NAME.replace(/-/g, "_")}__`,
+  `mcp/${MCP_SERVER_NAME}/`,
+  `mcp/${MCP_SERVER_NAME.replace(/-/g, "_")}/`
+];
+function isPiDispatchable(name, customToolNameToPi) {
+  if (!name) return false;
+  const normalized = name.toLowerCase();
+  if (customToolNameToPi?.has(name) || customToolNameToPi?.has(normalized)) return true;
+  if (BRIDGED_TOOL_PREFIXES.some((prefix) => normalized.startsWith(prefix))) return true;
+  if (normalized.startsWith("mcp__")) return false;
+  if (customToolNameToPi?.size && SDK_TO_PI_TOOL_NAME[normalized]) return false;
+  return true;
+}
 function mapToolName(name, customToolNameToPi) {
   const normalized = name.toLowerCase();
   const builtin = SDK_TO_PI_TOOL_NAME[normalized];
@@ -45250,12 +45265,7 @@ function mapToolName(name, customToolNameToPi) {
     const mapped = customToolNameToPi.get(name) ?? customToolNameToPi.get(normalized);
     if (mapped) return mapped;
   }
-  for (const prefix of [
-    MCP_TOOL_PREFIX,
-    `mcp__${MCP_SERVER_NAME.replace(/-/g, "_")}__`,
-    `mcp/${MCP_SERVER_NAME}/`,
-    `mcp/${MCP_SERVER_NAME.replace(/-/g, "_")}/`
-  ]) {
+  for (const prefix of BRIDGED_TOOL_PREFIXES) {
     if (normalized.startsWith(prefix)) return normalized.slice(prefix.length);
   }
   return name;
@@ -45474,6 +45484,11 @@ function processStreamEvent(message, customToolNameToPi, model, c = ctx()) {
       debug(`processStreamEvent: child-executed tool ${event.content_block.name} [${event.content_block.id}] \u2014 not mirrored as a Pi tool call`);
       return;
     }
+    if (event.content_block?.type === "tool_use" && !isPiDispatchable(event.content_block.name, customToolNameToPi)) {
+      c.suppressedStreamIndexes.add(event.index);
+      debug(`processStreamEvent: non-dispatchable tool ${event.content_block.name} [${event.content_block.id}] \u2014 not mirrored as a Pi tool call`);
+      return;
+    }
     if (event.content_block?.type === "text") {
       c.turnBlocks.push({ type: "text", text: "", index: event.index });
       c.currentPiStream.push({ type: "text_start", contentIndex: c.turnBlocks.length - 1, partial: c.turnOutput });
@@ -45591,6 +45606,10 @@ function appendMissingToolUsesFromAssistant(assistantMsg, model, customToolNameT
       debug(`assistant message: child-executed tool ${block.name} [${block.id}] \u2014 not mirrored as a Pi tool call`);
       continue;
     }
+    if (!isPiDispatchable(block.name, customToolNameToPi)) {
+      debug(`assistant message: non-dispatchable tool ${block.name} [${block.id}] \u2014 not mirrored as a Pi tool call`);
+      continue;
+    }
     const existingIdx = c.turnBlocks.findIndex((b) => b.type === "toolCall" && b.id === block.id);
     if (existingIdx < 0 && (c.forwardedToolCallIds.has(block.id) || c.deadToolCallIds.has(block.id))) {
       debug(`assistant message: tool_use ${block.id} already ${c.forwardedToolCallIds.has(block.id) ? "forwarded" : "dead"} \u2014 skipping duplicate`);
@@ -45682,6 +45701,10 @@ function processAssistantMessage(message, model, customToolNameToPi, c = ctx()) 
       if (isChildExecutedTool(block.name)) {
         c.noteChildExecutedToolCall(block.id, block.name);
         debug(`processAssistantMessage fallback: child-executed tool ${block.name} [${block.id}] \u2014 not mirrored as a Pi tool call`);
+        continue;
+      }
+      if (!isPiDispatchable(block.name, customToolNameToPi)) {
+        debug(`processAssistantMessage fallback: non-dispatchable tool ${block.name} [${block.id}] \u2014 not mirrored as a Pi tool call`);
         continue;
       }
       if (!c.turnBlocks.some((b) => b.type === "toolCall" && b.id === block.id) && (c.forwardedToolCallIds.has(block.id) || c.deadToolCallIds.has(block.id))) {
@@ -47270,6 +47293,7 @@ export {
   isChildInternalTool,
   isConnectorTool,
   isConnectorWriteTool,
+  isPiDispatchable,
   isUsageLimitMessage,
   listAccountConnectors,
   mapToolName,

@@ -4,7 +4,26 @@ const SDK_TO_PI_TOOL_NAME: Record<string, string> = {
 	read: "read", write: "write", edit: "edit", bash: "bash",
 };
 
+const BRIDGED_TOOL_PREFIXES = [
+	MCP_TOOL_PREFIX,
+	`mcp__${MCP_SERVER_NAME.replace(/-/g, "_")}__`,
+	`mcp/${MCP_SERVER_NAME}/`,
+	`mcp/${MCP_SERVER_NAME.replace(/-/g, "_")}/`,
+];
+
 // --- Provider helpers: tool name mapping ---
+
+export function isPiDispatchable(name: string, customToolNameToPi?: Map<string, string>): boolean {
+	if (!name) return false;
+	const normalized = name.toLowerCase();
+	if (customToolNameToPi?.has(name) || customToolNameToPi?.has(normalized)) return true;
+	if (BRIDGED_TOOL_PREFIXES.some((prefix) => normalized.startsWith(prefix))) return true;
+	// A foreign MCP namespace belongs to a child-loaded server, not Pi's bridge.
+	if (normalized.startsWith("mcp__")) return false;
+	// Bare SDK aliases are naming slips when the child has a bridged manifest.
+	if (customToolNameToPi?.size && SDK_TO_PI_TOOL_NAME[normalized]) return false;
+	return true;
+}
 
 export function mapToolName(name: string, customToolNameToPi?: Map<string, string>): string {
 	const normalized = name.toLowerCase();
@@ -14,12 +33,7 @@ export function mapToolName(name: string, customToolNameToPi?: Map<string, strin
 		const mapped = customToolNameToPi.get(name) ?? customToolNameToPi.get(normalized);
 		if (mapped) return mapped;
 	}
-	for (const prefix of [
-		MCP_TOOL_PREFIX,
-		`mcp__${MCP_SERVER_NAME.replace(/-/g, "_")}__`,
-		`mcp/${MCP_SERVER_NAME}/`,
-		`mcp/${MCP_SERVER_NAME.replace(/-/g, "_")}/`,
-	]) {
+	for (const prefix of BRIDGED_TOOL_PREFIXES) {
 		if (normalized.startsWith(prefix)) return normalized.slice(prefix.length);
 	}
 	return name;

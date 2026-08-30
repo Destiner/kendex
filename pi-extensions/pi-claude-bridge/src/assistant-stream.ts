@@ -5,7 +5,7 @@ import { connectorResultByteSize, recordConnectorCallResult } from "./connector-
 import { isChildExecutedTool } from "./connectors.js";
 import { debug, diagDump } from "./debug.js";
 import { ctx, failStrandedToolCall, type QueryContext } from "./query-state.js";
-import { mapToolArgs, mapToolName } from "./tool-mapping.js";
+import { isPiDispatchable, mapToolArgs, mapToolName } from "./tool-mapping.js";
 
 // --- Usage helpers ---
 
@@ -344,6 +344,11 @@ export function processStreamEvent(
 			debug(`processStreamEvent: child-executed tool ${event.content_block.name} [${event.content_block.id}] — not mirrored as a Pi tool call`);
 			return;
 		}
+		if (event.content_block?.type === "tool_use" && !isPiDispatchable(event.content_block.name, customToolNameToPi)) {
+			c.suppressedStreamIndexes.add(event.index);
+			debug(`processStreamEvent: non-dispatchable tool ${event.content_block.name} [${event.content_block.id}] — not mirrored as a Pi tool call`);
+			return;
+		}
 		if (event.content_block?.type === "text") {
 			c.turnBlocks.push({ type: "text", text: "", index: event.index });
 			c.currentPiStream!.push({ type: "text_start", contentIndex: c.turnBlocks.length - 1, partial: c.turnOutput });
@@ -507,6 +512,10 @@ function appendMissingToolUsesFromAssistant(
 			debug(`assistant message: child-executed tool ${block.name} [${block.id}] — not mirrored as a Pi tool call`);
 			continue;
 		}
+		if (!isPiDispatchable(block.name, customToolNameToPi)) {
+			debug(`assistant message: non-dispatchable tool ${block.name} [${block.id}] — not mirrored as a Pi tool call`);
+			continue;
+		}
 		const existingIdx = c.turnBlocks.findIndex((b: any) => b.type === "toolCall" && b.id === block.id);
 		if (existingIdx < 0 && (c.forwardedToolCallIds.has(block.id) || c.deadToolCallIds.has(block.id))) {
 			// Completed-message replay of a call Pi already executed in an earlier
@@ -657,6 +666,10 @@ export function processAssistantMessage(message: SDKMessage, model: Model<any>, 
 				// becomes a Pi tool call and never ends the turn.
 				c.noteChildExecutedToolCall(block.id, block.name);
 				debug(`processAssistantMessage fallback: child-executed tool ${block.name} [${block.id}] — not mirrored as a Pi tool call`);
+				continue;
+			}
+			if (!isPiDispatchable(block.name, customToolNameToPi)) {
+				debug(`processAssistantMessage fallback: non-dispatchable tool ${block.name} [${block.id}] — not mirrored as a Pi tool call`);
 				continue;
 			}
 			if (!c.turnBlocks.some((b: any) => b.type === "toolCall" && b.id === block.id)
