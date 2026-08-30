@@ -236,6 +236,71 @@ fn a_tampered_checkout_is_detected_and_rebuilt() {
     assert!(body(&repaired.root).contains("v1"));
 }
 
+/// A checkout an older kendex published is self-consistent with whatever it
+/// wrote, so matching its own signature proves nothing about the rules that
+/// wrote it. Its receipt is the bare signature, the form before those rules
+/// were recorded, and it is rebuilt rather than served.
+#[test]
+fn a_checkout_published_before_the_rules_were_recorded_is_rebuilt() {
+    let f = fixture();
+    let published = sync(&f.env, REPO, None).unwrap();
+    let key = key_for(&f.env);
+    fs::write(
+        store::receipt_path(&f.env, &key, &published.commit),
+        store::tree_signature(&published.root).unwrap(),
+    )
+    .unwrap();
+
+    assert!(store::published(&f.env, &key, &published.commit).is_none());
+
+    let repaired = cached(&f.env, REPO, None).unwrap().unwrap();
+    assert_eq!(repaired.root, published.root);
+    assert!(body(&repaired.root).contains("v1"));
+    assert!(store::published(&f.env, &key, &published.commit).is_some());
+}
+
+/// Callers test `published` before taking the lock, so two of them can
+/// miss the same receipt and both go on to publish. The one that wakes
+/// second finds the commit already there and hands back what is in place,
+/// rather than materializing over a directory the first caller is reading.
+/// Removing the mirror is what makes the answer observable: materializing
+/// again is then the one thing that cannot quietly succeed.
+#[test]
+fn a_publisher_that_wakes_to_a_published_commit_leaves_it_alone() {
+    let f = fixture();
+    let first = sync(&f.env, REPO, None).unwrap();
+    let key = key_for(&f.env);
+    let mirror = store::mirror_dir(&f.env, &key);
+    fs::remove_dir_all(&mirror).unwrap();
+
+    let again = store::publish(&f.env, &key, &mirror, &first.commit).unwrap();
+
+    assert_eq!(again, first.root);
+    assert!(body(&again).contains("v1"));
+}
+
+/// Two trees of one commit can share a signature, so a receipt visible
+/// while the old directory is still in place would vouch for the directory
+/// about to be moved out from under a reader. The order is observable at
+/// the step between: a receipt write that cannot land finds the old
+/// checkout already gone rather than still being served.
+#[test]
+fn the_old_checkout_leaves_view_before_the_receipt_names_the_new_one() {
+    let f = fixture();
+    let first = sync(&f.env, REPO, None).unwrap();
+    let key = key_for(&f.env);
+    let mirror = store::mirror_dir(&f.env, &key);
+
+    // Nothing renames a file onto a directory, so the receipt write fails
+    // at exactly the step after the old checkout is moved aside.
+    let receipt = store::receipt_path(&f.env, &key, &first.commit);
+    fs::remove_file(&receipt).unwrap();
+    fs::create_dir(&receipt).unwrap();
+
+    assert!(store::publish(&f.env, &key, &mirror, &first.commit).is_err());
+    assert!(!first.root.exists(), "the old checkout was still in view");
+}
+
 /// A checkout that fails half way leaves nothing readable behind: the
 /// directory only ever appears complete, by rename.
 #[test]
