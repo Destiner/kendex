@@ -255,5 +255,374 @@ else
   bad "with nothing left to compare against, the run fails closed instead of reporting clean" "rc=$RC out=$OUT"
 fi
 
+echo "=== an attributes rule cannot withhold the lines a change adds ==="
+
+# A committed '-diff' (or 'binary') row makes git call a path binary, and the
+# patch then says "Binary files ... differ" with no hunks at all: every
+# line-scoped lane would have nothing to read while the run still counted the
+# file as changed — a scan reported but never performed. One row would take a
+# whole extension out of reach.
+CITE='# Staged
+
+See `docs/gone.md` for the rest.
+'
+
+seed attrs-staged
+printf '%s' "$CITE" >"$R/docs/staged.md"
+git -C "$R" add docs/staged.md
+run_pf --staged
+if [ "$RC" -eq 1 ] && has "docs/staged.md:3: [docs-cited-paths]"; then
+  ok "control: the added dead citation fires with no attributes row"
+else
+  bad "control: the added dead citation fires with no attributes row" "rc=$RC out=$OUT"
+fi
+printf '*.md -diff\n' >"$R/.gitattributes"
+git -C "$R" add .gitattributes
+# The fixture is real only if the row has in fact flipped git's verdict.
+if git -C "$R" diff --cached --no-ext-diff -- docs/staged.md | grep -q '^Binary files'; then
+  ok "fixture: with '*.md -diff' an unpinned diff carries no hunks"
+else
+  bad "fixture: '-diff' makes an unpinned diff carry no hunks" "rc=$RC"
+fi
+run_pf --staged
+if [ "$RC" -eq 1 ] && has "docs/staged.md:3: [docs-cited-paths]"; then
+  ok "--staged still reads the added line under a '-diff' row"
+else
+  bad "--staged still reads the added line under a '-diff' row" "rc=$RC out=$OUT"
+fi
+if has "preflight: clean"; then
+  bad "no clean verdict may cover a file whose lines were withheld" "$OUT"
+else
+  ok "no clean verdict covers the withheld lines"
+fi
+printf '*.md binary\n' >"$R/.gitattributes"
+git -C "$R" add .gitattributes
+run_pf --staged
+if [ "$RC" -eq 1 ] && has "docs/staged.md:3: [docs-cited-paths]"; then
+  ok "the 'binary' attribute macro cannot withhold them either"
+else
+  bad "the 'binary' attribute macro cannot withhold them either" "rc=$RC out=$OUT"
+fi
+
+# The base scope reads the same patch shape against the merge base.
+seed attrs-base
+printf '*.md -diff\n' >"$R/.gitattributes"
+git -C "$R" add .gitattributes
+git -C "$R" commit -qm attrs
+printf '%s' "$CITE" >"$R/docs/staged.md"
+run_pf
+if [ "$RC" -eq 1 ] && has "docs/staged.md:3: [docs-cited-paths]"; then
+  ok "--base still reads the added line under a '-diff' row"
+else
+  bad "--base still reads the added line under a '-diff' row" "rc=$RC out=$OUT"
+fi
+
+# The other half: forcing text is not a licence to decode an asset. Content
+# is the judge in every scope — the same test --all applies to a tracked file
+# — so binary bytes contribute no lines and no finding built from them.
+seed attrs-binary
+printf 'PNG\000See `docs/gone.md` for the rest.\n' >"$R/docs/staged.md"
+git -C "$R" add docs/staged.md
+run_pf --staged
+if [ "$RC" -eq 0 ] && has "preflight: clean (1 changed file(s))"; then
+  ok "a changed file whose own bytes are binary contributes no lines"
+else
+  bad "a changed file whose own bytes are binary contributes no lines" "rc=$RC out=$OUT"
+fi
+printf 'PNG See `docs/gone.md` for the rest.\n' >"$R/docs/staged.md"
+git -C "$R" add docs/staged.md
+run_pf --staged
+if [ "$RC" -eq 1 ] && has "docs/staged.md:1: [docs-cited-paths]"; then
+  ok "control: the same bytes without the NUL are read as text"
+else
+  bad "control: the same bytes without the NUL are read as text" "rc=$RC out=$OUT"
+fi
+
+# git calls a blob binary on a NUL in its LEADING 8000 BYTES and reads the rest
+# as text. A wider window would drop a file git reads as text, taking its added
+# lines out of every lane while the run still counted it changed.
+seed binary-window
+{
+  printf '# Staged\n\n'
+  printf 'See `docs/gone.md` for the rest.\n'
+  head -c 20000 /dev/zero | tr '\0' 'x'
+  printf '\n\000\n'
+} >"$R/docs/staged.md"
+git -C "$R" add docs/staged.md
+run_pf --staged
+if [ "$RC" -eq 1 ] && has "docs/staged.md:3: [docs-cited-paths]"; then
+  ok "a NUL past the leading 8000 bytes leaves the file text, as it is to git"
+else
+  bad "a NUL past the leading 8000 bytes leaves the file text, as it is to git" "rc=$RC out=$OUT"
+fi
+
+# The other half of "no lines": a file whose lines are withheld is still a
+# CHANGED FILE, and the whole-file lanes judge the path, not the content — no
+# amount of binary content makes a new suite wired. The temp-path line is what
+# makes the second half of this assertion mean something: it is a line-scoped
+# finding on that same path, and the NUL is the only reason it stays quiet.
+seed binary-wholefile
+mkdir -p "$R/tests" "$R/.github/workflows"
+printf 'name: ci\non: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: bash tests/other.test.sh\n' >"$R/.github/workflows/ci.yml"
+git -C "$R" add -A
+git -C "$R" commit -qm ci
+printf '#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p /tmp/preflight-fixture\n# \000\n' >"$R/tests/new.test.sh"
+git -C "$R" add tests/new.test.sh
+run_pf --staged
+if [ "$RC" -eq 1 ] && has "tests/new.test.sh:0: [unwired-suite]" && ! has "[hardcoded-temp-path]"; then
+  ok "a binary file still reaches the whole-file lanes; only its lines are withheld"
+else
+  bad "a binary file still reaches the whole-file lanes; only its lines are withheld" "rc=$RC out=$OUT"
+fi
+printf '#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p /tmp/preflight-fixture\n# x\n' >"$R/tests/new.test.sh"
+git -C "$R" add tests/new.test.sh
+run_pf --staged
+if [ "$RC" -eq 1 ] && has "tests/new.test.sh:0: [unwired-suite]" && has "tests/new.test.sh:3: [hardcoded-temp-path]"; then
+  ok "control: without the NUL the same fixture fires on the line too"
+else
+  bad "control: without the NUL the same fixture fires on the line too" "rc=$RC out=$OUT"
+fi
+
+# A committed blob whose own bytes spell a patch header. Forcing --text hands
+# every changed file's raw content to the patch parser unless content is judged
+# FIRST: a line reading '++ b/<path>' renders with the '+' prefix as a file
+# header at column 1, re-points the parser at that path, and the record split
+# then reopens and truncates it — destroying another file's added lines.
+seed binary-forged-header
+printf '# Staged\n\nSee `docs/gone.md` for the rest.\n' >"$R/docs/staged.md"
+printf 'PNG\000\n++ b/docs/staged.md\n+junk\n' >"$R/zz.bin"
+git -C "$R" add -A
+run_pf --staged
+if [ "$RC" -eq 1 ] && has "docs/staged.md:3: [docs-cited-paths]"; then
+  ok "a binary blob cannot forge a patch header over another file's lines"
+else
+  bad "a binary blob cannot forge a patch header over another file's lines" "rc=$RC out=$OUT"
+fi
+run_pf
+if [ "$RC" -eq 1 ] && has "docs/staged.md:3: [docs-cited-paths]"; then
+  ok "--base holds the same line against the forged header"
+else
+  bad "--base holds the same line against the forged header" "rc=$RC out=$OUT"
+fi
+
+# The index revspec carries its stage: `:0:PATH`, never a bare `:PATH`. Under
+# the bare form git reads a leading `0:` through `3:` in the path AS the stage
+# selector, so `0:asset` asks for the blob at `asset` instead. That lookup
+# either lands on another file's bytes or fails outright, and a failure drops
+# the path out of the binary exclusion, where --text hands its raw content to
+# the patch parser and the forged header above goes live again.
+#
+# The victim is dot-named on purpose. git orders the patch by path, and the
+# record split truncates a file's collected lines only when its path is
+# reopened after another one, so the forging file has to come SECOND.
+seed stage-prefixed-path
+printf '%s' "$CITE" >"$R/.top.md"
+printf 'PNG\000\n++ b/.top.md\n+junk\n' >"$R/0:asset"
+git -C "$R" add -- .top.md '0:asset'
+run_pf --staged
+if [ "$RC" -eq 1 ] && has ".top.md:3: [docs-cited-paths]"; then
+  ok "a path named for a stage selector cannot forge a header over another file's record"
+else
+  bad "a path named for a stage selector cannot forge a header over another file's record" "rc=$RC out=$OUT"
+fi
+printf 'PNG\000\n+junk\n' >"$R/0:asset"
+git -C "$R" add -- '0:asset'
+run_pf --staged
+if [ "$RC" -eq 1 ] && has ".top.md:3: [docs-cited-paths]"; then
+  ok "control: the same fixture without the injected header line reports the same finding"
+else
+  bad "control: the same fixture without the injected header line reports the same finding" "rc=$RC out=$OUT"
+fi
+
+# The other half of the bare form: a sibling sits at the shortened path, the
+# lookup succeeds, and the binary verdict is taken over bytes belonging to a
+# different file.
+seed stage-prefixed-sibling
+printf '%s' "$CITE" >"$R/0:doc.md"
+printf 'PNG\000binary\n' >"$R/doc.md"
+git -C "$R" add -- '0:doc.md' doc.md
+run_pf --staged
+if [ "$RC" -eq 1 ] && has "0:doc.md:3: [docs-cited-paths]"; then
+  ok "a stage-prefixed path is judged on its own bytes, not on its shortened sibling's"
+else
+  bad "a stage-prefixed path is judged on its own bytes, not on its shortened sibling's" "rc=$RC out=$OUT"
+fi
+
+# The header state machine, pinned where excluding carriers cannot reach.
+# `+++ b/<path>` is a file header only where git can have written one: inside
+# the preamble a `diff --git` line opens, directly after `--- `. A hunk BODY
+# spells the same shape at column 0 whenever an added line reads `++ b/<path>`,
+# and an unanchored parser hands the victim's record to the carrier — the
+# splitter then reopens that record and truncates the findings already
+# collected for it. The carrier here is ORDINARY TEXT that content
+# classification correctly refuses to exclude, so no exclusion closes this:
+# only the anchor does.
+#
+# Both fixtures share the shape that makes the loss happen: the carrier sorts
+# AFTER the victim and writes at least one row under its OWN name before
+# forging, so the forged rows arrive as a second, non-adjacent group.
+forge_carrier() { # PATH — a text carrier whose third added line forges a header
+  printf 'seed\nnormal\n++ b/docs/staged.md\njunk\n' >"$R/$1"
+}
+
+# Variant one: a NUL-free blob a committed `-diff` row marks binary. The
+# --text pin gives it hunks it would not otherwise have had, and content
+# classification correctly calls it text, so it is correctly NOT excluded.
+seed attributed-text-forged-header
+printf '%s' "$CITE" >"$R/docs/staged.md"
+printf '*.txt -diff\n' >"$R/.gitattributes"
+forge_carrier zz.txt
+git -C "$R" add -A
+NOTEXT="$(git -C "$R" -c core.quotePath=false diff --cached --no-color --unified=0 -- zz.txt)"
+case "$NOTEXT" in
+  *"Binary files"*) ok "fixture: the '-diff' row really does make the unpinned diff go binary" ;;
+  *) bad "fixture: the '-diff' row makes the unpinned diff go binary" "diff=$NOTEXT" ;;
+esac
+run_pf --staged
+if [ "$RC" -eq 1 ] && has "docs/staged.md:3: [docs-cited-paths]"; then
+  ok "an attributed-text carrier cannot forge a header over another file's record"
+else
+  bad "an attributed-text carrier cannot forge a header over another file's record" "rc=$RC out=$OUT"
+fi
+printf 'seed\nnormal\njunk\n' >"$R/zz.txt"
+git -C "$R" add zz.txt
+run_pf --staged
+if [ "$RC" -eq 1 ] && has "docs/staged.md:3: [docs-cited-paths]"; then
+  ok "control: the same fixture without the forged line reports the same finding"
+else
+  bad "control: the same fixture without the forged line reports the same finding" "rc=$RC out=$OUT"
+fi
+
+# Variant two: no attributes row at all. A plain text file reaches the parser
+# by every route, on every scope, with nothing to exclude it by.
+seed plain-text-forged-header
+printf '%s' "$CITE" >"$R/docs/staged.md"
+forge_carrier zz.txt
+git -C "$R" add -A
+run_pf --staged
+if [ "$RC" -eq 1 ] && has "docs/staged.md:3: [docs-cited-paths]"; then
+  ok "a plain text carrier cannot forge a header over another file's record"
+else
+  bad "a plain text carrier cannot forge a header over another file's record" "rc=$RC out=$OUT"
+fi
+run_pf
+if [ "$RC" -eq 1 ] && has "docs/staged.md:3: [docs-cited-paths]"; then
+  ok "--base holds the same line against the plain text carrier"
+else
+  bad "--base holds the same line against the plain text carrier" "rc=$RC out=$OUT"
+fi
+printf 'seed\nnormal\njunk\n' >"$R/zz.txt"
+git -C "$R" add zz.txt
+run_pf --staged
+if [ "$RC" -eq 1 ] && has "docs/staged.md:3: [docs-cited-paths]"; then
+  ok "control: the plain text fixture without the forged line reports the same finding"
+else
+  bad "control: the plain text fixture without the forged line reports the same finding" "rc=$RC out=$OUT"
+fi
+
+# A flag set by `--- ` alone would still be forgeable: with --unified=0 a
+# hunk emits its removed lines before its added ones, so ONE hunk that
+# replaces a line reading `-- a/<x>` with one reading `++ b/<victim>` spells
+# the whole header pair at column 0. `diff --git` is the record no body can
+# spell, which is why the flag is anchored there rather than on `--- `.
+seed forged-header-pair
+printf 'seed\nfiller\n-- a/x\ntail\n' >"$R/zz.txt"
+git -C "$R" add zz.txt
+git -C "$R" commit -qm carrier
+printf '%s' "$CITE" >"$R/docs/staged.md"
+printf 'seed\nnormal\nfiller\n++ b/docs/staged.md\njunk\ntail\n' >"$R/zz.txt"
+git -C "$R" add -A
+# Every half of the shape matters. The first hunk gives the carrier a record
+# under its OWN name, without which there is nothing to reopen and nothing to
+# truncate. The second spells the pair on ADJACENT records, which is what a
+# flag set by `--- ` alone accepts, and puts an added line AFTER it, without
+# which the forged header re-points at nothing.
+PAIR="$(git -C "$R" diff --cached --no-color --unified=0 -- zz.txt | grep -A2 -e '^--- a/x$' | tr '\n' '|')"
+case "$PAIR" in
+  "--- a/x|+++ b/docs/staged.md|+junk|")
+    ok "fixture: the hunk body spells the header pair, with a line after it"
+    ;;
+  *) bad "fixture: the hunk body spells the header pair, with a line after it" "got=$PAIR" ;;
+esac
+run_pf --staged
+if [ "$RC" -eq 1 ] && has "docs/staged.md:3: [docs-cited-paths]"; then
+  ok "a forged '---'/'+++' PAIR cannot re-point the parse either"
+else
+  bad "a forged '---'/'+++' PAIR cannot re-point the parse either" "rc=$RC out=$OUT"
+fi
+# Anchored on `--- ` alone this same fixture re-points the parse and the
+# splitter refusal below fires instead — a loud exit 2 rather than a lost
+# finding, which is the guard doing its job over a parser that let the
+# forgery through. The measurement is the ordinary verdict, not the refusal.
+if has "arrived in two separate groups"; then
+  bad "the forgery never reaches the splitter's refusal" "out=$OUT"
+else
+  ok "the forgery never reaches the splitter's refusal"
+fi
+
+# The forged line is not swallowed either: it is content of the file that
+# carries it, so a lane scanning that file's added lines still sees it.
+seed forged-line-is-content
+printf 'seed\nnormal\n++ b/docs/staged.md\nmkdir -p /tmp/preflight-fixture\n' >"$R/zz.txt"
+git -C "$R" add -A
+run_pf --staged
+if [ "$RC" -eq 1 ] && has "zz.txt:4: [hardcoded-temp-path]"; then
+  ok "a rejected header record leaves the lines after it attributed to their own file"
+else
+  bad "a rejected header record leaves the lines after it attributed to their own file" "rc=$RC out=$OUT"
+fi
+
+echo "=== content the run cannot read fails loudly, never a clean verdict ==="
+
+# A read that FAILS is not a verdict of "no lines". The path is already inside
+# the changed-file count, so a silent skip would print a clean total covering
+# content no lane read — the exact shape every pin above exists to close.
+seed unreadable
+printf '# New\n\nSee `docs/gone.md` for the rest.\n' >"$R/docs/new.md"
+if [ "$(id -u)" -eq 0 ]; then
+  printf '  skip  the unreadable-content pin needs a non-root reader (chmod 000 cannot deny root)\n'
+else
+  chmod 000 "$R/docs/new.md"
+  run_pf
+  chmod 644 "$R/docs/new.md"
+  if [ "$RC" -eq 2 ] && has "docs/new.md" && ! has "preflight: clean"; then
+    ok "content the run cannot read is exit 2, naming the path"
+  else
+    bad "content the run cannot read is exit 2, naming the path" "rc=$RC out=$OUT"
+  fi
+  run_pf
+  if [ "$RC" -eq 1 ] && has "docs/new.md:3: [docs-cited-paths]"; then
+    ok "control: the same file readable produces the ordinary verdict"
+  else
+    bad "control: the same file readable produces the ordinary verdict" "rc=$RC out=$OUT"
+  fi
+fi
+
+# Staged scope reads the index, so the failure is the index lookup's: the
+# blob the change set just listed cannot be materialized. The path stays in
+# the changed-file count either way, so a silent skip here is the same clean
+# verdict over unread content — it just arrives through the other scope.
+seed vanished-blob
+printf '# New\n\nSee `docs/gone.md` for the rest.\n' >"$R/docs/new.md"
+git -C "$R" add docs/new.md
+run_pf --staged
+if [ "$RC" -eq 1 ] && has "docs/new.md:3: [docs-cited-paths]"; then
+  ok "control: the staged file reports the ordinary verdict while its blob is readable"
+else
+  bad "control: the staged file reports the ordinary verdict" "rc=$RC out=$OUT"
+fi
+OID="$(git -C "$R" rev-parse :0:docs/new.md)"
+if [ ! -f "$R/.git/objects/${OID:0:2}/${OID:2}" ]; then
+  bad "fixture: the staged blob is a loose object at the expected path" "$OID"
+else
+  rm -f -- "$R/.git/objects/${OID:0:2}/${OID:2}"
+  run_pf --staged
+  if [ "$RC" -eq 2 ] && has "docs/new.md" && ! has "preflight: clean"; then
+    ok "a staged blob the index lookup cannot materialize is exit 2, naming the path"
+  else
+    bad "a vanished staged blob is exit 2, naming the path" "rc=$RC out=$OUT"
+  fi
+fi
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

@@ -241,14 +241,26 @@ reason — with it, one attributes line would hide a whole extension from the
 fast path, where a skipped file reads as clean. What forcing text lets
 through is then judged on content: each named path's index blob is sniffed
 for a NUL in its first block, git's own test, and a genuinely binary blob is
-skipped rather than decoded. So a text file under a `-diff` rule is still
-read, while an asset whose bytes happen to spell a marker cannot block a
-commit with a record of raw bytes. Sniffing only the named paths keeps that
-at one `cat-file` per marker-carrying file, not one per staged file.
+NAMED as unmeasured rather than decoded. So a text file under a `-diff` rule
+is still read, while an asset whose bytes happen to spell a marker cannot
+block a commit with a record of raw bytes, and cannot ride inside a clean
+verdict either. Sniffing only the named paths keeps that at one `cat-file`
+per marker-carrying file, not one per staged file.
 
-The index-wide lane makes no such promise. It runs `git grep -I`, so a blob
-git calls binary — including one a `-diff` rule makes it call binary — is
-outside its scan. Closing that half is KEN-844.
+The index-wide scans give the same answer, in the shared
+`gg_content_carriers` every one of them lists through: it forces text, drops
+the excluded paths, sniffs each named blob, and hands back the paths a scan
+may measure. `gg_grep_lane` details the hits per carrier, and its detail
+scan forces text too — the two move TOGETHER, since text on the listing over
+`-I` on the detail scan would name a file the detail scan then finds nothing
+in, which the lane's own invariant turns into a spurious exit 2.
+`conflict-markers`, `suppression-ban`'s seven blanket lanes and its bare-allow
+count, and `prose` inherit the rule from the helper; `prose` reaches it having
+already made the same judgement in its own walk. Every skip the helper makes
+is named and counted in `GG_WALK_SKIPPED`, which each check's verdict line
+carries as `N matched path(s) not measured`. The tally is of distinct PATHS:
+a check running several lanes over overlapping pathspecs meets the same
+unreadable blob once per lane, and `gg_note_skip` names and counts it once.
 
 ## byte-ceiling sizing
 

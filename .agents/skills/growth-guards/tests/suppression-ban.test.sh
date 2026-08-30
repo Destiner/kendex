@@ -351,6 +351,70 @@ OUT="$(cd "$R" && PATH="$GIT_SHIM:$PATH" "$SB" 2>&1)" && RC=0 || RC=$?
   || bad "a git grep execution failure is a collection error" "rc=$RC out=$OUT"
 case "$OUT" in *"suppression-ban: OK"*) bad "no OK verdict may accompany a broken scan" "$OUT" ;; *) ok "no OK verdict accompanies the broken scan" ;; esac
 
+echo "=== a carrier the sniff skips is named, and qualifies the verdict ==="
+new_repo unmeasured
+printf 'fn main() {}\n' >"$R/ok.rs"
+# A .rs path whose bytes carry the module-wide pragma at column 0 and a NUL
+# in git's leading window: the listing forces text, so the path IS matched
+# and reaches the content sniff, and the sniff is what keeps it out of the
+# count. Unread is not clean — the path is named and the verdict says so.
+printf '\000\n#![allow(dead_code)]\nfn f() {}\n' >"$R/blob.rs"
+git -C "$R" add -A
+run_sb
+[ "$RC" -eq 0 ] && case "$OUT" in
+  *"not measured: blob.rs — binary content, not text"*"suppression-ban: OK"*"1 matched path(s) not measured"*) true ;;
+  *) false ;;
+esac \
+  && ok "a clean verdict names the skipped carrier and says how many went unmeasured" \
+  || bad "clean verdict carries the unmeasured qualifier" "rc=$RC out=$OUT"
+
+# The same qualifier on a FAILING verdict: a readable pragma elsewhere
+# decides the exit code, and the unread carrier still has to be declared.
+printf '#![allow(dead_code)]\nfn g() {}\n' >"$R/blanket.rs"
+git -C "$R" add -A
+run_sb
+[ "$RC" -eq 1 ] && case "$OUT" in
+  *"not measured: blob.rs — binary content, not text"*"suppression-ban: 1 violation(s)"*"1 matched path(s) not measured"*) true ;;
+  *) false ;;
+esac \
+  && ok "a violation verdict carries the same qualifier" \
+  || bad "violation verdict carries the unmeasured qualifier" "rc=$RC out=$OUT"
+
+# The must-fail control: the same bytes with the NUL taken out are text, so
+# the carrier is measured, fires on its own line, and nothing is declared
+# unmeasured.
+printf '\n#![allow(dead_code)]\nfn f() {}\n' >"$R/blob.rs"
+git -C "$R" add -A
+run_sb
+[ "$RC" -eq 1 ] && case "$OUT" in
+  *"module-wide rust allow: blob.rs:2:"*) true ;;
+  *) false ;;
+esac \
+  && ok "control: the same bytes without a NUL are read, and fire" \
+  || bad "control: the NUL-free carrier fires" "rc=$RC out=$OUT"
+case "$OUT" in
+  *"not measured"*) bad "nothing goes unmeasured once the carrier is text" "$OUT" ;;
+  *) ok "and no unmeasured qualifier accompanies a fully read scan" ;;
+esac
+
+echo "=== one path skipped by two lanes is named once and counted once ==="
+new_repo unmeasured-dedup
+printf 'fn main() {}\n' >"$R/ok.rs"
+# The same unreadable blob reaches two of this check's scans: the module-wide
+# pragma matches the blanket lane's listing and the bare attribute matches the
+# bare-allow carrier listing, so the sniff meets blob.rs twice. The verdict
+# counts PATHS, so both the name and the number are per distinct path.
+printf '\000\n#![allow(dead_code)]\n#[allow(dead_code)]\nfn x() {}\n' >"$R/blob.rs"
+git -C "$R" add -A
+run_sb
+NAMED="$(printf '%s\n' "$OUT" | grep -c "not measured: blob\.rs — binary content, not text")" || NAMED=0
+[ "$RC" -eq 0 ] && [ "$NAMED" -eq 1 ] && case "$OUT" in
+  *"suppression-ban: OK"*"1 matched path(s) not measured"*) true ;;
+  *) false ;;
+esac \
+  && ok "a two-lane skip prints one not-measured line and counts one path" \
+  || bad "two-lane skip is deduplicated by path" "rc=$RC named=$NAMED out=$OUT"
+
 echo "=== fail-closed: an unreadable staged blob is a collection error ==="
 new_repo unreadable
 printf '#[allow(dead_code)]\nfn f() {}\n' >"$R/bare.rs"
@@ -367,11 +431,16 @@ run_sb
   || bad "vanished blob is exit 2 with git's error line" "rc=$RC out=$OUT"
 case "$OUT" in *"suppression-ban: OK"*) bad "no OK verdict may accompany an unread blob" "$OUT" ;; *) ok "no OK verdict accompanies the unread blob" ;; esac
 
-# The bare-allow count call bypasses the shared lane helper; a shim erroring
-# ONLY that call proves its own guard (a real unreadable .rs blob is caught
-# earlier, by the gate-1 lane scan above).
+# The per-carrier count is gate 2's own call, made after the shared listing
+# has already named the carrier; a shim erroring ONLY that call proves its
+# own guard (a real unreadable .rs blob is caught earlier, by the gate-1 lane
+# scan above). The fixture carries a baselined bare allow, so the count call
+# runs and the shim-free control is clean.
 new_repo countfail
+mkdir -p "$R/tools"
 printf 'fn main() {}\n' >"$R/ok.rs"
+printf '#[allow(dead_code)]\nfn b() {}\n' >"$R/bare.rs"
+printf 'bare.rs\t1\n' >"$R/tools/suppression-baseline.tsv"
 git -C "$R" add -A
 run_sb
 [ "$RC" -eq 0 ] && ok "shim-free control: the countfail fixture passes with the real git" \
@@ -381,7 +450,7 @@ mkdir -p "$COUNT_SHIM"
 cat >"$COUNT_SHIM/git" <<EOF
 #!/usr/bin/env bash
 for a in "\$@"; do
-  if [ "\$a" = "-cIE" ]; then
+  if [ "\$a" = "-acE" ]; then
     echo "error: 'phantom.rs': unable to read 0000000000000000000000000000000000000000" >&2
     exit 1
   fi
