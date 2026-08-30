@@ -1,3 +1,4 @@
+import { isMcpResourceTool } from "./connectors.js";
 import { MCP_SERVER_NAME, MCP_TOOL_PREFIX } from "./skills.js";
 
 const SDK_TO_PI_TOOL_NAME: Record<string, string> = {
@@ -13,16 +14,27 @@ const BRIDGED_TOOL_PREFIXES = [
 
 // --- Provider helpers: tool name mapping ---
 
+function bridgedToolSuffix(normalized: string): string | undefined {
+	const prefix = BRIDGED_TOOL_PREFIXES.find((candidate) => normalized.startsWith(candidate));
+	return prefix ? normalized.slice(prefix.length) : undefined;
+}
+
 export function isPiDispatchable(name: string, customToolNameToPi?: Map<string, string>): boolean {
 	if (!name) return false;
 	const normalized = name.toLowerCase();
+	const hasManifest = Boolean(customToolNameToPi?.size);
 	if (customToolNameToPi?.has(name) || customToolNameToPi?.has(normalized)) return true;
-	if (BRIDGED_TOOL_PREFIXES.some((prefix) => normalized.startsWith(prefix))) return true;
+	const bridgedSuffix = bridgedToolSuffix(normalized);
+	if (bridgedSuffix !== undefined) {
+		if (!hasManifest) return true;
+		return customToolNameToPi?.has(`${MCP_TOOL_PREFIX}${bridgedSuffix}`) ?? false;
+	}
 	// A foreign MCP namespace belongs to a child-loaded server, not Pi's bridge.
 	if (normalized.startsWith("mcp__")) return false;
-	// Bare SDK aliases are naming slips when the child has a bridged manifest.
-	if (customToolNameToPi?.size && SDK_TO_PI_TOOL_NAME[normalized]) return false;
-	return true;
+	// Resource discovery is deliberately mirrored as Pi's account-access audit.
+	if (isMcpResourceTool(name)) return true;
+	// A populated manifest is authoritative: every other bare name is a naming slip.
+	return !hasManifest;
 }
 
 export function mapToolName(name: string, customToolNameToPi?: Map<string, string>): string {
@@ -33,8 +45,9 @@ export function mapToolName(name: string, customToolNameToPi?: Map<string, strin
 		const mapped = customToolNameToPi.get(name) ?? customToolNameToPi.get(normalized);
 		if (mapped) return mapped;
 	}
-	for (const prefix of BRIDGED_TOOL_PREFIXES) {
-		if (normalized.startsWith(prefix)) return normalized.slice(prefix.length);
+	const bridgedSuffix = bridgedToolSuffix(normalized);
+	if (bridgedSuffix !== undefined) {
+		return customToolNameToPi?.get(`${MCP_TOOL_PREFIX}${bridgedSuffix}`) ?? bridgedSuffix;
 	}
 	return name;
 }

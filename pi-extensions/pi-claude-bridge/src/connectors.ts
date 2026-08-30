@@ -144,14 +144,18 @@ function deliveredSpellings(name: string): string[] {
 // REQUEST-side spellings: this list feeds the SDK option surface (the
 // disallowedTools filter in toolIsolationForQuery) and is the exported public
 // name. Delivered-side checks use CONNECTOR_DISCOVERY_TOOL_NAMES below.
-export const CONNECTOR_DISCOVERY_TOOLS = ["ToolSearch", "ListMcpResources", "ReadMcpResource"];
+const MCP_RESOURCE_TOOLS = ["ListMcpResources", "ReadMcpResource"];
+export const CONNECTOR_DISCOVERY_TOOLS = ["ToolSearch", ...MCP_RESOURCE_TOOLS];
 
-// Delivered-side membership set for the discovery tools: both spellings of
-// each entry, derived from SDK_TOOL_ALIASES. A PreToolUse hook's `tool_name`
-// carries the canonical spelling (`ListMcpResourcesTool`), so testing the
-// request-side list directly made the fail-closed allowlist hook DENY the two
-// resource tools it exists to permit (kendex#1011).
+// Delivered-side membership sets carry both spellings, derived from the one
+// alias declaration above. The resource-only set keeps those audit calls
+// dispatchable without making ToolSearch a Pi call (kendex#1007, kendex#1011).
 const CONNECTOR_DISCOVERY_TOOL_NAMES = new Set(CONNECTOR_DISCOVERY_TOOLS.flatMap(deliveredSpellings));
+const MCP_RESOURCE_TOOL_NAMES = new Set(MCP_RESOURCE_TOOLS.flatMap(deliveredSpellings));
+
+export function isMcpResourceTool(name: string): boolean {
+	return MCP_RESOURCE_TOOL_NAMES.has(name);
+}
 
 // --- Connector WRITE tool control (read-inline / write-by-approval) ---
 //

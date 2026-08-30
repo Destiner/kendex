@@ -27552,8 +27552,13 @@ function deliveredSpellings(name) {
   const canonical = SDK_TOOL_ALIASES[name];
   return canonical ? [name, canonical] : [name];
 }
-var CONNECTOR_DISCOVERY_TOOLS = ["ToolSearch", "ListMcpResources", "ReadMcpResource"];
+var MCP_RESOURCE_TOOLS = ["ListMcpResources", "ReadMcpResource"];
+var CONNECTOR_DISCOVERY_TOOLS = ["ToolSearch", ...MCP_RESOURCE_TOOLS];
 var CONNECTOR_DISCOVERY_TOOL_NAMES = new Set(CONNECTOR_DISCOVERY_TOOLS.flatMap(deliveredSpellings));
+var MCP_RESOURCE_TOOL_NAMES = new Set(MCP_RESOURCE_TOOLS.flatMap(deliveredSpellings));
+function isMcpResourceTool(name) {
+  return MCP_RESOURCE_TOOL_NAMES.has(name);
+}
 var CONNECTOR_NS_PREFIX2 = "mcp__claude_ai_";
 var CONNECTOR_NS_GMAIL = `${CONNECTOR_NS_PREFIX2}Gmail__`;
 var CONNECTOR_NS_CALENDAR = `${CONNECTOR_NS_PREFIX2}Google_Calendar__`;
@@ -45248,14 +45253,23 @@ var BRIDGED_TOOL_PREFIXES = [
   `mcp/${MCP_SERVER_NAME}/`,
   `mcp/${MCP_SERVER_NAME.replace(/-/g, "_")}/`
 ];
+function bridgedToolSuffix(normalized) {
+  const prefix = BRIDGED_TOOL_PREFIXES.find((candidate) => normalized.startsWith(candidate));
+  return prefix ? normalized.slice(prefix.length) : void 0;
+}
 function isPiDispatchable(name, customToolNameToPi) {
   if (!name) return false;
   const normalized = name.toLowerCase();
+  const hasManifest = Boolean(customToolNameToPi?.size);
   if (customToolNameToPi?.has(name) || customToolNameToPi?.has(normalized)) return true;
-  if (BRIDGED_TOOL_PREFIXES.some((prefix) => normalized.startsWith(prefix))) return true;
+  const bridgedSuffix = bridgedToolSuffix(normalized);
+  if (bridgedSuffix !== void 0) {
+    if (!hasManifest) return true;
+    return customToolNameToPi?.has(`${MCP_TOOL_PREFIX}${bridgedSuffix}`) ?? false;
+  }
   if (normalized.startsWith("mcp__")) return false;
-  if (customToolNameToPi?.size && SDK_TO_PI_TOOL_NAME[normalized]) return false;
-  return true;
+  if (isMcpResourceTool(name)) return true;
+  return !hasManifest;
 }
 function mapToolName(name, customToolNameToPi) {
   const normalized = name.toLowerCase();
@@ -45265,8 +45279,9 @@ function mapToolName(name, customToolNameToPi) {
     const mapped = customToolNameToPi.get(name) ?? customToolNameToPi.get(normalized);
     if (mapped) return mapped;
   }
-  for (const prefix of BRIDGED_TOOL_PREFIXES) {
-    if (normalized.startsWith(prefix)) return normalized.slice(prefix.length);
+  const bridgedSuffix = bridgedToolSuffix(normalized);
+  if (bridgedSuffix !== void 0) {
+    return customToolNameToPi?.get(`${MCP_TOOL_PREFIX}${bridgedSuffix}`) ?? bridgedSuffix;
   }
   return name;
 }
