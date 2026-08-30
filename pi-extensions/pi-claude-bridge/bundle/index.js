@@ -28309,8 +28309,8 @@ var QueryContext = class {
   deferredUserMessages = [];
   handledTerminalError = false;
   // Once visible text/thinking, a complete tool call, or a child-executed
-  // CONNECTOR dispatch reaches Pi, the request must never be replayed on
-  // another account (duplicate side effects). Query-scoped, not per-turn:
+  // connector/foreign-MCP dispatch reaches Pi, the request must never be
+  // replayed on another account (duplicate side effects). Query-scoped, not per-turn:
   // resetTurnState must not clear it.
   committedOutput = false;
   /** True when this query holds NO claim on the module-level shared session
@@ -45257,8 +45257,13 @@ function bridgedToolSuffix(normalized) {
   const prefix = BRIDGED_TOOL_PREFIXES.find((candidate) => normalized.startsWith(candidate));
   return prefix ? normalized.slice(prefix.length) : void 0;
 }
+function isForeignMcpTool(name) {
+  if (typeof name !== "string") return false;
+  const normalized = name.toLowerCase();
+  return normalized.startsWith("mcp__") && bridgedToolSuffix(normalized) === void 0;
+}
 function isPiDispatchable(name, customToolNameToPi) {
-  if (!name) return false;
+  if (typeof name !== "string" || !name) return false;
   const normalized = name.toLowerCase();
   const hasManifest = Boolean(customToolNameToPi?.size);
   if (customToolNameToPi?.has(name) || customToolNameToPi?.has(normalized)) return true;
@@ -45267,7 +45272,7 @@ function isPiDispatchable(name, customToolNameToPi) {
     if (!hasManifest) return true;
     return customToolNameToPi?.has(`${MCP_TOOL_PREFIX}${bridgedSuffix}`) ?? false;
   }
-  if (normalized.startsWith("mcp__")) return false;
+  if (isForeignMcpTool(name)) return false;
   if (isMcpResourceTool(name)) return true;
   return !hasManifest;
 }
@@ -45501,6 +45506,7 @@ function processStreamEvent(message, customToolNameToPi, model, c = ctx()) {
     }
     if (event.content_block?.type === "tool_use" && !isPiDispatchable(event.content_block.name, customToolNameToPi)) {
       c.suppressedStreamIndexes.add(event.index);
+      if (isForeignMcpTool(event.content_block.name)) c.markOutputCommitted();
       debug(`processStreamEvent: non-dispatchable tool ${event.content_block.name} [${event.content_block.id}] \u2014 not mirrored as a Pi tool call`);
       return;
     }
@@ -45622,6 +45628,7 @@ function appendMissingToolUsesFromAssistant(assistantMsg, model, customToolNameT
       continue;
     }
     if (!isPiDispatchable(block.name, customToolNameToPi)) {
+      if (isForeignMcpTool(block.name)) c.markOutputCommitted();
       debug(`assistant message: non-dispatchable tool ${block.name} [${block.id}] \u2014 not mirrored as a Pi tool call`);
       continue;
     }
@@ -45719,6 +45726,7 @@ function processAssistantMessage(message, model, customToolNameToPi, c = ctx()) 
         continue;
       }
       if (!isPiDispatchable(block.name, customToolNameToPi)) {
+        if (isForeignMcpTool(block.name)) c.markOutputCommitted();
         debug(`processAssistantMessage fallback: non-dispatchable tool ${block.name} [${block.id}] \u2014 not mirrored as a Pi tool call`);
         continue;
       }

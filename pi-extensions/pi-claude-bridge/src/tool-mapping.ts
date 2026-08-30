@@ -19,8 +19,14 @@ function bridgedToolSuffix(normalized: string): string | undefined {
 	return prefix ? normalized.slice(prefix.length) : undefined;
 }
 
-export function isPiDispatchable(name: string, customToolNameToPi?: Map<string, string>): boolean {
-	if (!name) return false;
+export function isForeignMcpTool(name: unknown): boolean {
+	if (typeof name !== "string") return false;
+	const normalized = name.toLowerCase();
+	return normalized.startsWith("mcp__") && bridgedToolSuffix(normalized) === undefined;
+}
+
+export function isPiDispatchable(name: unknown, customToolNameToPi?: Map<string, string>): boolean {
+	if (typeof name !== "string" || !name) return false;
 	const normalized = name.toLowerCase();
 	const hasManifest = Boolean(customToolNameToPi?.size);
 	if (customToolNameToPi?.has(name) || customToolNameToPi?.has(normalized)) return true;
@@ -30,7 +36,7 @@ export function isPiDispatchable(name: string, customToolNameToPi?: Map<string, 
 		return customToolNameToPi?.has(`${MCP_TOOL_PREFIX}${bridgedSuffix}`) ?? false;
 	}
 	// A foreign MCP namespace belongs to a child-loaded server, not Pi's bridge.
-	if (normalized.startsWith("mcp__")) return false;
+	if (isForeignMcpTool(name)) return false;
 	// Resource discovery is deliberately mirrored as Pi's account-access audit.
 	if (isMcpResourceTool(name)) return true;
 	// A populated manifest is authoritative: every other bare name is a naming slip.

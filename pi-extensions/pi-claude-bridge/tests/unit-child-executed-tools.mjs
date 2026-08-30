@@ -354,10 +354,11 @@ describe("child-executed tools are never mirrored as Pi tool calls", () => {
 			installFakeStream();
 			return c;
 		};
-		const assertNoPiCall = (c) => {
+		const assertNoPiCall = (c, committedOutput) => {
 			assert.equal(c.turnBlocks.length, 0);
 			assert.equal(c.turnSawToolCall, false);
 			assert.deepEqual(c.turnToolCallIds, []);
+			assert.equal(c.committedOutput, committedOutput);
 		};
 
 		let c = freshContext();
@@ -366,22 +367,45 @@ describe("child-executed tools are never mirrored as Pi tool calls", () => {
 			content_block: { type: "tool_use", id: "toolu_bare", name: "grep", input: {} },
 		}), manifest, model);
 		processStreamEvent(streamEvent({ type: "content_block_stop", index: 0 }), manifest, model);
-		assertNoPiCall(c);
+		assertNoPiCall(c, false);
+
+		c = freshContext();
+		processStreamEvent(streamEvent({
+			type: "content_block_start", index: 0,
+			content_block: { type: "tool_use", id: "toolu_nameless", input: {} },
+		}), manifest, model);
+		processStreamEvent(streamEvent({ type: "content_block_stop", index: 0 }), manifest, model);
+		assertNoPiCall(c, false);
+
+		c = freshContext();
+		processStreamEvent(streamEvent({
+			type: "content_block_start", index: 0,
+			content_block: { type: "tool_use", id: "toolu_native_stream", name: "mcp__filesystem__read_file", input: {} },
+		}), manifest, model);
+		processStreamEvent(streamEvent({ type: "content_block_stop", index: 0 }), manifest, model);
+		assertNoPiCall(c, true);
 
 		c = freshContext();
 		c.turnSawStreamEvent = true;
 		processAssistantMessage({
 			type: "assistant",
-			message: { content: [{ type: "tool_use", id: "toolu_native", name: "mcp__filesystem__read_file", input: {} }] },
+			message: { content: [{ type: "tool_use", id: "toolu_native_boundary", name: "mcp__filesystem__read_file", input: {} }] },
 		}, model, manifest);
-		assertNoPiCall(c);
+		assertNoPiCall(c, true);
 
 		c = freshContext();
 		processAssistantMessage({
 			type: "assistant",
-			message: { content: [{ type: "tool_use", id: "toolu_fallback", name: "bash", input: {} }] },
+			message: { content: [{ type: "tool_use", id: "toolu_native_fallback", name: "mcp__filesystem__read_file", input: {} }] },
 		}, model, manifest);
-		assertNoPiCall(c);
+		assertNoPiCall(c, true);
+
+		c = freshContext();
+		processAssistantMessage({
+			type: "assistant",
+			message: { content: [{ type: "tool_use", id: "toolu_bare_fallback", name: "bash", input: {} }] },
+		}, model, manifest);
+		assertNoPiCall(c, false);
 	});
 
 	it("mirrors a streamed MCP-resource read under its stream-side spelling (kendex#1007)", () => {

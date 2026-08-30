@@ -5,7 +5,7 @@ import { connectorResultByteSize, recordConnectorCallResult } from "./connector-
 import { isChildExecutedTool } from "./connectors.js";
 import { debug, diagDump } from "./debug.js";
 import { ctx, failStrandedToolCall, type QueryContext } from "./query-state.js";
-import { isPiDispatchable, mapToolArgs, mapToolName } from "./tool-mapping.js";
+import { isForeignMcpTool, isPiDispatchable, mapToolArgs, mapToolName } from "./tool-mapping.js";
 
 // --- Usage helpers ---
 
@@ -346,6 +346,7 @@ export function processStreamEvent(
 		}
 		if (event.content_block?.type === "tool_use" && !isPiDispatchable(event.content_block.name, customToolNameToPi)) {
 			c.suppressedStreamIndexes.add(event.index);
+			if (isForeignMcpTool(event.content_block.name)) c.markOutputCommitted();
 			debug(`processStreamEvent: non-dispatchable tool ${event.content_block.name} [${event.content_block.id}] — not mirrored as a Pi tool call`);
 			return;
 		}
@@ -513,6 +514,7 @@ function appendMissingToolUsesFromAssistant(
 			continue;
 		}
 		if (!isPiDispatchable(block.name, customToolNameToPi)) {
+			if (isForeignMcpTool(block.name)) c.markOutputCommitted();
 			debug(`assistant message: non-dispatchable tool ${block.name} [${block.id}] — not mirrored as a Pi tool call`);
 			continue;
 		}
@@ -669,6 +671,7 @@ export function processAssistantMessage(message: SDKMessage, model: Model<any>, 
 				continue;
 			}
 			if (!isPiDispatchable(block.name, customToolNameToPi)) {
+				if (isForeignMcpTool(block.name)) c.markOutputCommitted();
 				debug(`processAssistantMessage fallback: non-dispatchable tool ${block.name} [${block.id}] — not mirrored as a Pi tool call`);
 				continue;
 			}

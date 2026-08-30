@@ -305,8 +305,8 @@ export class QueryContext {
 	deferredUserMessages: DeferredUserMessage[] = [];
 	handledTerminalError = false;
 	// Once visible text/thinking, a complete tool call, or a child-executed
-	// CONNECTOR dispatch reaches Pi, the request must never be replayed on
-	// another account (duplicate side effects). Query-scoped, not per-turn:
+	// connector/foreign-MCP dispatch reaches Pi, the request must never be
+	// replayed on another account (duplicate side effects). Query-scoped, not per-turn:
 	// resetTurnState must not clear it.
 	committedOutput = false;
 	/** True when this query holds NO claim on the module-level shared session
