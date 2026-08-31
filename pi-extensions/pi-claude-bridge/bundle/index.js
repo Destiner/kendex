@@ -45260,7 +45260,7 @@ function bridgedToolSuffix(normalized) {
 function isForeignMcpTool(name) {
   if (typeof name !== "string") return false;
   const normalized = name.toLowerCase();
-  return normalized.startsWith("mcp__") && bridgedToolSuffix(normalized) === void 0;
+  return (normalized.startsWith("mcp__") || normalized.startsWith("mcp/")) && bridgedToolSuffix(normalized) === void 0;
 }
 function isPiDispatchable(name, customToolNameToPi) {
   if (typeof name !== "string" || !name) return false;

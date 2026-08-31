@@ -28,6 +28,8 @@ describe("tool name mapping", () => {
 		assert.equal(isPiDispatchable("bash", map), false);
 		assert.equal(isPiDispatchable("grep", map), false);
 		assert.equal(isPiDispatchable("mcp__filesystem__read_file", map), false);
+		assert.equal(isPiDispatchable("mcp/filesystem/read_file", map), false);
+		assert.equal(isPiDispatchable("mcp/filesystem/read_file", new Map()), false);
 		assert.equal(isPiDispatchable("mcp__custom-tools__grep", map), true);
 		assert.equal(isPiDispatchable("mcp__custom_tools__grep", map), true);
 		assert.equal(isPiDispatchable("mcp/custom-tools/grep", map), true);

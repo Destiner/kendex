@@ -386,6 +386,14 @@ describe("child-executed tools are never mirrored as Pi tool calls", () => {
 		assertNoPiCall(c, true);
 
 		c = freshContext();
+		processStreamEvent(streamEvent({
+			type: "content_block_start", index: 0,
+			content_block: { type: "tool_use", id: "toolu_native_slash_stream", name: "mcp/filesystem/read_file", input: {} },
+		}), manifest, model);
+		processStreamEvent(streamEvent({ type: "content_block_stop", index: 0 }), manifest, model);
+		assertNoPiCall(c, true);
+
+		c = freshContext();
 		c.turnSawStreamEvent = true;
 		processAssistantMessage({
 			type: "assistant",

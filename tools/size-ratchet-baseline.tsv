@@ -27,9 +27,9 @@ pi-extensions/pi-background-tasks/extensions/background-tasks.ts	986
 pi-extensions/pi-background-tasks/extensions/wake-events.ts	600
 pi-extensions/pi-background-tasks/package.json	421
 pi-extensions/pi-caveman/extensions/caveman.ts	406
-pi-extensions/pi-claude-bridge/src/assistant-stream.ts	713
+pi-extensions/pi-claude-bridge/src/assistant-stream.ts	729
 pi-extensions/pi-claude-bridge/src/config.ts	478
-pi-extensions/pi-claude-bridge/src/connectors.ts	746
+pi-extensions/pi-claude-bridge/src/connectors.ts	750
 pi-extensions/pi-claude-bridge/src/index.ts	1477
 pi-extensions/pi-claude-bridge/src/query-state.ts	771
 pi-extensions/pi-claude-bridge/src/session-persistence.ts	649

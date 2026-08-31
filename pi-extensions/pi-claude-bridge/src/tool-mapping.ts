@@ -22,7 +22,7 @@ function bridgedToolSuffix(normalized: string): string | undefined {
 export function isForeignMcpTool(name: unknown): boolean {
 	if (typeof name !== "string") return false;
 	const normalized = name.toLowerCase();
-	return normalized.startsWith("mcp__") && bridgedToolSuffix(normalized) === undefined;
+	return (normalized.startsWith("mcp__") || normalized.startsWith("mcp/")) && bridgedToolSuffix(normalized) === undefined;
 }
 
 export function isPiDispatchable(name: unknown, customToolNameToPi?: Map<string, string>): boolean {
